@@ -8,12 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		DB46D07118B0B465005EE9AC /* 30x64.png in Resources */ = {isa = PBXBuildFile; fileRef = DB46D07018B0B465005EE9AC /* 30x64.png */; };
+		DB475CEE18C20E3700458430 /* FB2StepButton.m in Sources */ = {isa = PBXBuildFile; fileRef = DB475CED18C20E3700458430 /* FB2StepButton.m */; };
 		DB93B18418A9267F005238B0 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B18318A9267F005238B0 /* QuartzCore.framework */; };
 		DB93B18718A9C059005238B0 /* ColorImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18618A9C059005238B0 /* ColorImageView.m */; };
 		DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18918A9D536005238B0 /* ColorScrollView.m */; };
 		DB93B18D18AA0160005238B0 /* ColorEntranceViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18C18AA0160005238B0 /* ColorEntranceViewController.m */; };
 		DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */; };
 		DB93B19418AA1ED8005238B0 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B19318AA1ED8005238B0 /* AVFoundation.framework */; };
+		DB98544718C5DF5E00A4556E /* ColorCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DB98544618C5DF5E00A4556E /* ColorCell.m */; };
+		DB98544918C5E0FF00A4556E /* 列表.png in Resources */ = {isa = PBXBuildFile; fileRef = DB98544818C5E0FF00A4556E /* 列表.png */; };
 		DB98F49D18B34E6400A1F6D4 /* 阴影.png in Resources */ = {isa = PBXBuildFile; fileRef = DB98F49C18B34E6400A1F6D4 /* 阴影.png */; };
 		DB9D173018ABBF74009963BC /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB9D172F18ABBF74009963BC /* CoreMedia.framework */; };
 		DB9D178618ABDA8D009963BC /* 110x136.png in Resources */ = {isa = PBXBuildFile; fileRef = DB9D176B18ABDA8C009963BC /* 110x136.png */; };
@@ -72,6 +75,8 @@
 
 /* Begin PBXFileReference section */
 		DB46D07018B0B465005EE9AC /* 30x64.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = 30x64.png; sourceTree = "<group>"; };
+		DB475CEC18C20E3700458430 /* FB2StepButton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FB2StepButton.h; sourceTree = "<group>"; };
+		DB475CED18C20E3700458430 /* FB2StepButton.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FB2StepButton.m; sourceTree = "<group>"; };
 		DB93B18318A9267F005238B0 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		DB93B18518A9C059005238B0 /* ColorImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorImageView.h; sourceTree = "<group>"; };
 		DB93B18618A9C059005238B0 /* ColorImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorImageView.m; sourceTree = "<group>"; };
@@ -82,6 +87,9 @@
 		DB93B19018AA1352005238B0 /* ColorRealTimeViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorRealTimeViewController.h; sourceTree = "<group>"; };
 		DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorRealTimeViewController.m; sourceTree = "<group>"; };
 		DB93B19318AA1ED8005238B0 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		DB98544518C5DF5E00A4556E /* ColorCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorCell.h; sourceTree = "<group>"; };
+		DB98544618C5DF5E00A4556E /* ColorCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorCell.m; sourceTree = "<group>"; };
+		DB98544818C5E0FF00A4556E /* 列表.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "列表.png"; path = "../列表.png"; sourceTree = "<group>"; };
 		DB98F49C18B34E6400A1F6D4 /* 阴影.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "阴影.png"; sourceTree = "<group>"; };
 		DB9D172F18ABBF74009963BC /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
 		DB9D176B18ABDA8C009963BC /* 110x136.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = 110x136.png; sourceTree = "<group>"; };
@@ -161,6 +169,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		DB475CEB18C20E3700458430 /* FB2StepButton */ = {
+			isa = PBXGroup;
+			children = (
+				DB475CEC18C20E3700458430 /* FB2StepButton.h */,
+				DB475CED18C20E3700458430 /* FB2StepButton.m */,
+			);
+			path = FB2StepButton;
+			sourceTree = "<group>";
+		};
+		DB475CEF18C20E9000458430 /* Open source */ = {
+			isa = PBXGroup;
+			children = (
+				DB475CEB18C20E3700458430 /* FB2StepButton */,
+			);
+			name = "Open source";
+			sourceTree = "<group>";
+		};
 		DB93B18E18AA116A005238B0 /* Controller */ = {
 			isa = PBXGroup;
 			children = (
@@ -183,6 +208,8 @@
 				DB93B18618A9C059005238B0 /* ColorImageView.m */,
 				DB9D3BC918B733210033ACDA /* ColorPickerImageView.h */,
 				DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */,
+				DB98544518C5DF5E00A4556E /* ColorCell.h */,
+				DB98544618C5DF5E00A4556E /* ColorCell.m */,
 			);
 			name = View;
 			sourceTree = "<group>";
@@ -199,6 +226,7 @@
 		DB9D176818ABDA8C009963BC /* ColorP */ = {
 			isa = PBXGroup;
 			children = (
+				DB98544818C5E0FF00A4556E /* 列表.png */,
 				DB9D176918ABDA8C009963BC /* 开始界面 */,
 				DB9D177518ABDA8C009963BC /* 取色界面 */,
 				DB9D177E18ABDA8C009963BC /* icon */,
@@ -263,6 +291,7 @@
 		DBE8C38618A20F5400E2B304 = {
 			isa = PBXGroup;
 			children = (
+				DB475CEF18C20E9000458430 /* Open source */,
 				DB9D173118ABDA34009963BC /* Image */,
 				DBE8C39818A20F5400E2B304 /* ColorPicker */,
 				DBE8C3B718A20F5400E2B304 /* ColorPickerTests */,
@@ -431,6 +460,7 @@
 				DBBAB4DE18AC7CBA00E5A984 /* 152.png in Resources */,
 				DBE8C3AB18A20F5400E2B304 /* Images.xcassets in Resources */,
 				DB9D178E18ABDA8D009963BC /* 240x248.png in Resources */,
+				DB98544918C5E0FF00A4556E /* 列表.png in Resources */,
 				DB9D179A18ABDA8D009963BC /* 80.png in Resources */,
 				DB9D179918ABDA8D009963BC /* 58.png in Resources */,
 				DBBAB4DA18AC62DE00E5A984 /* y 148.png in Resources */,
@@ -467,6 +497,8 @@
 				DBE8C3A318A20F5400E2B304 /* ColorAppDelegate.m in Sources */,
 				DB93B18D18AA0160005238B0 /* ColorEntranceViewController.m in Sources */,
 				DBE8C39F18A20F5400E2B304 /* main.m in Sources */,
+				DB475CEE18C20E3700458430 /* FB2StepButton.m in Sources */,
+				DB98544718C5DF5E00A4556E /* ColorCell.m in Sources */,
 				DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */,
 				DBE8C3A918A20F5400E2B304 /* ColorViewController.m in Sources */,
 				DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */,

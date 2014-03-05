@@ -10,6 +10,7 @@
 #import "ColorViewController.h"
 #import "ColorScrollView.h"
 #import "ColorRealTimeViewController.h"
+#import "ColorCell.h"
 
 //使用hex颜色的宏
 #define UIColorFromRGB(rgbValue) [UIColor colorWithRed:((float)((rgbValue & 0xFF0000) >> 16))/255.0 green:((float)((rgbValue & 0xFF00) >> 8))/255.0 blue:((float)(rgbValue & 0xFF))/255.0 alpha:1.0]
@@ -21,11 +22,15 @@
 #define TOP_COLOR_LIBRARY_STATE_FRAME CGRectMake(320/2, 138/2, 208/2, 36/2)
 
 @interface ColorEntranceViewController ()
+
 @property (strong,nonatomic) UIButton *selectPhotoButton;
 @property (strong,nonatomic) UIButton *pickPhotoButton;
 @property (strong,nonatomic) UIButton *realTimeButton;
-@property (strong,nonatomic) UIButton *topSelectStateButton;
+@property (strong,nonatomic) UIButton *topEntranceViewButton;
 @property (strong,nonatomic) UIButton *topColorLibrayStateButton;
+@property (strong,nonatomic) UITableView *tableView;
+@property (strong,nonatomic) NSMutableArray *colorArray;
+
 @end
 
 @implementation ColorEntranceViewController
@@ -58,7 +63,24 @@
     [self.view addSubview:topButtonBackGroud];
     
     //设置导航条按钮
+    _topEntranceViewButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.topEntranceViewButton.frame = TOP_SELECT_STATE_BUTTON_FRAME;
+    [self.topEntranceViewButton addTarget:self action:@selector(showEntranceView) forControlEvents:UIControlEventTouchUpInside];
+    self.topEntranceViewButton.selected = YES;
+    [self.topEntranceViewButton setBackgroundImage:[UIImage imageNamed:@"112x138.png"] forState:UIControlStateNormal];
+    [self.topEntranceViewButton setBackgroundImage:[UIImage imageNamed:@"112x138 B.png"] forState:UIControlStateHighlighted];
+    [self.topEntranceViewButton setBackgroundImage:[UIImage imageNamed:@"112x138 B.png"] forState:UIControlStateSelected];
+    [self.view addSubview:self.topEntranceViewButton];
     
+    _topColorLibrayStateButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.topColorLibrayStateButton.frame = TOP_COLOR_LIBRARY_STATE_FRAME;
+    [self.topColorLibrayStateButton addTarget:self action:@selector(showColorRecord) forControlEvents:UIControlEventTouchUpInside];
+    [self.topColorLibrayStateButton setImage:[UIImage imageNamed:@"320x138.png"] forState:UIControlStateNormal];
+    [self.topColorLibrayStateButton setImage:[UIImage imageNamed:@"320x138 B.png"] forState:UIControlStateSelected];
+    [self.topColorLibrayStateButton setImage:[UIImage imageNamed:@"320x138 B.png"] forState:UIControlStateHighlighted];
+    //出现了问题 为什么直接使用 uicontrolStateHighlighted|uicontrolStareSelected不行
+    [self.view addSubview:self.topColorLibrayStateButton];
+
     
     //设置背景
     self.view.backgroundColor = [UIColor colorWithRed:239.0/255.0 green:239.0/255.0 blue:237.0/255.0 alpha:1];
@@ -87,21 +109,10 @@
     _realTimeButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.realTimeButton.frame = REAL_TIME_BUTTON_FRAME;
     [self.realTimeButton setBackgroundImage:[UIImage imageNamed:@"117x744.png"] forState:UIControlStateNormal];
-    [self.realTimeButton setBackgroundImage:[UIImage imageNamed:@"117x744 B.png"] forState:UIControlStateHighlighted];
+    [self.realTimeButton setBackgroundImage:[UIImage imageNamed:@"117x744 B.png"] forState:UIControlStateSelected|UIControlStateHighlighted];
     [self.realTimeButton addTarget:self action:@selector(realTimeView) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.realTimeButton];
     
-    _topSelectStateButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.topSelectStateButton.frame = TOP_SELECT_STATE_BUTTON_FRAME;
-    [self.topSelectStateButton setBackgroundImage:[UIImage imageNamed:@"112x138 B.png"] forState:UIControlStateNormal];
-    [self.topSelectStateButton setBackgroundImage:[UIImage imageNamed:@"112x138.png"] forState:UIControlStateHighlighted];
-    [self.view addSubview:self.topSelectStateButton];
-    
-    _topColorLibrayStateButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.topColorLibrayStateButton.frame = TOP_COLOR_LIBRARY_STATE_FRAME;
-    [self.topColorLibrayStateButton setBackgroundImage:[UIImage imageNamed:@"320x138.png"] forState:UIControlStateNormal];
-    [self.topColorLibrayStateButton setBackgroundImage:[UIImage imageNamed:@"320x138 B.png"] forState:UIControlStateHighlighted];
-    [self.view addSubview:self.topColorLibrayStateButton];
 }
 
 - (void)didReceiveMemoryWarning
@@ -120,10 +131,6 @@
         UIAlertView * alert = [[UIAlertView alloc]initWithTitle:@"无本地相册" message:Nil delegate:nil cancelButtonTitle:@"YES" otherButtonTitles:nil, nil];
         [alert show];
     }
-    
-    //_imagePicker = [[UIImagePickerController alloc]init];
-    //self.imagePicker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-    //self.imagePicker.delegate = self;
     
     UIImagePickerController *imageLibray = [[UIImagePickerController alloc]init];
     imageLibray.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
@@ -178,7 +185,6 @@
               
           }];
      }];
-    //[self presentViewController:imagePicker animated:YES completion:nil];
 }
 
 - (void)realTimeView
@@ -186,6 +192,45 @@
     ColorRealTimeViewController *realTimeController = [[ColorRealTimeViewController alloc]init];
     [self presentViewController:realTimeController animated:YES completion:nil];
 }
+
+- (void)showColorRecord
+{
+    //设置按钮选中状态
+    self.topEntranceViewButton.selected = NO;
+    self.topColorLibrayStateButton.selected = YES;
+    
+    //取tableview要显示的数据
+    NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
+    self.colorArray = [[defaults arrayForKey:@"colorArray"] mutableCopy];
+    for (NSString * string in self.colorArray)
+    {
+        NSLog(@"%@",string);
+    }
+    
+    //显示tableView
+    if (_tableView == nil)
+    {
+        _tableView = [[UITableView alloc]initWithFrame:CGRectMake(0, 192/2, 320, 480 - 192/2)];
+        self.tableView.backgroundColor = [UIColor blueColor];
+        
+        self.tableView.delegate = self;
+        self.tableView.dataSource = self;
+        [self.view addSubview:self.tableView];
+    }
+    else
+    {
+        [self.tableView reloadData];
+        self.tableView.hidden = NO;
+    }
+}
+
+- (void)showEntranceView
+{
+    self.tableView.hidden = YES;
+    self.topColorLibrayStateButton.selected = NO;
+    self.topEntranceViewButton.selected = YES;
+}
+
 
 #pragma mark -imagePicker
 
@@ -197,5 +242,62 @@
     //[picker dismissViewControllerAnimated:NO completion:nil];
 
 }
+
+#pragma mark -tableView datasource
+
+-(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    NSString *cellIdentifier = @"colorCell" ;
+    ColorCell *cell = [tableView dequeueReusableCellWithIdentifier:cellIdentifier];
+    
+    if (cell == nil)
+    {
+        cell = [[ColorCell alloc]initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellIdentifier];
+    }
+    return cell;
+}
+
+-(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    //返回需要显示的行数
+    return [self.colorArray count];
+}
+
+/* 奇怪 用了就显示不出来了
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
+{
+    //返回有多少个section
+    return 1;
+}
+ */
+
+//删除选择列，更新颜色值数组
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    
+    [self.colorArray removeObjectAtIndex:indexPath.row];
+    
+    //保存进本地
+    NSUserDefaults * userDefault = [NSUserDefaults standardUserDefaults];
+    [userDefault setObject:self.colorArray forKey:@"colorArray"];
+    [userDefault synchronize];
+    
+    [tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+
+}
+
+#pragma mark -tableview delegate
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return 170/2;
+}
+
+// 返回cell editing的样式
+- (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return UITableViewCellEditingStyleDelete;
+}
+
 
 @end

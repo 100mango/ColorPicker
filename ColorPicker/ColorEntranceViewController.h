@@ -8,6 +8,6 @@
 
 #import <UIKit/UIKit.h>
 
-@interface ColorEntranceViewController : UINavigationController<UINavigationControllerDelegate,UIImagePickerControllerDelegate>
+@interface ColorEntranceViewController : UINavigationController<UINavigationControllerDelegate,UIImagePickerControllerDelegate,UITableViewDelegate,UITableViewDataSource>
 
 @end

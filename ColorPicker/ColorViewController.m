@@ -10,6 +10,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
+#import "FB2StepButton.h"
 
 @interface ColorViewController ()
 
@@ -21,7 +22,8 @@
 @property (strong, nonatomic) UILabel *hexRGB;
 @property (strong,nonatomic) UIButton *backButton;
 @property (strong,nonatomic) UISlider *slider;
-//@property (strong, nonatomic) UIImageView *colorPickerView;
+//@property (strong,nonatomic) FB2StepButton *saveButton;
+@property (strong,nonatomic) UIButton *saveButton;
 
 @end
 
@@ -113,6 +115,14 @@
     [self.backButton addTarget:self action:@selector(back) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.backButton];
     
+    //_saveButton = [[FB2StepButton alloc]initWithFrame:CGRectMake(200, 793/2, 30, 30)];
+    _saveButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    [self.saveButton addTarget:self action:@selector(saveColor) forControlEvents:UIControlEventTouchUpInside];
+    self.saveButton.frame = CGRectMake(100, 100, 50, 50);
+    self.saveButton.backgroundColor = [UIColor blackColor];
+    [self.view addSubview:self.saveButton];
+    
+    
     //初始化Slider
     _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 15)];
     self.slider.maximumValue = 10;
@@ -139,12 +149,35 @@
     // Dispose of any resources that can be recreated.
 }
 
-#pragma mark -touchEventMethod
+#pragma mark -buttonTouchEventMethod
 
 - (void)back
 {
     [self.presentingViewController.presentingViewController dismissViewControllerAnimated:YES completion:nil];
 }
+
+- (void)saveColor
+{
+    NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
+    NSArray * colorArray = [userDefaults arrayForKey:@"colorArray"];
+    
+    if (colorArray == nil)
+    {
+        NSLog(@"we don't have");
+        NSArray * newColorArray = @[self.hexRGB.text];
+        [userDefaults setObject:newColorArray forKey:@"colorArray"];
+    }
+    else
+    {
+        NSMutableArray *newColorArray = [colorArray mutableCopy];
+        [newColorArray addObject:self.hexRGB.text];
+        [userDefaults setObject:newColorArray forKey:@"colorArray"];
+        NSLog(@"Save color");
+    }
+    [userDefaults synchronize];
+}
+
+#pragma mark -sliderTouchEventMethod
 
 - (void)valueChanged
 {
@@ -152,7 +185,8 @@
     //self.scrollView.selectedImageView.colorPickerView.hidden = YES;
 }
 
-//scrollView delegate
+#pragma mark -scrollView
+
 -(UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView
 {
     //将要缩放时，将取色指示计隐藏

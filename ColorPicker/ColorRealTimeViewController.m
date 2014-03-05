@@ -62,7 +62,6 @@
     
     // Initialize image output
     AVCaptureVideoDataOutput *output = [AVCaptureVideoDataOutput new];
-    
     NSDictionary *rgbOutputSettings = [NSDictionary dictionaryWithObject:
                                        [NSNumber numberWithInt:kCMPixelFormat_32BGRA] forKey:(id)kCVPixelBufferPixelFormatTypeKey];
     [output setVideoSettings:rgbOutputSettings];
