@@ -10,6 +10,7 @@
 #import "ColorImageView.h"
 
 @interface ColorPickerImageView ()
+
 @end
 @implementation ColorPickerImageView
 
@@ -30,16 +31,12 @@
 - (void)handleGesture:(UIPanGestureRecognizer *)gestureRecognizer
 {
     CGPoint point = [gestureRecognizer locationInView:self.superview];
-    //point.x -= 36/2;
-    //point.y -= 60/2;
     CGRect newFrame = self.frame;
     newFrame.origin.x = point.x;
     newFrame.origin.y = point.y;
     self.frame = newFrame;
     
     CGPoint pointInImage = [gestureRecognizer locationInView:self.imageView];
-    //pointInImage.x -= 36/2;
-    //pointInImage.y -= 60/2;
     [self.imageView getColorOfPoint:pointInImage];
 }
                                                 

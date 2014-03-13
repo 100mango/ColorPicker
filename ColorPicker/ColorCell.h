@@ -10,4 +10,7 @@
 
 @interface ColorCell : UITableViewCell
 
+
+- (void)setColorInformationWith:(NSString*)hexColor;
+
 @end

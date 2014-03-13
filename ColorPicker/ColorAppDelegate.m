@@ -17,8 +17,6 @@
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     ColorEntranceViewController *entranceController = [[ColorEntranceViewController alloc]init];
     self.window.rootViewController = entranceController;
-    //ColorRealTimeViewController *realTimeController = [[ColorRealTimeViewController alloc]init];
-    //self.window.rootViewController = realTimeController;
     [self.window makeKeyAndVisible];
     return YES;
 }

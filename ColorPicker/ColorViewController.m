@@ -10,7 +10,6 @@
 #import <QuartzCore/QuartzCore.h>
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
-#import "FB2StepButton.h"
 
 @interface ColorViewController ()
 
@@ -22,7 +21,6 @@
 @property (strong, nonatomic) UILabel *hexRGB;
 @property (strong,nonatomic) UIButton *backButton;
 @property (strong,nonatomic) UISlider *slider;
-//@property (strong,nonatomic) FB2StepButton *saveButton;
 @property (strong,nonatomic) UIButton *saveButton;
 
 @end
@@ -115,11 +113,13 @@
     [self.backButton addTarget:self action:@selector(back) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.backButton];
     
+    
     //_saveButton = [[FB2StepButton alloc]initWithFrame:CGRectMake(200, 793/2, 30, 30)];
     _saveButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    [self.saveButton addTarget:self action:@selector(saveColor) forControlEvents:UIControlEventTouchUpInside];
-    self.saveButton.frame = CGRectMake(100, 100, 50, 50);
+    [self.saveButton addTarget:self action:@selector(clickToSave) forControlEvents:UIControlEventTouchUpInside];
+    self.saveButton.frame = CGRectMake(100, 300, 24, 24);
     self.saveButton.backgroundColor = [UIColor blackColor];
+    self.saveButton.layer.cornerRadius = 12.0;
     [self.view addSubview:self.saveButton];
     
     
@@ -158,6 +158,7 @@
 
 - (void)saveColor
 {
+    //考虑使用多线程使用存储
     NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
     NSArray * colorArray = [userDefaults arrayForKey:@"colorArray"];
     
@@ -177,6 +178,20 @@
     [userDefaults synchronize];
 }
 
+- (void)clickToSave
+{
+    self.saveButton.layer.anchorPoint = CGPointMake(1.0, 0.5);
+    
+    CABasicAnimation *newButtomAnimation = [CABasicAnimation animationWithKeyPath:@"bounds"];
+    newButtomAnimation.fromValue = [NSValue valueWithCGRect:self.saveButton.bounds];
+    CGRect newRect = self.saveButton.bounds;
+    newRect.size.width += 30;
+    newButtomAnimation.toValue = [NSValue valueWithCGRect:newRect];
+    newButtomAnimation.duration = 0.2;
+    [self.saveButton.layer addAnimation:newButtomAnimation forKey:@"bounds"];
+    
+    self.saveButton.bounds = newRect;    
+}
 #pragma mark -sliderTouchEventMethod
 
 - (void)valueChanged

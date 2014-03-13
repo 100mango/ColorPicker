@@ -35,15 +35,6 @@
 
 @implementation ColorEntranceViewController
 
-- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
-{
-    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
-    if (self) {
-        // Custom initialization
-    }
-    return self;
-}
-
 //设置状态栏
 -(UIStatusBarStyle)preferredStatusBarStyle
 {
@@ -135,19 +126,24 @@
     UIImagePickerController *imageLibray = [[UIImagePickerController alloc]init];
     imageLibray.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
     imageLibray.delegate = self;
+    //定制选择图片时的的navigationBar外观
+    imageLibray.navigationBar.barTintColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
+    imageLibray.navigationBar.tintColor = [UIColor whiteColor];
+    imageLibray.navigationBar.translucent = NO;
+    imageLibray.navigationBar.titleTextAttributes = @{NSForegroundColorAttributeName: [UIColor whiteColor]};
     
     //按钮被激发的动画
-    [UIView animateWithDuration: 0.7
+    [UIView animateWithDuration: 0.3
                      animations:
      ^{
-         self.selectPhotoButton.frame = CGRectMake(117/2 + 400, 532/2, 406/2, 102/2);
+         //self.selectPhotoButton.frame = CGRectMake(117/2 + 400, 532/2, 406/2, 102/2);
          self.selectPhotoButton.alpha = 0.0;
       }
                      completion:
      ^(BOOL finished){
          [self presentViewController:imageLibray animated:YES completion:
           ^{
-              self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME;
+              //self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME;
               self.selectPhotoButton.alpha = 1;
 
           }];
@@ -170,17 +166,17 @@
     imagePicker.delegate = self;
     
     //按钮被激活动画
-    [UIView animateWithDuration: 0.7
+    [UIView animateWithDuration: 0.3
                      animations:
      ^{
-         self.pickPhotoButton.frame = CGRectMake(117/2 + 400, 638/2, 406/2, 102/2);
+         //self.pickPhotoButton.frame = CGRectMake(117/2 + 400, 638/2, 406/2, 102/2);
          self.pickPhotoButton.alpha = 0.0;
      }
                      completion:
      ^(BOOL finished){
          [self presentViewController:imagePicker animated:YES completion:
           ^{
-              self.pickPhotoButton.frame = PICK_PHOTO_BUTTON_FRAME;
+             // self.pickPhotoButton.frame = PICK_PHOTO_BUTTON_FRAME;
               self.pickPhotoButton.alpha = 1;
               
           }];
@@ -211,7 +207,8 @@
     if (_tableView == nil)
     {
         _tableView = [[UITableView alloc]initWithFrame:CGRectMake(0, 192/2, 320, 480 - 192/2)];
-        self.tableView.backgroundColor = [UIColor blueColor];
+        self.tableView.backgroundColor = [UIColor whiteColor];
+        self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
         
         self.tableView.delegate = self;
         self.tableView.dataSource = self;
@@ -254,6 +251,9 @@
     {
         cell = [[ColorCell alloc]initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellIdentifier];
     }
+    
+    //设置cell属性
+    [cell setColorInformationWith:[self.colorArray objectAtIndex:indexPath.row]];
     return cell;
 }
 
