@@ -39,12 +39,10 @@
 
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
 {
+    //更像点击后的指示器坐标
     UITouch *touch = [[event allTouches]anyObject];
     CGPoint point = [touch locationInView:self];
     CGRect newFrame = self.colorPickerView.frame;
-    //为了让手指触摸到指示器的中间，而不是箭头
-    //point.x -= 36/2;
-    //point.y -= 60/2;
     newFrame.origin.x = point.x;
     newFrame.origin.y = point.y;
     self.colorPickerView.frame = newFrame;

@@ -37,9 +37,6 @@
 {
     UITouch *touch = [[event allTouches]anyObject];
     CGPoint point = [touch locationInView:self];
-    //为了让箭头指向的点才是检查的点，而不是触摸点是检查点。即触摸点非检测点
-    //point.x -= 36/2;
-    //point.y -= 60/2;
     
     [self getColorOfPoint:point];
 }

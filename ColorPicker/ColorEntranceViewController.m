@@ -12,8 +12,7 @@
 #import "ColorRealTimeViewController.h"
 #import "ColorCell.h"
 
-//使用hex颜色的宏
-#define UIColorFromRGB(rgbValue) [UIColor colorWithRed:((float)((rgbValue & 0xFF0000) >> 16))/255.0 green:((float)((rgbValue & 0xFF00) >> 8))/255.0 blue:((float)(rgbValue & 0xFF))/255.0 alpha:1.0]
+
 //按钮尺寸
 #define SELECT_PHOTO_BUTTON_FRAME CGRectMake(117/2, 532/2, 406/2, 102/2)
 #define PICK_PHOTO_BUTTON_FRAME CGRectMake(117/2, 638/2, 406/2, 102/2)
@@ -45,6 +44,22 @@
 {
     [super viewDidLoad];
     
+    [self setupNavigationBar];
+    [self setupBackground];
+    [self setupButtons];
+}
+
+- (void)didReceiveMemoryWarning
+{
+    [super didReceiveMemoryWarning];
+    // Dispose of any resources that can be recreated.
+}
+
+
+#pragma mark -setupView
+
+- (void)setupNavigationBar
+{
     //设置NavigationBar
     self.navigationBar.hidden = YES;
     
@@ -71,17 +86,19 @@
     [self.topColorLibrayStateButton setImage:[UIImage imageNamed:@"320x138 B.png"] forState:UIControlStateHighlighted];
     //出现了问题 为什么直接使用 uicontrolStateHighlighted|uicontrolStareSelected不行
     [self.view addSubview:self.topColorLibrayStateButton];
+}
 
-    
+- (void)setupBackground
+{
     //设置背景
     self.view.backgroundColor = [UIColor colorWithRed:239.0/255.0 green:239.0/255.0 blue:237.0/255.0 alpha:1];
     UIImageView *imageView = [[UIImageView alloc]initWithFrame:CGRectMake(240/2, 248/2, 160/2, 228/2)];
     imageView.image = [UIImage imageNamed:@"240x248.png"];
     [self.view addSubview:imageView];
-    
-    /**
-     *  初始化按钮
-     */
+}
+
+- (void)setupButtons
+{
     _selectPhotoButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME;
     [self.selectPhotoButton setBackgroundImage:[UIImage imageNamed:@"117x532.png"] forState:UIControlStateNormal];
@@ -103,14 +120,8 @@
     [self.realTimeButton setBackgroundImage:[UIImage imageNamed:@"117x744 B.png"] forState:UIControlStateSelected|UIControlStateHighlighted];
     [self.realTimeButton addTarget:self action:@selector(realTimeView) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.realTimeButton];
-    
 }
 
-- (void)didReceiveMemoryWarning
-{
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
-}
 #pragma mark -buttonMethod
 
 - (void)selectImage
@@ -203,7 +214,7 @@
         NSLog(@"%@",string);
     }
     
-    //显示tableView
+    //显示tableView lazy init
     if (_tableView == nil)
     {
         _tableView = [[UITableView alloc]initWithFrame:CGRectMake(0, 192/2, 320, 480 - 192/2)];
@@ -234,10 +245,9 @@
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
 {
     UIImage *image = [info objectForKey:UIImagePickerControllerOriginalImage];
-    ColorViewController *colorViewController = [[ColorViewController alloc]initWithImage:image];
+    ColorViewController *colorViewController = [[ColorViewController alloc]init];
     [picker presentViewController:colorViewController animated:YES completion:nil];
-    //[picker dismissViewControllerAnimated:NO completion:nil];
-
+    [colorViewController setChooseImage:image];
 }
 
 #pragma mark -tableView datasource
@@ -263,13 +273,6 @@
     return [self.colorArray count];
 }
 
-/* 奇怪 用了就显示不出来了
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
-{
-    //返回有多少个section
-    return 1;
-}
- */
 
 //删除选择列，更新颜色值数组
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath

@@ -27,17 +27,10 @@
 
 @implementation ColorViewController
 
-- (id)initWithImage:(UIImage *)image
+
+- (void)setChooseImage:(UIImage *)image
 {
-    if (self = [super init])
-    {
-        //bug 要注意在赋值前 先要初始化
-        _scrollView = [[ColorScrollView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 568/2)];
-        self.scrollView.selectedImageView.image = image;
-        return self;
-    }
-    else
-        return nil;
+    self.scrollView.selectedImageView.image = image;
 }
 
 //设置状态栏
@@ -51,12 +44,53 @@
     self.view = [[UIView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
     self.view.backgroundColor = [UIColor colorWithRed:239.0/255 green:239.0/255 blue:237.0/255 alpha:1.0];
     
+    [self setupBackgroud];
+    [self setupSrollView];
+    [self setupColorInformationView];
+    [self setupButtons];
+    [self setupSlider];
+}
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    
+    //注册到通知中心用于更新label
+    NSString * updateLabel = @"updateLabelAndColorImage";
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateLabelAndColorImage) name:updateLabel object:nil];
+}
+
+- (void)didReceiveMemoryWarning
+{
+    [super didReceiveMemoryWarning];
+    // Dispose of any resources that can be recreated.
+}
+
+#pragma mark -setupSubView
+
+- (void)setupBackgroud
+{
     //设置自定义导航条背景
     UIImageView *topButtonBackgroud = [[UIImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 128/2)];
     topButtonBackgroud.image = [UIImage imageNamed:@"00 B.png"];
     [self.view addSubview:topButtonBackgroud];
-    
+}
+
+- (void)setupSlider
+{
+    //初始化Slider
+    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 15)];
+    self.slider.maximumValue = 10;
+    [self.slider setThumbImage:[UIImage imageNamed:@"y 148.png"] forState:UIControlStateNormal];
+    [self.slider setMinimumTrackImage:[UIImage imageNamed:@"130x159.png"] forState:UIControlStateNormal];
+    [self.slider addTarget:self action:@selector(valueChanged) forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:self.slider];
+}
+
+- (void)setupSrollView
+{
     //初始化scrollView
+    _scrollView = [[ColorScrollView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 568/2)];
     self.scrollView.maximumZoomScale = 100.0;
     self.scrollView.minimumZoomScale = 1.0;
     self.scrollView.contentSize = CGSizeMake(1000, 1000);
@@ -70,7 +104,10 @@
     UIImageView *shawdowView = [[UIImageView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 568/2)];
     shawdowView.image = [UIImage imageNamed:@"阴影.png"];
     [self.view addSubview:shawdowView];
-    
+}
+
+- (void)setupColorInformationView
+{
     //初始化选中颜色view
     _selectedColoImageView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2, 126/2, 126/2)];
     self.selectedColoImageView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
@@ -95,7 +132,7 @@
     self.green.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
     self.blue.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
     self.hexRGB.textColor = self.red.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
-
+    
     self.red.text = self.scrollView.selectedImageView.red;
     self.green.text = self.scrollView.selectedImageView.green;
     self.blue.text = self.scrollView.selectedImageView.blue;
@@ -104,8 +141,10 @@
     [self.view addSubview:self.green];
     [self.view addSubview:self.blue];
     [self.view addSubview:self.hexRGB];
+}
 
-    
+- (void)setupButtons
+{
     //初始化按钮
     _backButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.backButton.frame = CGRectMake(30/2, 64/2, 20, 20);
@@ -114,39 +153,13 @@
     [self.view addSubview:self.backButton];
     
     
-    //_saveButton = [[FB2StepButton alloc]initWithFrame:CGRectMake(200, 793/2, 30, 30)];
     _saveButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    [self.saveButton addTarget:self action:@selector(clickToSave) forControlEvents:UIControlEventTouchUpInside];
+    [self.saveButton addTarget:self action:@selector(saveColor) forControlEvents:UIControlEventTouchUpInside];
     self.saveButton.frame = CGRectMake(100, 300, 24, 24);
     self.saveButton.backgroundColor = [UIColor blackColor];
     self.saveButton.layer.cornerRadius = 12.0;
     [self.view addSubview:self.saveButton];
-    
-    
-    //初始化Slider
-    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 15)];
-    self.slider.maximumValue = 10;
-    [self.slider setThumbImage:[UIImage imageNamed:@"y 148.png"] forState:UIControlStateNormal];
-    [self.slider setMinimumTrackImage:[UIImage imageNamed:@"130x159.png"] forState:UIControlStateNormal];
-    [self.slider addTarget:self action:@selector(valueChanged) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:self.slider];
-    
-    
-}
 
-- (void)viewDidLoad
-{
-    [super viewDidLoad];
-    
-    //注册到通知中心用于更新label
-    NSString * updateLabel = @"updateLabelAndColorImage";
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateLabelAndColorImage) name:updateLabel object:nil];
-}
-
-- (void)didReceiveMemoryWarning
-{
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
 }
 
 #pragma mark -buttonTouchEventMethod

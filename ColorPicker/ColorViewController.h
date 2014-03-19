@@ -11,6 +11,6 @@
 
 @interface ColorViewController : UIViewController<UINavigationControllerDelegate,UIImagePickerControllerDelegate,UIScrollViewDelegate>
 
+- (void)setChooseImage: (UIImage *)image;
 
-- (id)initWithImage: (UIImage *)image;
 @end
