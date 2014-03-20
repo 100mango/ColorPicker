@@ -8,16 +8,29 @@
 
 #import "ColorRealTimeViewController.h"
 #import <AVFoundation/AVFoundation.h>
+#import "GPUImage.h"
 
 @interface ColorRealTimeViewController ()
 
 
-@property (strong,nonatomic) AVCaptureSession *session;
+//@property (strong,nonatomic) AVCaptureSession *session;
 @property (strong,nonatomic) UIButton *backButton;
+/*
 @property (strong,nonatomic) CALayer *realTimeLayer;
 @property (strong,nonatomic) AVCaptureVideoPreviewLayer *previewLayer;
 @property (strong,nonatomic) NSTimer *timer;
 @property BOOL flag;
+ */
+
+@property (strong,nonatomic) GPUImageVideoCamera *videoCamera;
+@property (strong,nonatomic) GPUImageRawDataOutput *videoRawData;
+@property (strong,nonatomic) GPUImageView *VideoView;
+@property (nonatomic) CGPoint currentPoint;
+@property (strong,nonatomic) UILabel *red;
+@property (strong,nonatomic) UILabel *green;
+@property (strong,nonatomic) UILabel *blue;
+
+@property BOOL isTouch;
 
 @end
 
@@ -34,24 +47,113 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    //开始实时化取景
-    [self startCamera];
     
-    //初始化按钮
+    _isTouch = NO;
+    
+    [self setupGPUImage];
+    [self setupButton];
+    [self setupLabels];
+    
+
+}
+
+
+#pragma setupView
+- (void)setupButton
+{
     _backButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.backButton.frame = CGRectMake(30/2, 64/2, 20, 20);
     [self.backButton setImage:[UIImage imageNamed:@"30x64.png"] forState:UIControlStateNormal];
     [self.backButton addTarget:self action:@selector(back) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.backButton];
-
-    _flag = YES;
 }
 
+- (void)setupLabels
+{
+    _red = [[UILabel alloc]initWithFrame:CGRectMake(20, 60, 40, 40)];
+    _blue = [[UILabel alloc]initWithFrame:CGRectMake(20, 100, 40, 40)];
+    _green = [[UILabel alloc]initWithFrame:CGRectMake(20, 140, 40, 40)];
+    
+    self.red.text = @"255";
+    self.green.text = @"255";
+    self.blue.text = @"255";
+    
+    [self.view addSubview:self.red];
+    [self.view addSubview:self.green];
+    [self.view addSubview:self.blue];
+}
+
+- (void)setupGPUImage
+{
+    //设置Camera
+    _videoCamera = [[GPUImageVideoCamera alloc]initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
+    self.videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
+    
+    //设置videoView
+    CGRect mainScreenFrame = [[UIScreen mainScreen]applicationFrame];
+    _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, mainScreenFrame.size.width, mainScreenFrame.size.height)];
+    [self.view addSubview:self.VideoView];
+    
+    //设置output Rawdata
+    CGSize videoPixelSize = CGSizeMake(480, 640);
+    _videoRawData = [[GPUImageRawDataOutput alloc]initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
+    
+    //设置output回调
+    __weak ColorRealTimeViewController *safeSelf = self;
+    [self.videoRawData setNewFrameAvailableBlock:^{
+        
+        if (safeSelf.isTouch == YES) {
+            CGSize currentViewSize = safeSelf.view.bounds.size;
+            CGSize rawPixelsSize = [safeSelf.videoRawData maximumOutputSize];
+            
+            CGPoint scaledTouchPoint;
+            scaledTouchPoint.x = (safeSelf.currentPoint.x / currentViewSize.width) * rawPixelsSize.width;
+            scaledTouchPoint.y = (safeSelf.currentPoint.y / currentViewSize.height) * rawPixelsSize.height;
+            
+            GPUByteColorVector colorAtTouchPoint = [safeSelf.videoRawData colorAtLocation:scaledTouchPoint];
+            NSLog(@"%d",(int)colorAtTouchPoint.red);
+            
+            dispatch_async(dispatch_get_main_queue(), ^{
+                safeSelf.red.text = [NSString stringWithFormat:@"%d",(int)colorAtTouchPoint.red];
+                safeSelf.green.text = [NSString stringWithFormat:@"%d",(int)colorAtTouchPoint.green];
+                safeSelf.blue.text = [NSString stringWithFormat:@"%d",(int)colorAtTouchPoint.blue];
+            });
+            
+            safeSelf.isTouch = NO;
+        }
+        
+    }];
+    
+    //开始录制
+    [self.videoCamera addTarget:self.VideoView];
+    [self.videoCamera addTarget:self.videoRawData];
+    [self.videoCamera startCameraCapture];
+    
+}
+
+#pragma mark -buttonEvent
 - (void)back
 {
     [self.presentingViewController dismissViewControllerAnimated:YES completion:nil];
 }
 
+#pragma mark -touchEvent
+-(void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    self.currentPoint = [[touches anyObject] locationInView:self.view];
+    self.isTouch = YES;
+    
+    //UITouch *touch = [[event allTouches]anyObject];
+    //self.currentPoint = [touch locationInView:self.view];
+    //self.isTouch = YES;
+    //[self getColorOfPoint:point];
+}
+
+
+
+
+
+/*
 - (void)startCamera
 {
     // Create the capture session
@@ -179,13 +281,5 @@
     
 }
 
-#pragma mark -timer
-
-- (void)updateFlag
-{
-    NSLog(@"we come herwe");
-    self.flag = YES;
-    //[self.timer invalidate];
-}
-
+*/
 @end
