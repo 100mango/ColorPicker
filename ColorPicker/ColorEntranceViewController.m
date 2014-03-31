@@ -240,7 +240,7 @@
 }
 
 
-#pragma mark -imagePicker
+#pragma mark -imagePicker delegate
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
 {

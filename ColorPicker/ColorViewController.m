@@ -14,14 +14,14 @@
 @interface ColorViewController ()
 
 @property (strong, nonatomic) ColorScrollView *scrollView;
-@property (strong,nonatomic) UIImageView *selectedColoImageView;
+@property (strong, nonatomic) UIImageView *selectedColoImageView;
 @property (strong, nonatomic) UILabel *red;
 @property (strong, nonatomic) UILabel *green;
 @property (strong, nonatomic) UILabel *blue;
 @property (strong, nonatomic) UILabel *hexRGB;
-@property (strong,nonatomic) UIButton *backButton;
-@property (strong,nonatomic) UISlider *slider;
-@property (strong,nonatomic) UIButton *saveButton;
+@property (strong, nonatomic) UIButton *backButton;
+@property (strong, nonatomic) UISlider *slider;
+@property (strong, nonatomic) UIButton *saveButton;
 
 @end
 
@@ -191,6 +191,7 @@
     [userDefaults synchronize];
 }
 
+/*
 - (void)clickToSave
 {
     self.saveButton.layer.anchorPoint = CGPointMake(1.0, 0.5);
@@ -205,6 +206,7 @@
     
     self.saveButton.bounds = newRect;    
 }
+ */
 #pragma mark -sliderTouchEventMethod
 
 - (void)valueChanged

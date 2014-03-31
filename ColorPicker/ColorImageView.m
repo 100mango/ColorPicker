@@ -22,7 +22,7 @@
         //将imageView 设为可接收触摸信息
         self.userInteractionEnabled = YES;
         //设置imageView 的contenMode模式
-        self.contentMode = UIViewContentModeScaleAspectFill;
+        self.contentMode = UIViewContentModeScaleAspectFit;
         
         //初始化RGB信息
         self.red = @"255";

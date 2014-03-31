@@ -42,11 +42,11 @@
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "ColorPicker/ColorRealTimeViewController.m"
-            timestampString = "416923979.814479"
+            timestampString = "417770110.779104"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "116"
-            endingLineNumber = "116"
+            startingLineNumber = "149"
+            endingLineNumber = "149"
             landmarkName = "-setupGPUImage"
             landmarkType = "5">
          </BreakpointContent>
