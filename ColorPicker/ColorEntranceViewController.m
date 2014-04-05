@@ -142,21 +142,19 @@
     imageLibray.navigationBar.tintColor = [UIColor whiteColor];
     imageLibray.navigationBar.translucent = NO;
     imageLibray.navigationBar.titleTextAttributes = @{NSForegroundColorAttributeName: [UIColor whiteColor]};
+    [imageLibray setNeedsStatusBarAppearanceUpdate];
     
     //按钮被激发的动画
     [UIView animateWithDuration: 0.3
                      animations:
      ^{
-         //self.selectPhotoButton.frame = CGRectMake(117/2 + 400, 532/2, 406/2, 102/2);
          self.selectPhotoButton.alpha = 0.0;
       }
                      completion:
      ^(BOOL finished){
          [self presentViewController:imageLibray animated:YES completion:
           ^{
-              //self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME;
               self.selectPhotoButton.alpha = 1;
-
           }];
      }];
     
@@ -180,14 +178,12 @@
     [UIView animateWithDuration: 0.3
                      animations:
      ^{
-         //self.pickPhotoButton.frame = CGRectMake(117/2 + 400, 638/2, 406/2, 102/2);
          self.pickPhotoButton.alpha = 0.0;
      }
                      completion:
      ^(BOOL finished){
          [self presentViewController:imagePicker animated:YES completion:
           ^{
-             // self.pickPhotoButton.frame = PICK_PHOTO_BUTTON_FRAME;
               self.pickPhotoButton.alpha = 1;
               
           }];
@@ -286,7 +282,6 @@
     [userDefault synchronize];
     
     [tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-
 }
 
 #pragma mark -tableview delegate

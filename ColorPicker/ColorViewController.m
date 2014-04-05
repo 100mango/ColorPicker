@@ -10,11 +10,12 @@
 #import <QuartzCore/QuartzCore.h>
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
+#import "ColorPickerImageView.h"
 
 @interface ColorViewController ()
 
 @property (strong, nonatomic) ColorScrollView *scrollView;
-@property (strong, nonatomic) UIImageView *selectedColoImageView;
+@property (strong, nonatomic) UIImageView *selectedColoImformationView;
 @property (strong, nonatomic) UILabel *red;
 @property (strong, nonatomic) UILabel *green;
 @property (strong, nonatomic) UILabel *blue;
@@ -109,10 +110,10 @@
 - (void)setupColorInformationView
 {
     //初始化选中颜色view
-    _selectedColoImageView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2, 126/2, 126/2)];
-    self.selectedColoImageView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
-    self.selectedColoImageView.image = [UIImage imageNamed:@"42x793.png"];
-    [self.view addSubview:self.selectedColoImageView];
+    _selectedColoImformationView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2, 126/2, 126/2)];
+    self.selectedColoImformationView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
+    self.selectedColoImformationView.image = [UIImage imageNamed:@"42x793.png"];
+    [self.view addSubview:self.selectedColoImformationView];
     
     //初始化颜色值框背景
     UIImageView *rgbView = [[UIImageView alloc]initWithFrame:CGRectMake(196/2, 793/2, 396/2, 126/2)];
@@ -154,10 +155,10 @@
     
     
     _saveButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.saveButton.frame = CGRectMake(530/2, 64/2, 81/2, 41/2);
+    [self.saveButton setImage:[UIImage imageNamed:@"530,64"] forState:UIControlStateNormal];
+    [self.saveButton setImage:[UIImage imageNamed:@"530,64 B"] forState:UIControlStateSelected];
     [self.saveButton addTarget:self action:@selector(saveColor) forControlEvents:UIControlEventTouchUpInside];
-    self.saveButton.frame = CGRectMake(100, 300, 24, 24);
-    self.saveButton.backgroundColor = [UIColor blackColor];
-    self.saveButton.layer.cornerRadius = 12.0;
     [self.view addSubview:self.saveButton];
 
 }
@@ -171,62 +172,52 @@
 
 - (void)saveColor
 {
-    //考虑使用多线程使用存储
-    NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
-    NSArray * colorArray = [userDefaults arrayForKey:@"colorArray"];
-    
-    if (colorArray == nil)
-    {
-        NSLog(@"we don't have");
-        NSArray * newColorArray = @[self.hexRGB.text];
-        [userDefaults setObject:newColorArray forKey:@"colorArray"];
-    }
-    else
-    {
-        NSMutableArray *newColorArray = [colorArray mutableCopy];
-        [newColorArray addObject:self.hexRGB.text];
-        [userDefaults setObject:newColorArray forKey:@"colorArray"];
-        NSLog(@"Save color");
-    }
-    [userDefaults synchronize];
+    self.saveButton.selected = YES;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        
+        NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
+        NSArray * colorArray = [userDefaults arrayForKey:@"colorArray"];
+        
+        if (colorArray == nil)
+        {
+            NSLog(@"we don't have");
+            NSArray * newColorArray = @[self.hexRGB.text];
+            [userDefaults setObject:newColorArray forKey:@"colorArray"];
+        }
+        else
+        {
+            NSMutableArray *newColorArray = [colorArray mutableCopy];
+            [newColorArray addObject:self.hexRGB.text];
+            [userDefaults setObject:newColorArray forKey:@"colorArray"];
+            NSLog(@"Save color");
+        }
+        [userDefaults synchronize];
+        
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            self.saveButton.selected = NO;
+        });
+        
+    });
 }
 
-/*
-- (void)clickToSave
-{
-    self.saveButton.layer.anchorPoint = CGPointMake(1.0, 0.5);
-    
-    CABasicAnimation *newButtomAnimation = [CABasicAnimation animationWithKeyPath:@"bounds"];
-    newButtomAnimation.fromValue = [NSValue valueWithCGRect:self.saveButton.bounds];
-    CGRect newRect = self.saveButton.bounds;
-    newRect.size.width += 30;
-    newButtomAnimation.toValue = [NSValue valueWithCGRect:newRect];
-    newButtomAnimation.duration = 0.2;
-    [self.saveButton.layer addAnimation:newButtomAnimation forKey:@"bounds"];
-    
-    self.saveButton.bounds = newRect;    
-}
- */
 #pragma mark -sliderTouchEventMethod
 
 - (void)valueChanged
 {
     [self.scrollView setZoomScale:self.slider.value*10];
-    //self.scrollView.selectedImageView.colorPickerView.hidden = YES;
 }
 
 #pragma mark -scrollView
 
 -(UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView
 {
-    //将要缩放时，将取色指示计隐藏
-    //self.scrollView.selectedImageView.colorPickerView.hidden = YES;
     return self.scrollView.selectedImageView;
 }
 
 - (void)scrollViewDidZoom:(UIScrollView *)scrollView
 {
     self.slider.value = scrollView.zoomScale/10;
+    self.scrollView.colorPickerView.imageZoomScale = scrollView.zoomScale;
 }
 -(void)updateLabelAndColorImage
 {
@@ -234,7 +225,7 @@
     self.green.text = self.scrollView.selectedImageView.green;
     self.blue.text = self.scrollView.selectedImageView.blue;
     self.hexRGB.text = self.scrollView.selectedImageView.hexRGB;
-    self.selectedColoImageView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
+    self.selectedColoImformationView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
 }
 
 

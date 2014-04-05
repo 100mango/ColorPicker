@@ -47,10 +47,10 @@
         self.blue.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
         self.hexRGB.textColor = self.red.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
 
-        [self addSubview:self.red];
-        [self addSubview:self.green];
-        [self addSubview:self.blue];
-        [self addSubview:self.hexRGB];
+        [self.contentView addSubview:self.red];
+        [self.contentView addSubview:self.green];
+        [self.contentView addSubview:self.blue];
+        [self.contentView addSubview:self.hexRGB];
         
         //初始化显示色彩图片
         _selectedColoImageView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2, 24/2, 126/2, 126/2)];

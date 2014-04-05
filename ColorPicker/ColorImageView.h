@@ -15,8 +15,6 @@
 @property (strong, nonatomic) NSString *green;
 @property (strong, nonatomic) NSString *blue;
 @property (strong, nonatomic) NSString *hexRGB;
-@property (strong, nonatomic) UIImageView *colorPickerView;
-
 
 - (void) getColorOfPoint:(CGPoint)point;
 
