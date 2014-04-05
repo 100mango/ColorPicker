@@ -11,6 +11,7 @@
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
 #import "ColorPickerImageView.h"
+#define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
 
 @interface ColorViewController ()
 
@@ -40,21 +41,15 @@
     return YES;
 }
 
--(void)loadView
+- (void)viewDidLoad
 {
-    self.view = [[UIView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
-    self.view.backgroundColor = [UIColor colorWithRed:239.0/255 green:239.0/255 blue:237.0/255 alpha:1.0];
+    [super viewDidLoad];
     
     [self setupBackgroud];
     [self setupSrollView];
     [self setupColorInformationView];
     [self setupButtons];
     [self setupSlider];
-}
-
-- (void)viewDidLoad
-{
-    [super viewDidLoad];
     
     //注册到通知中心用于更新label
     NSString * updateLabel = @"updateLabelAndColorImage";
@@ -71,6 +66,8 @@
 
 - (void)setupBackgroud
 {
+    //设置背景颜色
+    self.view.backgroundColor = [UIColor colorWithRed:239.0/255 green:239.0/255 blue:237.0/255 alpha:1.0];
     //设置自定义导航条背景
     UIImageView *topButtonBackgroud = [[UIImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 128/2)];
     topButtonBackgroud.image = [UIImage imageNamed:@"00 B.png"];
@@ -80,7 +77,7 @@
 - (void)setupSlider
 {
     //初始化Slider
-    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 15)];
+    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 6/2)];
     self.slider.maximumValue = 10;
     [self.slider setThumbImage:[UIImage imageNamed:@"y 148.png"] forState:UIControlStateNormal];
     [self.slider setMinimumTrackImage:[UIImage imageNamed:@"130x159.png"] forState:UIControlStateNormal];
@@ -91,40 +88,77 @@
 - (void)setupSrollView
 {
     //初始化scrollView
-    _scrollView = [[ColorScrollView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 568/2)];
+    if (DEVICE_IS_IPHONE5) {
+        NSLog(@" i am iphone5");
+        _scrollView = [[ColorScrollView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 745/2)];
+    }
+    else
+    {
+        _scrollView = [[ColorScrollView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 569/2)];
+    }
+    
     self.scrollView.maximumZoomScale = 100.0;
     self.scrollView.minimumZoomScale = 1.0;
     self.scrollView.contentSize = CGSizeMake(1000, 1000);
     self.scrollView.bounces = NO;
     self.scrollView.bouncesZoom = NO; //禁止缩小至最小比例之下
     self.scrollView.delegate = self;
-    //self.scrollView.canCancelContentTouches = YES;//让子view接收到触摸信息
     [self.view addSubview:self.scrollView];
     
-    //增加scrollview上的阴影边框
-    UIImageView *shawdowView = [[UIImageView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 568/2)];
-    shawdowView.image = [UIImage imageNamed:@"阴影.png"];
+    //增加scrollview的阴影边框
+    UIImageView *shawdowView = nil;
+    if (DEVICE_IS_IPHONE5) {
+        shawdowView = [[UIImageView alloc]initWithFrame:CGRectMake(0,128/2 + 64/2, 320, 745/2)];
+        shawdowView.image = [UIImage imageNamed:@"阴影5"];
+    }
+    else
+    {
+        shawdowView = [[UIImageView alloc]initWithFrame:CGRectMake(0, 128/2 + 64/2, 320, 569/2)];
+        shawdowView.image = [UIImage imageNamed:@"阴影.png"];
+    }
     [self.view addSubview:shawdowView];
 }
 
 - (void)setupColorInformationView
 {
     //初始化选中颜色view
-    _selectedColoImformationView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2, 126/2, 126/2)];
+    if (DEVICE_IS_IPHONE5) {
+        _selectedColoImformationView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2 + 176/2, 126/2, 126/2)];
+    }
+    else
+    {
+        _selectedColoImformationView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2, 126/2, 126/2)];
+    }
     self.selectedColoImformationView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
     self.selectedColoImformationView.image = [UIImage imageNamed:@"42x793.png"];
     [self.view addSubview:self.selectedColoImformationView];
     
     //初始化颜色值框背景
-    UIImageView *rgbView = [[UIImageView alloc]initWithFrame:CGRectMake(196/2, 793/2, 396/2, 126/2)];
+    UIImageView *rgbView = nil;
+    if (DEVICE_IS_IPHONE5) {
+        rgbView = [[UIImageView alloc]initWithFrame:CGRectMake(196/2, 793/2 + 176/2, 396/2, 126/2)];
+    }
+    else
+    {
+        rgbView = [[UIImageView alloc]initWithFrame:CGRectMake(196/2, 793/2, 396/2, 126/2)];
+    }
     rgbView.image = [UIImage imageNamed:@"196x793.png"];
     [self.view addSubview:rgbView];
     
     //初始化RGB标签
-    _red = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 800/2 - 2, 30, 20)];
-    _green = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 840/2 - 2, 30, 20)];
-    _blue = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 880/2 - 2, 30, 20)];
-    _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(456/2, 846/2 - 5, 80, 20)];
+    if (DEVICE_IS_IPHONE5) {
+        _red = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 796/2 + 176/2, 30, 20)];
+        _green = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 836/2  + 176/2, 30, 20)];
+        _blue = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 876/2 + 176/2, 30, 20)];
+        _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(456/2, 846/2 - 5+ 176/2, 80, 20)];
+    }
+    else
+    {
+        _red = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 800/2 - 2, 30, 20)];
+        _green = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 840/2 - 2, 30, 20)];
+        _blue = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 880/2 - 2, 30, 20)];
+        _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(456/2, 846/2 - 5, 80, 20)];
+    }
     self.red.font = [UIFont systemFontOfSize:12.0];
     self.green.font = [UIFont systemFontOfSize:12.0];
     self.blue.font = [UIFont systemFontOfSize:12.0];

@@ -13,6 +13,9 @@
 #import "ColorCell.h"
 
 
+//适配iphone
+#define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
+
 //按钮尺寸
 #define SELECT_PHOTO_BUTTON_FRAME CGRectMake(117/2, 532/2, 406/2, 102/2)
 #define PICK_PHOTO_BUTTON_FRAME CGRectMake(117/2, 638/2, 406/2, 102/2)
@@ -213,7 +216,14 @@
     //显示tableView lazy init
     if (_tableView == nil)
     {
-        _tableView = [[UITableView alloc]initWithFrame:CGRectMake(0, 192/2, 320, 480 - 192/2)];
+        if (DEVICE_IS_IPHONE5) {
+            _tableView = [[UITableView alloc]initWithFrame:CGRectMake(0, 192/2, 320, 568 - 192/2)];
+
+        }
+        else
+        {
+            _tableView = [[UITableView alloc]initWithFrame:CGRectMake(0, 192/2, 320, 480 - 192/2)];
+        }
         self.tableView.backgroundColor = [UIColor whiteColor];
         self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
         

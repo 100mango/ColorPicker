@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		919F8C10591B4FEC9C29849F /* libPods.a in Frameworks */ = {isa = PBXBuildFile; fileRef = ECA1429469F24160A189FA16 /* libPods.a */; };
+		DB7320BB18F00E7D0044C308 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DB7320BA18F00E7D0044C308 /* Images.xcassets */; };
 		DB93B18418A9267F005238B0 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B18318A9267F005238B0 /* QuartzCore.framework */; };
 		DB93B18718A9C059005238B0 /* ColorImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18618A9C059005238B0 /* ColorImageView.m */; };
 		DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18918A9D536005238B0 /* ColorScrollView.m */; };
@@ -25,7 +26,6 @@
 		DBE8C39F18A20F5400E2B304 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = DBE8C39E18A20F5400E2B304 /* main.m */; };
 		DBE8C3A318A20F5400E2B304 /* ColorAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = DBE8C3A218A20F5400E2B304 /* ColorAppDelegate.m */; };
 		DBE8C3A918A20F5400E2B304 /* ColorViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DBE8C3A818A20F5400E2B304 /* ColorViewController.m */; };
-		DBE8C3AB18A20F5400E2B304 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DBE8C3AA18A20F5400E2B304 /* Images.xcassets */; };
 		DBE8C3B218A20F5400E2B304 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C3B118A20F5400E2B304 /* XCTest.framework */; };
 		DBE8C3B318A20F5400E2B304 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39218A20F5400E2B304 /* Foundation.framework */; };
 		DBE8C3B418A20F5400E2B304 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39618A20F5400E2B304 /* UIKit.framework */; };
@@ -45,6 +45,7 @@
 
 /* Begin PBXFileReference section */
 		532F4D46D446485DBA593DD6 /* Pods.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Pods.xcconfig; path = Pods/Pods.xcconfig; sourceTree = "<group>"; };
+		DB7320BA18F00E7D0044C308 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
 		DB93B18318A9267F005238B0 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		DB93B18518A9C059005238B0 /* ColorImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorImageView.h; sourceTree = "<group>"; };
 		DB93B18618A9C059005238B0 /* ColorImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorImageView.m; sourceTree = "<group>"; };
@@ -74,7 +75,6 @@
 		DBE8C3A218A20F5400E2B304 /* ColorAppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ColorAppDelegate.m; sourceTree = "<group>"; };
 		DBE8C3A718A20F5400E2B304 /* ColorViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ColorViewController.h; sourceTree = "<group>"; };
 		DBE8C3A818A20F5400E2B304 /* ColorViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ColorViewController.m; sourceTree = "<group>"; };
-		DBE8C3AA18A20F5400E2B304 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
 		DBE8C3B018A20F5400E2B304 /* ColorPickerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ColorPickerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBE8C3B118A20F5400E2B304 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
 		DBE8C3B918A20F5400E2B304 /* ColorPickerTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "ColorPickerTests-Info.plist"; sourceTree = "<group>"; };
@@ -111,11 +111,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		DB475CEF18C20E9000458430 /* Open source */ = {
+		DB7320BC18F00FF10044C308 /* Category */ = {
 			isa = PBXGroup;
 			children = (
+				DB942D9A18ED4E2F009DDD0E /* UIImagePickerController+StausBar.h */,
+				DB942D9B18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m */,
 			);
-			name = "Open source";
+			name = Category;
 			sourceTree = "<group>";
 		};
 		DB93B18E18AA116A005238B0 /* Controller */ = {
@@ -149,7 +151,6 @@
 		DBE8C38618A20F5400E2B304 = {
 			isa = PBXGroup;
 			children = (
-				DB475CEF18C20E9000458430 /* Open source */,
 				DBE8C39818A20F5400E2B304 /* ColorPicker */,
 				DBE8C3B718A20F5400E2B304 /* ColorPickerTests */,
 				DBE8C39118A20F5400E2B304 /* Frameworks */,
@@ -185,14 +186,13 @@
 		DBE8C39818A20F5400E2B304 /* ColorPicker */ = {
 			isa = PBXGroup;
 			children = (
+				DB7320BA18F00E7D0044C308 /* Images.xcassets */,
 				DBE8C3A118A20F5400E2B304 /* ColorAppDelegate.h */,
 				DBE8C3A218A20F5400E2B304 /* ColorAppDelegate.m */,
 				DB93B18E18AA116A005238B0 /* Controller */,
 				DB93B18F18AA12A9005238B0 /* View */,
-				DBE8C3AA18A20F5400E2B304 /* Images.xcassets */,
+				DB7320BC18F00FF10044C308 /* Category */,
 				DBE8C39918A20F5400E2B304 /* Supporting Files */,
-				DB942D9A18ED4E2F009DDD0E /* UIImagePickerController+StausBar.h */,
-				DB942D9B18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m */,
 			);
 			path = ColorPicker;
 			sourceTree = "<group>";
@@ -201,8 +201,8 @@
 			isa = PBXGroup;
 			children = (
 				DBE8C39A18A20F5400E2B304 /* ColorPicker-Info.plist */,
-				DBE8C39B18A20F5400E2B304 /* InfoPlist.strings */,
 				DBE8C39E18A20F5400E2B304 /* main.m */,
+				DBE8C39B18A20F5400E2B304 /* InfoPlist.strings */,
 				DBE8C3A018A20F5400E2B304 /* ColorPicker-Prefix.pch */,
 			);
 			name = "Supporting Files";
@@ -305,8 +305,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DBE8C3AB18A20F5400E2B304 /* Images.xcassets in Resources */,
 				DBE8C39D18A20F5400E2B304 /* InfoPlist.strings in Resources */,
+				DB7320BB18F00E7D0044C308 /* Images.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

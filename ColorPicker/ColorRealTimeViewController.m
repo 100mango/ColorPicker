@@ -9,8 +9,8 @@
 #import "ColorRealTimeViewController.h"
 #import <AVFoundation/AVFoundation.h>
 #import "GPUImage.h"
-
-static const CGPoint foucsPoint = {275/2 + 45,436/2 +45};
+#define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
+static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 
 @interface ColorRealTimeViewController ()
 
@@ -58,7 +58,14 @@ static const CGPoint foucsPoint = {275/2 + 45,436/2 +45};
     [self.view addSubview:self.backButton];
     
     _saveButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.saveButton.frame = CGRectMake(500/2, 884/2, 140/2, 77/2);
+    if (DEVICE_IS_IPHONE5) {
+        NSLog(@"we ae iphone5!!");
+        self.saveButton.frame = CGRectMake(500/2, 884/2 + 176/2, 140/2, 77/2);
+    }
+    else
+    {
+        self.saveButton.frame = CGRectMake(500/2, 884/2, 140/2, 77/2);
+    }
     [self.saveButton setImage:[UIImage imageNamed:@"500,883"] forState:UIControlStateNormal];
     [self.saveButton setImage:[UIImage imageNamed:@"500,883 B"] forState:UIControlStateHighlighted];
     [self.saveButton setImage:[UIImage imageNamed:@"500,883 C"] forState:UIControlStateSelected];
@@ -69,14 +76,21 @@ static const CGPoint foucsPoint = {275/2 + 45,436/2 +45};
 
 - (void)setupLabels
 {
-    _labelBackground = [[UIImageView alloc]initWithFrame:CGRectMake(0, 818/2, 171/2, 143/2)];
+    if (DEVICE_IS_IPHONE5) {
+        _labelBackground = [[UIImageView alloc]initWithFrame:CGRectMake(0, 818/2 + 176/2, 171/2, 143/2)];
+        _red = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 820/2, 40, 40)];
+        _green = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 860/2, 40, 40)];
+        _blue = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 900/2, 40, 40)];
+    }
+    else
+    {
+        _labelBackground = [[UIImageView alloc]initWithFrame:CGRectMake(0, 818/2 + 176/2, 171/2, 143/2)];
+        _red = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 820/2 + 176/2, 40, 40)];
+        _green = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 860/2 + 176/2, 40, 40)];
+        _blue = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 900/2 + 176/2, 40, 40)];
+    }
     self.labelBackground.image = [UIImage imageNamed:@"0,817"];
     [self.view addSubview:self.labelBackground];
-    
-    _red = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 820/2, 40, 40)];
-    _green = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 860/2, 40, 40)];
-    _blue = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 900/2, 40, 40)];
-    
     
     self.red.text = @"255";
     self.green.text = @"255";
@@ -109,7 +123,13 @@ static const CGPoint foucsPoint = {275/2 + 45,436/2 +45};
     //设置videoView
     //CGRect mainScreenFrame = [[UIScreen mainScreen]applicationFrame];
     //_VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, mainScreenFrame.size.width, mainScreenFrame.size.height)];
-    _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
+    if (DEVICE_IS_IPHONE5) {
+        _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568)];
+    }
+    else
+    {
+        _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
+    }
     self.VideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
     [self.view addSubview:self.VideoView];
     
