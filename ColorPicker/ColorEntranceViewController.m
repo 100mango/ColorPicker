@@ -22,6 +22,10 @@
 #define REAL_TIME_BUTTON_FRAME CGRectMake(117/2, 744/2, 406/2, 102/2)
 #define TOP_SELECT_STATE_BUTTON_FRAME CGRectMake(112/2, 138/2, 208/2, 36/2)
 #define TOP_COLOR_LIBRARY_STATE_FRAME CGRectMake(320/2, 138/2, 208/2, 36/2)
+//iphone5
+#define SELECT_PHOTO_BUTTON_FRAME_IPHONE5 CGRectMake(117/2, 642/2, 406/2, 102/2)
+#define PICK_PHOTO_BUTTON_FRAME_IPHONE5 CGRectMake(117/2, 748/2, 406/2, 102/2)
+#define REAL_TIME_BUTTON_FRAME_IPHONE5 CGRectMake(117/2, 854/2, 406/2, 102/2)
 
 @interface ColorEntranceViewController ()
 
@@ -95,15 +99,30 @@
 {
     //设置背景
     self.view.backgroundColor = [UIColor colorWithRed:239.0/255.0 green:239.0/255.0 blue:237.0/255.0 alpha:1];
-    UIImageView *imageView = [[UIImageView alloc]initWithFrame:CGRectMake(240/2, 248/2, 160/2, 228/2)];
-    imageView.image = [UIImage imageNamed:@"240x248.png"];
+    UIImageView *imageView = nil;
+    if (DEVICE_IS_IPHONE5)
+    {
+        imageView = [[UIImageView alloc]initWithFrame:CGRectMake(245/2, 310/2, 151/2, 230/2)];
+    }
+    else
+    {
+        imageView = [[UIImageView alloc]initWithFrame:CGRectMake(245/2, 248/2, 151/2, 230/2)];
+    }
+    imageView.image = [UIImage imageNamed:@"245x248"];
     [self.view addSubview:imageView];
 }
 
 - (void)setupButtons
 {
     _selectPhotoButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME;
+    if (DEVICE_IS_IPHONE5) {
+        self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME_IPHONE5;
+    }
+    else
+    {
+        self.selectPhotoButton.frame = SELECT_PHOTO_BUTTON_FRAME;
+
+    }
     [self.selectPhotoButton setBackgroundImage:[UIImage imageNamed:@"117x532.png"] forState:UIControlStateNormal];
     [self.selectPhotoButton setBackgroundImage:[UIImage imageNamed:@"117x532 B.png"] forState:UIControlStateHighlighted];
     [self.selectPhotoButton addTarget:self action:@selector(selectImage) forControlEvents:UIControlEventTouchUpInside];
@@ -111,14 +130,26 @@
     
     
     _pickPhotoButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.pickPhotoButton.frame = PICK_PHOTO_BUTTON_FRAME;
+    if (DEVICE_IS_IPHONE5) {
+        self.pickPhotoButton.frame = PICK_PHOTO_BUTTON_FRAME_IPHONE5;
+    }
+    else
+    {
+        self.pickPhotoButton.frame = PICK_PHOTO_BUTTON_FRAME;
+    }
     [self.pickPhotoButton setBackgroundImage:[UIImage imageNamed:@"117x638.png"] forState:UIControlStateNormal];
     [self.pickPhotoButton setBackgroundImage:[UIImage imageNamed:@"117x638 B.png"] forState:UIControlStateHighlighted];
     [self.pickPhotoButton addTarget:self action:@selector(pickImage) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.pickPhotoButton];
     
     _realTimeButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.realTimeButton.frame = REAL_TIME_BUTTON_FRAME;
+    if (DEVICE_IS_IPHONE5) {
+        self.realTimeButton.frame = REAL_TIME_BUTTON_FRAME_IPHONE5;
+    }
+    else
+    {
+        self.realTimeButton.frame = REAL_TIME_BUTTON_FRAME;
+    }
     [self.realTimeButton setBackgroundImage:[UIImage imageNamed:@"117x744.png"] forState:UIControlStateNormal];
     [self.realTimeButton setBackgroundImage:[UIImage imageNamed:@"117x744 B.png"] forState:UIControlStateSelected|UIControlStateHighlighted];
     [self.realTimeButton addTarget:self action:@selector(realTimeView) forControlEvents:UIControlEventTouchUpInside];

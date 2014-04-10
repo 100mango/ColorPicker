@@ -9,7 +9,7 @@
 #import "ColorScrollView.h"
 #import "ColorImageView.h"
 #import "ColorPickerImageView.h"
-
+#define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
 
 @interface ColorScrollView ()
 
@@ -22,10 +22,18 @@
     self = [super initWithFrame:frame];
     if (self)
     {
+        //设置裁剪
+        self.clipsToBounds = YES;
         //初始化背景颜色
         self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
         //初始化要放大的Imageview
-        _selectedImageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568/2)];
+        if (DEVICE_IS_IPHONE5) {
+            _selectedImageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 745/2)];
+        }
+        else
+        {
+            _selectedImageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568/2)];
+        }
         [self addSubview:self.selectedImageView];
         
         //初始化取色指示器图片

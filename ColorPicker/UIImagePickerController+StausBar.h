@@ -9,5 +9,4 @@
 #import <UIKit/UIKit.h>
 
 @interface UIImagePickerController (StausBar)
--(BOOL)prefersStatusBarHidden;
 @end

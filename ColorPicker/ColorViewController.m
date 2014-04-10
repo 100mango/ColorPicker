@@ -77,7 +77,7 @@
 - (void)setupSlider
 {
     //初始化Slider
-    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,150/2 , 380/2, 34/2)];
+    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 30)];
     self.slider.maximumValue = 10;
     [self.slider setThumbImage:[UIImage imageNamed:@"y 148.png"] forState:UIControlStateNormal];
     [self.slider setMinimumTrackImage:[UIImage imageNamed:@"130x159.png"] forState:UIControlStateNormal];

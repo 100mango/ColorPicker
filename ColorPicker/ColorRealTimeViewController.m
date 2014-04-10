@@ -10,7 +10,6 @@
 #import <AVFoundation/AVFoundation.h>
 #import "GPUImage.h"
 #define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
-static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 
 @interface ColorRealTimeViewController ()
 
@@ -24,7 +23,7 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 @property (strong,nonatomic) UILabel *blue;
 @property (strong,nonatomic) NSString *hexRGB;
 @property (strong,nonatomic) UIImageView *labelBackground;
-@property (strong,nonatomic) UIImageView *colorPoint;
+@property (strong,nonatomic) UIImageView *colorVIewCircle;
 @property (strong,nonatomic) UIColor *pointColor;
 @property (strong,nonatomic) UIView *colorView;
 @end
@@ -104,16 +103,23 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 
 - (void)setupColorPointView
 {
-    //_colorPoint = [[UIImageView alloc]initWithFrame:CGRectMake(275/2, 436/2, 45, 45)];
-    _colorPoint = [[UIImageView alloc]initWithFrame:CGRectMake(320/2-45/2, 568/2 -45/2, 45, 45)];
-    self.colorPoint.image = [UIImage imageNamed:@"275,436"];
-    
-    _colorView = [[UIView alloc]initWithFrame:CGRectMake(275/2 + 22/2,436/2 + 21/2, 46/2, 46/2)];
+    if (DEVICE_IS_IPHONE5) {
+        _colorVIewCircle = [[UIImageView alloc]initWithFrame:CGRectMake(320/2 - 45/2, 568/2 -45/2, 45, 45)];
+        _colorView = [[UIView alloc]initWithFrame:CGRectMake(320/2 - 46/2/2,568/2  - 46/2/2, 46/2, 46/2)];
+
+    }
+    else
+    {
+        _colorVIewCircle = [[UIImageView alloc]initWithFrame:CGRectMake(320/2 - 45/2, 480/2 -45/2, 45, 45)];
+        _colorView = [[UIView alloc]initWithFrame:CGRectMake(320/2 - 46/2/2,480/2  - 46/2/2, 46/2, 46/2)];
+
+    }
+    self.colorVIewCircle.image = [UIImage imageNamed:@"275,436"];
     self.colorView.backgroundColor = [UIColor clearColor];
     self.colorView.layer.cornerRadius = 46/2/2;
     
     [self.view addSubview:self.colorView];
-    [self.view addSubview:self.colorPoint];
+    [self.view addSubview:self.colorVIewCircle];
 }
 
 - (void)setupGPUImage
@@ -123,8 +129,6 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
     self.videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
     
     //设置videoView
-    //CGRect mainScreenFrame = [[UIScreen mainScreen]applicationFrame];
-    //_VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, mainScreenFrame.size.width, mainScreenFrame.size.height)];
     if (DEVICE_IS_IPHONE5) {
         _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568)];
     }
@@ -143,15 +147,9 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
     __weak ColorRealTimeViewController *safeSelf = self;
     [self.videoRawData setNewFrameAvailableBlock:^{
         
-        CGSize currentViewSize = safeSelf.view.bounds.size;
-        CGSize rawPixelsSize = [safeSelf.videoRawData maximumOutputSize];
+        CGPoint focusPoint = {480/2,640/2};
         
-        CGPoint scaledTouchPoint;
-        scaledTouchPoint.x = (foucsPoint.x / currentViewSize.width) * rawPixelsSize.width;
-        scaledTouchPoint.y = (foucsPoint.y / currentViewSize.height) * rawPixelsSize.height;
-        CGPoint testpoint = {480/2,640/2};
-        
-        GPUByteColorVector colorAtTouchPoint = [safeSelf.videoRawData colorAtLocation:testpoint];
+        GPUByteColorVector colorAtTouchPoint = [safeSelf.videoRawData colorAtLocation:focusPoint];
         
         dispatch_async(dispatch_get_main_queue(), ^{
             
