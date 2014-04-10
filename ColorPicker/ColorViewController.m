@@ -77,7 +77,7 @@
 - (void)setupSlider
 {
     //初始化Slider
-    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 6/2)];
+    _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,150/2 , 380/2, 34/2)];
     self.slider.maximumValue = 10;
     [self.slider setThumbImage:[UIImage imageNamed:@"y 148.png"] forState:UIControlStateNormal];
     [self.slider setMinimumTrackImage:[UIImage imageNamed:@"130x159.png"] forState:UIControlStateNormal];
@@ -150,14 +150,14 @@
         _red = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 796/2 + 176/2, 30, 20)];
         _green = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 836/2  + 176/2, 30, 20)];
         _blue = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 876/2 + 176/2, 30, 20)];
-        _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(456/2, 846/2 - 5+ 176/2, 80, 20)];
+        _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(436/2, 846/2 - 5+ 176/2, 80, 20)];
     }
     else
     {
         _red = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 800/2 - 2, 30, 20)];
         _green = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 840/2 - 2, 30, 20)];
         _blue = [[UILabel alloc]initWithFrame:CGRectMake(280/2, 880/2 - 2, 30, 20)];
-        _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(456/2, 846/2 - 5, 80, 20)];
+        _hexRGB = [[UILabel alloc]initWithFrame:CGRectMake(436/2, 846/2 - 5, 80, 20)];
     }
     self.red.font = [UIFont systemFontOfSize:12.0];
     self.green.font = [UIFont systemFontOfSize:12.0];

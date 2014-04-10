@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DBE8C38E18A20F5400E2B304"
-               BuildableName = "ColorPicker.app"
+               BuildableName = "TouchColor.app"
                BlueprintName = "ColorPicker"
                ReferencedContainer = "container:ColorPicker.xcodeproj">
             </BuildableReference>
@@ -43,7 +43,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DBE8C38E18A20F5400E2B304"
-            BuildableName = "ColorPicker.app"
+            BuildableName = "TouchColor.app"
             BlueprintName = "ColorPicker"
             ReferencedContainer = "container:ColorPicker.xcodeproj">
          </BuildableReference>
@@ -62,7 +62,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DBE8C38E18A20F5400E2B304"
-            BuildableName = "ColorPicker.app"
+            BuildableName = "TouchColor.app"
             BlueprintName = "ColorPicker"
             ReferencedContainer = "container:ColorPicker.xcodeproj">
          </BuildableReference>
@@ -80,7 +80,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DBE8C38E18A20F5400E2B304"
-            BuildableName = "ColorPicker.app"
+            BuildableName = "TouchColor.app"
             BlueprintName = "ColorPicker"
             ReferencedContainer = "container:ColorPicker.xcodeproj">
          </BuildableReference>

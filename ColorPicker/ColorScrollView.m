@@ -22,6 +22,9 @@
     self = [super initWithFrame:frame];
     if (self)
     {
+        //初始化背景颜色
+        self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
+        //初始化要放大的Imageview
         _selectedImageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568/2)];
         [self addSubview:self.selectedImageView];
         

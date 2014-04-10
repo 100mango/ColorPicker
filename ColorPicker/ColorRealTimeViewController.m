@@ -39,11 +39,12 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+
     [self setupGPUImage];
     [self setupButton];
     [self setupLabels];
     [self setupColorPointView];
+
 }
 
 
@@ -78,16 +79,16 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 {
     if (DEVICE_IS_IPHONE5) {
         _labelBackground = [[UIImageView alloc]initWithFrame:CGRectMake(0, 818/2 + 176/2, 171/2, 143/2)];
-        _red = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 820/2, 40, 40)];
-        _green = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 860/2, 40, 40)];
-        _blue = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 900/2, 40, 40)];
-    }
-    else
-    {
-        _labelBackground = [[UIImageView alloc]initWithFrame:CGRectMake(0, 818/2 + 176/2, 171/2, 143/2)];
         _red = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 820/2 + 176/2, 40, 40)];
         _green = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 860/2 + 176/2, 40, 40)];
         _blue = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 900/2 + 176/2, 40, 40)];
+    }
+    else
+    {
+        _labelBackground = [[UIImageView alloc]initWithFrame:CGRectMake(0, 818/2, 171/2, 143/2)];
+        _red = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 820/2, 40, 40)];
+        _green = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 860/2, 40, 40)];
+        _blue = [[UILabel alloc]initWithFrame:CGRectMake(74/2, 900/2, 40, 40)];
     }
     self.labelBackground.image = [UIImage imageNamed:@"0,817"];
     [self.view addSubview:self.labelBackground];
@@ -103,7 +104,8 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
 
 - (void)setupColorPointView
 {
-    _colorPoint = [[UIImageView alloc]initWithFrame:CGRectMake(275/2, 436/2, 45, 45)];
+    //_colorPoint = [[UIImageView alloc]initWithFrame:CGRectMake(275/2, 436/2, 45, 45)];
+    _colorPoint = [[UIImageView alloc]initWithFrame:CGRectMake(320/2-45/2, 568/2 -45/2, 45, 45)];
     self.colorPoint.image = [UIImage imageNamed:@"275,436"];
     
     _colorView = [[UIView alloc]initWithFrame:CGRectMake(275/2 + 22/2,436/2 + 21/2, 46/2, 46/2)];
@@ -134,7 +136,7 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
     [self.view addSubview:self.VideoView];
     
     //设置output Rawdata
-    CGSize videoPixelSize = CGSizeMake(640, 480);
+    CGSize videoPixelSize = CGSizeMake(480.0, 640.0);
     _videoRawData = [[GPUImageRawDataOutput alloc]initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
     
     //设置output回调
@@ -147,8 +149,9 @@ static const CGPoint foucsPoint = {275/2 + 45/2,436/2 +45/2};
         CGPoint scaledTouchPoint;
         scaledTouchPoint.x = (foucsPoint.x / currentViewSize.width) * rawPixelsSize.width;
         scaledTouchPoint.y = (foucsPoint.y / currentViewSize.height) * rawPixelsSize.height;
+        CGPoint testpoint = {480/2,640/2};
         
-        GPUByteColorVector colorAtTouchPoint = [safeSelf.videoRawData colorAtLocation:scaledTouchPoint];
+        GPUByteColorVector colorAtTouchPoint = [safeSelf.videoRawData colorAtLocation:testpoint];
         
         dispatch_async(dispatch_get_main_queue(), ^{
             

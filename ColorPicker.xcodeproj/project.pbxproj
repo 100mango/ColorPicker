@@ -63,7 +63,7 @@
 		DB9D172F18ABBF74009963BC /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
 		DB9D3BC918B733210033ACDA /* ColorPickerImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorPickerImageView.h; sourceTree = "<group>"; };
 		DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorPickerImageView.m; sourceTree = "<group>"; };
-		DBE8C38F18A20F5400E2B304 /* ColorPicker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ColorPicker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DBE8C38F18A20F5400E2B304 /* TouchColor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TouchColor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBE8C39218A20F5400E2B304 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		DBE8C39618A20F5400E2B304 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
@@ -162,7 +162,7 @@
 		DBE8C39018A20F5400E2B304 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				DBE8C38F18A20F5400E2B304 /* ColorPicker.app */,
+				DBE8C38F18A20F5400E2B304 /* TouchColor.app */,
 				DBE8C3B018A20F5400E2B304 /* ColorPickerTests.xctest */,
 			);
 			name = Products;
@@ -245,7 +245,7 @@
 			);
 			name = ColorPicker;
 			productName = ColorPicker;
-			productReference = DBE8C38F18A20F5400E2B304 /* ColorPicker.app */;
+			productReference = DBE8C38F18A20F5400E2B304 /* TouchColor.app */;
 			productType = "com.apple.product-type.application";
 		};
 		DBE8C3AF18A20F5400E2B304 /* ColorPickerTests */ = {
@@ -276,6 +276,9 @@
 				LastUpgradeCheck = 0510;
 				ORGANIZATIONNAME = Mango;
 				TargetAttributes = {
+					DBE8C38E18A20F5400E2B304 = {
+						DevelopmentTeam = J8GWD93J5V;
+					};
 					DBE8C3AF18A20F5400E2B304 = {
 						TestTargetID = DBE8C38E18A20F5400E2B304;
 					};
@@ -485,10 +488,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
 				INFOPLIST_FILE = "ColorPicker/ColorPicker-Info.plist";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				PRODUCT_NAME = TouchColor;
+				PROVISIONING_PROFILE = "";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Debug;
@@ -499,10 +506,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
 				INFOPLIST_FILE = "ColorPicker/ColorPicker-Info.plist";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				PRODUCT_NAME = TouchColor;
+				PROVISIONING_PROFILE = "";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;

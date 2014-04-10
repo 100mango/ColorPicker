@@ -64,7 +64,7 @@
     self.red = [NSString stringWithFormat:@"%d",pixel[0]];
     self.green = [NSString stringWithFormat:@"%d",pixel[1]];
     self.blue = [NSString stringWithFormat:@"%d",pixel[2]];
-    self.hexRGB = [NSString stringWithFormat:@"#%x%x%x",pixel[0],pixel[1],pixel[2]];
+    self.hexRGB = [NSString stringWithFormat:@"#%02x%02x%02x",pixel[0],pixel[1],pixel[2]];
     self.selectedColor = color;
     
     
