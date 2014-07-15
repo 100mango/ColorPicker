@@ -76,7 +76,6 @@
 
     NSScanner *scanner = [NSScanner scannerWithString:[hexColor substringWithRange:NSMakeRange(1, 2)]];
     [scanner scanHexInt:&red];
-    NSLog(@"%d",red);
     
     scanner = [NSScanner scannerWithString:[hexColor substringWithRange:NSMakeRange(3, 2)]];
     [scanner scanHexInt:&green];

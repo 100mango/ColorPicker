@@ -76,7 +76,6 @@
 
 - (void)setupSlider
 {
-    //初始化Slider
     _slider = [[UISlider alloc]initWithFrame:CGRectMake(130/2 ,130/2 , 380/2, 30)];
     self.slider.maximumValue = 10;
     [self.slider setThumbImage:[UIImage imageNamed:@"y 148.png"] forState:UIControlStateNormal];
@@ -214,7 +213,6 @@
         
         if (colorArray == nil)
         {
-            NSLog(@"we don't have");
             NSArray * newColorArray = @[self.hexRGB.text];
             [userDefaults setObject:newColorArray forKey:@"colorArray"];
         }
@@ -223,7 +221,6 @@
             NSMutableArray *newColorArray = [colorArray mutableCopy];
             [newColorArray addObject:self.hexRGB.text];
             [userDefaults setObject:newColorArray forKey:@"colorArray"];
-            NSLog(@"Save color");
         }
         [userDefaults synchronize];
         

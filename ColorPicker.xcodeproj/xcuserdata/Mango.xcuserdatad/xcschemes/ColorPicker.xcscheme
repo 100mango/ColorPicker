@@ -91,6 +91,7 @@
    </AnalyzeAction>
    <ArchiveAction
       buildConfiguration = "Release"
+      customArchiveName = "TouchColor"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>

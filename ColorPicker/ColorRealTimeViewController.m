@@ -59,7 +59,6 @@
     
     _saveButton = [UIButton buttonWithType:UIButtonTypeCustom];
     if (DEVICE_IS_IPHONE5) {
-        NSLog(@"we ae iphone5!!");
         self.saveButton.frame = CGRectMake(500/2, 884/2 + 176/2, 140/2, 77/2);
     }
     else
@@ -192,7 +191,6 @@
         
         if (colorArray == nil)
         {
-            NSLog(@"we don't have");
             NSArray * newColorArray = @[self.hexRGB];
             [userDefaults setObject:newColorArray forKey:@"colorArray"];
         }
@@ -201,7 +199,6 @@
             NSMutableArray *newColorArray = [colorArray mutableCopy];
             [newColorArray addObject:self.hexRGB];
             [userDefaults setObject:newColorArray forKey:@"colorArray"];
-            NSLog(@"Save color");
         }
         [userDefaults synchronize];
         
