@@ -9,52 +9,50 @@
 #import "ColorScrollView.h"
 #import "ColorImageView.h"
 #import "ColorPickerImageView.h"
-#define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
+#import "Masonry.h"
 
 @interface ColorScrollView ()
-
+@property (strong,nonatomic) UIImageView *pickerView;
 @end
 
 @implementation ColorScrollView
 
-- (id)initWithFrame:(CGRect)frame
+- (void)awakeFromNib
 {
-    self = [super initWithFrame:frame];
-    if (self)
-    {
-        //设置裁剪
-        self.clipsToBounds = YES;
-        //初始化背景颜色
-        self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
-        //初始化要放大的Imageview
-        if (DEVICE_IS_IPHONE5) {
-            _selectedImageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 745/2)];
-        }
-        else
-        {
-            _selectedImageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568/2)];
-        }
-        [self addSubview:self.selectedImageView];
-        
-        //初始化取色指示器图片
-        _colorPickerView =[[ColorPickerImageView alloc]initWithFrame:CGRectMake(0, 0, 50/2, 50/2)];
-        self.colorPickerView.image = [UIImage imageNamed:@"picker"];
-        self.colorPickerView.hidden = YES;
-        self.colorPickerView.exclusiveTouch = YES;
-        self.colorPickerView.userInteractionEnabled = YES;
-        self.colorPickerView.imageView = self.selectedImageView;
-        [self addSubview:self.colorPickerView];
-    }
-    return self;
+    [super awakeFromNib];
+    
+    //初始化背景颜色
+    self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
+    
+    //初始化要放大的Imageview
+    _imageView = [[ColorImageView alloc]init];
+    self.imageView.image = [UIImage imageNamed:@"lookup"];
+    [self addSubview:self.imageView];
+    [self.imageView mas_makeConstraints:^(MASConstraintMaker *make) {
+        make.top.equalTo(@0);
+        make.bottom.equalTo(@0);
+        make.left.equalTo(@0);
+        make.right.equalTo(@0);
+    }];
+    
+    //初始取色器
+    _pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
+    self.pickerView.exclusiveTouch = YES;
+    self.pickerView.userInteractionEnabled = YES;
+    self.pickerView.hidden = YES;
+    [self addSubview:self.pickerView];
+    
+    DLog(@"%@",self.imageView);
+    DLog(@"%@",self);
 }
 
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
 {
-    //更像点击后的指示器坐标
+    //更像点击后的取色器坐标
     UITouch *touch = [[event allTouches]anyObject];
     CGPoint point = [touch locationInView:self];
-    self.colorPickerView.center = point;
-    self.colorPickerView.hidden = NO;
+    self.pickerView.center = point;
+    self.pickerView.hidden = NO;
     return YES;
 }
 

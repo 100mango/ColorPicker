@@ -1,1 +1,2 @@
 pod 'GPUImage'
+pod 'Masonry'

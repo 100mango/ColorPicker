@@ -15,6 +15,9 @@
 
 @interface ColorViewController ()
 
+@property (weak, nonatomic) IBOutlet ColorScrollView *colorScrollView;
+@property (nonatomic,strong) UIImage *image;
+
 @property (strong, nonatomic) ColorScrollView *scrollView;
 @property (strong, nonatomic) UIImageView *selectedColoImformationView;
 @property (strong, nonatomic) UILabel *red;
@@ -29,10 +32,9 @@
 
 @implementation ColorViewController
 
-
 - (void)setChooseImage:(UIImage *)image
 {
-    self.scrollView.selectedImageView.image = image;
+    self.image = image;
 }
 
 //设置状态栏
@@ -44,8 +46,10 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+    self.colorScrollView.imageView.image = self.image;
     [self setupBackgroud];
+    
+    /*
     [self setupSrollView];
     [self setupColorInformationView];
     [self setupButtons];
@@ -54,6 +58,7 @@
     //注册到通知中心用于更新label
     NSString * updateLabel = @"updateLabelAndColorImage";
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateLabelAndColorImage) name:updateLabel object:nil];
+     */
 }
 
 - (void)didReceiveMemoryWarning
@@ -68,10 +73,6 @@
 {
     //设置背景颜色
     self.view.backgroundColor = [UIColor colorWithRed:239.0/255 green:239.0/255 blue:237.0/255 alpha:1.0];
-    //设置自定义导航条背景
-    UIImageView *topButtonBackgroud = [[UIImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 128/2)];
-    topButtonBackgroud.image = [UIImage imageNamed:@"00 B.png"];
-    [self.view addSubview:topButtonBackgroud];
 }
 
 - (void)setupSlider
@@ -128,7 +129,7 @@
     {
         _selectedColoImformationView = [[UIImageView alloc]initWithFrame:CGRectMake(42/2 , 793/2, 126/2, 126/2)];
     }
-    self.selectedColoImformationView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
+    self.selectedColoImformationView.backgroundColor = self.scrollView.imageView.selectedColor;
     self.selectedColoImformationView.image = [UIImage imageNamed:@"42x793.png"];
     [self.view addSubview:self.selectedColoImformationView];
     
@@ -167,10 +168,10 @@
     self.blue.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
     self.hexRGB.textColor = self.red.textColor = [UIColor colorWithRed:76.0/255 green:103.0/255 blue:122.0/255 alpha:1.0];
     
-    self.red.text = self.scrollView.selectedImageView.red;
-    self.green.text = self.scrollView.selectedImageView.green;
-    self.blue.text = self.scrollView.selectedImageView.blue;
-    self.hexRGB.text = self.scrollView.selectedImageView.hexRGB;
+    self.red.text = self.scrollView.imageView.red;
+    self.green.text = self.scrollView.imageView.green;
+    self.blue.text = self.scrollView.imageView.blue;
+    self.hexRGB.text = self.scrollView.imageView.hexRGB;
     [self.view addSubview:self.red];
     [self.view addSubview:self.green];
     [self.view addSubview:self.blue];
@@ -242,21 +243,21 @@
 
 -(UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView
 {
-    return self.scrollView.selectedImageView;
+    return self.scrollView.imageView;
 }
 
 - (void)scrollViewDidZoom:(UIScrollView *)scrollView
 {
     self.slider.value = scrollView.zoomScale/10;
-    self.scrollView.colorPickerView.imageZoomScale = scrollView.zoomScale;
+    //self.scrollView.colorPickerView.imageZoomScale = scrollView.zoomScale;
 }
 -(void)updateLabelAndColorImage
 {
-    self.red.text = self.scrollView.selectedImageView.red;
-    self.green.text = self.scrollView.selectedImageView.green;
-    self.blue.text = self.scrollView.selectedImageView.blue;
-    self.hexRGB.text = self.scrollView.selectedImageView.hexRGB;
-    self.selectedColoImformationView.backgroundColor = self.scrollView.selectedImageView.selectedColor;
+    self.red.text = self.scrollView.imageView.red;
+    self.green.text = self.scrollView.imageView.green;
+    self.blue.text = self.scrollView.imageView.blue;
+    self.hexRGB.text = self.scrollView.imageView.hexRGB;
+    self.selectedColoImformationView.backgroundColor = self.scrollView.imageView.selectedColor;
 }
 
 

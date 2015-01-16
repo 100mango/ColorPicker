@@ -12,6 +12,6 @@
 @interface ColorPickerImageView : UIImageView
 
 @property (weak,nonatomic) ColorImageView *imageView;
-@property (nonatomic) CGFloat imageZoomScale;
+//@property (nonatomic) CGFloat imageZoomScale;
 
 @end

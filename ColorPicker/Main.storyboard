@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="6254" systemVersion="14B25" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" initialViewController="JDh-ul-XDh">
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="6247"/>
+    </dependencies>
+    <scenes>
+        <!--Color Main View Controller-->
+        <scene sceneID="wrh-YS-RXg">
+            <objects>
+                <viewController id="c3D-kC-Bm6" customClass="ColorMainViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="mnj-fM-zUf"/>
+                        <viewControllerLayoutGuide type="bottom" id="4vr-oP-Uch"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="Cn0-Yd-eZ5">
+                        <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="WOl-9a-92k" userLabel="extendedBar">
+                                <rect key="frame" x="0.0" y="64" width="600" height="44"/>
+                                <subviews>
+                                    <segmentedControl opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="left" contentVerticalAlignment="top" segmentControlStyle="plain" translatesAutoresizingMaskIntoConstraints="NO" id="4c3-Bd-JRD">
+                                        <rect key="frame" x="225" y="8" width="150" height="29"/>
+                                        <color key="backgroundColor" red="0.21568627450980393" green="0.21568627450980393" blue="0.17254901960784313" alpha="1" colorSpace="calibratedRGB"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="150" id="SJl-gP-fb5"/>
+                                        </constraints>
+                                        <segments>
+                                            <segment title="New"/>
+                                            <segment title="Record"/>
+                                        </segments>
+                                        <color key="tintColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                                    </segmentedControl>
+                                </subviews>
+                                <color key="backgroundColor" red="0.2156862745" green="0.2156862745" blue="0.17254901959999999" alpha="1" colorSpace="calibratedRGB"/>
+                                <constraints>
+                                    <constraint firstAttribute="centerX" secondItem="4c3-Bd-JRD" secondAttribute="centerX" id="Aei-px-pII"/>
+                                    <constraint firstAttribute="height" constant="44" id="Y0F-gc-mKh"/>
+                                    <constraint firstAttribute="centerY" secondItem="4c3-Bd-JRD" secondAttribute="centerY" id="tk3-7e-7ms"/>
+                                </constraints>
+                            </view>
+                            <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="v1k-Se-nTb" userLabel="选择照片">
+                                <rect key="frame" x="267" y="236" width="46" height="30"/>
+                                <state key="normal" title="Button">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="PickImageFromGallery:" destination="c3D-kC-Bm6" eventType="touchUpInside" id="66f-T0-VCX"/>
+                                </connections>
+                            </button>
+                            <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="7U6-bL-Geh" userLabel="照相">
+                                <rect key="frame" x="254" y="303" width="46" height="30"/>
+                                <state key="normal" title="Button">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <action selector="pickImageWithCamera:" destination="c3D-kC-Bm6" eventType="touchUpInside" id="eta-eF-dcX"/>
+                                </connections>
+                            </button>
+                            <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="u9A-pT-Ri1">
+                                <rect key="frame" x="240" y="416" width="46" height="30"/>
+                                <state key="normal" title="Button">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                            </button>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstItem="WOl-9a-92k" firstAttribute="top" secondItem="mnj-fM-zUf" secondAttribute="bottom" id="RcJ-Zm-O82"/>
+                            <constraint firstItem="WOl-9a-92k" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="UBW-Ga-Tmz"/>
+                            <constraint firstAttribute="trailing" secondItem="WOl-9a-92k" secondAttribute="trailing" id="cmv-nh-HPq"/>
+                        </constraints>
+                    </view>
+                    <navigationItem key="navigationItem" id="pZ6-I6-A9w"/>
+                    <connections>
+                        <segue destination="7cd-DP-vP2" kind="show" identifier="showColorViewController" id="It2-AC-j31"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="UdG-di-iXq" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="1064" y="263"/>
+        </scene>
+        <!--Color View Controller-->
+        <scene sceneID="iKf-Sa-AG7">
+            <objects>
+                <viewController id="7cd-DP-vP2" customClass="ColorViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="2E8-Q3-Upc"/>
+                        <viewControllerLayoutGuide type="bottom" id="1eh-77-TKF"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="1WV-fX-6Fv">
+                        <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="t3h-zd-LCC" userLabel="slider区域">
+                                <rect key="frame" x="0.0" y="64" width="600" height="44"/>
+                                <subviews>
+                                    <slider opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" value="0.5" minValue="0.0" maxValue="1" translatesAutoresizingMaskIntoConstraints="NO" id="Bu3-Uw-3oC">
+                                        <rect key="frame" x="58" y="7" width="484" height="31"/>
+                                    </slider>
+                                </subviews>
+                                <color key="backgroundColor" red="0.45882352939999999" green="0.46666666670000001" blue="0.4823529412" alpha="1" colorSpace="calibratedRGB"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="44" id="1Av-1p-REi"/>
+                                    <constraint firstItem="Bu3-Uw-3oC" firstAttribute="leading" secondItem="t3h-zd-LCC" secondAttribute="leading" constant="60" id="5fQ-vl-ACM"/>
+                                    <constraint firstAttribute="centerY" secondItem="Bu3-Uw-3oC" secondAttribute="centerY" id="nYq-w0-xg0"/>
+                                    <constraint firstAttribute="centerX" secondItem="Bu3-Uw-3oC" secondAttribute="centerX" id="vOa-nh-mpb"/>
+                                </constraints>
+                            </view>
+                            <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="7bc-VN-UR6" customClass="ColorScrollView">
+                                <rect key="frame" x="0.0" y="108" width="600" height="400"/>
+                            </scrollView>
+                        </subviews>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstAttribute="trailing" secondItem="7bc-VN-UR6" secondAttribute="trailing" id="79U-P9-zbq"/>
+                            <constraint firstAttribute="trailing" secondItem="t3h-zd-LCC" secondAttribute="trailing" id="PUr-h0-ams"/>
+                            <constraint firstItem="1eh-77-TKF" firstAttribute="top" secondItem="7bc-VN-UR6" secondAttribute="bottom" constant="92" id="U2Y-az-SSm"/>
+                            <constraint firstItem="t3h-zd-LCC" firstAttribute="top" secondItem="2E8-Q3-Upc" secondAttribute="bottom" id="Vt6-FE-b13"/>
+                            <constraint firstItem="7bc-VN-UR6" firstAttribute="top" secondItem="t3h-zd-LCC" secondAttribute="bottom" id="YIi-kv-K9T"/>
+                            <constraint firstItem="t3h-zd-LCC" firstAttribute="leading" secondItem="1WV-fX-6Fv" secondAttribute="leading" id="dkE-QY-uaj"/>
+                            <constraint firstItem="7bc-VN-UR6" firstAttribute="leading" secondItem="1WV-fX-6Fv" secondAttribute="leading" id="lL3-L4-YgX"/>
+                        </constraints>
+                    </view>
+                    <connections>
+                        <outlet property="colorScrollView" destination="7bc-VN-UR6" id="HTg-lq-Q5s"/>
+                    </connections>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="zm0-F3-Cgz" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="2030" y="251"/>
+        </scene>
+        <!--Navigation Controller-->
+        <scene sceneID="WH4-O1-W5Q">
+            <objects>
+                <navigationController automaticallyAdjustsScrollViewInsets="NO" id="JDh-ul-XDh" sceneMemberID="viewController">
+                    <toolbarItems/>
+                    <navigationBar key="navigationBar" contentMode="scaleToFill" id="qRv-ZZ-alD">
+                        <rect key="frame" x="0.0" y="0.0" width="320" height="44"/>
+                        <autoresizingMask key="autoresizingMask"/>
+                        <textAttributes key="titleTextAttributes">
+                            <color key="textColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                        </textAttributes>
+                    </navigationBar>
+                    <nil name="viewControllers"/>
+                    <connections>
+                        <segue destination="c3D-kC-Bm6" kind="relationship" relationship="rootViewController" id="rla-ad-GCe"/>
+                    </connections>
+                </navigationController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="wse-MV-xs9" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="351" y="288"/>
+        </scene>
+    </scenes>
+</document>

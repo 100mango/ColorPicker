@@ -14,10 +14,12 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+    /*
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
     ColorEntranceViewController *entranceController = [[ColorEntranceViewController alloc]init];
     self.window.rootViewController = entranceController;
     [self.window makeKeyAndVisible];
+     */
     return YES;
 }
 							

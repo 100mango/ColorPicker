@@ -8,10 +8,8 @@
 
 #import <UIKit/UIKit.h>
 @class ColorImageView;
-@class ColorPickerImageView;
 @interface ColorScrollView : UIScrollView
 
-@property (strong, nonatomic) ColorImageView *selectedImageView;
-@property (strong, nonatomic) ColorPickerImageView *colorPickerView;
+@property (strong, nonatomic) ColorImageView *imageView;
 
 @end

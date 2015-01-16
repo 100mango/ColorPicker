@@ -51,9 +51,9 @@
 {
     [super viewDidLoad];
     
-    [self setupNavigationBar];
-    [self setupBackground];
-    [self setupButtons];
+    //[self setupNavigationBar];
+    //[self setupBackground];
+    //[self setupButtons];
 }
 
 - (void)didReceiveMemoryWarning
