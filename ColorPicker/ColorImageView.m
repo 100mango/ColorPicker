@@ -29,6 +29,8 @@
         self.green = @"255";
         self.blue = @"255";
         self.hexRGB = @"#FFFFFF";
+        
+        DLog(@"initwithFrame");
     }
     return self;
 }
@@ -67,12 +69,8 @@
     self.hexRGB = [NSString stringWithFormat:@"#%02x%02x%02x",pixel[0],pixel[1],pixel[2]];
     self.selectedColor = color;
     
-    
-    
     //通知Controller更新label和图片
     [[NSNotificationCenter defaultCenter] postNotificationName:@"updateLabelAndColorImage"object:self];
-    
-    NSLog(@"%@",color);
 }
 
 

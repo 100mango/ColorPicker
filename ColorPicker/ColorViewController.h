@@ -9,7 +9,7 @@
 #import <UIKit/UIKit.h>
 @class ColorScrollView;
 
-@interface ColorViewController : UIViewController<UINavigationControllerDelegate,UIImagePickerControllerDelegate,UIScrollViewDelegate>
+@interface ColorViewController : UIViewController
 
 - (void)setChooseImage: (UIImage *)image;
 

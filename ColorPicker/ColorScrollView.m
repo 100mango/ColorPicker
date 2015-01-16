@@ -26,7 +26,6 @@
     
     //初始化要放大的Imageview
     _imageView = [[ColorImageView alloc]init];
-    self.imageView.image = [UIImage imageNamed:@"lookup"];
     [self addSubview:self.imageView];
     [self.imageView mas_makeConstraints:^(MASConstraintMaker *make) {
         make.top.equalTo(@0);
@@ -41,9 +40,7 @@
     self.pickerView.userInteractionEnabled = YES;
     self.pickerView.hidden = YES;
     [self addSubview:self.pickerView];
-    
-    DLog(@"%@",self.imageView);
-    DLog(@"%@",self);
+ 
 }
 
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
