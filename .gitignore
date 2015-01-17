@@ -29,3 +29,17 @@ DerivedData
 Pods/
 
 *.xcuserstate
+
+*.xcuserstate
+
+*.xcuserstate
+
+ColorPicker.xcworkspace/xcuserdata/Mango.xcuserdatad/UserInterfaceState.xcuserstate
+
+ColorPicker.xcodeproj/xcuserdata/Mango.xcuserdatad/xcschemes/ColorPicker.xcscheme
+
+Pods/Pods.xcodeproj/project.pbxproj
+
+Pods/Pods.xcodeproj/xcuserdata/Mango.xcuserdatad/xcschemes/Pods-GPUImage.xcscheme
+
+Pods/Pods.xcodeproj/xcuserdata/Mango.xcuserdatad/xcschemes/Pods.xcscheme

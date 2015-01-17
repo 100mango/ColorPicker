@@ -22,6 +22,8 @@
 		DB98544718C5DF5E00A4556E /* ColorCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DB98544618C5DF5E00A4556E /* ColorCell.m */; };
 		DB9D173018ABBF74009963BC /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB9D172F18ABBF74009963BC /* CoreMedia.framework */; };
 		DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */; };
+		DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */; };
+		DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */; };
 		DBE8C39318A20F5400E2B304 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39218A20F5400E2B304 /* Foundation.framework */; };
 		DBE8C39518A20F5400E2B304 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */; };
 		DBE8C39718A20F5400E2B304 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39618A20F5400E2B304 /* UIKit.framework */; };
@@ -71,6 +73,9 @@
 		DB9D172F18ABBF74009963BC /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
 		DB9D3BC918B733210033ACDA /* ColorPickerImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorPickerImageView.h; sourceTree = "<group>"; };
 		DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorPickerImageView.m; sourceTree = "<group>"; };
+		DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorTableViewCell.h; sourceTree = "<group>"; };
+		DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorTableViewCell.m; sourceTree = "<group>"; };
+		DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ColorTableViewCell.xib; sourceTree = "<group>"; };
 		DBE8C38F18A20F5400E2B304 /* TouchColor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TouchColor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBE8C39218A20F5400E2B304 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
@@ -163,6 +168,9 @@
 				DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */,
 				DB98544518C5DF5E00A4556E /* ColorCell.h */,
 				DB98544618C5DF5E00A4556E /* ColorCell.m */,
+				DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */,
+				DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */,
+				DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */,
 			);
 			name = View;
 			sourceTree = "<group>";
@@ -333,6 +341,7 @@
 				DB7320BB18F00E7D0044C308 /* Images.xcassets in Resources */,
 				DB8C5C5E1A68E0DB00B4B2CA /* Main.storyboard in Resources */,
 				DB8C5C631A68E8C600B4B2CA /* Launch Screen.xib in Resources */,
+				DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -393,6 +402,7 @@
 				DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */,
 				DBE8C3A918A20F5400E2B304 /* ColorViewController.m in Sources */,
 				DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */,
+				DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */,
 				DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */,
 				DB8C5C611A68E72900B4B2CA /* ColorMainViewController.m in Sources */,
 			);
