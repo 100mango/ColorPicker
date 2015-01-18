@@ -17,23 +17,19 @@
 
 @implementation ColorScrollView
 
+/*
 - (void)awakeFromNib
 {
     [super awakeFromNib];
+    
     
     //初始化背景颜色
     self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
     
     //初始化要放大的Imageview
-    _imageView = [[ColorImageView alloc]init];
+    _imageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)];
     [self addSubview:self.imageView];
-    [self.imageView mas_makeConstraints:^(MASConstraintMaker *make) {
-        make.top.equalTo(@0);
-        make.bottom.equalTo(@0);
-        make.left.equalTo(@0);
-        make.right.equalTo(@0);
-    }];
-    
+
     //初始取色器
     _pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
     self.pickerView.exclusiveTouch = YES;
@@ -42,6 +38,40 @@
     [self addSubview:self.pickerView];
  
 }
+ */
+
+- (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage *)image
+{
+    self = [super initWithFrame:frame];
+    if (self)
+    {
+        //初始化自身设置
+        self.maximumZoomScale = 100.0;
+        self.minimumZoomScale = 1.0;
+        self.contentSize = frame.size;
+        self.bounces = NO;
+        self.bouncesZoom = NO; //禁止缩小至最小比例之下
+        self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
+
+        //初始化要放大的Imageview
+        _imageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, frame.size.width, frame.size.height)];
+        self.imageView.image = image;
+        [self addSubview:self.imageView];
+        
+        DLog(@"%@",self);
+        DLog(@"%@",self.imageView);
+        
+        //初始取色器
+        _pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
+        self.pickerView.exclusiveTouch = YES;
+        self.pickerView.userInteractionEnabled = YES;
+        self.pickerView.hidden = YES;
+        
+    }
+    return self;
+}
+
+
 
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
 {

@@ -17,7 +17,8 @@
 @property (strong,nonatomic) UIButton *saveButton;
 @property (strong,nonatomic) GPUImageVideoCamera *videoCamera;
 @property (strong,nonatomic) GPUImageRawDataOutput *videoRawData;
-@property (strong,nonatomic) GPUImageView *VideoView;
+//@property (strong,nonatomic) GPUImageView *VideoView;
+@property (weak, nonatomic) IBOutlet GPUImageView *VideoView;
 @property (strong,nonatomic) UILabel *red;
 @property (strong,nonatomic) UILabel *green;
 @property (strong,nonatomic) UILabel *blue;
@@ -128,13 +129,15 @@
     self.videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
     
     //设置videoView
+    /*
     if (DEVICE_IS_IPHONE5) {
         _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568)];
     }
     else
     {
         _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
-    }
+    }*/
+    
     self.VideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
     [self.view addSubview:self.VideoView];
     

@@ -115,9 +115,6 @@
                         <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <scrollView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="7bc-VN-UR6" customClass="ColorScrollView">
-                                <rect key="frame" x="0.0" y="64" width="600" height="444"/>
-                            </scrollView>
                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" text="Label" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="4xG-Zc-AiD" userLabel="R">
                                 <rect key="frame" x="60" y="538" width="42" height="21"/>
                                 <fontDescription key="fontDescription" type="system" pointSize="17"/>
@@ -142,26 +139,30 @@
                                 <color key="textColor" cocoaTouchSystemColor="darkTextColor"/>
                                 <nil key="highlightedColor"/>
                             </label>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="AsZ-sa-wyA" userLabel="scrollViewContent">
+                                <rect key="frame" x="0.0" y="64" width="600" height="436"/>
+                                <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                            </view>
                         </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                         <constraints>
-                            <constraint firstAttribute="trailing" secondItem="7bc-VN-UR6" secondAttribute="trailing" id="79U-P9-zbq"/>
-                            <constraint firstItem="1eh-77-TKF" firstAttribute="top" secondItem="7bc-VN-UR6" secondAttribute="bottom" constant="92" id="U2Y-az-SSm"/>
-                            <constraint firstItem="7bc-VN-UR6" firstAttribute="top" secondItem="2E8-Q3-Upc" secondAttribute="bottom" id="ZHA-ew-YZF"/>
-                            <constraint firstItem="7bc-VN-UR6" firstAttribute="leading" secondItem="1WV-fX-6Fv" secondAttribute="leading" id="lL3-L4-YgX"/>
+                            <constraint firstItem="AsZ-sa-wyA" firstAttribute="top" secondItem="2E8-Q3-Upc" secondAttribute="bottom" id="3jN-Qr-Vdh"/>
+                            <constraint firstItem="1eh-77-TKF" firstAttribute="top" secondItem="AsZ-sa-wyA" secondAttribute="bottom" constant="100" id="PW2-nu-HKb"/>
+                            <constraint firstAttribute="trailing" secondItem="AsZ-sa-wyA" secondAttribute="trailing" id="XWQ-7r-U1K"/>
+                            <constraint firstItem="AsZ-sa-wyA" firstAttribute="leading" secondItem="1WV-fX-6Fv" secondAttribute="leading" id="kXN-3R-r2m"/>
                         </constraints>
                     </view>
                     <connections>
                         <outlet property="blue" destination="sZg-OH-FxK" id="MLq-wl-Sua"/>
-                        <outlet property="colorScrollView" destination="7bc-VN-UR6" id="HTg-lq-Q5s"/>
                         <outlet property="green" destination="JzV-tE-xIH" id="nUw-Pb-rqQ"/>
                         <outlet property="hexRGB" destination="nJV-r6-kJY" id="QRy-i8-lMi"/>
                         <outlet property="red" destination="4xG-Zc-AiD" id="zlC-0F-W6U"/>
+                        <outlet property="scrollViewSizeView" destination="AsZ-sa-wyA" id="Mgt-ww-83a"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="zm0-F3-Cgz" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="1949" y="254"/>
+            <point key="canvasLocation" x="1885" y="254"/>
         </scene>
         <!--Color Real Time View Controller-->
         <scene sceneID="OkF-D2-1dW">
@@ -174,8 +175,24 @@
                     <view key="view" contentMode="scaleToFill" id="r87-Vt-hF8">
                         <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="wiy-2J-2WF" customClass="GPUImageView">
+                                <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
+                                <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                            </view>
+                        </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                        <constraints>
+                            <constraint firstItem="wiy-2J-2WF" firstAttribute="leading" secondItem="r87-Vt-hF8" secondAttribute="leading" id="9Wl-Sp-o3v"/>
+                            <constraint firstAttribute="trailing" secondItem="wiy-2J-2WF" secondAttribute="trailing" id="VwR-yW-2x8"/>
+                            <constraint firstItem="EEU-00-7Lu" firstAttribute="top" secondItem="wiy-2J-2WF" secondAttribute="bottom" id="YBy-29-WV9"/>
+                            <constraint firstItem="wiy-2J-2WF" firstAttribute="top" secondItem="r87-Vt-hF8" secondAttribute="top" id="qUu-yk-3bk"/>
+                        </constraints>
                     </view>
+                    <nil key="simulatedTopBarMetrics"/>
+                    <connections>
+                        <outlet property="VideoView" destination="wiy-2J-2WF" id="FW8-Ow-PVS"/>
+                    </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="5vv-5g-pcS" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>

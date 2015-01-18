@@ -11,17 +11,17 @@
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
 #import "ColorPickerImageView.h"
-#define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
 
-@interface ColorViewController ()
+@interface ColorViewController ()<UIScrollViewDelegate>
 
-@property (weak, nonatomic) IBOutlet ColorScrollView *colorScrollView;
+@property (strong, nonatomic)  ColorScrollView *colorScrollView;
 @property (nonatomic,strong) UIImage *image;
 
 @property (weak, nonatomic) IBOutlet UILabel *red;
 @property (weak, nonatomic) IBOutlet UILabel *green;
 @property (weak, nonatomic) IBOutlet UILabel *blue;
 @property (weak, nonatomic) IBOutlet UILabel *hexRGB;
+@property (weak, nonatomic) IBOutlet UIView *scrollViewSizeView;
 
 @property (strong, nonatomic) UIImageView *selectedColoImformationView;
 
@@ -50,9 +50,8 @@
     [super viewDidLoad];
     
     //setup view
-    self.colorScrollView.imageView.image = self.image;
     [self setupBackgroud];
-    
+    [self setupScrollView];
     
     //init data
     self.red.text = self.colorScrollView.imageView.red;
@@ -72,6 +71,14 @@
 }
 
 #pragma mark -setup View
+
+- (void)setupScrollView
+{
+    CGRect frame = CGRectMake(0, 0, self.scrollViewSizeView.frame.size.width, self.scrollViewSizeView.frame.size.height);
+    _colorScrollView = [[ColorScrollView alloc]initWithFrame:frame andUIImage:self.image];
+    self.colorScrollView.delegate = self;
+    [self.scrollViewSizeView addSubview:self.colorScrollView];
+}
 
 - (void)setupBackgroud
 {
@@ -111,6 +118,14 @@
         
     });
 }
+
+#pragma mark -scrollView delegate
+
+-(UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView
+{
+    return self.colorScrollView.imageView;
+}
+
 
 #pragma - notification center
 -(void)updateLabelAndColorImage

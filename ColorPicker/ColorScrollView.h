@@ -12,4 +12,6 @@
 
 @property (strong, nonatomic) ColorImageView *imageView;
 
+- (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage*)image;
+
 @end
