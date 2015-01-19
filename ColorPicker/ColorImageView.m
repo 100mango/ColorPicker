@@ -29,8 +29,6 @@
         self.green = @"255";
         self.blue = @"255";
         self.hexRGB = @"#FFFFFF";
-        
-        DLog(@"initwithFrame");
     }
     return self;
 }

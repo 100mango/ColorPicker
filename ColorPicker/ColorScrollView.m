@@ -66,6 +66,7 @@
         self.pickerView.exclusiveTouch = YES;
         self.pickerView.userInteractionEnabled = YES;
         self.pickerView.hidden = YES;
+        [self addSubview:self.pickerView];
         
     }
     return self;

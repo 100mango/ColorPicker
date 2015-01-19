@@ -43,3 +43,7 @@ Pods/Pods.xcodeproj/project.pbxproj
 Pods/Pods.xcodeproj/xcuserdata/Mango.xcuserdatad/xcschemes/Pods-GPUImage.xcscheme
 
 Pods/Pods.xcodeproj/xcuserdata/Mango.xcuserdatad/xcschemes/Pods.xcscheme
+
+Pods/GPUImage/framework/Source/GPUImage.h
+
+Pods/GPUImage/framework/Source/GPUImageAmatorkaFilter.m

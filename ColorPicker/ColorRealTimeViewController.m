@@ -12,11 +12,26 @@
 #define DEVICE_IS_IPHONE5 ([[UIScreen mainScreen] bounds].size.height == 568)
 
 @interface ColorRealTimeViewController ()
+{
+    CALayer *trackingDot;
+    
+    GPUImageVideoCamera *videoCamera;
+    GPUImageFilter *thresholdFilter, *positionFilter;
+    GPUImageRawDataOutput *positionRawData, *videoRawData;
+    GPUImageAverageColor *positionAverageColor;
+    GPUImageView *filteredVideoView;
+    
+    
+    BOOL shouldReplaceThresholdColor;
+    CGPoint currentTouchPoint;
+    GLfloat thresholdSensitivity;
+    GPUVector3 thresholdColor;
+}
 
 @property (strong,nonatomic) UIButton *backButton;
 @property (strong,nonatomic) UIButton *saveButton;
-@property (strong,nonatomic) GPUImageVideoCamera *videoCamera;
-@property (strong,nonatomic) GPUImageRawDataOutput *videoRawData;
+//@property (strong,nonatomic) GPUImageVideoCamera *videoCamera;
+//@property (strong,nonatomic) GPUImageRawDataOutput *videoRawData;
 //@property (strong,nonatomic) GPUImageView *VideoView;
 @property (weak, nonatomic) IBOutlet GPUImageView *VideoView;
 @property (strong,nonatomic) UILabel *red;
@@ -125,8 +140,8 @@
 - (void)setupGPUImage
 {
     //设置Camera
-    _videoCamera = [[GPUImageVideoCamera alloc]initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
-    self.videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
+    //_videoCamera = [[GPUImageVideoCamera alloc]initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
+    //self.videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
     
     //设置videoView
     /*
@@ -139,8 +154,9 @@
     }*/
     
     self.VideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
-    [self.view addSubview:self.VideoView];
+    //[self.view addSubview:self.VideoView];
     
+    /*
     //设置output Rawdata
     CGSize videoPixelSize = CGSizeMake(480.0, 640.0);
     _videoRawData = [[GPUImageRawDataOutput alloc]initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
@@ -175,7 +191,32 @@
     [self.videoCamera addTarget:self.VideoView];
     [self.videoCamera addTarget:self.videoRawData];
     [self.videoCamera startCameraCapture];
+     */
     
+    
+    videoCamera = [[GPUImageVideoCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
+    videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
+    CGSize videoPixelSize = CGSizeMake(480.0, 640.0);
+    __unsafe_unretained ColorRealTimeViewController *weakSelf = self;
+    
+    videoRawData = [[GPUImageRawDataOutput alloc] initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
+    [videoRawData setNewFrameAvailableBlock:^{
+            
+        
+        CGPoint focusPoint = {480/2,640/2};
+        
+        
+        GPUByteColorVector colorAtTouchPoint = [weakSelf->videoRawData colorAtLocation:focusPoint];
+        
+        NSLog(@"Color at touch point: %d, %d, %d, %d", colorAtTouchPoint.red, colorAtTouchPoint.green, colorAtTouchPoint.blue, colorAtTouchPoint.alpha);
+        
+        }];
+    
+    
+    [videoCamera addTarget:self.VideoView];
+    [videoCamera addTarget:videoRawData];
+    
+    [videoCamera startCameraCapture];
 }
 
 #pragma mark -buttonEvent

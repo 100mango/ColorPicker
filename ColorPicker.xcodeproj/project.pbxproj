@@ -527,7 +527,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
 				INFOPLIST_FILE = "ColorPicker/ColorPicker-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_NAME = TouchColor;
 				PROVISIONING_PROFILE = "";
@@ -546,7 +546,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
 				INFOPLIST_FILE = "ColorPicker/ColorPicker-Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				PRODUCT_NAME = TouchColor;
 				PROVISIONING_PROFILE = "";
 				WRAPPER_EXTENSION = app;
