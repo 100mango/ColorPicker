@@ -12,6 +12,7 @@
 #import "ColorCell.h"
 
 //controller
+#import "ColorTrackingViewController.h"
 #import "ColorViewController.h"
 @interface ColorMainViewController ()<UIImagePickerControllerDelegate,UINavigationControllerDelegate,UITableViewDelegate,UITableViewDataSource>
 
@@ -133,6 +134,12 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
     }
 }
 
+- (IBAction)realTime:(id)sender {
+    
+    ColorTrackingViewController *colorTrackingViewController = [[ColorTrackingViewController alloc] initWithNibName:nil bundle:nil];
+    [self presentViewController:colorTrackingViewController animated:NO completion:nil];
+
+}
 #pragma mark -imagePicker delegate
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info

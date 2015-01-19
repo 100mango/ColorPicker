@@ -55,10 +55,17 @@
 {
     [super viewDidLoad];
 
-    [self setupGPUImage];
+    //[self setupGPUImage];
     [self setupButton];
     [self setupLabels];
     [self setupColorPointView];
+
+}
+
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self setupGPUImage];
 
 }
 
@@ -197,6 +204,11 @@
     videoCamera = [[GPUImageVideoCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
     videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
     CGSize videoPixelSize = CGSizeMake(480.0, 640.0);
+    CGRect mainScreenFrame = [[UIScreen mainScreen] applicationFrame];
+
+    filteredVideoView = [[GPUImageView alloc] initWithFrame:CGRectMake(0.0, 0.0, mainScreenFrame.size.width, mainScreenFrame.size.height)];
+    [self.view addSubview:filteredVideoView];
+    
     __unsafe_unretained ColorRealTimeViewController *weakSelf = self;
     
     videoRawData = [[GPUImageRawDataOutput alloc] initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
@@ -213,9 +225,8 @@
         }];
     
     
-    [videoCamera addTarget:self.VideoView];
+    [videoCamera addTarget:filteredVideoView];
     [videoCamera addTarget:videoRawData];
-    
     [videoCamera startCameraCapture];
 }
 
