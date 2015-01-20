@@ -16,6 +16,15 @@
                         <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
+                            <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="q5G-PB-3Fd">
+                                <rect key="frame" x="277" y="380" width="46" height="30"/>
+                                <state key="normal" title="Button">
+                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                </state>
+                                <connections>
+                                    <segue destination="imP-eF-7VW" kind="show" id="WaG-Yd-7Hv"/>
+                                </connections>
+                            </button>
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="WOl-9a-92k" userLabel="extendedBar">
                                 <rect key="frame" x="0.0" y="64" width="600" height="44"/>
                                 <subviews>
@@ -50,6 +59,15 @@
                                     <outlet property="delegate" destination="c3D-kC-Bm6" id="YFC-gI-OHD"/>
                                 </connections>
                             </tableView>
+                            <visualEffectView opaque="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="PmZ-v2-N8B" userLabel="添加颜色菜单">
+                                <rect key="frame" x="0.0" y="556" width="600" height="448"/>
+                                <view key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" id="5GC-Gb-K0F">
+                                    <rect key="frame" x="0.0" y="0.0" width="600" height="448"/>
+                                    <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                                    <color key="backgroundColor" red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="calibratedRGB"/>
+                                </view>
+                                <blurEffect style="light"/>
+                            </visualEffectView>
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="vCS-qA-bYw" userLabel="bottomBar">
                                 <rect key="frame" x="0.0" y="556" width="600" height="44"/>
                                 <subviews>
@@ -95,28 +113,28 @@
                         </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                         <constraints>
+                            <constraint firstItem="LGY-Up-bYB" firstAttribute="height" secondItem="PmZ-v2-N8B" secondAttribute="height" id="8uj-Ci-d1o"/>
                             <constraint firstAttribute="trailing" secondItem="LGY-Up-bYB" secondAttribute="trailing" id="OTD-N7-qVM"/>
                             <constraint firstItem="4vr-oP-Uch" firstAttribute="top" secondItem="vCS-qA-bYw" secondAttribute="bottom" id="PjZ-KZ-1GK"/>
                             <constraint firstItem="WOl-9a-92k" firstAttribute="top" secondItem="mnj-fM-zUf" secondAttribute="bottom" id="RcJ-Zm-O82"/>
+                            <constraint firstItem="LGY-Up-bYB" firstAttribute="width" secondItem="PmZ-v2-N8B" secondAttribute="width" id="Rqg-hU-GWf"/>
+                            <constraint firstAttribute="centerX" secondItem="PmZ-v2-N8B" secondAttribute="centerX" id="SSg-aH-CU3"/>
                             <constraint firstItem="WOl-9a-92k" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="UBW-Ga-Tmz"/>
                             <constraint firstAttribute="trailing" secondItem="WOl-9a-92k" secondAttribute="trailing" id="cmv-nh-HPq"/>
                             <constraint firstItem="LGY-Up-bYB" firstAttribute="top" secondItem="WOl-9a-92k" secondAttribute="bottom" id="g7f-f2-u3U"/>
+                            <constraint firstItem="PmZ-v2-N8B" firstAttribute="top" secondItem="LGY-Up-bYB" secondAttribute="bottom" id="oae-v9-nY7"/>
                             <constraint firstItem="vCS-qA-bYw" firstAttribute="top" secondItem="LGY-Up-bYB" secondAttribute="bottom" id="okk-7b-DU1"/>
                             <constraint firstItem="LGY-Up-bYB" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="pOU-37-5qt"/>
-                            <constraint firstItem="4vr-oP-Uch" firstAttribute="top" secondItem="LGY-Up-bYB" secondAttribute="bottom" id="qAj-TQ-Msk"/>
                             <constraint firstAttribute="trailing" secondItem="vCS-qA-bYw" secondAttribute="trailing" id="wdZ-Dw-Vwl"/>
                             <constraint firstItem="vCS-qA-bYw" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="zso-yv-2yp"/>
                         </constraints>
-                        <variation key="default">
-                            <mask key="constraints">
-                                <exclude reference="qAj-TQ-Msk"/>
-                            </mask>
-                        </variation>
                     </view>
                     <navigationItem key="navigationItem" id="pZ6-I6-A9w"/>
                     <connections>
+                        <outlet property="pickImageArea" destination="PmZ-v2-N8B" id="rjc-BD-ywZ"/>
                         <outlet property="pickImageFromAlbumButton" destination="v1k-Se-nTb" id="I9m-XM-tYA"/>
                         <outlet property="pickImageFromCameraButton" destination="7U6-bL-Geh" id="oej-zU-FL3"/>
+                        <outlet property="pickImageTopConstraint" destination="oae-v9-nY7" id="gjX-xW-MhL"/>
                         <outlet property="recordTableView" destination="LGY-Up-bYB" id="Leo-Vq-tfl"/>
                         <segue destination="7cd-DP-vP2" kind="show" identifier="showColorViewController" id="It2-AC-j31"/>
                     </connections>
@@ -184,7 +202,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="zm0-F3-Cgz" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="1885" y="254"/>
+            <point key="canvasLocation" x="1945" y="-150"/>
         </scene>
         <!--Color Real Time View Controller-->
         <scene sceneID="OkF-D2-1dW">
@@ -218,7 +236,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="5vv-5g-pcS" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="1582" y="1041"/>
+            <point key="canvasLocation" x="1954" y="628"/>
         </scene>
         <!--Navigation Controller-->
         <scene sceneID="WH4-O1-W5Q">

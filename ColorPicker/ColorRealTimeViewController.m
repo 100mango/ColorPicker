@@ -160,7 +160,7 @@
         _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
     }*/
     
-    self.VideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
+    //self.VideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
     //[self.view addSubview:self.VideoView];
     
     /*

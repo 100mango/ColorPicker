@@ -13,12 +13,13 @@
 #import "UIView+Tools.h"
 
 //controller
-#import "ColorTrackingViewController.h"
 #import "ColorViewController.h"
 @interface ColorMainViewController ()<UIImagePickerControllerDelegate,UINavigationControllerDelegate,UITableViewDelegate,UITableViewDataSource>
 
 @property (weak, nonatomic) IBOutlet UIButton *pickImageFromAlbumButton;
 @property (weak, nonatomic) IBOutlet UIButton *pickImageFromCameraButton;
+@property (weak, nonatomic) IBOutlet NSLayoutConstraint *pickImageTopConstraint;
+@property (weak, nonatomic) IBOutlet UIVisualEffectView *pickImageArea;
 
 
 //被选中的图片
@@ -99,11 +100,25 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
     {
         sender.selected = YES;
         [sender rotateViewWithAngle:M_PI_4];
+        DLog(@"%f",self.pickImageTopConstraint.constant);
+        self.pickImageTopConstraint.constant = -self.recordTableView.frame.size.height;
+        DLog(@"%f",self.pickImageTopConstraint.constant);
+        [UIView animateWithDuration:0.3 animations:^{
+            [self.view layoutIfNeeded];
+            DLog(@"%@",self.pickImageArea);
+        }];
     }
     else
     {
         sender.selected = NO;
         [sender rotateViewWithAngle:-M_PI_4];
+        DLog(@"%f",self.pickImageTopConstraint.constant);
+        self.pickImageTopConstraint.constant = 0;
+        DLog(@"%f",self.pickImageTopConstraint.constant);
+        [UIView animateWithDuration:0.3 animations:^{
+            [self.view layoutIfNeeded];
+            DLog(@"%@",self.pickImageArea);
+        }];
     }
 }
 
@@ -152,8 +167,6 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
 
 - (IBAction)realTime:(id)sender {
     
-    ColorTrackingViewController *colorTrackingViewController = [[ColorTrackingViewController alloc] initWithNibName:nil bundle:nil];
-    [self presentViewController:colorTrackingViewController animated:NO completion:nil];
 
 }
 #pragma mark -imagePicker delegate
