@@ -11,15 +11,18 @@
 //view
 #import "ColorCell.h"
 #import "UIView+Tools.h"
+#import "ColorSingleColorCell.h"
 
 //controller
 #import "ColorViewController.h"
 @interface ColorMainViewController ()<UIImagePickerControllerDelegate,UINavigationControllerDelegate,UITableViewDelegate,UITableViewDataSource>
 
-@property (weak, nonatomic) IBOutlet UIButton *pickImageFromAlbumButton;
-@property (weak, nonatomic) IBOutlet UIButton *pickImageFromCameraButton;
+
 @property (weak, nonatomic) IBOutlet NSLayoutConstraint *pickImageTopConstraint;
 @property (weak, nonatomic) IBOutlet UIVisualEffectView *pickImageArea;
+@property (weak, nonatomic) IBOutlet UIView *pickImageFromAlbumView;
+@property (weak, nonatomic) IBOutlet UIView *pickImageFromCameraView;
+@property (weak, nonatomic) IBOutlet UIView *pickColorFromRealTimeView;
 
 
 //被选中的图片
@@ -30,7 +33,8 @@
 
 @end
 
-NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
+static NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
+static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 @implementation ColorMainViewController
 
@@ -39,7 +43,8 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
     
     //setup view
     [self setupNavigationBar];
-    
+    [self setupButtonView];
+    [self.recordTableView registerNib:[UINib nibWithNibName:@"ColorSingleColorCell" bundle:nil] forCellReuseIdentifier:colorSigleCellIdentifier];
     
 }
 
@@ -70,12 +75,63 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
     [self.navigationController.navigationBar setBackgroundImage:[UIImage new] forBarMetrics:UIBarMetricsDefault];
 
     self.navigationController.navigationBar.barTintColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:44/255.0 alpha:1];
+    
+}
+
+- (void)setupButtonView
+{
+    [self.pickImageFromAlbumView touchEndedBlock:^(UIView *selfView)
+     {
+         DLog(@"touch album view");
+         //检查有无照相机
+         if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypePhotoLibrary] == NO
+             )
+         {
+             UIAlertView * alert = [[UIAlertView alloc]initWithTitle:@"无本地相册" message:Nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil, nil];
+             [alert show];
+         }
+         else
+         {
+             
+             UIImagePickerController *imageLibray = [[UIImagePickerController alloc]init];
+             imageLibray.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+             imageLibray.delegate = self;
+             //定制选择图片时的的navigationBar外观
+             imageLibray.navigationBar.barTintColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
+             imageLibray.navigationBar.tintColor = [UIColor whiteColor];
+             imageLibray.navigationBar.translucent = NO;
+             imageLibray.navigationBar.titleTextAttributes = @{NSForegroundColorAttributeName: [UIColor whiteColor]};
+             [imageLibray setNeedsStatusBarAppearanceUpdate];
+             
+             [self presentViewController:imageLibray animated:YES completion:nil];
+             [self closeButtonView];
+         }
+     }];
+    
+    [self.pickImageFromCameraView touchEndedBlock:^(UIView *selfView) {
+        //检查有无摄像头
+        if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera] == NO
+            )
+        {
+            UIAlertView * alert = [[UIAlertView alloc]initWithTitle:@"无照相机" message:Nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil, nil];
+            [alert show];
+        }
+        else
+        {
+            UIImagePickerController *imagePicker = [[UIImagePickerController alloc]init];
+            imagePicker.sourceType = UIImagePickerControllerSourceTypeCamera;
+            imagePicker.delegate = self;
+            [self presentViewController:imagePicker animated:YES completion:nil];
+            [self closeButtonView];
+        }
+    }];
 }
 
 #pragma mark - action
 
 - (IBAction)segemtedControlValueChanged:(UISegmentedControl *)sender
 {
+    /*
     if (sender.selectedSegmentIndex == 0)
     {
         self.recordTableView.hidden = YES;
@@ -88,18 +144,22 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
         self.pickImageFromAlbumButton.hidden = YES;
         self.pickImageFromCameraButton.hidden = YES;
     }
+     */
+}
+
+
+- (void)closeButtonView
+{
+    self.pickImageTopConstraint.constant = 0;
+    [self.view layoutIfNeeded];
 }
 
 - (IBAction)pickNewColor:(UIButton *)sender
 {
-    //裁剪为圆
-    [sender ClipSquareViewToRound];
-    sender.clipsToBounds = YES;
-    
     if (sender.selected == NO)
     {
         sender.selected = YES;
-        [sender rotateViewWithAngle:M_PI_4 andDuration:0.3];
+        [sender rotateViewWithAngle:M_PI/8 andDuration:0.3];
         
         self.pickImageTopConstraint.constant = -self.recordTableView.frame.size.height;
         [UIView animateWithDuration:0.3 animations:^{
@@ -109,61 +169,13 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
     else
     {
         sender.selected = NO;
-        [sender rotateViewWithAngle:-M_PI_4 andDuration:0.3];
+        [sender rotateViewWithAngle:-M_PI/8 andDuration:0.3];
 
         self.pickImageTopConstraint.constant = 0;
         [UIView animateWithDuration:0.3 animations:^{
             [self.view layoutIfNeeded];
         }];
     }
-}
-
-- (IBAction)PickImageFromGallery:(id)sender
-{
-    //检查有无照相机
-    if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypePhotoLibrary] == NO
-        )
-    {
-        UIAlertView * alert = [[UIAlertView alloc]initWithTitle:@"无本地相册" message:Nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil, nil];
-        [alert show];
-    }
-    else
-    {
-        
-        UIImagePickerController *imageLibray = [[UIImagePickerController alloc]init];
-        imageLibray.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-        imageLibray.delegate = self;
-        //定制选择图片时的的navigationBar外观
-        imageLibray.navigationBar.barTintColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
-        imageLibray.navigationBar.tintColor = [UIColor whiteColor];
-        imageLibray.navigationBar.translucent = NO;
-        imageLibray.navigationBar.titleTextAttributes = @{NSForegroundColorAttributeName: [UIColor whiteColor]};
-        [imageLibray setNeedsStatusBarAppearanceUpdate];
-        
-        [self presentViewController:imageLibray animated:YES completion:nil];
-    }
-}
-- (IBAction)pickImageWithCamera:(id)sender
-{
-    //检查有无摄像头
-    if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera] == NO
-        )
-    {
-        UIAlertView * alert = [[UIAlertView alloc]initWithTitle:@"无照相机" message:Nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil, nil];
-        [alert show];
-    }
-    else
-    {
-        UIImagePickerController *imagePicker = [[UIImagePickerController alloc]init];
-        imagePicker.sourceType = UIImagePickerControllerSourceTypeCamera;
-        imagePicker.delegate = self;
-        [self presentViewController:imagePicker animated:YES completion:nil];
-    }
-}
-
-- (IBAction)realTime:(id)sender {
-    
-
 }
 #pragma mark -imagePicker delegate
 
@@ -180,26 +192,21 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
 
 #pragma mark -tableView datasource
 
--(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    NSString *cellIdentifier = @"colorCell" ;
-    ColorCell *cell = [tableView dequeueReusableCellWithIdentifier:cellIdentifier];
-    
-    if (cell == nil)
-    {
-        cell = [[ColorCell alloc]initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellIdentifier];
-    }
-    
-    //设置cell属性
-    [cell setColorInformationWith:[self.colorArray objectAtIndex:indexPath.row]];
-    return cell;
-}
-
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     //返回需要显示的行数
     return [self.colorArray count];
 }
+
+-(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    ColorSingleColorCell *cell = [tableView dequeueReusableCellWithIdentifier:colorSigleCellIdentifier];
+    
+    [cell setColorInformationWith:[self.colorArray objectAtIndex:indexPath.row]];
+    
+    return cell;
+}
+
 
 
 //删除选择列，更新颜色值数组
@@ -220,7 +227,7 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    return 170/2;
+    return 82;
 }
 
 // 返回cell editing的样式

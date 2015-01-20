@@ -82,16 +82,12 @@
 {
     //设置背景颜色
     self.view.backgroundColor = [UIColor colorWithRed:239.0/255 green:239.0/255 blue:237.0/255 alpha:1.0];
-    
-    UIBarButtonItem *saveButton = [[UIBarButtonItem alloc]initWithTitle:@"保存" style:UIBarButtonItemStylePlain target:self action:@selector(saveColor)];
-    self.navigationItem.rightBarButtonItem = saveButton;
 }
 
 #pragma mark -Action
-
-- (void)saveColor
+- (IBAction)saveColor:(UIButton *)sender
 {
-    //self.saveButton.selected = YES;
+    self.saveButton.selected = YES;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         
         NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
@@ -111,7 +107,7 @@
         [userDefaults synchronize];
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            //self.saveButton.selected = NO;
+            self.saveButton.selected = NO;
         });
         
     });
@@ -132,6 +128,7 @@
     self.green.text = self.colorScrollView.imageView.green;
     self.blue.text = self.colorScrollView.imageView.blue;
     self.hexRGB.text = self.colorScrollView.imageView.hexRGB;
+    self.saveButton.backgroundColor = self.colorScrollView.imageView.selectedColor;
 }
 
 

@@ -29,6 +29,7 @@
         self.green = @"255";
         self.blue = @"255";
         self.hexRGB = @"#FFFFFF";
+        self.selectedColor = [UIColor whiteColor];
     }
     return self;
 }
