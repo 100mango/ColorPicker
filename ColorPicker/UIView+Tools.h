@@ -7,6 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
+#import "UIView+AnimationExtensions.h"
 
 @interface UIView (Tools)
 
@@ -23,11 +24,12 @@
 - (void)addTopBorderWithColor: (UIColor *) color andWidth:(CGFloat) borderWidth;
 
 //anmation helper
+//请使用UIView+AnimationExtensions.h
 /**
  *  旋转view
  *  @param angle 弧度：PI = 360度
  */
-- (void)rotateViewWithAngle:(CGFloat)angle;
+- (void)rotateViewWithAngle:(CGFloat)angle andDuration:(CGFloat)duration;
 
 
 //封装gestureRecognizer到UIView中，用的时候直接把需触发的block传入即可

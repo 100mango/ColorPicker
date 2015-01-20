@@ -99,25 +99,21 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
     if (sender.selected == NO)
     {
         sender.selected = YES;
-        [sender rotateViewWithAngle:M_PI_4];
-        DLog(@"%f",self.pickImageTopConstraint.constant);
+        [sender rotateViewWithAngle:M_PI_4 andDuration:0.3];
+        
         self.pickImageTopConstraint.constant = -self.recordTableView.frame.size.height;
-        DLog(@"%f",self.pickImageTopConstraint.constant);
         [UIView animateWithDuration:0.3 animations:^{
             [self.view layoutIfNeeded];
-            DLog(@"%@",self.pickImageArea);
         }];
     }
     else
     {
         sender.selected = NO;
-        [sender rotateViewWithAngle:-M_PI_4];
-        DLog(@"%f",self.pickImageTopConstraint.constant);
+        [sender rotateViewWithAngle:-M_PI_4 andDuration:0.3];
+
         self.pickImageTopConstraint.constant = 0;
-        DLog(@"%f",self.pickImageTopConstraint.constant);
         [UIView animateWithDuration:0.3 animations:^{
             [self.view layoutIfNeeded];
-            DLog(@"%@",self.pickImageArea);
         }];
     }
 }

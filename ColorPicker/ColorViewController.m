@@ -8,6 +8,9 @@
 
 #import "ColorViewController.h"
 #import <QuartzCore/QuartzCore.h>
+
+//view
+#import "UIView+Tools.h"
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
 #import "ColorPickerImageView.h"
@@ -22,12 +25,7 @@
 @property (weak, nonatomic) IBOutlet UILabel *blue;
 @property (weak, nonatomic) IBOutlet UILabel *hexRGB;
 @property (weak, nonatomic) IBOutlet UIView *scrollViewSizeView;
-
-@property (strong, nonatomic) UIImageView *selectedColoImformationView;
-
-@property (strong, nonatomic) UIButton *backButton;
-@property (strong, nonatomic) UISlider *slider;
-@property (strong, nonatomic) UIButton *saveButton;
+@property (weak, nonatomic) IBOutlet UIButton *saveButton;
 
 @end
 
@@ -93,7 +91,7 @@
 
 - (void)saveColor
 {
-    self.saveButton.selected = YES;
+    //self.saveButton.selected = YES;
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         
         NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
@@ -113,7 +111,7 @@
         [userDefaults synchronize];
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            self.saveButton.selected = NO;
+            //self.saveButton.selected = NO;
         });
         
     });
@@ -134,7 +132,6 @@
     self.green.text = self.colorScrollView.imageView.green;
     self.blue.text = self.colorScrollView.imageView.blue;
     self.hexRGB.text = self.colorScrollView.imageView.hexRGB;
-    self.selectedColoImformationView.backgroundColor = self.colorScrollView.imageView.selectedColor;
 }
 
 
