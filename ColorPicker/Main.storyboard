@@ -42,14 +42,38 @@
                                     <constraint firstAttribute="centerY" secondItem="4c3-Bd-JRD" secondAttribute="centerY" id="tk3-7e-7ms"/>
                                 </constraints>
                             </view>
-                            <tableView hidden="YES" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="44" sectionHeaderHeight="22" sectionFooterHeight="22" translatesAutoresizingMaskIntoConstraints="NO" id="LGY-Up-bYB" userLabel="记录">
-                                <rect key="frame" x="0.0" y="108" width="600" height="492"/>
+                            <tableView hidden="YES" clipsSubviews="YES" contentMode="scaleToFill" alwaysBounceVertical="YES" dataMode="prototypes" style="plain" separatorStyle="default" rowHeight="44" sectionHeaderHeight="22" sectionFooterHeight="22" translatesAutoresizingMaskIntoConstraints="NO" id="LGY-Up-bYB" userLabel="记录TableView">
+                                <rect key="frame" x="0.0" y="108" width="600" height="448"/>
                                 <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                                 <connections>
                                     <outlet property="dataSource" destination="c3D-kC-Bm6" id="aIg-oK-Vwh"/>
                                     <outlet property="delegate" destination="c3D-kC-Bm6" id="YFC-gI-OHD"/>
                                 </connections>
                             </tableView>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="vCS-qA-bYw" userLabel="bottomBar">
+                                <rect key="frame" x="0.0" y="556" width="600" height="44"/>
+                                <subviews>
+                                    <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="rlY-95-qnd" userLabel="添加颜色按钮">
+                                        <rect key="frame" x="280" y="2" width="40" height="40"/>
+                                        <constraints>
+                                            <constraint firstAttribute="height" constant="40" id="4IJ-PM-2gH"/>
+                                            <constraint firstAttribute="width" constant="40" id="Pcu-2q-ZSt"/>
+                                        </constraints>
+                                        <state key="normal" image="新建.png">
+                                            <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
+                                        </state>
+                                        <connections>
+                                            <action selector="pickNewColor:" destination="c3D-kC-Bm6" eventType="touchUpInside" id="euA-fo-h2S"/>
+                                        </connections>
+                                    </button>
+                                </subviews>
+                                <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                                <constraints>
+                                    <constraint firstAttribute="centerY" secondItem="rlY-95-qnd" secondAttribute="centerY" id="4b6-5b-IK4"/>
+                                    <constraint firstAttribute="centerX" secondItem="rlY-95-qnd" secondAttribute="centerX" id="b0R-dC-SbI"/>
+                                    <constraint firstAttribute="height" constant="44" id="yiK-U1-2O3"/>
+                                </constraints>
+                            </view>
                             <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="v1k-Se-nTb" userLabel="选择照片">
                                 <rect key="frame" x="267" y="236" width="46" height="30"/>
                                 <state key="normal" title="Button">
@@ -68,30 +92,29 @@
                                     <action selector="pickImageWithCamera:" destination="c3D-kC-Bm6" eventType="touchUpInside" id="eFe-d3-Lm8"/>
                                 </connections>
                             </button>
-                            <button opaque="NO" contentMode="scaleToFill" fixedFrame="YES" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="u9A-pT-Ri1">
-                                <rect key="frame" x="240" y="416" width="46" height="30"/>
-                                <state key="normal" title="Button">
-                                    <color key="titleShadowColor" white="0.5" alpha="1" colorSpace="calibratedWhite"/>
-                                </state>
-                                <connections>
-                                    <action selector="realTime:" destination="c3D-kC-Bm6" eventType="touchUpInside" id="I4M-2Z-3TZ"/>
-                                </connections>
-                            </button>
                         </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                         <constraints>
                             <constraint firstAttribute="trailing" secondItem="LGY-Up-bYB" secondAttribute="trailing" id="OTD-N7-qVM"/>
+                            <constraint firstItem="4vr-oP-Uch" firstAttribute="top" secondItem="vCS-qA-bYw" secondAttribute="bottom" id="PjZ-KZ-1GK"/>
                             <constraint firstItem="WOl-9a-92k" firstAttribute="top" secondItem="mnj-fM-zUf" secondAttribute="bottom" id="RcJ-Zm-O82"/>
                             <constraint firstItem="WOl-9a-92k" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="UBW-Ga-Tmz"/>
                             <constraint firstAttribute="trailing" secondItem="WOl-9a-92k" secondAttribute="trailing" id="cmv-nh-HPq"/>
                             <constraint firstItem="LGY-Up-bYB" firstAttribute="top" secondItem="WOl-9a-92k" secondAttribute="bottom" id="g7f-f2-u3U"/>
+                            <constraint firstItem="vCS-qA-bYw" firstAttribute="top" secondItem="LGY-Up-bYB" secondAttribute="bottom" id="okk-7b-DU1"/>
                             <constraint firstItem="LGY-Up-bYB" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="pOU-37-5qt"/>
                             <constraint firstItem="4vr-oP-Uch" firstAttribute="top" secondItem="LGY-Up-bYB" secondAttribute="bottom" id="qAj-TQ-Msk"/>
+                            <constraint firstAttribute="trailing" secondItem="vCS-qA-bYw" secondAttribute="trailing" id="wdZ-Dw-Vwl"/>
+                            <constraint firstItem="vCS-qA-bYw" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="zso-yv-2yp"/>
                         </constraints>
+                        <variation key="default">
+                            <mask key="constraints">
+                                <exclude reference="qAj-TQ-Msk"/>
+                            </mask>
+                        </variation>
                     </view>
                     <navigationItem key="navigationItem" id="pZ6-I6-A9w"/>
                     <connections>
-                        <outlet property="pickColorFromRealTimeButton" destination="u9A-pT-Ri1" id="4CD-tm-Y3I"/>
                         <outlet property="pickImageFromAlbumButton" destination="v1k-Se-nTb" id="I9m-XM-tYA"/>
                         <outlet property="pickImageFromCameraButton" destination="7U6-bL-Geh" id="oej-zU-FL3"/>
                         <outlet property="recordTableView" destination="LGY-Up-bYB" id="Leo-Vq-tfl"/>
@@ -100,7 +123,7 @@
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="UdG-di-iXq" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="1064" y="263"/>
+            <point key="canvasLocation" x="1224" y="221"/>
         </scene>
         <!--Color View Controller-->
         <scene sceneID="iKf-Sa-AG7">
@@ -219,4 +242,7 @@
             <point key="canvasLocation" x="351" y="288"/>
         </scene>
     </scenes>
+    <resources>
+        <image name="新建.png" width="91" height="68"/>
+    </resources>
 </document>

@@ -20,6 +20,9 @@
     self.window.rootViewController = entranceController;
     [self.window makeKeyAndVisible];
      */
+    //magic 防止没有内容时 出现多余的separator
+    [[UITableView appearance] setTableFooterView:[[UIView alloc] initWithFrame:CGRectZero]];
+
     return YES;
 }
 							

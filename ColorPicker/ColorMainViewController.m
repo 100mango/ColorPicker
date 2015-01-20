@@ -10,6 +10,7 @@
 
 //view
 #import "ColorCell.h"
+#import "UIView+Tools.h"
 
 //controller
 #import "ColorTrackingViewController.h"
@@ -18,7 +19,6 @@
 
 @property (weak, nonatomic) IBOutlet UIButton *pickImageFromAlbumButton;
 @property (weak, nonatomic) IBOutlet UIButton *pickImageFromCameraButton;
-@property (weak, nonatomic) IBOutlet UIButton *pickColorFromRealTimeButton;
 
 
 //被选中的图片
@@ -80,14 +80,30 @@ NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
         self.recordTableView.hidden = YES;
         self.pickImageFromAlbumButton.hidden = NO;
         self.pickImageFromCameraButton.hidden = NO;
-        self.pickColorFromRealTimeButton.hidden = NO;
     }
     else
     {
         self.recordTableView.hidden = NO;
         self.pickImageFromAlbumButton.hidden = YES;
         self.pickImageFromCameraButton.hidden = YES;
-        self.pickColorFromRealTimeButton.hidden = YES;
+    }
+}
+
+- (IBAction)pickNewColor:(UIButton *)sender
+{
+    //裁剪为圆
+    [sender ClipSquareViewToRound];
+    sender.clipsToBounds = YES;
+    
+    if (sender.selected == NO)
+    {
+        sender.selected = YES;
+        [sender rotateViewWithAngle:M_PI_4];
+    }
+    else
+    {
+        sender.selected = NO;
+        [sender rotateViewWithAngle:-M_PI_4];
     }
 }
 

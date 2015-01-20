@@ -25,6 +25,8 @@
 		DBA87C1F1A6D06C200BB8FA2 /* ColorTrackingViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DBA87C1E1A6D06C200BB8FA2 /* ColorTrackingViewController.m */; };
 		DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */; };
 		DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */; };
+		DBC3F3AB1A6E41BA00BD52B0 /* 新建.png in Resources */ = {isa = PBXBuildFile; fileRef = DBC3F3AA1A6E41BA00BD52B0 /* 新建.png */; };
+		DBC3F3AF1A6E427E00BD52B0 /* UIView+Tools.m in Sources */ = {isa = PBXBuildFile; fileRef = DBC3F3AE1A6E427E00BD52B0 /* UIView+Tools.m */; };
 		DBE8C39318A20F5400E2B304 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39218A20F5400E2B304 /* Foundation.framework */; };
 		DBE8C39518A20F5400E2B304 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */; };
 		DBE8C39718A20F5400E2B304 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39618A20F5400E2B304 /* UIKit.framework */; };
@@ -79,6 +81,9 @@
 		DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorTableViewCell.h; sourceTree = "<group>"; };
 		DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorTableViewCell.m; sourceTree = "<group>"; };
 		DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ColorTableViewCell.xib; sourceTree = "<group>"; };
+		DBC3F3AA1A6E41BA00BD52B0 /* 新建.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "新建.png"; sourceTree = "<group>"; };
+		DBC3F3AD1A6E427E00BD52B0 /* UIView+Tools.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIView+Tools.h"; sourceTree = "<group>"; };
+		DBC3F3AE1A6E427E00BD52B0 /* UIView+Tools.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIView+Tools.m"; sourceTree = "<group>"; };
 		DBE8C38F18A20F5400E2B304 /* TouchColor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TouchColor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBE8C39218A20F5400E2B304 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
@@ -178,6 +183,15 @@
 			name = View;
 			sourceTree = "<group>";
 		};
+		DBC3F3AC1A6E427300BD52B0 /* Tools */ = {
+			isa = PBXGroup;
+			children = (
+				DBC3F3AD1A6E427E00BD52B0 /* UIView+Tools.h */,
+				DBC3F3AE1A6E427E00BD52B0 /* UIView+Tools.m */,
+			);
+			name = Tools;
+			sourceTree = "<group>";
+		};
 		DBE8C38618A20F5400E2B304 = {
 			isa = PBXGroup;
 			children = (
@@ -216,7 +230,9 @@
 		DBE8C39818A20F5400E2B304 /* ColorPicker */ = {
 			isa = PBXGroup;
 			children = (
+				DBC3F3AC1A6E427300BD52B0 /* Tools */,
 				DB7320BA18F00E7D0044C308 /* Images.xcassets */,
+				DBC3F3AA1A6E41BA00BD52B0 /* 新建.png */,
 				DBE8C3A118A20F5400E2B304 /* ColorAppDelegate.h */,
 				DBE8C3A218A20F5400E2B304 /* ColorAppDelegate.m */,
 				DB8C5C5D1A68E0DB00B4B2CA /* Main.storyboard */,
@@ -345,6 +361,7 @@
 				DBE8C39D18A20F5400E2B304 /* InfoPlist.strings in Resources */,
 				DB7320BB18F00E7D0044C308 /* Images.xcassets in Resources */,
 				DB8C5C5E1A68E0DB00B4B2CA /* Main.storyboard in Resources */,
+				DBC3F3AB1A6E41BA00BD52B0 /* 新建.png in Resources */,
 				DB8C5C631A68E8C600B4B2CA /* Launch Screen.xib in Resources */,
 				DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */,
 			);
@@ -410,6 +427,7 @@
 				DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */,
 				DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */,
 				DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */,
+				DBC3F3AF1A6E427E00BD52B0 /* UIView+Tools.m in Sources */,
 				DB8C5C611A68E72900B4B2CA /* ColorMainViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
