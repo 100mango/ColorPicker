@@ -18,13 +18,15 @@
 @interface ColorMainViewController ()<UIImagePickerControllerDelegate,UINavigationControllerDelegate,UITableViewDelegate,UITableViewDataSource>
 
 
+
+
+//选择取色区域
+@property (weak, nonatomic) IBOutlet UIButton *PickColorButton;
 @property (weak, nonatomic) IBOutlet NSLayoutConstraint *pickImageTopConstraint;
 @property (weak, nonatomic) IBOutlet UIVisualEffectView *pickImageArea;
 @property (weak, nonatomic) IBOutlet UIView *pickImageFromAlbumView;
 @property (weak, nonatomic) IBOutlet UIView *pickImageFromCameraView;
 @property (weak, nonatomic) IBOutlet UIView *pickColorFromRealTimeView;
-
-
 //被选中的图片
 @property (nonatomic,strong) UIImage *pickImage;
 //tableview
@@ -151,6 +153,7 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 - (void)closeButtonView
 {
     self.pickImageTopConstraint.constant = 0;
+    self.PickColorButton.selected = NO;
     [self.view layoutIfNeeded];
 }
 
