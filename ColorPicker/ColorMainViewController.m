@@ -45,7 +45,7 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     [self setupNavigationBar];
     [self setupButtonView];
     [self.recordTableView registerNib:[UINib nibWithNibName:@"ColorSingleColorCell" bundle:nil] forCellReuseIdentifier:colorSigleCellIdentifier];
-    
+    self.recordTableView.allowsSelection = NO;
 }
 
 - (void)viewWillAppear:(BOOL)animated

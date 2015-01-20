@@ -7,19 +7,12 @@
 //
 
 #import "ColorAppDelegate.h"
-#include "ColorEntranceViewController.h"
-#include "ColorRealTimeViewController.h"
 
 @implementation ColorAppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
-    /*
-    self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-    ColorEntranceViewController *entranceController = [[ColorEntranceViewController alloc]init];
-    self.window.rootViewController = entranceController;
-    [self.window makeKeyAndVisible];
-     */
+
     //magic 防止没有内容时 出现多余的separator
     [[UITableView appearance] setTableFooterView:[[UIView alloc] initWithFrame:CGRectZero]];
 

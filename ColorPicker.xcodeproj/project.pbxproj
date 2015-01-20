@@ -15,7 +15,6 @@
 		DB93B18418A9267F005238B0 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B18318A9267F005238B0 /* QuartzCore.framework */; };
 		DB93B18718A9C059005238B0 /* ColorImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18618A9C059005238B0 /* ColorImageView.m */; };
 		DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18918A9D536005238B0 /* ColorScrollView.m */; };
-		DB93B18D18AA0160005238B0 /* ColorEntranceViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18C18AA0160005238B0 /* ColorEntranceViewController.m */; };
 		DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */; };
 		DB93B19418AA1ED8005238B0 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B19318AA1ED8005238B0 /* AVFoundation.framework */; };
 		DB942D9C18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m in Sources */ = {isa = PBXBuildFile; fileRef = DB942D9B18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m */; };
@@ -65,8 +64,6 @@
 		DB93B18618A9C059005238B0 /* ColorImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorImageView.m; sourceTree = "<group>"; };
 		DB93B18818A9D536005238B0 /* ColorScrollView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorScrollView.h; sourceTree = "<group>"; };
 		DB93B18918A9D536005238B0 /* ColorScrollView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorScrollView.m; sourceTree = "<group>"; };
-		DB93B18B18AA0160005238B0 /* ColorEntranceViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorEntranceViewController.h; sourceTree = "<group>"; };
-		DB93B18C18AA0160005238B0 /* ColorEntranceViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorEntranceViewController.m; sourceTree = "<group>"; };
 		DB93B19018AA1352005238B0 /* ColorRealTimeViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorRealTimeViewController.h; sourceTree = "<group>"; };
 		DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorRealTimeViewController.m; sourceTree = "<group>"; };
 		DB93B19318AA1ED8005238B0 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -158,8 +155,6 @@
 			children = (
 				DBE8C3A718A20F5400E2B304 /* ColorViewController.h */,
 				DBE8C3A818A20F5400E2B304 /* ColorViewController.m */,
-				DB93B18B18AA0160005238B0 /* ColorEntranceViewController.h */,
-				DB93B18C18AA0160005238B0 /* ColorEntranceViewController.m */,
 				DB93B19018AA1352005238B0 /* ColorRealTimeViewController.h */,
 				DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */,
 				DB8C5C5F1A68E72900B4B2CA /* ColorMainViewController.h */,
@@ -424,7 +419,6 @@
 				DB93B18718A9C059005238B0 /* ColorImageView.m in Sources */,
 				DBE8C3A318A20F5400E2B304 /* ColorAppDelegate.m in Sources */,
 				DB9AE0D21A6E68C700E29EFF /* UIView+AnimationExtensions.m in Sources */,
-				DB93B18D18AA0160005238B0 /* ColorEntranceViewController.m in Sources */,
 				DB9AE0DB1A6E94BE00E29EFF /* ColorSingleColorCell.m in Sources */,
 				DBE8C39F18A20F5400E2B304 /* main.m in Sources */,
 				DB98544718C5DF5E00A4556E /* ColorCell.m in Sources */,
