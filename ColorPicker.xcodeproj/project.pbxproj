@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		919F8C10591B4FEC9C29849F /* libPods.a in Frameworks */ = {isa = PBXBuildFile; fileRef = ECA1429469F24160A189FA16 /* libPods.a */; };
-		DB7320BB18F00E7D0044C308 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DB7320BA18F00E7D0044C308 /* Images.xcassets */; };
 		DB8C5C5E1A68E0DB00B4B2CA /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DB8C5C5D1A68E0DB00B4B2CA /* Main.storyboard */; };
 		DB8C5C611A68E72900B4B2CA /* ColorMainViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB8C5C601A68E72900B4B2CA /* ColorMainViewController.m */; };
 		DB8C5C631A68E8C600B4B2CA /* Launch Screen.xib in Resources */ = {isa = PBXBuildFile; fileRef = DB8C5C621A68E8C600B4B2CA /* Launch Screen.xib */; };
@@ -27,6 +26,7 @@
 		DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */; };
 		DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */; };
 		DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */; };
+		DBD463141A6FE76800C29AFD /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DBD463131A6FE76800C29AFD /* Images.xcassets */; };
 		DBE8C39318A20F5400E2B304 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39218A20F5400E2B304 /* Foundation.framework */; };
 		DBE8C39518A20F5400E2B304 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */; };
 		DBE8C39718A20F5400E2B304 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBE8C39618A20F5400E2B304 /* UIKit.framework */; };
@@ -54,7 +54,6 @@
 /* Begin PBXFileReference section */
 		869745FFE178D5DA597F4B90 /* Pods.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Pods.debug.xcconfig; path = "Pods/Target Support Files/Pods/Pods.debug.xcconfig"; sourceTree = "<group>"; };
 		B4FEEDA0039CCE82D5EAFCC3 /* Pods.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Pods.release.xcconfig; path = "Pods/Target Support Files/Pods/Pods.release.xcconfig"; sourceTree = "<group>"; };
-		DB7320BA18F00E7D0044C308 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
 		DB8C5C5D1A68E0DB00B4B2CA /* Main.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; path = Main.storyboard; sourceTree = "<group>"; };
 		DB8C5C5F1A68E72900B4B2CA /* ColorMainViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorMainViewController.h; sourceTree = "<group>"; };
 		DB8C5C601A68E72900B4B2CA /* ColorMainViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorMainViewController.m; sourceTree = "<group>"; };
@@ -84,6 +83,7 @@
 		DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorTableViewCell.h; sourceTree = "<group>"; };
 		DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorTableViewCell.m; sourceTree = "<group>"; };
 		DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ColorTableViewCell.xib; sourceTree = "<group>"; };
+		DBD463131A6FE76800C29AFD /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
 		DBE8C38F18A20F5400E2B304 /* TouchColor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TouchColor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBE8C39218A20F5400E2B304 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
@@ -234,11 +234,11 @@
 			isa = PBXGroup;
 			children = (
 				DBC3F3AC1A6E427300BD52B0 /* Tools */,
-				DB7320BA18F00E7D0044C308 /* Images.xcassets */,
 				DBE8C3A118A20F5400E2B304 /* ColorAppDelegate.h */,
 				DBE8C3A218A20F5400E2B304 /* ColorAppDelegate.m */,
 				DB8C5C5D1A68E0DB00B4B2CA /* Main.storyboard */,
 				DB8C5C621A68E8C600B4B2CA /* Launch Screen.xib */,
+				DBD463131A6FE76800C29AFD /* Images.xcassets */,
 				DB93B18E18AA116A005238B0 /* Controller */,
 				DB93B18F18AA12A9005238B0 /* View */,
 				DB7320BC18F00FF10044C308 /* Category */,
@@ -360,8 +360,8 @@
 			files = (
 				DBE8C39D18A20F5400E2B304 /* InfoPlist.strings in Resources */,
 				DB9AE0DC1A6E94BE00E29EFF /* ColorSingleColorCell.xib in Resources */,
-				DB7320BB18F00E7D0044C308 /* Images.xcassets in Resources */,
 				DB8C5C5E1A68E0DB00B4B2CA /* Main.storyboard in Resources */,
+				DBD463141A6FE76800C29AFD /* Images.xcassets in Resources */,
 				DB8C5C631A68E8C600B4B2CA /* Launch Screen.xib in Resources */,
 				DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */,
 			);

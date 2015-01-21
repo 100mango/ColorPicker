@@ -617,6 +617,6 @@
         <image name="icon2x1" width="46" height="46"/>
         <image name="icon3x1" width="46" height="46"/>
         <image name="plus" width="20" height="20"/>
-        <image name="tableViewPlaceHolder" width="640" height="640"/>
+        <image name="tableViewPlaceHolder" width="196" height="239"/>
     </resources>
 </document>
