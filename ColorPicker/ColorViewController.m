@@ -27,6 +27,8 @@
 @property (weak, nonatomic) IBOutlet UIView *scrollViewSizeView;
 @property (weak, nonatomic) IBOutlet UIButton *saveButton;
 
+@property (weak, nonatomic) IBOutlet UIView *bottomBar;
+
 @end
 
 @implementation ColorViewController
@@ -46,6 +48,8 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    
+    DLog(@"%@",self.bottomBar);
     
     //setup view
     [self setupBackgroud];

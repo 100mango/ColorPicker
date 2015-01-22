@@ -51,6 +51,9 @@
                                     <outlet property="delegate" destination="c3D-kC-Bm6" id="YFC-gI-OHD"/>
                                 </connections>
                             </tableView>
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="reminder" translatesAutoresizingMaskIntoConstraints="NO" id="jIa-UO-XjD" userLabel="reminder">
+                                <rect key="frame" x="209" y="488" width="182" height="60"/>
+                            </imageView>
                             <imageView hidden="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="tableViewPlaceHolder" translatesAutoresizingMaskIntoConstraints="NO" id="2aE-x8-NkX" userLabel="tableViewPlaceHolder">
                                 <rect key="frame" x="202" y="181" width="196" height="239"/>
                             </imageView>
@@ -273,6 +276,8 @@
                             <constraint firstAttribute="centerX" secondItem="PmZ-v2-N8B" secondAttribute="centerX" id="SSg-aH-CU3"/>
                             <constraint firstItem="WOl-9a-92k" firstAttribute="leading" secondItem="Cn0-Yd-eZ5" secondAttribute="leading" id="UBW-Ga-Tmz"/>
                             <constraint firstAttribute="trailing" secondItem="WOl-9a-92k" secondAttribute="trailing" id="cmv-nh-HPq"/>
+                            <constraint firstAttribute="centerX" secondItem="jIa-UO-XjD" secondAttribute="centerX" id="f6e-mP-MuL"/>
+                            <constraint firstItem="vCS-qA-bYw" firstAttribute="top" secondItem="jIa-UO-XjD" secondAttribute="bottom" constant="8" id="fwc-23-ao4"/>
                             <constraint firstItem="LGY-Up-bYB" firstAttribute="top" secondItem="WOl-9a-92k" secondAttribute="bottom" id="g7f-f2-u3U"/>
                             <constraint firstAttribute="centerX" secondItem="2aE-x8-NkX" secondAttribute="centerX" id="njY-QI-W0Q"/>
                             <constraint firstItem="PmZ-v2-N8B" firstAttribute="top" secondItem="LGY-Up-bYB" secondAttribute="bottom" id="oae-v9-nY7"/>
@@ -286,6 +291,7 @@
                     <navigationItem key="navigationItem" id="pZ6-I6-A9w"/>
                     <connections>
                         <outlet property="PickColorButton" destination="rlY-95-qnd" id="DO8-hZ-4Xl"/>
+                        <outlet property="addColorReminder" destination="jIa-UO-XjD" id="oaz-ec-aPP"/>
                         <outlet property="pickColorFromRealTimeView" destination="8DF-zO-owa" id="b1W-9u-qco"/>
                         <outlet property="pickImageArea" destination="PmZ-v2-N8B" id="rjc-BD-ywZ"/>
                         <outlet property="pickImageFromAlbumView" destination="mKV-l5-iTh" id="R8J-EG-5ey"/>
@@ -315,6 +321,14 @@
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="AsZ-sa-wyA" userLabel="scrollViewContent">
                                 <rect key="frame" x="0.0" y="64" width="600" height="446"/>
                                 <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                                <constraints>
+                                    <constraint firstAttribute="height" relation="greaterThanOrEqual" priority="750" constant="446" id="BSu-fv-jDJ"/>
+                                </constraints>
+                                <variation key="default">
+                                    <mask key="constraints">
+                                        <exclude reference="BSu-fv-jDJ"/>
+                                    </mask>
+                                </variation>
                             </view>
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="mZ7-2O-FXW" userLabel="取色信息">
                                 <rect key="frame" x="0.0" y="510" width="600" height="90"/>
@@ -523,6 +537,7 @@
                         <constraints>
                             <constraint firstItem="AsZ-sa-wyA" firstAttribute="top" secondItem="2E8-Q3-Upc" secondAttribute="bottom" id="3jN-Qr-Vdh"/>
                             <constraint firstItem="mZ7-2O-FXW" firstAttribute="leading" secondItem="1WV-fX-6Fv" secondAttribute="leading" id="7g3-Z0-Dg1"/>
+                            <constraint firstItem="mZ7-2O-FXW" firstAttribute="top" secondItem="AsZ-sa-wyA" secondAttribute="bottom" id="DiB-HS-h7I"/>
                             <constraint firstItem="mZ7-2O-FXW" firstAttribute="top" secondItem="AsZ-sa-wyA" secondAttribute="bottom" constant="20" id="MF9-X0-Bkt">
                                 <variation key="heightClass=regular-widthClass=compact" constant="0.0"/>
                             </constraint>
@@ -539,11 +554,14 @@
                             <mask key="constraints">
                                 <exclude reference="rbr-uh-ScH"/>
                                 <exclude reference="MF9-X0-Bkt"/>
+                                <exclude reference="X7W-zf-Vnd"/>
+                                <exclude reference="o1m-hP-wTw"/>
                                 <exclude reference="PW2-nu-HKb"/>
                             </mask>
                         </variation>
                         <variation key="heightClass=regular-widthClass=compact">
                             <mask key="constraints">
+                                <exclude reference="DiB-HS-h7I"/>
                                 <include reference="MF9-X0-Bkt"/>
                                 <exclude reference="o1m-hP-wTw"/>
                                 <exclude reference="PW2-nu-HKb"/>
@@ -552,6 +570,7 @@
                     </view>
                     <connections>
                         <outlet property="blue" destination="sZg-OH-FxK" id="MLq-wl-Sua"/>
+                        <outlet property="bottomBar" destination="mZ7-2O-FXW" id="c8P-xE-iQT"/>
                         <outlet property="green" destination="JzV-tE-xIH" id="nUw-Pb-rqQ"/>
                         <outlet property="hexRGB" destination="nJV-r6-kJY" id="QRy-i8-lMi"/>
                         <outlet property="red" destination="4xG-Zc-AiD" id="zlC-0F-W6U"/>
@@ -625,6 +644,7 @@
         <image name="icon2x1" width="46" height="46"/>
         <image name="icon3x1" width="46" height="46"/>
         <image name="plus" width="20" height="20"/>
+        <image name="reminder" width="182" height="60"/>
         <image name="tableViewPlaceHolder" width="196" height="239"/>
     </resources>
 </document>

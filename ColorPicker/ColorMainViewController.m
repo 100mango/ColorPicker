@@ -33,6 +33,7 @@
 @property (weak, nonatomic) IBOutlet UITableView *recordTableView;
 @property (strong,nonatomic) NSMutableArray *colorArray;
 @property (weak, nonatomic) IBOutlet UIImageView *tableViewPlaceHolder;
+@property (weak, nonatomic) IBOutlet UIImageView *addColorReminder;
 
 @end
 
@@ -62,17 +63,7 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
     self.colorArray = [[defaults arrayForKey:@"colorArray"] mutableCopy];
     [self.recordTableView reloadData];
-    /*
-    //检测是否需要tableViewPlaceHolder
-    if (self.colorArray == nil || self.colorArray.count == 0)
-    {
-        self.tableViewPlaceHolder.hidden = NO;
-    }
-    else
-    {
-        self.tableViewPlaceHolder.hidden = YES;
-    }
-     */
+
 }
 
 - (void)didReceiveMemoryWarning {
@@ -214,14 +205,16 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    //检测是否需要tableViewPlaceHolder
+    //检测是否需要tableViewPlaceHolder和Reminder
     if (self.colorArray == nil || self.colorArray.count == 0)
     {
         self.tableViewPlaceHolder.hidden = NO;
+        self.addColorReminder.hidden = NO;
     }
     else
     {
         self.tableViewPlaceHolder.hidden = YES;
+        self.addColorReminder.hidden = YES;
     }
     
     //返回需要显示的行数
