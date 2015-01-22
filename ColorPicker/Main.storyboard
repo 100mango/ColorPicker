@@ -51,7 +51,7 @@
                                     <outlet property="delegate" destination="c3D-kC-Bm6" id="YFC-gI-OHD"/>
                                 </connections>
                             </tableView>
-                            <imageView hidden="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="tableViewPlaceHolder" translatesAutoresizingMaskIntoConstraints="NO" id="2aE-x8-NkX" userLabel="tableViewPlaceHolder">
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" misplaced="YES" image="tableViewPlaceHolder" translatesAutoresizingMaskIntoConstraints="NO" id="2aE-x8-NkX" userLabel="tableViewPlaceHolder">
                                 <rect key="frame" x="-20" y="-20" width="640" height="640"/>
                             </imageView>
                             <visualEffectView opaque="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="PmZ-v2-N8B" userLabel="添加颜色菜单">
@@ -285,6 +285,7 @@
                         <outlet property="pickImageFromCameraView" destination="Vos-ky-luL" id="bGD-fz-wL4"/>
                         <outlet property="pickImageTopConstraint" destination="oae-v9-nY7" id="gjX-xW-MhL"/>
                         <outlet property="recordTableView" destination="LGY-Up-bYB" id="Leo-Vq-tfl"/>
+                        <outlet property="tableViewPlaceHolder" destination="2aE-x8-NkX" id="fWB-wu-2mq"/>
                         <segue destination="7cd-DP-vP2" kind="show" identifier="showColorViewController" id="It2-AC-j31"/>
                     </connections>
                 </viewController>

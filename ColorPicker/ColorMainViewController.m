@@ -32,6 +32,7 @@
 //tableview
 @property (weak, nonatomic) IBOutlet UITableView *recordTableView;
 @property (strong,nonatomic) NSMutableArray *colorArray;
+@property (weak, nonatomic) IBOutlet UIImageView *tableViewPlaceHolder;
 
 @end
 
@@ -46,8 +47,11 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     //setup view
     [self setupNavigationBar];
     [self setupButtonView];
+    
     [self.recordTableView registerNib:[UINib nibWithNibName:@"ColorSingleColorCell" bundle:nil] forCellReuseIdentifier:colorSigleCellIdentifier];
     self.recordTableView.allowsSelection = NO;
+    self.recordTableView.estimatedRowHeight = 44;
+    self.recordTableView.rowHeight = UITableViewAutomaticDimension;
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -58,6 +62,17 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
     self.colorArray = [[defaults arrayForKey:@"colorArray"] mutableCopy];
     [self.recordTableView reloadData];
+    /*
+    //检测是否需要tableViewPlaceHolder
+    if (self.colorArray == nil || self.colorArray.count == 0)
+    {
+        self.tableViewPlaceHolder.hidden = NO;
+    }
+    else
+    {
+        self.tableViewPlaceHolder.hidden = YES;
+    }
+     */
 }
 
 - (void)didReceiveMemoryWarning {
@@ -197,6 +212,16 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 -(NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
+    //检测是否需要tableViewPlaceHolder
+    if (self.colorArray == nil || self.colorArray.count == 0)
+    {
+        self.tableViewPlaceHolder.hidden = NO;
+    }
+    else
+    {
+        self.tableViewPlaceHolder.hidden = YES;
+    }
+    
     //返回需要显示的行数
     return [self.colorArray count];
 }
@@ -227,11 +252,6 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 }
 
 #pragma mark -tableview delegate
-
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    return 82;
-}
 
 // 返回cell editing的样式
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath
