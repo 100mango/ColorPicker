@@ -51,8 +51,8 @@
                                     <outlet property="delegate" destination="c3D-kC-Bm6" id="YFC-gI-OHD"/>
                                 </connections>
                             </tableView>
-                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" misplaced="YES" image="tableViewPlaceHolder" translatesAutoresizingMaskIntoConstraints="NO" id="2aE-x8-NkX" userLabel="tableViewPlaceHolder">
-                                <rect key="frame" x="-20" y="-20" width="640" height="640"/>
+                            <imageView hidden="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="tableViewPlaceHolder" translatesAutoresizingMaskIntoConstraints="NO" id="2aE-x8-NkX" userLabel="tableViewPlaceHolder">
+                                <rect key="frame" x="202" y="181" width="196" height="239"/>
                             </imageView>
                             <visualEffectView opaque="NO" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="PmZ-v2-N8B" userLabel="添加颜色菜单">
                                 <rect key="frame" x="0.0" y="556" width="600" height="448"/>
@@ -61,7 +61,7 @@
                                     <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                     <subviews>
                                         <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="mKV-l5-iTh" userLabel="照片取色">
-                                            <rect key="frame" x="0.0" y="40" width="600" height="80"/>
+                                            <rect key="frame" x="0.0" y="104" width="600" height="80"/>
                                             <subviews>
                                                 <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="icon1x1" translatesAutoresizingMaskIntoConstraints="NO" id="QMG-aH-p0a">
                                                     <rect key="frame" x="224" y="17" width="46" height="46"/>
@@ -102,7 +102,7 @@
                                             </variation>
                                         </view>
                                         <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="Vos-ky-luL" userLabel="图片取色">
-                                            <rect key="frame" x="0.0" y="120" width="600" height="80"/>
+                                            <rect key="frame" x="0.0" y="184" width="600" height="80"/>
                                             <subviews>
                                                 <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="icon2x1" translatesAutoresizingMaskIntoConstraints="NO" id="JGd-9M-prN">
                                                     <rect key="frame" x="224" y="17" width="46" height="46"/>
@@ -142,7 +142,7 @@
                                             </variation>
                                         </view>
                                         <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="8DF-zO-owa" userLabel="实时取色">
-                                            <rect key="frame" x="0.0" y="200" width="600" height="80"/>
+                                            <rect key="frame" x="0.0" y="264" width="600" height="80"/>
                                             <subviews>
                                                 <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="icon3x1" translatesAutoresizingMaskIntoConstraints="NO" id="Xh5-VO-bpB">
                                                     <rect key="frame" x="224" y="17" width="46" height="46"/>
@@ -185,6 +185,8 @@
                                     <constraints>
                                         <constraint firstItem="mKV-l5-iTh" firstAttribute="top" secondItem="5GC-Gb-K0F" secondAttribute="top" constant="40" id="4kN-p4-ng0"/>
                                         <constraint firstItem="8DF-zO-owa" firstAttribute="leading" secondItem="mKV-l5-iTh" secondAttribute="leading" id="6re-0M-LMk"/>
+                                        <constraint firstAttribute="centerY" secondItem="Vos-ky-luL" secondAttribute="centerY" id="91M-12-62m"/>
+                                        <constraint firstAttribute="centerX" secondItem="Vos-ky-luL" secondAttribute="centerX" id="9Qr-RI-XVu"/>
                                         <constraint firstItem="8DF-zO-owa" firstAttribute="height" secondItem="mKV-l5-iTh" secondAttribute="height" id="Dzk-8G-FrH"/>
                                         <constraint firstItem="8DF-zO-owa" firstAttribute="height" secondItem="Vos-ky-luL" secondAttribute="height" id="Irf-46-d4W"/>
                                         <constraint firstAttribute="bottom" secondItem="8DF-zO-owa" secondAttribute="bottom" id="KnK-CC-3Tf"/>
@@ -198,6 +200,7 @@
                                     </constraints>
                                     <variation key="default">
                                         <mask key="constraints">
+                                            <exclude reference="4kN-p4-ng0"/>
                                             <exclude reference="KnK-CC-3Tf"/>
                                         </mask>
                                     </variation>
@@ -208,7 +211,7 @@
                                 <rect key="frame" x="0.0" y="556" width="600" height="44"/>
                                 <subviews>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="rlY-95-qnd" userLabel="添加颜色按钮">
-                                        <rect key="frame" x="280" y="2" width="40" height="40"/>
+                                        <rect key="frame" x="0.0" y="2" width="600" height="40"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="40" id="4IJ-PM-2gH"/>
                                             <constraint firstAttribute="height" constant="40" id="OIq-64-nl0"/>
@@ -222,10 +225,12 @@
                                             <mask key="constraints">
                                                 <exclude reference="4IJ-PM-2gH"/>
                                                 <exclude reference="Pcu-2q-ZSt"/>
+                                                <exclude reference="zfR-dr-ZHJ"/>
                                             </mask>
                                         </variation>
                                         <variation key="heightClass=regular-widthClass=compact">
                                             <mask key="constraints">
+                                                <exclude reference="OIq-64-nl0"/>
                                                 <exclude reference="zfR-dr-ZHJ"/>
                                             </mask>
                                         </variation>
@@ -237,6 +242,8 @@
                                 <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstAttribute="centerY" secondItem="rlY-95-qnd" secondAttribute="centerY" id="4b6-5b-IK4"/>
+                                    <constraint firstAttribute="trailing" secondItem="rlY-95-qnd" secondAttribute="trailing" id="4bg-zU-OSD"/>
+                                    <constraint firstItem="rlY-95-qnd" firstAttribute="leading" secondItem="vCS-qA-bYw" secondAttribute="leading" id="PFf-1L-Au9"/>
                                     <constraint firstItem="rlY-95-qnd" firstAttribute="leading" secondItem="vCS-qA-bYw" secondAttribute="leading" id="TQc-ng-8fN"/>
                                     <constraint firstAttribute="centerX" secondItem="rlY-95-qnd" secondAttribute="centerX" id="b0R-dC-SbI"/>
                                     <constraint firstAttribute="trailing" secondItem="rlY-95-qnd" secondAttribute="trailing" id="iIQ-jf-Qai"/>
@@ -250,8 +257,8 @@
                                 </variation>
                                 <variation key="heightClass=regular-widthClass=compact">
                                     <mask key="constraints">
-                                        <include reference="TQc-ng-8fN"/>
-                                        <include reference="iIQ-jf-Qai"/>
+                                        <exclude reference="TQc-ng-8fN"/>
+                                        <exclude reference="iIQ-jf-Qai"/>
                                     </mask>
                                 </variation>
                             </view>

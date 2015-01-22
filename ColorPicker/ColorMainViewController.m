@@ -97,9 +97,12 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 - (void)setupButtonView
 {
+    //[self.pickImageFromAlbumView addBottomBorderWithColor:[UIColor colorWithRed:209/255.0 green:209/255.0 blue:209/255.0 alpha:1] andWidth:1];
+    //[self.pickImageFromCameraView addBottomBorderWithColor:[UIColor colorWithRed:209/255.0 green:209/255.0 blue:209/255.0 alpha:1] andWidth:1];
+    //[self.pickColorFromRealTimeView addBottomBorderWithColor:[UIColor colorWithRed:209/255.0 green:209/255.0 blue:209/255.0 alpha:1] andWidth:1];
+    
     [self.pickImageFromAlbumView touchEndedBlock:^(UIView *selfView)
      {
-         DLog(@"touch album view");
          //检查有无照相机
          if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypePhotoLibrary] == NO
              )
@@ -178,7 +181,6 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     {
         sender.selected = YES;
         [sender rotateViewWithAngle:M_PI/8 andDuration:0.3];
-        
         self.pickImageTopConstraint.constant = -self.recordTableView.frame.size.height;
         [UIView animateWithDuration:0.3 animations:^{
             [self.view layoutIfNeeded];
