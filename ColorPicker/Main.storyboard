@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="6254" systemVersion="14B25" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" initialViewController="JDh-ul-XDh">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="6254" systemVersion="14C109" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" initialViewController="JDh-ul-XDh">
     <dependencies>
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="6247"/>
         <capability name="Aspect ratio constraints" minToolsVersion="5.1"/>
@@ -51,7 +51,7 @@
                                     <outlet property="delegate" destination="c3D-kC-Bm6" id="YFC-gI-OHD"/>
                                 </connections>
                             </tableView>
-                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="reminder" translatesAutoresizingMaskIntoConstraints="NO" id="jIa-UO-XjD" userLabel="reminder">
+                            <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" misplaced="YES" image="reminder" translatesAutoresizingMaskIntoConstraints="NO" id="jIa-UO-XjD" userLabel="reminder">
                                 <rect key="frame" x="209" y="488" width="182" height="60"/>
                             </imageView>
                             <imageView hidden="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="tableViewPlaceHolder" translatesAutoresizingMaskIntoConstraints="NO" id="2aE-x8-NkX" userLabel="tableViewPlaceHolder">
@@ -581,40 +581,6 @@
                 <placeholder placeholderIdentifier="IBFirstResponder" id="zm0-F3-Cgz" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
             <point key="canvasLocation" x="2124" y="-469.5"/>
-        </scene>
-        <!--Color Real Time View Controller-->
-        <scene sceneID="OkF-D2-1dW">
-            <objects>
-                <viewController id="imP-eF-7VW" customClass="ColorRealTimeViewController" sceneMemberID="viewController">
-                    <layoutGuides>
-                        <viewControllerLayoutGuide type="top" id="HNt-fk-OXl"/>
-                        <viewControllerLayoutGuide type="bottom" id="EEU-00-7Lu"/>
-                    </layoutGuides>
-                    <view key="view" contentMode="scaleToFill" id="r87-Vt-hF8">
-                        <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
-                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-                        <subviews>
-                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="wiy-2J-2WF" customClass="GPUImageView">
-                                <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
-                                <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
-                            </view>
-                        </subviews>
-                        <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
-                        <constraints>
-                            <constraint firstItem="wiy-2J-2WF" firstAttribute="leading" secondItem="r87-Vt-hF8" secondAttribute="leading" id="9Wl-Sp-o3v"/>
-                            <constraint firstAttribute="trailing" secondItem="wiy-2J-2WF" secondAttribute="trailing" id="VwR-yW-2x8"/>
-                            <constraint firstItem="EEU-00-7Lu" firstAttribute="top" secondItem="wiy-2J-2WF" secondAttribute="bottom" id="YBy-29-WV9"/>
-                            <constraint firstItem="wiy-2J-2WF" firstAttribute="top" secondItem="r87-Vt-hF8" secondAttribute="top" id="qUu-yk-3bk"/>
-                        </constraints>
-                    </view>
-                    <nil key="simulatedTopBarMetrics"/>
-                    <connections>
-                        <outlet property="VideoView" destination="wiy-2J-2WF" id="FW8-Ow-PVS"/>
-                    </connections>
-                </viewController>
-                <placeholder placeholderIdentifier="IBFirstResponder" id="5vv-5g-pcS" userLabel="First Responder" sceneMemberID="firstResponder"/>
-            </objects>
-            <point key="canvasLocation" x="1954" y="628"/>
         </scene>
         <!--Navigation Controller-->
         <scene sceneID="WH4-O1-W5Q">

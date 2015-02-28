@@ -17,7 +17,6 @@
 		DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */; };
 		DB93B19418AA1ED8005238B0 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B19318AA1ED8005238B0 /* AVFoundation.framework */; };
 		DB942D9C18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m in Sources */ = {isa = PBXBuildFile; fileRef = DB942D9B18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m */; };
-		DB98544718C5DF5E00A4556E /* ColorCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DB98544618C5DF5E00A4556E /* ColorCell.m */; };
 		DB9AE0D21A6E68C700E29EFF /* UIView+AnimationExtensions.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9AE0D11A6E68C700E29EFF /* UIView+AnimationExtensions.m */; };
 		DB9AE0D51A6E68E900E29EFF /* UIView+Tools.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9AE0D41A6E68E900E29EFF /* UIView+Tools.m */; };
 		DB9AE0DB1A6E94BE00E29EFF /* ColorSingleColorCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9AE0D91A6E94BE00E29EFF /* ColorSingleColorCell.m */; };
@@ -68,8 +67,6 @@
 		DB93B19318AA1ED8005238B0 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		DB942D9A18ED4E2F009DDD0E /* UIImagePickerController+StausBar.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIImagePickerController+StausBar.h"; sourceTree = "<group>"; };
 		DB942D9B18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIImagePickerController+StausBar.m"; sourceTree = "<group>"; };
-		DB98544518C5DF5E00A4556E /* ColorCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorCell.h; sourceTree = "<group>"; };
-		DB98544618C5DF5E00A4556E /* ColorCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorCell.m; sourceTree = "<group>"; };
 		DB9AE0D01A6E68C700E29EFF /* UIView+AnimationExtensions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIView+AnimationExtensions.h"; sourceTree = "<group>"; };
 		DB9AE0D11A6E68C700E29EFF /* UIView+AnimationExtensions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIView+AnimationExtensions.m"; sourceTree = "<group>"; };
 		DB9AE0D31A6E68E900E29EFF /* UIView+Tools.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIView+Tools.h"; sourceTree = "<group>"; };
@@ -172,8 +169,6 @@
 				DB93B18618A9C059005238B0 /* ColorImageView.m */,
 				DB9D3BC918B733210033ACDA /* ColorPickerImageView.h */,
 				DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */,
-				DB98544518C5DF5E00A4556E /* ColorCell.h */,
-				DB98544618C5DF5E00A4556E /* ColorCell.m */,
 				DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */,
 				DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */,
 				DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */,
@@ -421,7 +416,6 @@
 				DB9AE0D21A6E68C700E29EFF /* UIView+AnimationExtensions.m in Sources */,
 				DB9AE0DB1A6E94BE00E29EFF /* ColorSingleColorCell.m in Sources */,
 				DBE8C39F18A20F5400E2B304 /* main.m in Sources */,
-				DB98544718C5DF5E00A4556E /* ColorCell.m in Sources */,
 				DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */,
 				DBE8C3A918A20F5400E2B304 /* ColorViewController.m in Sources */,
 				DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */,

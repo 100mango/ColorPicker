@@ -9,7 +9,6 @@
 #import "ColorMainViewController.h"
 
 //view
-#import "ColorCell.h"
 #import "UIView+Tools.h"
 #import "ColorSingleColorCell.h"
 
