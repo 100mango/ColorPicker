@@ -73,6 +73,11 @@
 }
 
 
+- (void)setFrame:(CGRect)frame
+{
+    [super setFrame:frame];
+    self.imageView.frame = frame;
+}
 
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
 {
