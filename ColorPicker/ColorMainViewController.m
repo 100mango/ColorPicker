@@ -155,7 +155,7 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
         else
         {
             self.addColorButton.selected = NO;
-            [self.addColorButton rotateViewWithAngle:0 andDuration:0.3];
+            [self.addColorButton rotateViewWithAngle:-M_PI/4*3 andDuration:0.3];
             self.pickImageTopConstraint.constant = 0;
             [UIView animateWithDuration:0.3 animations:^{
                 [self.view layoutIfNeeded];
@@ -194,9 +194,9 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 - (IBAction)pickNewColor:(UIButton *)sender
 {
-    if (sender.selected == NO)
+    if (self.addColorButton.selected == NO)
     {
-        sender.selected = YES;
+        self.addColorButton.selected = YES;
         [self.addColorButton rotateViewWithAngle:M_PI/4*3 andDuration:0.3];
         self.pickImageTopConstraint.constant = -self.recordTableView.frame.size.height;
         [UIView animateWithDuration:0.3 animations:^{
@@ -205,8 +205,8 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     }
     else
     {
-        sender.selected = NO;
-        [self.addColorButton rotateViewWithAngle:0 andDuration:0.3];
+        self.addColorButton.selected = NO;
+        [self.addColorButton rotateViewWithAngle:-M_PI/4*3 andDuration:0.3];
         self.pickImageTopConstraint.constant = 0;
         [UIView animateWithDuration:0.3 animations:^{
             [self.view layoutIfNeeded];
