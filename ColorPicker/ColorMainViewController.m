@@ -18,7 +18,9 @@
 
 
 
-
+//点击开始取色区域
+@property (weak, nonatomic) IBOutlet UIView *bottomBar;
+@property (weak, nonatomic) IBOutlet UIButton *addColorButton;
 //选择取色区域
 @property (weak, nonatomic) IBOutlet UIButton *PickColorButton;
 @property (weak, nonatomic) IBOutlet NSLayoutConstraint *pickImageTopConstraint;
@@ -47,6 +49,7 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     //setup view
     [self setupNavigationBar];
     [self setupButtonView];
+    [self setupBottomBar];
     
     [self.recordTableView registerNib:[UINib nibWithNibName:@"ColorSingleColorCell" bundle:nil] forCellReuseIdentifier:colorSigleCellIdentifier];
     self.recordTableView.allowsSelection = NO;
@@ -133,6 +136,31 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
             imagePicker.delegate = self;
             [self presentViewController:imagePicker animated:YES completion:nil];
             [self closeButtonView];
+        }
+    }];
+}
+
+- (void)setupBottomBar
+{
+    [self.bottomBar touchEndedBlock:^(UIView *selfView) {
+        if (self.addColorButton.selected == NO)
+        {
+            self.addColorButton.selected = YES;
+            [self.addColorButton rotateViewWithAngle:M_PI/8 andDuration:0.3];
+            self.pickImageTopConstraint.constant = -self.recordTableView.frame.size.height;
+            [UIView animateWithDuration:0.3 animations:^{
+                [self.view layoutIfNeeded];
+            }];
+        }
+        else
+        {
+            self.addColorButton.selected = NO;
+            [self.addColorButton rotateViewWithAngle:-M_PI/8 andDuration:0.3];
+            
+            self.pickImageTopConstraint.constant = 0;
+            [UIView animateWithDuration:0.3 animations:^{
+                [self.view layoutIfNeeded];
+            }];
         }
     }];
 }
