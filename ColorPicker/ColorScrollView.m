@@ -16,28 +16,6 @@
 
 @implementation ColorScrollView
 
-/*
-- (void)awakeFromNib
-{
-    [super awakeFromNib];
-    
-    
-    //初始化背景颜色
-    self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
-    
-    //初始化要放大的Imageview
-    _imageView = [[ColorImageView alloc]initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)];
-    [self addSubview:self.imageView];
-
-    //初始取色器
-    _pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
-    self.pickerView.exclusiveTouch = YES;
-    self.pickerView.userInteractionEnabled = YES;
-    self.pickerView.hidden = YES;
-    [self addSubview:self.pickerView];
- 
-}
- */
 
 - (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage *)image
 {
@@ -57,8 +35,8 @@
         self.imageView.image = image;
         [self addSubview:self.imageView];
         
-        DLog(@"%@",self);
-        DLog(@"%@",self.imageView);
+        //DLog(@"%@",self);
+        //DLog(@"%@",self.imageView);
         
         //初始取色器
         _pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
@@ -80,7 +58,7 @@
 
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
 {
-    //更像点击后的取色器坐标
+    //更新点击后的取色器坐标
     UITouch *touch = [[event allTouches]anyObject];
     CGPoint point = [touch locationInView:self];
     self.pickerView.center = point;
