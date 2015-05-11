@@ -22,7 +22,6 @@
 		DB9AE0DB1A6E94BE00E29EFF /* ColorSingleColorCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9AE0D91A6E94BE00E29EFF /* ColorSingleColorCell.m */; };
 		DB9AE0DC1A6E94BE00E29EFF /* ColorSingleColorCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = DB9AE0DA1A6E94BE00E29EFF /* ColorSingleColorCell.xib */; };
 		DB9D173018ABBF74009963BC /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB9D172F18ABBF74009963BC /* CoreMedia.framework */; };
-		DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */; };
 		DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */; };
 		DBBE9C761A6A4E1000ABA620 /* ColorTableViewCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */; };
 		DBD463141A6FE76800C29AFD /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DBD463131A6FE76800C29AFD /* Images.xcassets */; };
@@ -75,8 +74,6 @@
 		DB9AE0D91A6E94BE00E29EFF /* ColorSingleColorCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorSingleColorCell.m; sourceTree = "<group>"; };
 		DB9AE0DA1A6E94BE00E29EFF /* ColorSingleColorCell.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ColorSingleColorCell.xib; sourceTree = "<group>"; };
 		DB9D172F18ABBF74009963BC /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
-		DB9D3BC918B733210033ACDA /* ColorPickerImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorPickerImageView.h; sourceTree = "<group>"; };
-		DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorPickerImageView.m; sourceTree = "<group>"; };
 		DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorTableViewCell.h; sourceTree = "<group>"; };
 		DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorTableViewCell.m; sourceTree = "<group>"; };
 		DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ColorTableViewCell.xib; sourceTree = "<group>"; };
@@ -167,8 +164,6 @@
 				DB93B18918A9D536005238B0 /* ColorScrollView.m */,
 				DB93B18518A9C059005238B0 /* ColorImageView.h */,
 				DB93B18618A9C059005238B0 /* ColorImageView.m */,
-				DB9D3BC918B733210033ACDA /* ColorPickerImageView.h */,
-				DB9D3BCA18B733210033ACDA /* ColorPickerImageView.m */,
 				DBBE9C721A6A4E1000ABA620 /* ColorTableViewCell.h */,
 				DBBE9C731A6A4E1000ABA620 /* ColorTableViewCell.m */,
 				DBBE9C741A6A4E1000ABA620 /* ColorTableViewCell.xib */,
@@ -416,7 +411,6 @@
 				DB9AE0D21A6E68C700E29EFF /* UIView+AnimationExtensions.m in Sources */,
 				DB9AE0DB1A6E94BE00E29EFF /* ColorSingleColorCell.m in Sources */,
 				DBE8C39F18A20F5400E2B304 /* main.m in Sources */,
-				DB9D3BCB18B733210033ACDA /* ColorPickerImageView.m in Sources */,
 				DBE8C3A918A20F5400E2B304 /* ColorViewController.m in Sources */,
 				DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */,
 				DBBE9C751A6A4E1000ABA620 /* ColorTableViewCell.m in Sources */,

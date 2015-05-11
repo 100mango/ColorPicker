@@ -13,7 +13,6 @@
 #import "UIView+Tools.h"
 #import "ColorImageView.h"
 #import "ColorScrollView.h"
-#import "ColorPickerImageView.h"
 
 @interface ColorViewController ()<UIScrollViewDelegate>
 
