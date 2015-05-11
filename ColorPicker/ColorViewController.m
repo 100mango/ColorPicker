@@ -68,8 +68,12 @@
 - (void)viewDidLayoutSubviews
 {
     [super viewDidLayoutSubviews];
+    
     //update scrollView frame
-    self.colorScrollView.frame = self.scrollViewSizeView.bounds;
+    // fix reset imageview frame by comparing first
+    if (!CGRectEqualToRect(self.colorScrollView.frame,self.scrollViewSizeView.bounds)) {
+        self.colorScrollView.frame = self.scrollViewSizeView.bounds;
+    }
 }
 
 - (void)didReceiveMemoryWarning
@@ -82,7 +86,7 @@
 
 - (void)setupScrollView
 {
-    CGRect frame = CGRectMake(0, 0, self.scrollViewSizeView.frame.size.width, self.scrollViewSizeView.frame.size.height);
+    CGRect frame = self.scrollViewSizeView.bounds;
     _colorScrollView = [[ColorScrollView alloc]initWithFrame:frame andUIImage:self.image];
     self.colorScrollView.delegate = self;
     [self.scrollViewSizeView addSubview:self.colorScrollView];

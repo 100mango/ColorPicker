@@ -56,6 +56,7 @@
     self.imageView.frame = frame;
 }
 
+
 - (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
 {
     //更新点击后的取色器坐标
