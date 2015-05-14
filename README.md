@@ -16,7 +16,7 @@
 
 ###2.0版本进行中
 1. 优化特点   
-   - 全面适配iPhone6，iPhone6 Plu
+   - 全面适配iPhone6，iPhone6 Plus
    - 添加图片色调提取功能
    - 全新简洁优美设计
 
