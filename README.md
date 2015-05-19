@@ -1,6 +1,6 @@
 #Touch Color
 
-1.0版本已于Apple Store上架  [Apple Store 链接](https://itunes.apple.com/cn/app/touchcolor/id859727780?mt=8)
+1.0版本已于AppStore上架  [AppStore 链接](https://itunes.apple.com/cn/app/touchcolor/id859727780?mt=8)
 
 一个优雅简洁，功能完善的取色器。照片取色，照相取色，实时取色三大功能为你带来移动平台最优秀的取色体验。
 
