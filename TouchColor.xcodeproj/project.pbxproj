@@ -13,7 +13,7 @@
 		DB8C5C631A68E8C600B4B2CA /* Launch Screen.xib in Resources */ = {isa = PBXBuildFile; fileRef = DB8C5C621A68E8C600B4B2CA /* Launch Screen.xib */; };
 		DB93B18418A9267F005238B0 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B18318A9267F005238B0 /* QuartzCore.framework */; };
 		DB93B18718A9C059005238B0 /* ColorImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18618A9C059005238B0 /* ColorImageView.m */; };
-		DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18918A9D536005238B0 /* ColorScrollView.m */; };
+		DB93B18A18A9D536005238B0 /* ColorDetectView.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B18918A9D536005238B0 /* ColorDetectView.m */; };
 		DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */; };
 		DB93B19418AA1ED8005238B0 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB93B19318AA1ED8005238B0 /* AVFoundation.framework */; };
 		DB942D9C18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m in Sources */ = {isa = PBXBuildFile; fileRef = DB942D9B18ED4E2F009DDD0E /* UIImagePickerController+StausBar.m */; };
@@ -57,8 +57,8 @@
 		DB93B18318A9267F005238B0 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		DB93B18518A9C059005238B0 /* ColorImageView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorImageView.h; sourceTree = "<group>"; };
 		DB93B18618A9C059005238B0 /* ColorImageView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorImageView.m; sourceTree = "<group>"; };
-		DB93B18818A9D536005238B0 /* ColorScrollView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorScrollView.h; sourceTree = "<group>"; };
-		DB93B18918A9D536005238B0 /* ColorScrollView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorScrollView.m; sourceTree = "<group>"; };
+		DB93B18818A9D536005238B0 /* ColorDetectView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorDetectView.h; sourceTree = "<group>"; };
+		DB93B18918A9D536005238B0 /* ColorDetectView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorDetectView.m; sourceTree = "<group>"; };
 		DB93B19018AA1352005238B0 /* ColorRealTimeViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ColorRealTimeViewController.h; sourceTree = "<group>"; };
 		DB93B19118AA1352005238B0 /* ColorRealTimeViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ColorRealTimeViewController.m; sourceTree = "<group>"; };
 		DB93B19318AA1ED8005238B0 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -77,17 +77,17 @@
 		DBE8C39218A20F5400E2B304 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		DBE8C39418A20F5400E2B304 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		DBE8C39618A20F5400E2B304 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
-		DBE8C39A18A20F5400E2B304 /* ColorPicker-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "ColorPicker-Info.plist"; sourceTree = "<group>"; };
+		DBE8C39A18A20F5400E2B304 /* TouchColor-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "TouchColor-Info.plist"; sourceTree = "<group>"; };
 		DBE8C39C18A20F5400E2B304 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		DBE8C39E18A20F5400E2B304 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
-		DBE8C3A018A20F5400E2B304 /* ColorPicker-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ColorPicker-Prefix.pch"; sourceTree = "<group>"; };
+		DBE8C3A018A20F5400E2B304 /* TouchColor-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TouchColor-Prefix.pch"; sourceTree = "<group>"; };
 		DBE8C3A118A20F5400E2B304 /* ColorAppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ColorAppDelegate.h; sourceTree = "<group>"; };
 		DBE8C3A218A20F5400E2B304 /* ColorAppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ColorAppDelegate.m; sourceTree = "<group>"; };
 		DBE8C3A718A20F5400E2B304 /* ColorViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ColorViewController.h; sourceTree = "<group>"; };
 		DBE8C3A818A20F5400E2B304 /* ColorViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ColorViewController.m; sourceTree = "<group>"; };
-		DBE8C3B018A20F5400E2B304 /* ColorPickerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ColorPickerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DBE8C3B018A20F5400E2B304 /* TouchColor.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TouchColor.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DBE8C3B118A20F5400E2B304 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
-		DBE8C3B918A20F5400E2B304 /* ColorPickerTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "ColorPickerTests-Info.plist"; sourceTree = "<group>"; };
+		DBE8C3B918A20F5400E2B304 /* TouchColorTests-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "TouchColorTests-Info.plist"; sourceTree = "<group>"; };
 		DBE8C3BB18A20F5400E2B304 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		DBE8C3BD18A20F5400E2B304 /* ColorPickerTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ColorPickerTests.m; sourceTree = "<group>"; };
 		ECA1429469F24160A189FA16 /* libPods.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libPods.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -155,8 +155,8 @@
 		DB93B18F18AA12A9005238B0 /* View */ = {
 			isa = PBXGroup;
 			children = (
-				DB93B18818A9D536005238B0 /* ColorScrollView.h */,
-				DB93B18918A9D536005238B0 /* ColorScrollView.m */,
+				DB93B18818A9D536005238B0 /* ColorDetectView.h */,
+				DB93B18918A9D536005238B0 /* ColorDetectView.m */,
 				DB93B18518A9C059005238B0 /* ColorImageView.h */,
 				DB93B18618A9C059005238B0 /* ColorImageView.m */,
 				DB9AE0D81A6E94BE00E29EFF /* ColorSingleColorCell.h */,
@@ -192,7 +192,7 @@
 			isa = PBXGroup;
 			children = (
 				DBE8C38F18A20F5400E2B304 /* TouchColor.app */,
-				DBE8C3B018A20F5400E2B304 /* ColorPickerTests.xctest */,
+				DBE8C3B018A20F5400E2B304 /* TouchColor.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -232,10 +232,10 @@
 		DBE8C39918A20F5400E2B304 /* Supporting Files */ = {
 			isa = PBXGroup;
 			children = (
-				DBE8C39A18A20F5400E2B304 /* ColorPicker-Info.plist */,
+				DBE8C39A18A20F5400E2B304 /* TouchColor-Info.plist */,
 				DBE8C39E18A20F5400E2B304 /* main.m */,
 				DBE8C39B18A20F5400E2B304 /* InfoPlist.strings */,
-				DBE8C3A018A20F5400E2B304 /* ColorPicker-Prefix.pch */,
+				DBE8C3A018A20F5400E2B304 /* TouchColor-Prefix.pch */,
 			);
 			name = "Supporting Files";
 			sourceTree = "<group>";
@@ -252,7 +252,7 @@
 		DBE8C3B818A20F5400E2B304 /* Supporting Files */ = {
 			isa = PBXGroup;
 			children = (
-				DBE8C3B918A20F5400E2B304 /* ColorPickerTests-Info.plist */,
+				DBE8C3B918A20F5400E2B304 /* TouchColorTests-Info.plist */,
 				DBE8C3BA18A20F5400E2B304 /* InfoPlist.strings */,
 			);
 			name = "Supporting Files";
@@ -261,9 +261,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		DBE8C38E18A20F5400E2B304 /* ColorPicker */ = {
+		DBE8C38E18A20F5400E2B304 /* TouchColor */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = DBE8C3C118A20F5400E2B304 /* Build configuration list for PBXNativeTarget "ColorPicker" */;
+			buildConfigurationList = DBE8C3C118A20F5400E2B304 /* Build configuration list for PBXNativeTarget "TouchColor" */;
 			buildPhases = (
 				4B5E31E6188646B1BC2F8EAA /* Check Pods Manifest.lock */,
 				DBE8C38B18A20F5400E2B304 /* Sources */,
@@ -275,14 +275,14 @@
 			);
 			dependencies = (
 			);
-			name = ColorPicker;
+			name = TouchColor;
 			productName = ColorPicker;
 			productReference = DBE8C38F18A20F5400E2B304 /* TouchColor.app */;
 			productType = "com.apple.product-type.application";
 		};
-		DBE8C3AF18A20F5400E2B304 /* ColorPickerTests */ = {
+		DBE8C3AF18A20F5400E2B304 /* TouchColorTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = DBE8C3C418A20F5400E2B304 /* Build configuration list for PBXNativeTarget "ColorPickerTests" */;
+			buildConfigurationList = DBE8C3C418A20F5400E2B304 /* Build configuration list for PBXNativeTarget "TouchColorTests" */;
 			buildPhases = (
 				DBE8C3AC18A20F5400E2B304 /* Sources */,
 				DBE8C3AD18A20F5400E2B304 /* Frameworks */,
@@ -293,9 +293,9 @@
 			dependencies = (
 				DBE8C3B618A20F5400E2B304 /* PBXTargetDependency */,
 			);
-			name = ColorPickerTests;
+			name = TouchColorTests;
 			productName = ColorPickerTests;
-			productReference = DBE8C3B018A20F5400E2B304 /* ColorPickerTests.xctest */;
+			productReference = DBE8C3B018A20F5400E2B304 /* TouchColor.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -316,7 +316,7 @@
 					};
 				};
 			};
-			buildConfigurationList = DBE8C38A18A20F5400E2B304 /* Build configuration list for PBXProject "ColorPicker" */;
+			buildConfigurationList = DBE8C38A18A20F5400E2B304 /* Build configuration list for PBXProject "TouchColor" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
@@ -329,8 +329,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				DBE8C38E18A20F5400E2B304 /* ColorPicker */,
-				DBE8C3AF18A20F5400E2B304 /* ColorPickerTests */,
+				DBE8C38E18A20F5400E2B304 /* TouchColor */,
+				DBE8C3AF18A20F5400E2B304 /* TouchColorTests */,
 			);
 		};
 /* End PBXProject section */
@@ -403,7 +403,7 @@
 				DB9AE0DB1A6E94BE00E29EFF /* ColorSingleColorCell.m in Sources */,
 				DBE8C39F18A20F5400E2B304 /* main.m in Sources */,
 				DBE8C3A918A20F5400E2B304 /* ColorViewController.m in Sources */,
-				DB93B18A18A9D536005238B0 /* ColorScrollView.m in Sources */,
+				DB93B18A18A9D536005238B0 /* ColorDetectView.m in Sources */,
 				DB93B19218AA1352005238B0 /* ColorRealTimeViewController.m in Sources */,
 				DB9AE0D51A6E68E900E29EFF /* UIView+Tools.m in Sources */,
 				DB8C5C611A68E72900B4B2CA /* ColorMainViewController.m in Sources */,
@@ -423,7 +423,7 @@
 /* Begin PBXTargetDependency section */
 		DBE8C3B618A20F5400E2B304 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = DBE8C38E18A20F5400E2B304 /* ColorPicker */;
+			target = DBE8C38E18A20F5400E2B304 /* TouchColor */;
 			targetProxy = DBE8C3B518A20F5400E2B304 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -482,6 +482,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
 				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = TouchColor;
 				SDKROOT = iphoneos;
 			};
 			name = Debug;
@@ -513,6 +514,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 7.0;
+				PRODUCT_NAME = TouchColor;
 				SDKROOT = iphoneos;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -527,8 +529,8 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
-				INFOPLIST_FILE = "ColorPicker/ColorPicker-Info.plist";
+				GCC_PREFIX_HEADER = "ColorPicker/TouchColor-Prefix.pch";
+				INFOPLIST_FILE = "ColorPicker/TouchColor-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = TouchColor;
@@ -547,8 +549,8 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
-				INFOPLIST_FILE = "ColorPicker/ColorPicker-Info.plist";
+				GCC_PREFIX_HEADER = "ColorPicker/TouchColor-Prefix.pch";
+				INFOPLIST_FILE = "ColorPicker/TouchColor-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 8.0;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = TouchColor;
@@ -568,13 +570,13 @@
 					"$(DEVELOPER_FRAMEWORKS_DIR)",
 				);
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
+				GCC_PREFIX_HEADER = "ColorPicker/TouchColor-Prefix.pch";
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
-				INFOPLIST_FILE = "ColorPickerTests/ColorPickerTests-Info.plist";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				INFOPLIST_FILE = "ColorPickerTests/TouchColorTests-Info.plist";
+				PRODUCT_NAME = TouchColor;
 				TEST_HOST = "$(BUNDLE_LOADER)";
 				WRAPPER_EXTENSION = xctest;
 			};
@@ -590,9 +592,9 @@
 					"$(DEVELOPER_FRAMEWORKS_DIR)",
 				);
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
-				GCC_PREFIX_HEADER = "ColorPicker/ColorPicker-Prefix.pch";
-				INFOPLIST_FILE = "ColorPickerTests/ColorPickerTests-Info.plist";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				GCC_PREFIX_HEADER = "ColorPicker/TouchColor-Prefix.pch";
+				INFOPLIST_FILE = "ColorPickerTests/TouchColorTests-Info.plist";
+				PRODUCT_NAME = TouchColor;
 				TEST_HOST = "$(BUNDLE_LOADER)";
 				WRAPPER_EXTENSION = xctest;
 			};
@@ -601,7 +603,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		DBE8C38A18A20F5400E2B304 /* Build configuration list for PBXProject "ColorPicker" */ = {
+		DBE8C38A18A20F5400E2B304 /* Build configuration list for PBXProject "TouchColor" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DBE8C3BF18A20F5400E2B304 /* Debug */,
@@ -610,7 +612,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DBE8C3C118A20F5400E2B304 /* Build configuration list for PBXNativeTarget "ColorPicker" */ = {
+		DBE8C3C118A20F5400E2B304 /* Build configuration list for PBXNativeTarget "TouchColor" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DBE8C3C218A20F5400E2B304 /* Debug */,
@@ -619,7 +621,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		DBE8C3C418A20F5400E2B304 /* Build configuration list for PBXNativeTarget "ColorPickerTests" */ = {
+		DBE8C3C418A20F5400E2B304 /* Build configuration list for PBXNativeTarget "TouchColorTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				DBE8C3C518A20F5400E2B304 /* Debug */,

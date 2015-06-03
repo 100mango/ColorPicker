@@ -8,14 +8,15 @@
 
 #import <UIKit/UIKit.h>
 
+@protocol ColorImageViewDelegate <NSObject>
+
+@optional
+- (void)handelColor:(NSString*)hexColor;
+@end
+
 @interface ColorImageView : UIImageView
 
-@property (strong, nonatomic) UIColor *selectedColor;
-@property (strong, nonatomic) NSString *red;
-@property (strong, nonatomic) NSString *green;
-@property (strong, nonatomic) NSString *blue;
-@property (strong, nonatomic) NSString *hexRGB;
 
-- (void) getColorOfPoint:(CGPoint)point;
+@property (nonatomic,weak)  id<ColorImageViewDelegate>delegate;
 
 @end

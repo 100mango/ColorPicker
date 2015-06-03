@@ -24,12 +24,6 @@
         //设置imageView 的contenMode模式
         self.contentMode = UIViewContentModeScaleAspectFit;
         
-        //初始化RGB信息
-        self.red = @"255";
-        self.green = @"255";
-        self.blue = @"255";
-        self.hexRGB = @"#FFFFFF";
-        self.selectedColor = [UIColor whiteColor];
     }
     return self;
 }
@@ -58,18 +52,10 @@
     
     CGContextRelease(context);
     CGColorSpaceRelease(colorSpace);
-    UIColor *color = [UIColor colorWithRed:pixel[0]/255.0
-                                     green:pixel[1]/255.0
-                                      blue:pixel[2]/255.0
-                                     alpha:pixel[3]/255.0];
-    self.red = [NSString stringWithFormat:@"%d",pixel[0]];
-    self.green = [NSString stringWithFormat:@"%d",pixel[1]];
-    self.blue = [NSString stringWithFormat:@"%d",pixel[2]];
-    self.hexRGB = [NSString stringWithFormat:@"#%02x%02x%02x",pixel[0],pixel[1],pixel[2]];
-    self.selectedColor = color;
     
-    //通知Controller更新label和图片
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"updateLabelAndColorImage"object:self];
+    NSString *hexColor = [NSString stringWithFormat:@"#%02x%02x%02x",pixel[0],pixel[1],pixel[2]];
+    
+    [self.delegate handelColor:hexColor];
 }
 
 

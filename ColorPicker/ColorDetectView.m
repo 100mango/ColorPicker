@@ -6,16 +6,18 @@
 //  Copyright (c) 2014年 Mango. All rights reserved.
 //
 
-#import "ColorScrollView.h"
+#import "ColorDetectView.h"
 #import "ColorImageView.h"
 #import "Masonry.h"
 
-@interface ColorScrollView ()
+@interface ColorDetectView ()<ColorImageViewDelegate>
 @property (strong,nonatomic) UIImageView *pickerView;
+@property (strong,readwrite,nonatomic) ColorImageView *imageView;
 @end
 
-@implementation ColorScrollView
+@implementation ColorDetectView
 
+@dynamic delegate;
 
 - (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage *)image
 {
@@ -31,8 +33,9 @@
         self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
 
         //初始化要放大的Imageview
-        _imageView = [[ColorImageView alloc]initWithFrame:self.bounds];
+        self.imageView = [[ColorImageView alloc]initWithFrame:self.bounds];
         self.imageView.image = image;
+        self.imageView.delegate = self;
         [self addSubview:self.imageView];
         
         //DLog(@"%@",self);
@@ -68,6 +71,9 @@
 }
 
 
-
+- (void)handelColor:(NSString *)hexColor
+{
+    [self.delegate handelColor:hexColor];
+}
 
 @end
