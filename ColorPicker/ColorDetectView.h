@@ -22,7 +22,7 @@
 
 @property (weak,nonatomic) id<ColorDetectViewDelegate> delegate;
 
-@property (strong,readonly,nonatomic) ColorImageView *imageView;
+@property (strong,readonly,nonatomic) UIImageView *imageView;
 - (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage*)image;
 
 

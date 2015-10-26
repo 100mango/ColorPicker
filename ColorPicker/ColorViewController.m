@@ -11,7 +11,6 @@
 
 //view
 #import "UIView+Tools.h"
-#import "ColorImageView.h"
 #import "ColorDetectView.h"
 
 @interface ColorViewController ()<ColorDetectViewDelegate>

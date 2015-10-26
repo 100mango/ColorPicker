@@ -7,12 +7,12 @@
 //
 
 #import "ColorDetectView.h"
-#import "ColorImageView.h"
 #import "Masonry.h"
 
-@interface ColorDetectView ()<ColorImageViewDelegate>
+@interface ColorDetectView ()
 @property (strong,nonatomic) UIImageView *pickerView;
-@property (strong,readwrite,nonatomic) ColorImageView *imageView;
+@property (strong,readwrite,nonatomic) UIImageView *imageView;
+@property (assign,nonatomic) CGPoint pointInImageView;
 @end
 
 @implementation ColorDetectView
@@ -31,21 +31,24 @@
         self.bounces = NO;
         self.bouncesZoom = NO; //禁止缩小至最小比例之下
         self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
+        [self.pinchGestureRecognizer addTarget:self action:@selector(handelPinchGeture:)];
 
-        //初始化要放大的Imageview
-        self.imageView = [[ColorImageView alloc]initWithFrame:self.bounds];
-        self.imageView.image = image;
-        self.imageView.delegate = self;
-        [self addSubview:self.imageView];
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]initWithTarget:self action:@selector(handelTapGesture:)];
+        [self addGestureRecognizer:tap];
+        [self.imageView addGestureRecognizer:tap];
         
-        //DLog(@"%@",self);
-        //DLog(@"%@",self.imageView);
+        
+        //初始化要放大的Imageview
+        self.imageView = [[UIImageView alloc]initWithFrame:self.bounds];
+        self.imageView.image = image;
+        self.imageView.contentMode = UIViewContentModeScaleAspectFit;
+        [self addSubview:self.imageView];
         
         //初始取色器
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]initWithTarget:self action:@selector(handelPangesture:)];
         self.pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
         [self.pickerView addGestureRecognizer:pan];
-        self.pickerView.exclusiveTouch = YES;
+        //self.pickerView.exclusiveTouch = YES;
         self.pickerView.userInteractionEnabled = YES;
         self.pickerView.hidden = YES;
         [self addSubview:self.pickerView];
@@ -61,21 +64,49 @@
     self.imageView.frame = frame;
 }
 
-
-- (BOOL)touchesShouldBegin:(NSSet *)touches withEvent:(UIEvent *)event inContentView:(UIView *)view
-{
-    //更新点击后的取色器坐标
-    UITouch *touch = [[event allTouches]anyObject];
-    CGPoint point = [touch locationInView:self];
-    self.pickerView.center = point;
-    self.pickerView.hidden = NO;
-    return YES;
-}
-
-
 - (void)handelColor:(NSString *)hexColor
 {
     [self.delegate handelColor:hexColor];
+}
+
+- (void) getColorOfPoint:(CGPoint)point InView:(UIView*)view
+{
+    
+    unsigned char pixel[4] = {0};
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(pixel,
+                                                 1, 1, 8, 4, colorSpace, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    
+    CGContextTranslateCTM(context, -point.x, -point.y);
+    
+    [view.layer renderInContext:context];
+    
+    CGContextRelease(context);
+    CGColorSpaceRelease(colorSpace);
+    
+    NSString *hexColor = [NSString stringWithFormat:@"#%02x%02x%02x",pixel[0],pixel[1],pixel[2]];
+    
+    [self.delegate handelColor:hexColor];
+}
+
+
+#pragma mark - tap gesture delegate
+- (void)handelTapGesture:(UITapGestureRecognizer*)gesture
+{
+    CGPoint point = [gesture locationInView:self];
+    self.pointInImageView = [gesture locationInView:self.imageView];
+    self.pickerView.center = point;
+    self.pickerView.hidden = NO;
+    [self getColorOfPoint:self.pointInImageView InView:self.imageView];
+    
+}
+
+#pragma mark - pinch gesture delegate
+- (void)handelPinchGeture:(UIPinchGestureRecognizer*)gesture
+{
+    if (gesture.state == UIGestureRecognizerStateChanged) {
+        self.pickerView.center = [self convertPoint:self.pointInImageView fromView:self.imageView];
+    }
 }
 
 #pragma mark - pan gesture delegate
@@ -83,8 +114,9 @@
 {
     if (gesture.state == UIGestureRecognizerStateChanged) {
         self.pickerView.center = [gesture locationInView:self];
-        [self.imageView getColorOfPoint:[gesture locationInView:self.imageView]];
+        [self getColorOfPoint:[gesture locationInView:self.imageView] InView:self.imageView];
     }
 }
+
 
 @end
