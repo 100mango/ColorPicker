@@ -325,11 +325,31 @@
                         <outlet property="recordTableView" destination="LGY-Up-bYB" id="Leo-Vq-tfl"/>
                         <outlet property="tableViewPlaceHolder" destination="2aE-x8-NkX" id="fWB-wu-2mq"/>
                         <segue destination="7cd-DP-vP2" kind="show" identifier="showColorViewController" id="It2-AC-j31"/>
+                        <segue destination="mff-5f-QYp" kind="presentation" identifier="showRealTimeViewController" modalTransitionStyle="crossDissolve" id="8Zt-76-9EV"/>
                     </connections>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="UdG-di-iXq" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="1224" y="221"/>
+            <point key="canvasLocation" x="1323" y="224"/>
+        </scene>
+        <!--Color Real Time View Controller-->
+        <scene sceneID="Sgw-Tm-wk2">
+            <objects>
+                <viewController id="mff-5f-QYp" customClass="ColorRealTimeViewController" sceneMemberID="viewController">
+                    <layoutGuides>
+                        <viewControllerLayoutGuide type="top" id="a7b-Jq-kKt"/>
+                        <viewControllerLayoutGuide type="bottom" id="G1l-eN-1MD"/>
+                    </layoutGuides>
+                    <view key="view" contentMode="scaleToFill" id="VXA-gn-unE">
+                        <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <animations/>
+                        <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="Sip-K4-5YI" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="2157" y="489"/>
         </scene>
         <!--Color View Controller-->
         <scene sceneID="iKf-Sa-AG7">

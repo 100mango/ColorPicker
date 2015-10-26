@@ -39,6 +39,7 @@
 @end
 
 static NSString *showColorViewControllerSegueIdentifier = @"showColorViewController";
+static NSString *showRealTimeControllerSegueIdentifier = @"showRealTimeViewController";
 static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 @implementation ColorMainViewController
@@ -119,7 +120,7 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
              [imageLibray setNeedsStatusBarAppearanceUpdate];
              
              [self presentViewController:imageLibray animated:YES completion:nil];
-             [self closeButtonView];
+             //[self closeButtonView];
          }
      }];
     
@@ -137,8 +138,12 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
             imagePicker.sourceType = UIImagePickerControllerSourceTypeCamera;
             imagePicker.delegate = self;
             [self presentViewController:imagePicker animated:YES completion:nil];
-            [self closeButtonView];
+            //[self closeButtonView];
         }
+    }];
+    
+    [self.pickColorFromRealTimeView touchEndedBlock:^(UIView *selfView) {
+        [self performSegueWithIdentifier:showRealTimeControllerSegueIdentifier sender:self];
     }];
 }
 
@@ -290,6 +295,9 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     {
         ColorViewController *controller = (ColorViewController*)[segue destinationViewController];
         [controller setChooseImage:self.pickImage];
+    }
+    
+    if ([segue.identifier isEqualToString:showRealTimeControllerSegueIdentifier]) {
     }
 }
 

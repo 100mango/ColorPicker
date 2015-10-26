@@ -55,7 +55,7 @@
 {
     [super viewDidLoad];
 
-    //[self setupGPUImage];
+    [self setupGPUImage];
     [self setupButton];
     [self setupLabels];
     [self setupColorPointView];
@@ -65,7 +65,7 @@
 - (void)viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
-    [self setupGPUImage];
+    //[self setupGPUImage];
 
 }
 
@@ -125,18 +125,12 @@
 
 - (void)setupColorPointView
 {
-    if (DEVICE_IS_IPHONE5) {
-        _colorVIewCircle = [[UIImageView alloc]initWithFrame:CGRectMake(320/2 - 45/2, 568/2 -45/2, 45, 45)];
-        _colorView = [[UIView alloc]initWithFrame:CGRectMake(320/2 - 46/2/2,568/2  - 46/2/2, 46/2, 46/2)];
-
-    }
-    else
-    {
-        _colorVIewCircle = [[UIImageView alloc]initWithFrame:CGRectMake(320/2 - 45/2, 480/2 -45/2, 45, 45)];
-        _colorView = [[UIView alloc]initWithFrame:CGRectMake(320/2 - 46/2/2,480/2  - 46/2/2, 46/2, 46/2)];
-
-    }
+    self.colorVIewCircle = [[UIImageView alloc]initWithFrame:CGRectMake(0, 0, 45, 45)];
+    self.colorVIewCircle.center = self.view.center;
     self.colorVIewCircle.image = [UIImage imageNamed:@"275,436"];
+    
+    self.colorView = [[UIView alloc]initWithFrame:CGRectMake(0,0, 46/2, 46/2)];
+    self.colorView.center = self.view.center;
     self.colorView.backgroundColor = [UIColor clearColor];
     self.colorView.layer.cornerRadius = 46/2/2;
     
@@ -146,35 +140,28 @@
 
 - (void)setupGPUImage
 {
-    //设置Camera
-    //_videoCamera = [[GPUImageVideoCamera alloc]initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
-    //self.videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
-    
-    //设置videoView
-    /*
-    if (DEVICE_IS_IPHONE5) {
-        _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 568)];
-    }
-    else
-    {
-        _VideoView = [[GPUImageView alloc]initWithFrame:CGRectMake(0, 0, 320, 480)];
-    }*/
-    
-    //self.VideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
-    //[self.view addSubview:self.VideoView];
-    
-    /*
-    //设置output Rawdata
+    videoCamera = [[GPUImageVideoCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
+    videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
     CGSize videoPixelSize = CGSizeMake(480.0, 640.0);
-    _videoRawData = [[GPUImageRawDataOutput alloc]initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
+    CGRect mainScreenFrame = [[UIScreen mainScreen] applicationFrame];
+
+    filteredVideoView = [[GPUImageView alloc] initWithFrame:CGRectMake(0.0, 0.0, mainScreenFrame.size.width, mainScreenFrame.size.height)];
+    filteredVideoView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
+    [self.view addSubview:filteredVideoView];
     
-    //设置output回调
+    __unsafe_unretained ColorRealTimeViewController *weakSelf = self;
+    
+    videoRawData = [[GPUImageRawDataOutput alloc] initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
     __weak ColorRealTimeViewController *safeSelf = self;
-    [self.videoRawData setNewFrameAvailableBlock:^{
+    [videoRawData setNewFrameAvailableBlock:^{
+            
         
         CGPoint focusPoint = {480/2,640/2};
         
-        GPUByteColorVector colorAtTouchPoint = [safeSelf.videoRawData colorAtLocation:focusPoint];
+        
+        GPUByteColorVector colorAtTouchPoint = [weakSelf->videoRawData colorAtLocation:focusPoint];
+        
+        NSLog(@"Color at touch point: %d, %d, %d, %d", colorAtTouchPoint.red, colorAtTouchPoint.green, colorAtTouchPoint.blue, colorAtTouchPoint.alpha);
         
         dispatch_async(dispatch_get_main_queue(), ^{
             
@@ -186,41 +173,12 @@
             safeSelf.green.text = [NSString stringWithFormat:@"%d",green];
             safeSelf.blue.text = [NSString stringWithFormat:@"%d",blue];
             safeSelf.hexRGB = [NSString stringWithFormat:@"#%02x%02x%02x",red,green,blue];
-
+            
             
             safeSelf.pointColor = [UIColor colorWithRed:red/255.0 green:green/255.0 blue:blue/255.0 alpha:1];
             safeSelf.colorView.backgroundColor = safeSelf.pointColor;
         });
         
-    }];
-    
-    //开始录制
-    [self.videoCamera addTarget:self.VideoView];
-    [self.videoCamera addTarget:self.videoRawData];
-    [self.videoCamera startCameraCapture];
-     */
-    
-    
-    videoCamera = [[GPUImageVideoCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
-    videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
-    CGSize videoPixelSize = CGSizeMake(480.0, 640.0);
-    CGRect mainScreenFrame = [[UIScreen mainScreen] applicationFrame];
-
-    filteredVideoView = [[GPUImageView alloc] initWithFrame:CGRectMake(0.0, 0.0, mainScreenFrame.size.width, mainScreenFrame.size.height)];
-    [self.view addSubview:filteredVideoView];
-    
-    __unsafe_unretained ColorRealTimeViewController *weakSelf = self;
-    
-    videoRawData = [[GPUImageRawDataOutput alloc] initWithImageSize:videoPixelSize resultsInBGRAFormat:YES];
-    [videoRawData setNewFrameAvailableBlock:^{
-            
-        
-        CGPoint focusPoint = {480/2,640/2};
-        
-        
-        GPUByteColorVector colorAtTouchPoint = [weakSelf->videoRawData colorAtLocation:focusPoint];
-        
-        NSLog(@"Color at touch point: %d, %d, %d, %d", colorAtTouchPoint.red, colorAtTouchPoint.green, colorAtTouchPoint.blue, colorAtTouchPoint.alpha);
         
         }];
     
