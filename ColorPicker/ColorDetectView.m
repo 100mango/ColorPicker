@@ -42,7 +42,9 @@
         //DLog(@"%@",self.imageView);
         
         //初始取色器
-        _pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]initWithTarget:self action:@selector(handelPangesture:)];
+        self.pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
+        [self.pickerView addGestureRecognizer:pan];
         self.pickerView.exclusiveTouch = YES;
         self.pickerView.userInteractionEnabled = YES;
         self.pickerView.hidden = YES;
@@ -74,6 +76,15 @@
 - (void)handelColor:(NSString *)hexColor
 {
     [self.delegate handelColor:hexColor];
+}
+
+#pragma mark - pan gesture delegate
+- (void)handelPangesture:(UIPanGestureRecognizer*)gesture
+{
+    if (gesture.state == UIGestureRecognizerStateChanged) {
+        self.pickerView.center = [gesture locationInView:self];
+        [self.imageView getColorOfPoint:[gesture locationInView:self.imageView]];
+    }
 }
 
 @end

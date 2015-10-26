@@ -16,7 +16,7 @@
 
 @interface ColorImageView : UIImageView
 
-
 @property (nonatomic,weak)  id<ColorImageViewDelegate>delegate;
+- (void) getColorOfPoint:(CGPoint)point;
 
 @end
