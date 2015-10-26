@@ -11,6 +11,6 @@
 
 @interface ColorViewController : UIViewController
 
-- (void)setChooseImage: (UIImage *)image;
+- (void)setChooseImage:(UIImage *)image;
 
 @end

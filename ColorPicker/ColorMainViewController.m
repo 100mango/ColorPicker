@@ -43,6 +43,14 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
 
 @implementation ColorMainViewController
 
+- (void)didReceiveMemoryWarning {
+    [super didReceiveMemoryWarning];
+    // Dispose of any resources that can be recreated.
+}
+
+
+#pragma mark - View Life Cycle
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     
@@ -65,16 +73,10 @@ static NSString *colorSigleCellIdentifier = @"colorSigleCellIdentifier";
     NSUserDefaults * defaults = [NSUserDefaults standardUserDefaults];
     self.colorArray = [[defaults arrayForKey:@"colorArray"] mutableCopy];
     [self.recordTableView reloadData];
-
-}
-
-- (void)didReceiveMemoryWarning {
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
+    
 }
 
 
-#pragma mark -setup view
 - (void)setupNavigationBar
 {
     self.title = @"Touch Color";

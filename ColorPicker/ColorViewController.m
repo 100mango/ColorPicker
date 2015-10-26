@@ -31,17 +31,29 @@
 
 @implementation ColorViewController
 
+//设置状态栏
+- (BOOL)prefersStatusBarHidden
+{
+    return YES;
+}
+
+
+- (void)didReceiveMemoryWarning
+{
+    [super didReceiveMemoryWarning];
+    // Dispose of any resources that can be recreated.
+}
+
+
+#pragma mark - public method
+
 - (void)setChooseImage:(UIImage *)image
 {
     //不能在这里直接赋值照片给ColorScrollView 因为ScrollView还为Null
     self.image = image;
 }
 
-//设置状态栏
-- (BOOL)prefersStatusBarHidden
-{
-    return YES;
-}
+#pragma mark - view life cycle
 
 - (void)viewDidLoad
 {
@@ -70,18 +82,10 @@
     }
 }
 
-- (void)didReceiveMemoryWarning
-{
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
-}
-
-#pragma mark -setup View
-
 - (void)setupScrollView
 {
     CGRect frame = self.scrollViewSizeView.bounds;
-    _colorDetectView = [[ColorDetectView alloc]initWithFrame:frame andUIImage:self.image];
+    self.colorDetectView = [[ColorDetectView alloc]initWithFrame:frame andUIImage:self.image];
     self.colorDetectView.delegate = self;
     [self.scrollViewSizeView addSubview:self.colorDetectView];
 }
