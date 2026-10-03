@@ -6,6 +6,7 @@
 
 @interface ColorMainViewController () <UITableViewDelegate, UITableViewDataSource, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
+@property (nonatomic, strong) UIStackView *sourceButtons;
 @property (nonatomic, strong) TCColorStore *store;
 @property (nonatomic, copy) NSArray<NSString *> *colors;
 @property (nonatomic, strong) UIActivityIndicatorView *loading;
@@ -29,6 +30,7 @@
     NSArray *identifiers = @[@"choosePhoto", @"takePhoto", @"liveColor"];
     NSArray *symbols = @[@"photo", @"camera", @"viewfinder"];
     UIStackView *buttons = [UIStackView new];
+    self.sourceButtons = buttons;
     buttons.axis = UILayoutConstraintAxisVertical;
     buttons.spacing = 8;
     buttons.translatesAutoresizingMaskIntoConstraints = NO;
@@ -68,6 +70,26 @@
         self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Sample Fixture" style:UIBarButtonItemStylePlain target:self action:@selector(openFixture)];
     }
 #endif
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    // Share one row in short, wide windows so accessibility-sized buttons cannot consume the history viewport.
+    BOOL wide = self.view.bounds.size.width > self.view.bounds.size.height;
+    UILayoutConstraintAxis axis = wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
+    if (self.sourceButtons.axis != axis) {
+        self.sourceButtons.axis = axis;
+        self.sourceButtons.distribution = wide ? UIStackViewDistributionFillEqually : UIStackViewDistributionFill;
+    }
+    NSArray *symbols = @[@"photo", @"camera", @"viewfinder"];
+    BOOL hideIcons = wide && UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
+    for (UIButton *button in self.sourceButtons.arrangedSubviews) {
+        BOOL hasImage = button.configuration.image != nil;
+        if (hasImage == hideIcons) {
+            UIButtonConfiguration *configuration = button.configuration;
+            configuration.image = hideIcons ? nil : [UIImage systemImageNamed:symbols[button.tag]];
+            button.configuration = configuration;
+        }
+    }
 }
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];

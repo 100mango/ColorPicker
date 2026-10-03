@@ -106,7 +106,24 @@
     [self.app.buttons[@"saveColor"] tap];
     [self.app.navigationBars.buttons.firstMatch tap];
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
+    XCUIElement *table=self.app.tables[@"colorHistory"];
+    XCUIElement *detail=table.staticTexts[@"R 255   G 0   B 0"];
+    XCTAssertTrue([detail waitForExistenceWithTimeout:5]);
+    for (NSUInteger i=0;i<4 && !CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1));i++) {
+        if (CGRectGetMinY(detail.frame) < CGRectGetMinY(table.frame)) [table swipeDown]; else [table swipeUp];
+    }
+    XCTAssertTrue(CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1)),@"RGB detail must be fully readable after scrolling");
     [self emitScreenshot:@"touchcolor-history-large-text"];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
+    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    XCTAssertTrue(self.app.buttons[@"takePhoto"].hittable);
+    XCTAssertTrue(self.app.buttons[@"liveColor"].hittable);
+    XCTAssertGreaterThan(table.frame.size.height,44);
+    for (NSUInteger i=0;i<4 && !CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1));i++) {
+        if (CGRectGetMinY(detail.frame) < CGRectGetMinY(table.frame)) [table swipeDown]; else [table swipeUp];
+    }
+    XCTAssertTrue(CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1)),@"Landscape RGB detail must remain readable at largest text size");
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
 }
 - (void)testSystemPhotoSelectionAndSampling {
     // CI seeds an opaque red PNG into this simulator's Photos library.
