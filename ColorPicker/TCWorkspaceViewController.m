@@ -23,6 +23,15 @@
     self.palette = [ColorMainViewController new];
     self.palette.workspaceDelegate = self;
     UINavigationController *library = [[UINavigationController alloc] initWithRootViewController:self.palette];
+    // The primary sidebar can become the whole compact window. Preserve semantic
+    // title contrast there as well as in the full two-column workspace.
+    UINavigationBarAppearance *paletteBar = [UINavigationBarAppearance new];
+    [paletteBar configureWithDefaultBackground];
+    paletteBar.titleTextAttributes = @{NSForegroundColorAttributeName:UIColor.labelColor};
+    library.navigationBar.standardAppearance = paletteBar;
+    library.navigationBar.scrollEdgeAppearance = paletteBar;
+    library.navigationBar.compactAppearance = paletteBar;
+    library.navigationBar.compactScrollEdgeAppearance = paletteBar;
     UIViewController *empty = [UIViewController new];
     empty.title = NSLocalizedString(@"Color Canvas", nil);
     empty.view.backgroundColor = UIColor.systemBackgroundColor;

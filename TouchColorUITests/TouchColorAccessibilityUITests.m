@@ -1,9 +1,11 @@
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import <math.h>
 
 /// Official XCTest audits run as their own bounded CI stage on each supported simulator family.
 @interface TouchColorAccessibilityUITests : XCTestCase
 @property (nonatomic, strong) XCUIApplication *app;
+@property (nonatomic) CGSize originalWindowSize;
 @end
 @implementation TouchColorAccessibilityUITests
 - (void)setUp {
@@ -37,7 +39,33 @@
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"R 255   G 0   B 255"]);
 }
-- (void)testAccessibilityEmptyPalette { [self auditScreen:@"empty palette"]; }
+- (void)testAccessibilityEmptyPalette {
+    [self auditScreen:@"empty palette"];
+    if (UIDevice.currentDevice.userInterfaceIdiom!=UIUserInterfaceIdiomPad) return;
+    XCUIElement *window=self.app.windows.firstMatch;
+    self.originalWindowSize=window.frame.size;
+    XCUICoordinate *corner=[[window coordinateWithNormalizedOffset:CGVectorMake(1,1)] coordinateWithOffset:CGVectorMake(-12,-12)];
+    [corner pressForDuration:0.3 thenDragToCoordinate:[window coordinateWithNormalizedOffset:CGVectorMake(0.45,0.75)]];
+    XCTNSPredicateExpectation *resized=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
+        return window.frame.size.width<self.originalWindowSize.width-100;
+    }] object:window];
+    XCTAssertEqual([XCTWaiter waitForExpectations:@[resized] timeout:8],XCTWaiterResultCompleted);
+    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    NSLog(@"ACCESSIBILITY_COMPACT_WINDOW %@",NSStringFromCGRect(window.frame));
+    [self auditScreen:@"empty palette in actual compact iPad window"];
+    [self restoreFullWindow];
+}
+- (void)restoreFullWindow {
+    XCUIElement *window=self.app.windows.firstMatch;
+    if (fabs(window.frame.size.width-self.originalWindowSize.width)>4) {
+        [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
+        XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
+            return fabs(window.frame.size.width-self.originalWindowSize.width)<4 && fabs(window.frame.size.height-self.originalWindowSize.height)<4;
+        }] object:window];
+        XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore window after accessibility audit: %@",self.app.debugDescription);
+    }
+    self.originalWindowSize=CGSizeZero;
+}
 - (void)testAccessibilitySampledPhoto {
     [self importAndSample];
     [self auditScreen:@"sampled photo with numeric RGB and hex"];
@@ -62,5 +90,12 @@
     [self.app launch];[self.app.buttons[@"privacyPolicy"] tap];
     XCTAssertTrue([self.app.buttons[@"privacy.retry"] waitForExistenceWithTimeout:5]);
     [self auditScreen:@"offline policy error in dark appearance"];
+}
+- (void)tearDown {
+    if (self.originalWindowSize.width>0) {
+        [self.app terminate];[self.app launch];
+        [self restoreFullWindow];
+    }
+    [super tearDown];
 }
 @end

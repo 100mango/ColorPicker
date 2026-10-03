@@ -159,7 +159,13 @@
     self.tableView.backgroundView = self.colors.count ? nil : emptyScroll;
 }
 - (void)showPrivacyButton {
-    UIBarButtonItem *privacy = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Privacy Policy", nil) style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)];
+    NSString *title=NSLocalizedString(@"Privacy Policy", nil);
+    // The native sidebar's title needs room to grow with Dynamic Type. A labelled
+    // privacy symbol keeps the same direct action without a competing long toolbar title.
+    UIBarButtonItem *privacy = self.workspaceDelegate
+        ? [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"hand.raised"] style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)]
+        : [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)];
+    privacy.accessibilityLabel = title;
     privacy.accessibilityIdentifier = @"privacyPolicy";
     self.navigationItem.rightBarButtonItem = privacy;
 }

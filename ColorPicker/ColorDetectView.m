@@ -20,6 +20,8 @@
         self.accessibilityIdentifier = @"photoViewport";
         self.imageView = [[UIImageView alloc] initWithImage:image];
         self.imageView.contentMode = UIViewContentModeScaleAspectFit;
+        // Match the sampler's documented white matte, including in dark appearance.
+        self.imageView.backgroundColor = UIColor.whiteColor;
         self.imageView.userInteractionEnabled = YES;
         self.imageView.accessibilityIdentifier = @"sampleImage";
         self.imageView.isAccessibilityElement = YES;

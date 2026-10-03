@@ -4,6 +4,7 @@
 
 @interface TouchColorIPadUITests : XCTestCase
 @property (nonatomic, strong) XCUIApplication *app;
+@property (nonatomic) CGSize originalWindowSize;
 @end
 @implementation TouchColorIPadUITests
 - (void)setUp {
@@ -39,31 +40,42 @@
 }
 - (void)cancelPicker {
     XCUIElement *content=self.app.scrollViews[@"photosView_content_scroll_view"];
-    XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
+    XCUIElement *cancel=self.app.navigationBars[@"Photos"].buttons[@"Cancel"].firstMatch;
     XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        return (content.exists && content.frame.size.width>0) || (cancel.exists && cancel.hittable);
+        // During PHPicker's remote-view transition an unresolved Cancel can exist with
+        // an invalid activation frame. Wait for real Photos content before querying actions.
+        return content.exists && content.frame.size.width>0 && content.frame.size.height>0;
     }] object:self.app];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:15],XCTWaiterResultCompleted,@"System picker must be ready: %@",self.app.debugDescription);
-    CGRect window=self.app.windows.firstMatch.frame;
-    CGRect picker=content.exists ? content.frame : CGRectZero;
-    NSArray<NSValue *> *outside=@[[NSValue valueWithCGPoint:CGPointMake(CGRectGetMaxX(window)-20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMinX(window)+20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMaxY(window)-20)],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMinY(window)+20)]];
-    BOOL dismissedPopover=NO;
-    if (!CGRectIsEmpty(picker)) {
-        for (NSValue *value in outside) {
-            CGPoint point=value.CGPointValue;
-            if (!CGRectContainsPoint(picker,point)) {
-                // Regular-width PHPicker intentionally has no Cancel button. Its Close controls
-                // belong to an informational banner. UIKit dismisses this popover on an outside tap.
-                XCUICoordinate *origin=[self.app.windows.firstMatch coordinateWithNormalizedOffset:CGVectorMake(0,0)];
-                [[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)] tap];
-                dismissedPopover=YES;
-                break;
+    // A compact adapted sheet has a real Cancel action even though its content leaves
+    // the underlying navigation strip visible. Prefer that action over a supposed outside tap.
+    CGRect cancelFrame=cancel.exists ? cancel.frame : CGRectZero;
+    BOOL visibleCancel=!CGRectIsEmpty(cancelFrame) && !CGRectIsNull(cancelFrame) &&
+        CGRectContainsRect(self.app.windows.firstMatch.frame,cancelFrame);
+    if (visibleCancel) {
+        [cancel tap];
+    } else {
+        CGRect window=self.app.windows.firstMatch.frame;
+        CGRect picker=content.exists ? content.frame : CGRectZero;
+        NSArray<NSValue *> *outside=@[[NSValue valueWithCGPoint:CGPointMake(CGRectGetMaxX(window)-20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMinX(window)+20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMaxY(window)-20)],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMinY(window)+20)]];
+        BOOL dismissedPopover=NO;
+        if (!CGRectIsEmpty(picker)) {
+            for (NSValue *value in outside) {
+                CGPoint point=value.CGPointValue;
+                if (!CGRectContainsPoint(picker,point)) {
+                    // Regular-width PHPicker intentionally has no Cancel button. Its Close controls
+                    // belong to an informational banner. UIKit dismisses this popover on an outside tap.
+                    XCUICoordinate *origin=[self.app.windows.firstMatch coordinateWithNormalizedOffset:CGVectorMake(0,0)];
+                    [[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)] tap];
+                    dismissedPopover=YES;
+                    break;
+                }
             }
         }
-    }
-    if (!dismissedPopover) {
-        XCTAssertTrue(cancel.hittable,@"Compact sheet Cancel must remain usable: %@",self.app.debugDescription);
-        [cancel tap];
+        if (!dismissedPopover) {
+            XCTAssertTrue(visibleCancel,@"Compact sheet Cancel must remain usable: %@",self.app.debugDescription);
+            [cancel tap];
+        }
     }
     XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
         return !content.exists && !cancel.exists;
@@ -171,6 +183,7 @@
     NSString *selection=self.app.staticTexts[@"sampledColor"].label;
     XCUIElement *window=self.app.windows.firstMatch;
     CGRect original=window.frame;
+    self.originalWindowSize=original.size;
     XCUICoordinate *corner=[[window coordinateWithNormalizedOffset:CGVectorMake(1,1)] coordinateWithOffset:CGVectorMake(-12,-12)];
     @try {
         // Apple's documented iPadOS window handle; this is an OS window resize, not a test-only app frame.
@@ -197,7 +210,25 @@
             XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return fabs(window.frame.size.width-original.size.width)<4 && fabs(window.frame.size.height-original.size.height)<4; }] object:window];
             XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore full window: %@",self.app.debugDescription);
             NSLog(@"NATIVE_WINDOW_RESTORED %@",NSStringFromCGRect(window.frame));
+            self.originalWindowSize=CGSizeZero;
         }
     }
+}
+- (void)tearDown {
+    // XCTest can end a failing case before its remaining actions. Recover the OS window
+    // independently so a failed modal assertion cannot change the next suite's geometry.
+    if (self.originalWindowSize.width>0) {
+        [self.app terminate];[self.app launch];
+        XCUIElement *window=self.app.windows.firstMatch;
+        if (fabs(window.frame.size.width-self.originalWindowSize.width)>4) {
+            [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
+            XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
+                return fabs(window.frame.size.width-self.originalWindowSize.width)<4 && fabs(window.frame.size.height-self.originalWindowSize.height)<4;
+            }] object:window];
+            XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore OS window after failed case: %@",self.app.debugDescription);
+        }
+        self.originalWindowSize=CGSizeZero;
+    }
+    [super tearDown];
 }
 @end
