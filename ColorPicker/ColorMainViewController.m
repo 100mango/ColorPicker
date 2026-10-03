@@ -198,6 +198,8 @@
     content.image = [UIImage systemImageNamed:@"circle.fill"];
     content.imageProperties.tintColor = TCUIColorFromHex(hex);
     content.textProperties.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    content.textProperties.numberOfLines = 0;
+    content.secondaryTextProperties.numberOfLines = 0;
     cell.contentConfiguration = content;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.accessibilityLabel = [NSString stringWithFormat:@"%@, %@", hex, TCRGBDescription(hex)];

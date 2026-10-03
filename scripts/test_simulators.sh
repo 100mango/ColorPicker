@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 family="${1:?Provide iPhone or iPad}"
-suite="${2:?Provide TouchColorTests or TouchColorUITests}"
+suite="${2:?Provide prepare, shutdown, TouchColorTests or TouchColorUITests}"
 case "$family" in iPhone|iPad) ;; *) exit 2;; esac
-case "$suite" in TouchColorTests|TouchColorUITests) ;; *) exit 2;; esac
+case "$suite" in prepare|shutdown|TouchColorTests|TouchColorUITests) ;; *) exit 2;; esac
 xcrun simctl list devices available -j > /tmp/touchcolor-devices.json
 device=$(python3 - "$family" <<'PY'
 import json,sys
@@ -19,10 +19,18 @@ print(selected['udid'])
 print('Selected '+selected['name']+' '+selected['udid'],file=sys.stderr)
 PY
 )
-# Teardown also runs after failed tests, so the next family never competes with an active simulator.
-trap 'xcrun simctl shutdown "$device" || true' EXIT
-xcrun simctl boot "$device" || true
-xcrun simctl bootstatus "$device" -b
+# Cold CoreSimulator startup has a separate budget; unit and UI suites share the warm device.
+if [[ "$suite" == prepare ]]; then
+  xcrun simctl boot "$device" || true
+  xcrun simctl bootstatus "$device" -b
+  xcrun simctl spawn "$device" launchctl print system >/dev/null
+  xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -showdestinations
+  exit 0
+fi
+if [[ "$suite" == shutdown ]]; then
+  xcrun simctl shutdown "$device" || true
+  exit 0
+fi
 if [[ "$suite" == TouchColorUITests ]]; then
   python3 - <<'PYPNG'
 import struct,zlib

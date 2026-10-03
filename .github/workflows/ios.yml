@@ -10,7 +10,7 @@ concurrency:
 jobs:
   compatibility:
     runs-on: xcode-27
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -44,22 +44,40 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
-      - name: iPhone unit tests
+      - name: Warm up iPhone simulator
+        id: warm-iphone
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPhone prepare
+      - name: iPhone unit tests
+        if: ${{ !cancelled() && steps.warm-iphone.outcome == 'success' }}
         timeout-minutes: 8
         run: bash scripts/test_simulators.sh iPhone TouchColorTests
       - name: iPhone UI tests and synthetic screenshots
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.warm-iphone.outcome == 'success' }}
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh iPhone TouchColorUITests
-      - name: iPad unit tests
+      - name: Shut down iPhone simulator
+        if: always()
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh iPhone shutdown
+      - name: Warm up iPad simulator
+        id: warm-ipad
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPad prepare
+      - name: iPad unit tests
+        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
         timeout-minutes: 8
         run: bash scripts/test_simulators.sh iPad TouchColorTests
       - name: iPad UI tests
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh iPad TouchColorUITests
+      - name: Shut down iPad simulator
+        if: always()
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh iPad shutdown
       - name: Always report test summaries and simulator diagnostics
         if: always()
         run: |
