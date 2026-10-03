@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from bounded_process import run_captured
 
 guard = Path(__file__).with_name('validate_evidence.py')
 checked = 0
@@ -14,7 +15,7 @@ def check(prepare, expected, limit=4_000_000):
     with tempfile.TemporaryDirectory(prefix='touchcolor-evidence-guard-') as directory:
         root = Path(directory)/'evidence'; root.mkdir()
         prepare(root)
-        result = subprocess.run([sys.executable, str(guard), str(root), str(limit)], capture_output=True, text=True)
+        result = run_captured([sys.executable, str(guard), str(root), str(limit)], timeout=10, text=True)
         assert (result.returncode == 0) == expected, (prepare.__name__, result.stdout, result.stderr)
         checked += 1
 def valid(root):

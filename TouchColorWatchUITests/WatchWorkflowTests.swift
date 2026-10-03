@@ -4,6 +4,10 @@ final class WatchWorkflowTests: XCTestCase {
     private var app: XCUIApplication!
     override func setUpWithError() throws {
         continueAfterFailure = false
+        // The first cold Watch UI session can spend two minutes waiting for the
+        // system app to become idle. Keep that startup bounded and distinct from
+        // the normal functional cases, which retain the 120-second allowance.
+        executionTimeAllowance = name.contains("Chinese") ? 240 : 120
         app = XCUIApplication()
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.watch-ui.\(UUID())"
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]
@@ -62,10 +66,41 @@ final class WatchWorkflowTests: XCTestCase {
             print("WATCH_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
             try app.performAccessibilityAudit(for: .all) { issue in
                 print("WATCH_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                print("WATCH_ACCESSIBILITY_ELEMENT: \(String((issue.element?.debugDescription ?? "none").prefix(5000)))")
                 return false
             }
             print("WATCH_ACCESSIBILITY_AUDIT_PASS: \(state)")
         } else { throw XCTSkip("Native audit qualification targets the installed watchOS 27 runtime") }
+    }
+
+    @MainActor func testOfficialAccessibilitySavedListSendAndCancel() throws {
+        XCTAssertTrue(app.buttons["watch.editor"].waitForExistence(timeout: 15))
+        app.buttons["watch.editor"].tap(); app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
+        for _ in 0..<5 where !app.buttons["watch.save"].isHittable { app.swipeUp() }
+        app.buttons["watch.save"].tap(); app.buttons["BackButton"].tap()
+        for _ in 0..<5 where !app.buttons["watch.color.0"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["watch.color.0"].isHittable)
+        XCTAssertTrue(app.buttons["watch.color.0"].label.contains("#fe0000"))
+        try audit("saved palette list")
+        let saved = XCTAttachment(screenshot: app.screenshot())
+        saved.name = "Native Watch device-sized saved palette"; saved.lifetime = .keepAlways; add(saved)
+        for _ in 0..<5 where !app.buttons["watch.editor"].isHittable { app.swipeDown() }
+        app.buttons["watch.editor"].tap()
+        for _ in 0..<5 where !app.buttons["watch.send"].isHittable { app.swipeUp() }
+        app.buttons["watch.send"].tap()
+        XCTAssertTrue(app.buttons["Send"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == '#fe0000'")).firstMatch.exists)
+        try audit("explicit Send confirmation")
+        let confirmation = XCTAttachment(screenshot: app.screenshot())
+        confirmation.name = "Native Watch device-sized Send and Cancel"; confirmation.lifetime = .keepAlways; add(confirmation)
+        app.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["watch.send"].waitForExistence(timeout: 5))
+        app.buttons["BackButton"].tap()
+        for _ in 0..<5 where !app.buttons["watch.transfer.open"].isHittable { app.swipeUp() }
+        app.buttons["watch.transfer.open"].tap()
+        XCTAssertFalse(app.staticTexts["watch.transfer.count"].exists)
+        try audit("cancelled Send leaves no transfer")
     }
     @MainActor func testOfficialAccessibilityHomeAndColorEditor() throws {
         XCTAssertTrue(app.buttons["watch.editor"].waitForExistence(timeout: 15))

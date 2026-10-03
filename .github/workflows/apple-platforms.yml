@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   native-platform:
-    name: ${{ matrix.platform }} on a fresh standard VM
+    name: ${{ matrix.lane || matrix.platform }} on a fresh standard VM
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -18,18 +18,40 @@ jobs:
         include:
           - platform: tv
             minutes: 25
+            evidence_bytes: 3000000
           - platform: mac
             minutes: 40
+            evidence_bytes: 4000000
           - platform: vision
+            lane: vision-canvas
+            vision_suite: canvas
             minutes: 40
+            evidence_bytes: 4000000
+          - platform: vision
+            lane: vision-files
+            vision_suite: files
+            minutes: 40
+            evidence_bytes: 4000000
           - platform: ios
             minutes: 20
+            evidence_bytes: 1000000
           - platform: watch
+            lane: watch-smallest
+            watch_profile: smallest
             minutes: 25
+            evidence_bytes: 2000000
+          - platform: watch
+            lane: watch-largest
+            watch_profile: largest
+            minutes: 25
+            evidence_bytes: 2000000
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_WATCH_PROFILE: ${{ matrix.watch_profile || 'largest' }}
+      TOUCHCOLOR_VISION_SUITE: ${{ matrix.vision_suite || 'canvas' }}
+      TOUCHCOLOR_EVIDENCE_LIMIT: ${{ matrix.evidence_bytes }}
     steps:
       - name: Check out exact source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -60,6 +82,9 @@ jobs:
           python3 scripts/verify_native_localizations.py
           python3 scripts/test_evidence_guard.py
           python3 scripts/test_capture_checkpoint.py
+          python3 scripts/test_watch_profiles.py
+          python3 scripts/test_bounded_process.py
+          python3 scripts/test_vision_suites.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Probe native XCTest accessibility audit availability
@@ -205,9 +230,9 @@ jobs:
             fi
           done
           python3 - <<'PY'
-          import json
+          import json,os
           from pathlib import Path
-          root=Path('build/evidence'); total=0
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])
           for manifest in root.glob('*/manifest.json'):
               groups=json.loads(manifest.read_text()); keep=set()
               for group in groups:
@@ -225,7 +250,7 @@ jobs:
           for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
               if p.is_file():
                   size=p.stat().st_size
-                  if size>5_000_000 or total+size>4_000_000: p.unlink()
+                  if size>5_000_000 or total+size>limit: p.unlink()
                   else: total+=size
           for manifest in root.glob('*/manifest.json'):
               groups=json.loads(manifest.read_text())
@@ -241,12 +266,12 @@ jobs:
         id: evidence_guard
         if: always()
         timeout-minutes: 1
-        run: python3 scripts/validate_evidence.py build/evidence 4000000
+        run: python3 scripts/validate_evidence.py build/evidence "$TOUCHCOLOR_EVIDENCE_LIMIT"
       - name: Retain small test evidence for review
         if: ${{ always() && steps.evidence_guard.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: touchcolor-native-evidence-${{ matrix.platform }}
+          name: touchcolor-native-evidence-${{ matrix.lane || matrix.platform }}
           path: build/evidence
           retention-days: 1
           compression-level: 9

@@ -3,17 +3,28 @@
 import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,time
 from pathlib import Path
 from capture_simulator_checkpoint import capture as capture_checkpoint
+from watch_profiles import select_profile
+from bounded_process import run_captured, check_output
+from vision_suites import SUITES as VISION_SUITES
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
-report={'captures':[],'platform':kind,'sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'stages':[]}
+report={'captures':[],'platform':kind,'sha':check_output(['git','rev-parse','HEAD'],text=True,timeout=10).strip(),'stages':[]}
 def run(command,timeout,required=True):
-    started=time.monotonic();started_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
+    if report.get('cleanup_unconfirmed'):
+        if required: raise RuntimeError('Prior process exit is unconfirmed; no new work on this VM')
+        return 124
+    started=time.monotonic();wall_started=time.time();started_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
+    report['active_command']={'command':command,'started_at':started_at,'started_monotonic':started,'timeout_seconds':timeout,'phase':'starting'}
+    (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
     p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    report['active_command'].update(pid=p.pid,phase='running')
+    (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+    print('NATIVE_COMMAND_STARTED',json.dumps(report['active_command']),flush=True)
     def output():
         for line in p.stdout:
             print(line,end='',flush=True)
@@ -32,17 +43,28 @@ def run(command,timeout,required=True):
     except subprocess.TimeoutExpired:
         # A stuck test process must not turn our command deadline into an
         # unbounded wait while reaping after SIGKILL. The VM job owns final cleanup.
+        report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+        print('NATIVE_COMMAND_DEADLINE_EXCEEDED',json.dumps(report['active_command']),flush=True)
         for stop_signal in (signal.SIGTERM,signal.SIGKILL):
+            report['active_command']['phase']='sending '+stop_signal.name
+            (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+            print('NATIVE_COMMAND_CLEANUP',report['active_command']['phase'],p.pid,flush=True)
             try:os.killpg(p.pid,stop_signal)
             except ProcessLookupError:break
+            report['active_command']['phase']='bounded reap after '+stop_signal.name
+            (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
             try:p.wait(timeout=10);break
             except subprocess.TimeoutExpired:continue
-        if p.poll() is None:cleanup_error='Process exit was not confirmed after bounded TERM/KILL waits'
+        if p.poll() is None:
+            cleanup_error='Process exit was not confirmed after bounded TERM/KILL waits'
+            report['cleanup_unconfirmed']=True
         code=124
     reader.join(timeout=5)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3)})
+    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
+    report['active_command']=None
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
@@ -50,9 +72,12 @@ def resources(label):
     sample={'label':label,'time':datetime.datetime.now(datetime.timezone.utc).isoformat()}
     for name,command in [('memory',['sysctl','hw.memsize','vm.swapusage']),('vm',['vm_stat'])]:
         try:
-            result=subprocess.run(command,capture_output=True,text=True,timeout=10)
+            result=run_captured(command,text=True,timeout=10)
             sample[name]={'exit':result.returncode,'text':(result.stdout+result.stderr)[-5000:]}
-        except Exception as error:sample[name]={'error':str(error)}
+        except Exception as error:
+            sample[name]={'error':str(error)}
+            if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False):
+                report['cleanup_unconfirmed']=True;break
     report.setdefault('resources',[]).append(sample)
     print('NATIVE_RESOURCE_STATE',json.dumps(sample),flush=True)
 device=None
@@ -77,26 +102,35 @@ try:
     report['release_bundle'].update(privacy_manifest=True,compiled_assets=True,unsigned=True)
     print('RELEASE_BUNDLE',json.dumps(report['release_bundle']),flush=True)
     run(['file',str(binary)],30)
-    linked_libraries=subprocess.check_output(['otool','-L',str(binary)],text=True,timeout=30).splitlines()[1:]
+    linked_libraries=check_output(['otool','-L',str(binary)],text=True,timeout=30).splitlines()[1:]
     report['release_linked_libraries']=[line.strip() for line in linked_libraries]
     assert not any(name in line for line in linked_libraries for name in ('Pods/','GPUImage','Masonry')), 'Retired dependency linked into native Release'
     print('NATIVE_RELEASE_LINKED_LIBRARIES',json.dumps(report['release_linked_libraries']),flush=True)
-    load_commands=subprocess.check_output(['otool','-l',str(binary)],text=True,timeout=30).splitlines()
+    load_commands=check_output(['otool','-l',str(binary)],text=True,timeout=30).splitlines()
     summary=[]
     for index,line in enumerate(load_commands):
         if 'LC_BUILD_VERSION' in line: summary.extend(load_commands[index:index+8])
     report['binary_platform_minimum']=summary;print('\n'.join(summary),flush=True)
-    text=subprocess.check_output(['strings',str(binary)],text=True)
+    text=check_output(['strings',str(binary)],text=True,timeout=30)
     assert 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
     if kind=='vision':
         runner_info=Path('build/vision-tests/Build/Products/Debug-xrsimulator/TouchColorVisionUITests-Runner.app/Info.plist')
         report['ui_runner_identifier']=plistlib.loads(runner_info.read_bytes())['CFBundleIdentifier']
         assert report['ui_runner_identifier'].startswith('com.mango.touchColor.TouchColorVisionUITests'), 'Unexpected UI runner product'
-    devices=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','-j'],timeout=30))['devices']
+    devices=json.loads(check_output(['xcrun','simctl','list','devices','available','-j'],timeout=30))['devices']
     candidates=[(runtime,d) for runtime,rows in devices.items() if runtime.endswith(runtime_suffix) for d in rows if d.get('isAvailable')]
     if not candidates:raise RuntimeError('No installed available '+runtime_suffix+' device')
-    runtime,device=next((v for v in candidates if '46mm' in v[1]['name']),candidates[0])
+    if kind=='watch':
+        size=os.environ.get('TOUCHCOLOR_WATCH_PROFILE','largest')
+        runtime,device,inventory=select_profile(devices,runtime_suffix,size)
+        report['watch_profile']=size;report['watch_available_inventory']=inventory
+        print('WATCH_AVAILABLE_PROFILE_INVENTORY',json.dumps(inventory),flush=True)
+        runtimes=json.loads(check_output(['xcrun','simctl','list','runtimes','-j'],timeout=30))['runtimes']
+        installed=next(value for value in runtimes if value['identifier']==runtime)
+        report['watch_runtime_supported_device_types']=installed.get('supportedDeviceTypes',[])
+        print('WATCH_RUNTIME_SUPPORTED_DEVICE_TYPES',json.dumps(report['watch_runtime_supported_device_types']),flush=True)
+    else: runtime,device=candidates[0]
     report.update(runtime=runtime,device=device)
     resources('before boot')
     run(['xcrun','simctl','boot',device['udid']],180,required=False)
@@ -138,32 +172,40 @@ try:
     test_arguments=['-configuration','Debug','-destination','platform='+platform+' Simulator,id='+device['udid'],
         '-derivedDataPath','build/'+kind+'-tests','-parallel-testing-enabled','NO','-collect-test-diagnostics','never',
         '-test-timeouts-enabled','YES','-default-test-execution-time-allowance','180' if kind=='vision' else '120',
-        '-maximum-test-execution-time-allowance','360' if kind=='vision' else '120','ARCHS=arm64','test-without-building']
+        '-maximum-test-execution-time-allowance','360' if kind=='vision' else '240' if kind=='watch' else '120','ARCHS=arm64','test-without-building']
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
         run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)
-        report['ui_scope']='Full native UI suite: Files/Photos cancellation, Photos import, paste/sample/save/relaunch, PNG export/reopen, Chinese UI and strict accessibility audits'
-        run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult','-only-testing:TouchColorVisionUITests']+skip,1200)
+        suite=os.environ.get('TOUCHCOLOR_VISION_SUITE','canvas')
+        assert suite in VISION_SUITES, 'Unknown Vision UI coverage group'
+        report['ui_scope']={'suite':suite,'cases':VISION_SUITES[suite]}
+        selected=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/'+method for method in VISION_SUITES[suite]]
+        print('VISION_UI_EXACT_SCOPE',json.dumps(report['ui_scope']),flush=True)
+        run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip,1200)
     else:
-        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
+        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,840 if kind=='watch' else 660)
     report['tests']='passed'
     if photo_seed_failed: raise RuntimeError('Photos seeding timed out or failed; other native tests executed, real Photos import remains unqualified')
     report['result']='passed'
 except Exception as error:
+    if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
-    resources('after platform attempt')
+    if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
-    if result_bundle.exists():
+    if result_bundle.exists() and not report.get('cleanup_unconfirmed'):
         try:
-            summary_run=subprocess.run(['xcrun','xcresulttool','get','test-results','summary','--path',str(result_bundle)],capture_output=True,text=True,timeout=30)
+            summary_run=run_captured(['xcrun','xcresulttool','get','test-results','summary','--path',str(result_bundle)],text=True,timeout=30)
             if summary_run.returncode==0:
                 summary=json.loads(summary_run.stdout)
                 report['xctest_summary']={key:summary.get(key) for key in ['result','passedTests','failedTests','skippedTests','totalTestCount']}
                 report['xctest_summary']['failures']=[{'test':f.get('testIdentifierString'),'message':f.get('failureText','')[:1600]} for f in summary.get('testFailures',[])[:12]]
                 print('NATIVE_XCTEST_SUMMARY',json.dumps(report['xctest_summary']),flush=True)
             else: report['summary_error']=(summary_run.stdout+summary_run.stderr)[-2000:]
-        except Exception as error:report['summary_error']=str(error)
-    if device:run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
+        except Exception as error:
+            report['summary_error']=str(error)
+            if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
+    if device and not report.get('cleanup_unconfirmed'):run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
+    if report.get('cleanup_unconfirmed'): report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
 if report['result']!='passed':raise SystemExit(1)

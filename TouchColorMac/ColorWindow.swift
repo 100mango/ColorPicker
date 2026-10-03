@@ -9,6 +9,7 @@ struct ColorWindow: View {
     @State private var showingPrivacy = false
     @State private var showingCamera = false
     @State private var targeted = false
+    private var ownsModalPresentation: Bool { showingPrivacy || showingCamera || session.errorMessage != nil }
 
     @MainActor init(library: PaletteLibrary, session: ImageSession? = nil) {
         self.library = library
@@ -18,6 +19,9 @@ struct ColorWindow: View {
     var body: some View {
         NavigationSplitView {
             PaletteSidebar(library: library, session: session)
+                // A sheet dims and blocks the workspace. Its inactive content must
+                // also leave VoiceOver navigation until the sheet is dismissed.
+                .accessibilityHidden(ownsModalPresentation)
                 .background(NativePaneAccessibility(label: NSLocalizedString("Saved color palette", comment: "Palette pane accessibility"), identifier: "workspace.palette"))
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
         } detail: {
@@ -60,6 +64,7 @@ struct ColorWindow: View {
             .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             .overlay { if targeted { RoundedRectangle(cornerRadius: 8).stroke(.blue, lineWidth: 3).allowsHitTesting(false) } }
             .onDrop(of: [.fileURL, .image], isTargeted: $targeted) { MacImportExport.drop($0, session: session, library: library) }
+            .accessibilityHidden(ownsModalPresentation)
             .background(NativePaneAccessibility(label: NSLocalizedString("Image color sampler", comment: "Sampler pane accessibility"), identifier: "workspace.sampler"))
         }
         .navigationSplitViewStyle(.balanced)
@@ -129,6 +134,9 @@ private struct SamplingControls: View {
             HStack {
                 Button("−") { session.changeZoom(session.zoom / 2) }.accessibilityLabel("Zoom out").accessibilityIdentifier("sample.zoom.out")
                 Slider(value: Binding(get: { session.zoom }, set: { session.changeZoom($0) }), in: ColorZoom.range)
+                    // The native thumb and track form one adjustable control.
+                    // Combine their semantics instead of exposing an unnamed thumb.
+                    .accessibilityElement(children: .combine)
                     .accessibilityLabel("Image zoom").accessibilityIdentifier("sample.zoom")
                 Button("+") { session.changeZoom(session.zoom * 2) }.accessibilityLabel("Zoom in").accessibilityIdentifier("sample.zoom.in")
                 Text(String(format: "%.1f×", session.zoom)).monospacedDigit().frame(width: 55).accessibilityIdentifier("sample.zoom.value")

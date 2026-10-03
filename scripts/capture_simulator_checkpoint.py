@@ -2,6 +2,7 @@
 """Capture a held test-owned simulator checkpoint through supported simctl APIs."""
 import json,subprocess,uuid
 from pathlib import Path
+from bounded_process import run_captured, check_output
 
 _containers = {}
 
@@ -12,7 +13,7 @@ def capture(device,runner_identifier,request_id,output):
     # Reuse only a previously discovered runner container holding this exact new UUID.
     # A changed/reinstalled runner requires a new supported simctl lookup.
     if container is None or not (container/'tmp'/('TouchColor-capture-'+request_id+'.json')).is_file():
-        container=Path(subprocess.check_output(['xcrun','simctl','get_app_container',device,runner_identifier,'data'],text=True,timeout=30).strip())
+        container=Path(check_output(['xcrun','simctl','get_app_container',device,runner_identifier,'data'],text=True,timeout=30).strip())
         _containers[key]=container
     request=container/'tmp'/('TouchColor-capture-'+request_id+'.json')
     ack=container/'tmp'/('TouchColor-capture-'+request_id+'.ack')
@@ -29,12 +30,12 @@ def capture(device,runner_identifier,request_id,output):
             destination=output/((request_id if attempt==0 else str(uuid.uuid4()).upper())+'.jpeg')
             command=['xcrun','simctl','io',device,'screenshot','--type=jpeg',str(destination)]
             try:
-                result=subprocess.run(command,capture_output=True,text=True,timeout=20)
+                result=run_captured(command,text=True,timeout=20)
                 outcome['attempts'].append({'exit':result.returncode,'file':destination.name})
                 break
             except subprocess.TimeoutExpired as error:
                 outcome['attempts'].append({'exit':124,'file':destination.name,'error':str(error)[:1600]})
-                if attempt==1: raise
+                if attempt==1 or not getattr(error,'cleanup_confirmed',False): raise
         # Nonzero returns (including permission errors) are never retried.
         outcome.update(command=command,exit=result.returncode,diagnostic=(result.stdout+result.stderr)[-1600:])
         assert result.returncode==0 and destination.is_file(), 'simctl screenshot did not produce an image'

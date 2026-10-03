@@ -26,6 +26,9 @@ def sources(directory):
 apprefs=sources('TouchColorMac')
 unitrefs=sources('TouchColorMacTests')+sources('Packages/ColorCore/Tests')
 uirefs=sources('TouchColorMacUITests')
+# The screenshot locator has independent negative/ambiguity tests in the hosted
+# unit suite and is also compiled into the UI harness. It never ships in the app.
+unitrefs.append(ref('TouchColorMacUITests/SixColorThumbnail.swift','sourcecode.swift'))
 resource=ref('TouchColorMac/Assets.xcassets','folder.assetcatalog')
 privacy=ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')
 localizations=[add('loc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorMac/'+lang+'.lproj/Localizable.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]

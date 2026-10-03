@@ -1,12 +1,33 @@
 import XCTest
 import SwiftUI
 import Foundation
+import Combine
 import ColorDomain
 import ColorRaster
 import ColorPaletteLegacy
 @testable import TouchColorWatch
 
 @MainActor final class WatchWorkspaceTests: XCTestCase {
+    func testRepeatedEditCopySelectionDoesNotRepublishOrMutateSavedHistory() {
+        let suite = "TouchColor.watch-copy-unit.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let palette = WatchPalette(defaults: defaults)
+        let first = RGBColor(hex: "#fe0000")!, next = RGBColor(hex: "#0c2238")!
+        palette.select(first); palette.save(); palette.save()
+        var red: [Double] = [], green: [Double] = [], blue: [Double] = []
+        let tokens = [palette.$red.dropFirst().sink { red.append($0) },
+                      palette.$green.dropFirst().sink { green.append($0) },
+                      palette.$blue.dropFirst().sink { blue.append($0) }]
+        withExtendedLifetime(tokens) {
+            for _ in 0..<5 { palette.select(first) }
+            XCTAssertTrue(red.isEmpty && green.isEmpty && blue.isEmpty)
+            palette.select(next); palette.select(next)
+            XCTAssertEqual(red, [12]); XCTAssertEqual(green, [34]); XCTAssertEqual(blue, [56])
+            XCTAssertEqual(palette.selected, next)
+            XCTAssertEqual(palette.colors, [first, first])
+        }
+    }
     func testOfflineRGBEditingKeepsOrderedDuplicatesAndRecoveryBackup() {
         let suite = "TouchColor.watch-unit.\(UUID())"
         let isolated = UserDefaults(suiteName: suite)!

@@ -117,8 +117,58 @@ import AVFoundation
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
     }
+    private func makePhotosFixture(at url: URL) throws {
+        let colors: [[UInt8]] = [[255,0,0,255], [0,255,0,255], [0,0,255,255],
+                                 [255,255,0,255], [255,0,255,255], [0,255,255,255]]
+        let bytes = (0..<200).flatMap { y in (0..<300).flatMap { x in colors[(y / 100) * 3 + x / 100] } }
+        let image = try XCTUnwrap(CGImage(width: 300, height: 200, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: 1200, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+    }
+
+    private func selectVerifiedPhotosThumbnail() throws {
+        let picker = app.sheets.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 15), app.debugDescription)
+        // The observed macOS Photos picker uses this native sheet. Never use
+        // screenshot coordinates for another sheet or for a permission prompt.
+        XCTAssertEqual(picker.frame.width, 780, accuracy: 2)
+        XCTAssertEqual(picker.frame.height, 620, accuracy: 2)
+        let deadline = Date().addingTimeInterval(35)
+        repeat {
+            let screenshot = picker.screenshot()
+            let png = screenshot.pngRepresentation
+            let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
+            let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+            let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? NSNumber).doubleValue
+            let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? NSNumber).doubleValue
+            XCTAssertEqual(width / height, Double(picker.frame.width / picker.frame.height), accuracy: 0.005,
+                           "The pixel coordinates must come from this cropped sheet, including Retina scale")
+            let locations = try SixColorThumbnail.locate(in: png)
+            if locations.count == 1, let point = locations.first {
+                let attachment = XCTAttachment(screenshot: screenshot)
+                attachment.name = "Native Mac verified asymmetric Photos thumbnail"
+                attachment.lifetime = .keepAlways; add(attachment)
+                print("NATIVE_PHOTOS_VERIFIED_THUMBNAIL: x=\(point.x) y=\(point.y)")
+                picker.coordinate(withNormalizedOffset: CGVector(dx: point.x, dy: point.y)).click()
+                return
+            }
+            XCTAssertLessThanOrEqual(locations.count, 1, "Only the one synthetic source may be selected")
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        let attachment = XCTAttachment(screenshot: picker.screenshot())
+        attachment.name = "Native Mac Photos thumbnail readiness failure"; attachment.lifetime = .keepAlways; add(attachment)
+        XCTFail("No unique six-color source was visible in the current Photos sheet; no coordinate was clicked")
+    }
+
     func testSystemPhotosImportSamplesActualImageInsideSandbox() throws {
         try XCTSkipUnless(expectsSandbox, "Qualify the populated system Photos route once in the minimal sandbox lane")
+        let photosFixture = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-Photos-\(UUID()).png")
+        try makePhotosFixture(at: photosFixture)
+        defer { try? FileManager.default.removeItem(at: photosFixture) }
         let photos = XCUIApplication(bundleIdentifier: "com.apple.Photos")
         photos.launch()
         defer {
@@ -139,7 +189,7 @@ import AVFoundation
         photos.typeKey("g", modifierFlags: [.command, .shift])
         let path = photos.sheets.textFields.firstMatch
         XCTAssertTrue(path.waitForExistence(timeout: 5), photos.debugDescription)
-        path.typeKey("a", modifierFlags: [.command]); path.typeText(fixture.path)
+        path.typeKey("a", modifierFlags: [.command]); path.typeText(photosFixture.path)
         photos.typeKey(.return, modifierFlags: [])
         let importButton = photos.sheets["open-panel"].buttons["OKButton"]
         XCTAssertTrue(importButton.waitForExistence(timeout: 5), photos.debugDescription); importButton.click()
@@ -158,26 +208,25 @@ import AVFoundation
         }).prefix(8) {
             print("NATIVE_PHOTOS_UI_OWNER: \(helper.bundleIdentifier ?? "unknown") pid=\(helper.processIdentifier)")
         }
-        let pickerShot = XCTAttachment(screenshot: app.screenshot())
-        pickerShot.name = "Native Mac populated system Photos picker"; pickerShot.lifetime = .keepAlways; add(pickerShot)
-        let photo = app.images["PXGGridLayout-Info"].firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 15), "Populated library was verified; a missing app-scoped AX image is a picker automation gap, not proof of an empty library. \(app.debugDescription)")
-        photo.click()
+        try selectVerifiedPhotosThumbnail()
         assertHex("#ff00ff")
+        // The default normalized center resolves to y=100. One original pixel up
+        // crosses the asymmetric fixture boundary into the green block.
         app.buttons["sample.above"].click(); assertHex("#00ff00")
         let dimensions = app.staticTexts["sample.pixel"]
-        XCTAssertTrue((dimensions.value as? String ?? dimensions.label).contains("3 × 2"))
+        XCTAssertTrue((dimensions.value as? String ?? dimensions.label).contains("300 × 200"))
         app.buttons["sample.save"].click()
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "1")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "Native Mac actual Photos imported source and green pixel"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["image.photos"].click()
-        XCTAssertTrue(photo.waitForExistence(timeout: 10), app.debugDescription)
+        let picker = app.sheets.firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), app.debugDescription)
         app.typeKey(.escape, modifierFlags: [])
         if #available(macOS 15.0, *) {
-            XCTAssertTrue(photo.waitForNonExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(picker.waitForNonExistence(timeout: 10), app.debugDescription)
         } else {
-            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: photo)
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: picker)
             XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed, app.debugDescription)
         }
         assertHex("#00ff00")
@@ -327,19 +376,38 @@ import AVFoundation
         XCTAssertTrue(app.groups["workspace.sampler"].exists, app.debugDescription)
         XCTAssertTrue(app.groups["workspace.palette"].staticTexts["palette.count"].exists)
         XCTAssertTrue(app.groups["workspace.sampler"].buttons["image.open.empty"].exists)
+        let zoom = app.sliders["sample.zoom"]
+        XCTAssertTrue(zoom.exists); XCTAssertEqual(zoom.label, "Image zoom")
+        XCTAssertFalse(zoom.isEnabled)
+        XCTAssertEqual(zoom.descendants(matching: .valueIndicator).matching(NSPredicate(format: "label == ''")).count, 0)
         try audit("empty workspace")
         openFile(fixture); assertHex("#ff00ff")
         app.buttons["sample.save"].click()
         try audit("full image and palette")
+        // Real pointer input must still operate the original slider after the
+        // accessibility composition change, with visible canvas magnification.
+        let canvas = app.images["image.canvas"]
+        let originalWidth = canvas.frame.width
+        zoom.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
+        XCTAssertGreaterThan(canvas.frame.width, originalWidth * 1.5)
+        app.buttons["sample.center"].click(); assertHex("#ff00ff")
     }
     @MainActor func testOfficialAccessibilityCameraAndPrivacy() throws {
         app.buttons["camera.open"].click()
         XCTAssertTrue(app.buttons["camera.close"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["palette.count"].exists)
+        XCTAssertFalse(app.buttons["sample.save"].exists)
         try audit("camera availability")
         app.buttons["camera.close"].click()
+        XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["sample.save"].exists)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["palette.count"].exists)
         try audit("offline privacy")
+        app.buttons["privacy.close"].click()
+        XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["image.open.empty"].exists)
     }
 
     @MainActor func testOfficialAccessibilityCorruptImportRetainsPreviousSource() throws {
@@ -349,8 +417,12 @@ import AVFoundation
         defer { try? FileManager.default.removeItem(at: bad) }
         openFile(bad)
         XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.staticTexts["palette.count"].exists)
+        XCTAssertFalse(app.buttons["sample.save"].exists)
         try audit("corrupt import error")
         app.buttons["OK"].click(); assertHex("#ff00ff")
+        XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["sample.save"].exists)
     }
 
     func testSandboxBoundaryMatchesExactAppConfiguration() throws {

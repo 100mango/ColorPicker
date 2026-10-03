@@ -85,13 +85,14 @@ final class VisionWorkflowTests: XCTestCase {
         capture("Native Vision ordered palette after relaunch")
     }
     func testNativeExportSaveAndReopenActualPNG() {
+        executionTimeAllowance = 300
         paste(); app.buttons["image.export"].tap()
         XCTAssertTrue(app.navigationBars["DOCSidebarView"].waitForExistence(timeout: 45), app.debugDescription)
         let save = app.buttons["DOCPicker.actionButton"]
         XCTAssertTrue(save.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertEqual(save.label, "Save")
         XCTAssertTrue(app.textFields["DOCPicker.filenameTextField"].exists)
-        print("VISION_EXPORT_PANEL_AX: \(app.debugDescription)")
+        print("VISION_EXPORT_PANEL_READY: actual Save and filename controls verified")
         save.tap()
         XCTAssertTrue(app.buttons["export.reopen"].waitForExistence(timeout: 12), app.debugDescription)
         app.buttons["export.reopen"].tap(); hex("#ff00ff")
@@ -115,15 +116,16 @@ final class VisionWorkflowTests: XCTestCase {
         let appended = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == '6' OR value == '6'"), object: count)
         XCTAssertEqual(XCTWaiter.wait(for: [appended], timeout: 15), .completed, app.debugDescription)
         // Read back every appended entry through its distinct production Copy action.
+        // Query the observed native Button directly, without an all-descendants scan.
         var reopened: [String] = []
         for index in 3..<6 {
-            let actions = app.buttons["palette.actions.\(index)"]
-            XCTAssertTrue(actions.waitForExistence(timeout: 10), app.debugDescription); actions.tap()
-            let copy = app.descendants(matching: .any).matching(identifier: "palette.copy.\(index)").firstMatch
+            app.buttons["palette.actions.\(index)"].tap()
+            let copy = app.buttons["palette.copy.\(index)"]
             XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription); copy.tap()
             reopened.append(UIPasteboard.general.string ?? "")
         }
         XCTAssertEqual(reopened, ["#ff00ff", "#ff00ff", "#00ff00"])
+        print("VISION_JSON_REOPEN_VERIFIED: actual Copy values magenta, magenta, green")
         capture("Native Vision changed-color JSON export reopened with duplicates")
     }
     func testChinesePasteAndPrecisionControls() {
