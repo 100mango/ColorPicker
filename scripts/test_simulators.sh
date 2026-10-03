@@ -13,7 +13,8 @@ if not runtimes: raise SystemExit('BLOCKED: stable iOS 27.0 simulator runtime is
 family=sys.argv[1]
 candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and family in d['name']]
 if not candidates: raise SystemExit('BLOCKED: missing '+family+' simulator')
-selected=next((d for d in candidates if 'SE' in d['name']),candidates[0])
+preferred='17e' if family=='iPhone' else 'mini'
+selected=next((d for d in candidates if preferred in d['name']),candidates[0])
 print(selected['udid'])
 print('Selected '+selected['name']+' '+selected['udid'],file=sys.stderr)
 PY

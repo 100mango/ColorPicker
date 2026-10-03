@@ -38,7 +38,7 @@ NSString *TCSampleImage(UIImage *image, CGPoint p) {
     CGFloat y = MIN(floor(p.y * pixels.height), pixels.height - 1);
     uint8_t pixel[4] = {255, 255, 255, 255};
     CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGContextRef context = CGBitmapContextCreate(pixel, 1, 1, 8, 4, space, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGContextRef context = CGBitmapContextCreate(pixel, 1, 1, 8, 4, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
     CGColorSpaceRelease(space);
     if (!context) return nil;
     CGContextSetRGBFillColor(context, 1, 1, 1, 1);

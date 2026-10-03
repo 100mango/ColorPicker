@@ -111,7 +111,7 @@
 - (void)testSystemPhotoSelectionAndSampling {
     // CI seeds an opaque red PNG into this simulator's Photos library.
     [self.app.buttons[@"choosePhoto"] tap];
-    XCUIElement *cell=self.app.collectionViews.cells.firstMatch;
+    XCUIElement *cell=[self.app.images matchingIdentifier:@"PXGGridLayout-Info"].firstMatch;
     XCTAssertTrue([cell waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
     [cell tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);

@@ -330,6 +330,7 @@
 				"HEADER_SEARCH_PATHS" = ("$(inherited)", "$(SRCROOT)/ColorPicker");
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
 				"GENERATE_INFOPLIST_FILE" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
 			};
@@ -344,6 +345,7 @@
 				"HEADER_SEARCH_PATHS" = ("$(inherited)", "$(SRCROOT)/ColorPicker");
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
 				"GENERATE_INFOPLIST_FILE" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
 			};
@@ -416,6 +418,7 @@
 				"HEADER_SEARCH_PATHS" = ("$(inherited)", "$(SRCROOT)/ColorPicker");
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
 				"GENERATE_INFOPLIST_FILE" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TEST_TARGET_NAME" = "TouchColor";
 			};
 		};
@@ -429,6 +432,7 @@
 				"HEADER_SEARCH_PATHS" = ("$(inherited)", "$(SRCROOT)/ColorPicker");
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
 				"GENERATE_INFOPLIST_FILE" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TEST_TARGET_NAME" = "TouchColor";
 			};
 		};

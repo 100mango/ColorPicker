@@ -90,7 +90,7 @@
     NSData *data=[NSData dataWithBytes:bytes length:sizeof(bytes)];
     CGDataProviderRef provider=CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
     CGColorSpaceRef space=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGImageRef cg=CGImageCreate(3,2,8,32,12,space,kCGImageAlphaPremultipliedLast|kCGBitmapByteOrder32Big,provider,NULL,NO,kCGRenderingIntentDefault);
+    CGImageRef cg=CGImageCreate(3,2,8,32,12,space,(CGBitmapInfo)kCGImageAlphaPremultipliedLast|kCGBitmapByteOrder32Big,provider,NULL,NO,kCGRenderingIntentDefault);
     UIImage *image=[UIImage imageWithCGImage:cg scale:scale orientation:orientation];
     CGImageRelease(cg); CGColorSpaceRelease(space); CGDataProviderRelease(provider);
     return image;
