@@ -93,3 +93,7 @@
 "Image canvas. Use the pixel controls to move the center marker." = "图片画布。请用像素控制移动中心标记。";
 "Previous Photos" = "上一页照片";
 "The selected color code could not be created." = "无法生成所选颜色的二维码。";
+"Delete" = "删除";
+"Retry" = "重试";
+"Photo %lld" = "照片 %lld";
+"x %lld, y %lld" = "x %lld，y %lld";

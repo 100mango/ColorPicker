@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import ColorDomain
+import ColorRaster
 
 struct WatchHome: View {
     @ObservedObject var palette: WatchPalette
@@ -81,7 +82,7 @@ struct WatchTransferView: View {
                 Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
                 if let pending = transfer.pending {
                     Text("\(pending.colors.count) selected colors").font(.caption)
-                    Button("Retry") { transfer.retry() }.accessibilityIdentifier("watch.transfer.retry")
+                    Button("Retry") { transfer.retry() }.disabled(transfer.sending).accessibilityIdentifier("watch.transfer.retry")
                     Button("Cancel Transfer", role: .destructive) { transfer.cancel() }
                 }
             }
@@ -98,19 +99,8 @@ struct WatchPhotoView: View {
                 PhotosPicker(selection: $selection, matching: .images, preferredItemEncoding: .current) { Label("Choose Photo", systemImage: "photo") }
                     .accessibilityIdentifier("watch.photos.choose")
                 if let preview = model.preview {
-                    GeometryReader { geometry in
-                        let ratio = min(geometry.size.width / CGFloat(preview.width), geometry.size.height / CGFloat(preview.height))
-                        let size = CGSize(width: CGFloat(preview.width) * ratio, height: CGFloat(preview.height) * ratio)
-                        Image(decorative: preview.image, scale: 1).resizable().interpolation(.none)
-                            .frame(width: size.width, height: size.height)
-                            .overlay {
-                                Circle().stroke(.white, lineWidth: 2 / model.zoom).background(Circle().stroke(.black, lineWidth: 4 / model.zoom))
-                                    .frame(width: 10 / model.zoom, height: 10 / model.zoom)
-                                    .position(x: model.point.x * size.width, y: model.point.y * size.height)
-                            }
-                            .scaleEffect(model.zoom, anchor: UnitPoint(x: model.point.x, y: model.point.y))
-                            .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-                    }.frame(height: 120).clipped().accessibilityIdentifier("watch.preview")
+                    WatchPreviewCanvas(preview: preview, point: model.point, zoom: model.zoom)
+                        .frame(height: 120).accessibilityIdentifier("watch.preview")
                     Text("Preview color · up to 512 pixels").font(.caption2)
                     if let color = model.color {
                         Text(color.hex).monospaced().accessibilityIdentifier("watch.preview.hex")
@@ -176,5 +166,27 @@ private struct WatchSavedColor: View {
                 Button("Delete", role: .destructive) { palette.remove(at: index); dismiss() }.accessibilityIdentifier("watch.delete.\(index)")
             }
         }
+    }
+}
+
+struct WatchPreviewCanvas: View {
+    let preview: PreviewRaster
+    let point: NormalizedPoint
+    let zoom: Double
+    var body: some View {
+        GeometryReader { geometry in
+            let ratio = min(geometry.size.width / CGFloat(preview.width), geometry.size.height / CGFloat(preview.height))
+            let size = CGSize(width: CGFloat(preview.width) * ratio, height: CGFloat(preview.height) * ratio)
+            Image(decorative: preview.image, scale: 1).resizable().interpolation(.none)
+                .frame(width: size.width, height: size.height)
+                .background(Color.white)
+                .overlay {
+                    Circle().stroke(.white, lineWidth: 2 / zoom).background(Circle().stroke(.black, lineWidth: 4 / zoom))
+                        .frame(width: 10 / zoom, height: 10 / zoom)
+                        .position(x: point.x * size.width, y: point.y * size.height)
+                }
+                .scaleEffect(zoom, anchor: UnitPoint(x: point.x, y: point.y))
+                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+        }.clipped()
     }
 }

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class TVWorkflowTests: XCTestCase {
     private var app: XCUIApplication!
@@ -6,19 +7,23 @@ final class TVWorkflowTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication(); app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.tv-ui.\(UUID())"
-        app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(en)"]; app.launch()
+        app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]; app.launch()
     }
     override func tearDownWithError() throws {
         if (testRun?.totalFailureCount ?? 0) > 0 { capture("Native TV failure"); print("TV_FAILURE_AX: \(app.debugDescription)") }
         app.terminate()
     }
-    private func capture(_ name: String) { let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot) }
+    private func capture(_ name: String) {
+        guard let data = app.screenshot().image.jpegData(compressionQuality: 0.45), data.count <= 3_000_000 else { return }
+        let shot = XCTAttachment(data: data, uniformTypeIdentifier: "public.jpeg"); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+    }
     /// Real remote events use the visible focus geometry; no direct test-only action dispatch.
-    private func select(_ element: XCUIElement) {
+    private func select(_ element: XCUIElement, in application: XCUIApplication? = nil) {
+        let root = application ?? app!
         XCTAssertTrue(element.waitForExistence(timeout: 15), app.debugDescription)
         for _ in 0..<24 {
             if element.hasFocus { remote.press(.select); return }
-            let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+            let focused = root.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
             if focused.exists {
                 let dx = element.frame.midX - focused.frame.midX, dy = element.frame.midY - focused.frame.midY
                 if abs(dx) > abs(dy) { remote.press(dx >= 0 ? .right : .left) }
@@ -35,10 +40,13 @@ final class TVWorkflowTests: XCTestCase {
     }
     func testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence() {
         select(app.buttons["tv.photos"])
-        if app.alerts.firstMatch.waitForExistence(timeout: 3) {
-            print("TV_PHOTOS_PERMISSION_AX: \(app.debugDescription)")
-            let allow = app.alerts.buttons.matching(NSPredicate(format: "label == 'Allow Full Access' OR label == 'Allow Access to All Photos' OR label == 'Allow' OR label == 'OK'")).firstMatch
-            select(allow)
+        let system = XCUIApplication(bundleIdentifier: "com.apple.PineBoard")
+        let allow = system.buttons["Allow All Photos"].firstMatch
+        if allow.waitForExistence(timeout: 8) {
+            let namesApp = system.staticTexts.matching(NSPredicate(format: "label CONTAINS 'TouchColor'")).firstMatch
+            XCTAssertTrue(namesApp.exists, system.debugDescription)
+            print("TV_PHOTOS_PERMISSION_AX: \(system.debugDescription)")
+            select(allow, in: system)
         }
         select(app.buttons["tv.photo.0"]); hex("#ff00ff")
         select(app.buttons["tv.sample.save"]); select(app.buttons["tv.sample.save"])
@@ -53,6 +61,15 @@ final class TVWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["tv.photos"].waitForExistence(timeout: 5))
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
         XCTAssertTrue(app.staticTexts["tv.palette.count"].waitForExistence(timeout: 10)); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "2")
+    }
+    func testChineseRemoteColorEditor() {
+        let editor = app.buttons["tv.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10)); XCTAssertEqual(editor.label, "创建颜色")
+        select(editor); select(app.buttons["tv.red.down"])
+        XCTAssertEqual(app.staticTexts["tv.editor.hex"].label, "#fe0000")
+        XCTAssertEqual(app.buttons["tv.editor.save"].label, "保存颜色")
+        select(app.buttons["tv.editor.save"]); capture("Native TV Chinese remote color editor")
+        remote.press(.menu)
     }
     func testRemoteColorEditorAndMenuReturn() {
         select(app.buttons["tv.editor"])

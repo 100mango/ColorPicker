@@ -8,6 +8,7 @@ import ColorPaletteLegacy
 /// retry keeps its UUID so the phone inbox can reject duplicate delivery.
 @MainActor final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
     @Published private(set) var status = NSLocalizedString("Select Send to iPhone to request a transfer.", comment: "Watch transfer status")
+    @Published private(set) var sending = false
     @Published private(set) var pending: PaletteTransfer?
     @Published private(set) var lastReceipt: PaletteTransferReceipt?
     private let file: URL
@@ -28,6 +29,9 @@ import ColorPaletteLegacy
             if FileManager.default.fileExists(atPath: receiptFile.path) {
                 let receipt = try PaletteTransferReceipt.decode(Data(contentsOf: receiptFile))
                 lastReceipt = receipt
+                if pending == nil {
+                    status = receipt.outcome == .accepted ? NSLocalizedString("Accepted on iPhone.", comment: "Transfer receipt") : NSLocalizedString("Declined on iPhone. Your watch palette is unchanged.", comment: "Transfer receipt")
+                }
                 if let pending, receipt.requestID == pending.id, receipt.fingerprint == (try PaletteFingerprint.of(pending)) {
                     if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
                     self.pending = nil
@@ -48,9 +52,30 @@ import ColorPaletteLegacy
         } catch { status = NSLocalizedString("The transfer could not be saved. Your palette is unchanged.", comment: "Watch transfer error") }
     }
     func retry() {
-        guard let pending else { return }
+        guard let pending, !sending else { return }
         guard let session, session.activationState == .activated, session.isCompanionAppInstalled else {
             status = NSLocalizedString("Waiting for TouchColor on the paired iPhone. Choose Retry when it is available.", comment: "Watch transfer status"); return
+        }
+        if session.isReachable, let data = try? pending.encoded() {
+            sending = true
+            let id = pending.id
+            session.sendMessage(["touchColorPaletteV1": data, "requestID": id.uuidString], replyHandler: { [weak self] reply in
+                Task { @MainActor in
+                    guard let self, self.pending?.id == id else { return }
+                    self.sending = false
+                    self.status = reply["received"] as? Bool == true
+                        ? NSLocalizedString("Received on iPhone. Open Watch Inbox there to review.", comment: "Foreground transfer status")
+                        : NSLocalizedString("The phone could not stage this transfer. The request was kept for retry.", comment: "Foreground transfer status")
+                }
+            }, errorHandler: { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.pending?.id == id else { return }
+                    self.sending = false
+                    self.status = NSLocalizedString("Transfer not delivered yet. Keep both apps open and choose Retry.", comment: "Foreground transfer status")
+                }
+            })
+            status = NSLocalizedString("Sending selected colors to iPhone…", comment: "Foreground transfer status")
+            return
         }
         if let existing = session.outstandingUserInfoTransfers.first(where: { ($0.userInfo["requestID"] as? String) == pending.id.uuidString }) {
             activeTransfer = existing
@@ -60,7 +85,7 @@ import ColorPaletteLegacy
         status = NSLocalizedString("Queued for iPhone. This has not changed the phone palette.", comment: "Watch transfer status")
     }
     func cancel() {
-        activeTransfer?.cancel(); activeTransfer = nil
+        activeTransfer?.cancel(); activeTransfer = nil; sending = false
         guard pending != nil else { return }
         do { if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }; pending = nil
             status = NSLocalizedString("Transfer cancelled. If it already arrived, review it on iPhone.", comment: "Watch transfer status")
@@ -75,9 +100,13 @@ import ColorPaletteLegacy
             try receipt.encoded().write(to: receiptFile, options: .atomic)
             lastReceipt = receipt
             if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
-            self.pending = nil; activeTransfer = nil
+            self.pending = nil; activeTransfer?.cancel(); activeTransfer = nil; sending = false
             status = receipt.outcome == .accepted ? NSLocalizedString("Accepted on iPhone.", comment: "Transfer receipt") : NSLocalizedString("Declined on iPhone. Your watch palette is unchanged.", comment: "Transfer receipt")
         } catch { status = NSLocalizedString("The transfer acknowledgement could not be saved. The request was kept for retry.", comment: "Transfer receipt") }
+    }
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
+        guard let data = message["touchColorReceiptV1"] as? Data else { return }
+        Task { @MainActor in self.receiveReceipt(data) }
     }
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
         guard let data = userInfo["touchColorReceiptV1"] as? Data else { return }

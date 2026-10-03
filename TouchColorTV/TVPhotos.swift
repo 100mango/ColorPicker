@@ -81,6 +81,6 @@ struct TVPhotoBrowser: View {
                 }
             }
             Button("Retry") { library.open() }
-        }.padding(40).onAppear { library.open() }.onExitCommand { dismiss() }
+        }.padding(40).frame(width: 1200, height: 760).onAppear { library.open() }.onExitCommand { dismiss() }
     }
 }

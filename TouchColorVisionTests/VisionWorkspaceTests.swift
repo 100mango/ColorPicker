@@ -57,9 +57,12 @@ import ColorPaletteLegacy
     func testRealProviderImportCancelMissingFileAndFullSizePNGReopen() async throws {
         let session = ImageSession(); try await load(session)
         let source = try XCTUnwrap(session.raster)
+        let providerURL = FileManager.default.temporaryDirectory.appendingPathComponent("provider-\(UUID()).png")
+        try source.pngData().write(to: providerURL)
+        defer { try? FileManager.default.removeItem(at: providerURL) }
         let provider = NSItemProvider()
-        provider.registerDataRepresentation(forTypeIdentifier: "public.png", visibility: .all) { completion in
-            completion(try? source.pngData(), nil); return nil
+        provider.registerFileRepresentation(forTypeIdentifier: "public.png", fileOptions: [], visibility: .all) { completion in
+            completion(providerURL, false, nil); return nil
         }
         XCTAssertTrue(VisionImport.providers([provider], session: session))
         for _ in 0..<100 where session.busy { try await Task.sleep(nanoseconds: 20_000_000) }
@@ -75,4 +78,52 @@ import ColorPaletteLegacy
         for _ in 0..<100 where session.busy { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertNotNil(session.errorMessage); XCTAssertEqual(session.selectedColor?.hex, "#ff00ff")
     }
+    func testRenderedVisionCanvasUsesTheSameWhiteAlphaPolicyAsSampling() async throws {
+        let session = ImageSession()
+        session.load(data: RasterFixture.alphaData(), name: "alpha.tiff", token: session.beginImport())
+        for _ in 0..<100 where session.busy { try await Task.sleep(nanoseconds: 20_000_000) }
+        session.select(NormalizedPoint(x: 0.95, y: 0.95)!)
+        let canvas = VisionPixelCanvas(frame: CGRect(x: 0, y: 0, width: 400, height: 200))
+        canvas.session = session; canvas.image = try XCTUnwrap(session.raster).image
+        canvas.setNeedsDisplay(); canvas.layer.displayIfNeeded()
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+        let image = UIGraphicsImageRenderer(size: canvas.bounds.size, format: format).image { canvas.layer.render(in: $0.cgContext) }
+        let cg = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(RasterPixelSampler.sample(image: cg, at: NormalizedPoint(x: 0.125, y: 0.25)!)?.hex, "#ffffff")
+        let blue = try XCTUnwrap(RasterPixelSampler.sample(image: cg, at: NormalizedPoint(x: 0.625, y: 0.25)!))
+        XCTAssertEqual(Double(blue.red), 127, accuracy: 1); XCTAssertEqual(Double(blue.green), 127, accuracy: 1); XCTAssertEqual(blue.blue, 255)
+    }
+
+    func testBoundedProviderFilePreservesAlphaOrientationsAndRejectsOversizeBeforeRead() async throws {
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent("provider-source-\(UUID()).tiff")
+        defer { try? FileManager.default.removeItem(at: source) }
+        for bytes in (1...8).map({ RasterFixture.data(orientation: $0) }) + [RasterFixture.alphaData()] {
+            try bytes.write(to: source)
+            let copy = try VisionPhotoFile.copyBounded(source)
+            defer { try? FileManager.default.removeItem(at: copy) }
+            XCTAssertEqual(try Data(contentsOf: copy), bytes)
+            let original = try ColorRaster.decode(bytes), copied = try ColorRaster.read(url: copy)
+            XCTAssertEqual(original.sourceOrientation, copied.sourceOrientation)
+            XCTAssertEqual(original.width, copied.width); XCTAssertEqual(original.height, copied.height)
+            for point in [NormalizedPoint.center, NormalizedPoint(x: 0.1, y: 0.1)!, NormalizedPoint(x: 0.75, y: 0.25)!] {
+                XCTAssertEqual(original.sample(at: point), copied.sample(at: point))
+            }
+        }
+        XCTAssertThrowsError(try VisionPhotoFile.copyBounded(source, cancelled: { true }))
+        let file = try FileHandle(forWritingTo: source)
+        try file.truncate(atOffset: UInt64(ColorRaster.maximumEncodedBytes + 1)); try file.close()
+        XCTAssertThrowsError(try VisionPhotoFile.copyBounded(source)) { error in
+            guard case RasterError.tooLarge = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        let session = ImageSession(); try await load(session)
+        let provider = NSItemProvider()
+        provider.registerFileRepresentation(forTypeIdentifier: "public.tiff", fileOptions: [], visibility: .all) { completion in
+            completion(source, true, nil); return nil
+        }
+        XCTAssertTrue(VisionImport.providers([provider], session: session))
+        for _ in 0..<150 where session.busy { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertFalse(session.busy); XCTAssertNotNil(session.errorMessage)
+        XCTAssertEqual(session.selectedColor?.hex, "#ff00ff")
+    }
+
 }

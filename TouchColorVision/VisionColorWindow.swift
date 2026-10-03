@@ -104,9 +104,9 @@ struct VisionColorWindow: View {
             defer { if photo == selected { photo = nil } }
             let token = session.beginImport()
             do {
-                guard let data = try await selected.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadUnknown) }
-                guard !Task.isCancelled, session.isCurrent(token) else { return }
-                session.load(data: data, name: NSLocalizedString("Selected photo", comment: "Source name"), token: token)
+                guard let file = try await selected.loadTransferable(type: VisionPhotoFile.self) else { throw CocoaError(.fileReadUnknown) }
+                guard !Task.isCancelled, session.isCurrent(token) else { try? FileManager.default.removeItem(at: file.url); return }
+                session.loadOwnedFile(file.url, name: NSLocalizedString("Selected photo", comment: "Source name"), token: token)
             } catch { if !Task.isCancelled { session.report(error, token: token) } }
         }
         .onDisappear { session.cancelImport() }

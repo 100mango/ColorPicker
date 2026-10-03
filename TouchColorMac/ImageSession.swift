@@ -15,7 +15,7 @@ import ColorPaletteLegacy
     @Published var zoom = 1.0
     @Published var errorMessage: String?
     @Published var notice: String?
-    private var generation = ImportGeneration()
+    private let generation = CaptureEpoch()
     // Bounded work: one decode at a time; replaced pending operations are cancelled.
     private let work: OperationQueue = {
         let queue = OperationQueue(); queue.name = "TouchColor.image-import"
@@ -32,11 +32,11 @@ import ColorPaletteLegacy
     @discardableResult func beginImport() -> UInt64 {
         work.cancelAllOperations()
         busy = true; errorMessage = nil; notice = nil
-        return generation.advance()
+        return generation.begin()
     }
     func isCurrent(_ token: UInt64) -> Bool { generation.accepts(token) }
     func cancelImport() {
-        generation.advance(); work.cancelAllOperations(); busy = false
+        generation.invalidate(); work.cancelAllOperations(); busy = false
         notice = NSLocalizedString("Import cancelled. Your current image is unchanged.", comment: "Import status")
     }
     func report(_ error: Error, token: UInt64) {
@@ -55,10 +55,20 @@ import ColorPaletteLegacy
             return try ColorRaster.read(url: url, cancelled: cancelled)
         }
     }
-    private func enqueue(name: String, token: UInt64,
+    func cancellationCheck(for token: UInt64) -> () -> Bool {
+        let epoch = generation
+        return { !epoch.accepts(token) }
+    }
+    func loadOwnedFile(_ url: URL, name: String, token: UInt64) {
+        enqueue(name: name, token: token, cleanup: { try? FileManager.default.removeItem(at: url) }) { cancelled in
+            try ColorRaster.read(url: url, cancelled: cancelled)
+        }
+    }
+    private func enqueue(name: String, token: UInt64, cleanup: (() -> Void)? = nil,
                          decode: @escaping (@escaping () -> Bool) throws -> ColorRaster) {
-        guard isCurrent(token) else { return }
+        guard isCurrent(token) else { cleanup?(); return }
         let operation = BlockOperation()
+        operation.completionBlock = cleanup
         operation.addExecutionBlock { [weak self, weak operation] in
             guard let operation, !operation.isCancelled else { return }
             let result = Result { try decode { operation.isCancelled } }

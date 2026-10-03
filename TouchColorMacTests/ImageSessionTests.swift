@@ -145,4 +145,23 @@ import ColorRaster
         library.remove(at: 1)
         XCTAssertEqual(PaletteLibrary(defaults: defaults).colors.map(\.hex), ["#ff0000", "#ff0000"])
     }
+    func testActualMacCanvasCompositesTransparentAndHalfAlphaPixelsOverWhite() async throws {
+        let session = ImageSession()
+        session.load(data: RasterFixture.alphaData(), name: "alpha.tiff", token: session.beginImport())
+        try await waitForImport(session)
+        session.select(NormalizedPoint(x: 0.95, y: 0.95)!)
+        let canvas = PixelCanvas(frame: NSRect(x: 0, y: 0, width: 400, height: 200)); canvas.session = session
+        let window = NSWindow(contentRect: canvas.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = canvas; window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        canvas.displayIfNeeded()
+        let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        let displayed = try XCTUnwrap(bitmap.cgImage)
+        let white = try XCTUnwrap(RasterPixelSampler.sample(image: displayed, at: NormalizedPoint(x: 0.125, y: 0.25)!))
+        let blue = try XCTUnwrap(RasterPixelSampler.sample(image: displayed, at: NormalizedPoint(x: 0.625, y: 0.25)!))
+        XCTAssertEqual(white.hex, "#ffffff")
+        XCTAssertEqual(Double(blue.red), 127, accuracy: 1); XCTAssertEqual(Double(blue.green), 127, accuracy: 1); XCTAssertEqual(blue.blue, 255)
+    }
+
 }

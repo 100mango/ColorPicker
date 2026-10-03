@@ -111,3 +111,10 @@
 "Accepted on iPhone." = "iPhone 已接受。";
 "Declined on iPhone. Your watch palette is unchanged." = "iPhone 已拒绝，手表调色板未变更。";
 "The transfer acknowledgement could not be saved. The request was kept for retry." = "无法保存传输回执，原请求已保留，可再次重试。";
+"Received on iPhone. Open Watch Inbox there to review." = "iPhone 已收到。请在手机上打开手表收件箱进行确认。";
+"The phone could not stage this transfer. The request was kept for retry." = "手机无法保存这项传输，原请求已保留，可再次重试。";
+"Transfer not delivered yet. Keep both apps open and choose Retry." = "传输尚未送达。请保持两个应用都打开，然后选择“重试”。";
+"Sending selected colors to iPhone…" = "正在向 iPhone 发送所选颜色…";
+"Delete" = "删除";
+"%lld selected colors" = "已选择 %lld 个颜色";
+"Preview zoom" = "预览缩放";

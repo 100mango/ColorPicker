@@ -108,7 +108,6 @@ import AVFoundation
     }
     private func saveFile(_ url: URL) {
         XCTAssertTrue(app.dialogs.buttons["OKButton"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
-        print("NATIVE_SAVE_PANEL_AX: \(app.debugDescription)")
         // Use the actual native Save As field; choose its parent directory separately.
         let name = app.dialogs.textFields["saveAsNameTextField"].firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5), app.debugDescription)

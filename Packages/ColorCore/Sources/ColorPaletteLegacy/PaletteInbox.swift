@@ -16,6 +16,7 @@ public enum PaletteFingerprint {
 public final class PaletteInbox {
     public static let pendingKey = "colorInboxPendingV1"
     public static let receiptsKey = "colorInboxAcceptedV1"
+    public static let rejectedKey = "colorInboxRejectedV1"
     public static let maximumPending = 16
     public static let maximumReceipts = 4096
     private let defaults: UserDefaults
@@ -29,8 +30,8 @@ public final class PaletteInbox {
         guard Set(result.map(\.id)).count == result.count else { throw PaletteInboxError.corruptStore }
         return result
     }
-    private func receipts(_ values: [String: Any]) throws -> [String: String] {
-        guard let raw = values[Self.receiptsKey] else { return [:] }
+    private func receipts(_ values: [String: Any], key: String) throws -> [String: String] {
+        guard let raw = values[key] else { return [:] }
         guard let result = raw as? [String: String], result.count <= Self.maximumReceipts,
               result.allSatisfy({ UUID(uuidString: $0.key)?.uuidString == $0.key && $0.value.utf8.count == 64 && $0.value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) }) else { throw PaletteInboxError.corruptStore }
         return result
@@ -45,16 +46,20 @@ public final class PaletteInbox {
         lock.lock(); defer { lock.unlock() }
         var values = defaults.persistentDomain(forName: domain) ?? [:]
         var pending = try entries(values)
-        let accepted = try receipts(values)
+        let accepted = try receipts(values, key: Self.receiptsKey), rejected = try receipts(values, key: Self.rejectedKey)
         if let existing = accepted[message.id.uuidString] {
             guard existing == digest else { throw PaletteInboxError.conflictingID }
             return PaletteTransferReceipt(requestID: message.id, fingerprint: digest, outcome: .accepted)
+        }
+        if let existing = rejected[message.id.uuidString] {
+            guard existing == digest else { throw PaletteInboxError.conflictingID }
+            return PaletteTransferReceipt(requestID: message.id, fingerprint: digest, outcome: .rejected)
         }
         if let existing = pending.first(where: { $0.id == message.id }) {
             guard existing == message else { throw PaletteInboxError.conflictingID }
             return nil
         }
-        guard pending.count < Self.maximumPending, accepted.count < Self.maximumReceipts else { throw PaletteInboxError.full }
+        guard pending.count < Self.maximumPending, accepted.count + rejected.count < Self.maximumReceipts else { throw PaletteInboxError.full }
         pending.append(message)
         values[Self.pendingKey] = try pending.map { try $0.encoded() }
         defaults.setPersistentDomain(values, forName: domain)
@@ -63,10 +68,12 @@ public final class PaletteInbox {
     public func accept(_ id: UUID) throws -> PaletteTransferReceipt {
         lock.lock(); defer { lock.unlock() }
         var values = defaults.persistentDomain(forName: domain) ?? [:]
-        var pending = try entries(values), accepted = try receipts(values)
+        var pending = try entries(values), accepted = try receipts(values, key: Self.receiptsKey)
+        let rejected = try receipts(values, key: Self.rejectedKey)
         if let digest = accepted[id.uuidString] { return PaletteTransferReceipt(requestID: id, fingerprint: digest, outcome: .accepted) }
+        if let digest = rejected[id.uuidString] { return PaletteTransferReceipt(requestID: id, fingerprint: digest, outcome: .rejected) }
         guard let index = pending.firstIndex(where: { $0.id == id }) else { throw PaletteInboxError.missing }
-        guard accepted.count < Self.maximumReceipts else { throw PaletteInboxError.full }
+        guard accepted.count + rejected.count < Self.maximumReceipts else { throw PaletteInboxError.full }
         let message = pending.remove(at: index), digest = try PaletteFingerprint.of(message)
         let original = values[LegacyPalette.key]
         let colors = (original as? [Any] ?? []).compactMap { ($0 as? String).flatMap(RGBColor.init(hex:)) }
@@ -83,11 +90,17 @@ public final class PaletteInbox {
     public func reject(_ id: UUID) throws -> PaletteTransferReceipt {
         lock.lock(); defer { lock.unlock() }
         var values = defaults.persistentDomain(forName: domain) ?? [:]
-        var pending = try entries(values)
+        var pending = try entries(values), rejected = try receipts(values, key: Self.rejectedKey)
+        let accepted = try receipts(values, key: Self.receiptsKey)
+        if let digest = accepted[id.uuidString] { return PaletteTransferReceipt(requestID: id, fingerprint: digest, outcome: .accepted) }
+        if let digest = rejected[id.uuidString] { return PaletteTransferReceipt(requestID: id, fingerprint: digest, outcome: .rejected) }
         guard let index = pending.firstIndex(where: { $0.id == id }) else { throw PaletteInboxError.missing }
-        let message = pending.remove(at: index)
+        guard accepted.count + rejected.count < Self.maximumReceipts else { throw PaletteInboxError.full }
+        let message = pending.remove(at: index), digest = try PaletteFingerprint.of(message)
+        rejected[id.uuidString] = digest
         values[Self.pendingKey] = try pending.map { try $0.encoded() }
+        values[Self.rejectedKey] = rejected
         defaults.setPersistentDomain(values, forName: domain)
-        return PaletteTransferReceipt(requestID: id, fingerprint: try PaletteFingerprint.of(message), outcome: .rejected)
+        return PaletteTransferReceipt(requestID: id, fingerprint: digest, outcome: .rejected)
     }
 }

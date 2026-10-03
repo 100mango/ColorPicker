@@ -17,6 +17,11 @@ enum RasterFixture {
                        space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
     }
+    static func alphaData() -> Data {
+        var bytes = [UInt8]()
+        for _ in 0..<20 { for x in 0..<40 { bytes += x < 20 ? [0, 0, 0, 0] : [0, 0, 128, 128] } }
+        return data(image: image(bytes: bytes, width: 40, height: 20))
+    }
     static func data(orientation: Int = 1, image: CGImage = RasterFixture.image()) -> Data {
         let data = NSMutableData()
         let destination = CGImageDestinationCreateWithData(data, UTType.tiff.identifier as CFString, 1, nil)!
@@ -64,6 +69,25 @@ final class ColorRasterTests: XCTestCase {
         let p3 = RasterFixture.image(bytes: [255,0,0,255], width: 1, height: 1, colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!)
         let converted = try ColorRaster.decode(RasterFixture.data(image: p3))
         XCTAssertEqual(converted.sample(at: .center)?.hex, "#ff0000")
+    }
+    func testPNGReopenPreservesAlphaSeparatelyFromWhiteDisplayMatte() throws {
+        let raster = try ColorRaster.decode(RasterFixture.alphaData())
+        let reopened = try ColorRaster.decode(raster.pngData())
+        func alpha(_ image: CGImage, x: Int) throws -> UInt8 {
+            let crop = try XCTUnwrap(image.cropping(to: CGRect(x: x, y: 2, width: 1, height: 1)))
+            var bytes = [UInt8](repeating: 0, count: 4)
+            return try bytes.withUnsafeMutableBytes { storage in
+                let context = try XCTUnwrap(CGContext(data: storage.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+                context.interpolationQuality = .none; context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                return storage[3]
+            }
+        }
+        for image in [raster.image, reopened.image] {
+            XCTAssertEqual(try alpha(image, x: 2), 0)
+            XCTAssertEqual(Double(try alpha(image, x: 30)), 128, accuracy: 1)
+        }
+        XCTAssertEqual(reopened.width, 40); XCTAssertEqual(reopened.height, 20)
     }
     func testFullSourceDimensionsEdgesCorruptAndCancel() throws {
         let width = 2049

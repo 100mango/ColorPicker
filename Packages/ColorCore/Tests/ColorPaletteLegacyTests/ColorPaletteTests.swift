@@ -87,4 +87,23 @@ final class PaletteInboxTests: XCTestCase {
         XCTAssertEqual(try PaletteTransferReceipt.decode(receipt.encoded()), receipt)
         XCTAssertThrowsError(try PaletteTransferReceipt.decode(Data(repeating: 0, count: 1025)))
     }
+    func testRejectedReceiptSurvivesRetryRelaunchAndConflictingIdentifier() throws {
+        let suite = "TouchColor.inbox-rejected.\(UUID())"
+        let isolated = UserDefaults(suiteName: suite)!
+        defer { isolated.removePersistentDomain(forName: suite) }
+        isolated.set(["#123456"], forKey: "colorArray")
+        let inbox = PaletteInbox(defaults: isolated, domain: suite)
+        let message = try PaletteTransfer(colors: [RGBColor(hex: "#ff0000")!]), data = try message.encoded()
+        try inbox.receive(data)
+        let receipt = try inbox.reject(message.id)
+        let reopened = PaletteInbox(defaults: isolated, domain: suite)
+        XCTAssertEqual(try reopened.receive(data), receipt)
+        XCTAssertEqual(try reopened.reject(message.id), receipt)
+        XCTAssertEqual(try reopened.accept(message.id), receipt)
+        XCTAssertTrue(try reopened.pending().isEmpty)
+        XCTAssertEqual(isolated.stringArray(forKey: "colorArray"), ["#123456"])
+        let conflict = try PaletteTransfer(id: message.id, colors: [RGBColor(hex: "#abcdef")!])
+        XCTAssertThrowsError(try reopened.receive(conflict.encoded()))
+    }
+
 }

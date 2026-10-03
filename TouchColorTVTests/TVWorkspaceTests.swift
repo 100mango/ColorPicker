@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import UIKit
 import CoreImage
 import ColorDomain
@@ -46,4 +47,13 @@ import ColorRaster
         XCTAssertEqual(reopened.width, 3); XCTAssertEqual(reopened.height, 2)
         XCTAssertEqual(reopened.sample(at: point)?.hex, "#00ff00")
     }
+    func testRenderedPreviewWhiteMatteMatchesTransparentAndHalfAlphaSamples() throws {
+        let content = TVSamplingCanvas(raster: try ColorRaster.decode(RasterFixture.alphaData()), point: .center, zoom: 1).frame(width: 400, height: 200).environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: content); renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        XCTAssertEqual(RasterPixelSampler.sample(image: image, at: NormalizedPoint(x: 0.25, y: 0.25)!)?.hex, "#ffffff")
+        let blue = try XCTUnwrap(RasterPixelSampler.sample(image: image, at: NormalizedPoint(x: 0.75, y: 0.25)!))
+        XCTAssertEqual(Double(blue.red), 127, accuracy: 1); XCTAssertEqual(Double(blue.green), 127, accuracy: 1); XCTAssertEqual(blue.blue, 255)
+    }
+
 }

@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 import Foundation
 import ColorDomain
 import ColorRaster
@@ -77,6 +78,15 @@ import ColorPaletteLegacy
         XCTAssertEqual(reopened.pending, next)
         reopened.receiveReceipt(Data("partial acknowledgement".utf8))
         XCTAssertEqual(reopened.pending, next)
+    }
+
+    func testRenderedPreviewWhiteMatteMatchesTransparentAndHalfAlphaSamples() throws {
+        let content = WatchPreviewCanvas(preview: try PreviewRaster.decode(RasterFixture.alphaData()), point: .center, zoom: 1).frame(width: 400, height: 200).environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: content); renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        XCTAssertEqual(RasterPixelSampler.sample(image: image, at: NormalizedPoint(x: 0.25, y: 0.25)!)?.hex, "#ffffff")
+        let blue = try XCTUnwrap(RasterPixelSampler.sample(image: image, at: NormalizedPoint(x: 0.75, y: 0.25)!))
+        XCTAssertEqual(Double(blue.red), 127, accuracy: 1); XCTAssertEqual(Double(blue.green), 127, accuracy: 1); XCTAssertEqual(blue.blue, 255)
     }
 
 }

@@ -41,8 +41,13 @@ jobs:
           python3 scripts/generate_watch_project.py
           python3 scripts/generate_tv_project.py
           python3 scripts/verify_mac_icons.py
+          python3 scripts/verify_native_localizations.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
+      - name: Probe native XCTest accessibility audit availability
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 7
+        run: python3 scripts/probe_accessibility_audits.py
       - name: Portable domain, raster and preservation tests
         timeout-minutes: 8
         run: swift test --package-path Packages/ColorCore --scratch-path build/package
@@ -50,7 +55,7 @@ jobs:
         timeout-minutes: 8
         run: |
           set -euo pipefail
-          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
           APP=build/mac-arm64/Build/Products/Release/TouchColor.app
@@ -71,7 +76,7 @@ jobs:
         timeout-minutes: 7
         run: |
           set -euo pipefail
-          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-x86_64 \
             ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
           lipo -info build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/MacOS/TouchColor
@@ -80,7 +85,7 @@ jobs:
         id: units
         timeout-minutes: 8
         run: |
-          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-unit.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -only-testing:TouchColorMacTests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
@@ -89,7 +94,7 @@ jobs:
         if: ${{ !cancelled() && steps.units.outcome == 'success' }}
         timeout-minutes: 10
         run: |
-          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \
@@ -119,10 +124,10 @@ jobs:
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.ui.outcome == 'success' }}
         timeout-minutes: 10
         run: |
-          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+          xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
             -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO build
           test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ios-device/Build/Products/Release-iphoneos/TouchColor.app/Info.plist)" = 15.0
-          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
+          xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator ARCHS=arm64 build-for-testing
           bash scripts/test_simulators.sh iPhoneCompact prepare
           bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
@@ -134,6 +139,7 @@ jobs:
         if: always()
         run: |
           mkdir -p build/evidence
+          if test -f build/accessibility-api/results.json; then cp build/accessibility-api/results.json build/evidence/accessibility-api.json; fi
           echo 'Intel slice build outcome: ${{ steps.intel.outcome }}; Intel runtime: not tested' | tee build/evidence/architecture.txt
           for name in unit ui sandbox; do
             if test -d "build/mac-$name.xcresult"; then
@@ -172,12 +178,22 @@ jobs:
                   size=p.stat().st_size
                   if size>5_000_000 or total+size>8_000_000: p.unlink()
                   else: total+=size
+          for manifest in root.glob('*/manifest.json'):
+              groups=json.loads(manifest.read_text())
+              for group in groups:
+                  group['attachments']=[a for a in group['attachments'] if (manifest.parent/a['exportedFileName']).exists()]
+              manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
           print('Bounded evidence bytes:',total)
           PY
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
-      - name: Retain small test evidence for review
+      - name: Validate final evidence byte and path limits
+        id: evidence_guard
         if: always()
+        timeout-minutes: 1
+        run: python3 scripts/validate_evidence.py build/evidence
+      - name: Retain small test evidence for review
+        if: ${{ always() && steps.evidence_guard.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: touchcolor-native-mac-evidence
