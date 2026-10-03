@@ -15,11 +15,11 @@ import ColorDomain
     private let epoch = CaptureEpoch()
     private var token: UInt64?
     private var requestingPermission = false
-    private let applicationIsActive: () -> Bool
+    private let applicationIsActive: @MainActor () -> Bool
     private var observers: [NSObjectProtocol] = []
     var session: AVCaptureSession { driver.session }
 
-    init(driver: CameraDriving = AVColorCameraDriver(), applicationIsActive: @escaping () -> Bool = { NSApp.isActive }) {
+    init(driver: CameraDriving = AVColorCameraDriver(), applicationIsActive: @escaping @MainActor () -> Bool = { NSApp.isActive }) {
         self.driver = driver
         self.applicationIsActive = applicationIsActive
         refreshDevices()

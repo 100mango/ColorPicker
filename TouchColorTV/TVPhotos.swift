@@ -10,7 +10,8 @@ import ColorRaster
     @Published private(set) var hasMore = false
     @Published private(set) var hasPrevious = false
     private var page = 0
-    private var activeRequest = PHInvalidImageRequestID
+    private var activeRequest: PHAssetResourceDataRequestID?
+    private var activeFile: BoundedImageFile?
     func open() {
         let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         if current == .notDetermined {
@@ -19,7 +20,10 @@ import ColorRaster
     }
     func more() { page += 1; reload() }
     func previous() { page = max(0, page - 1); reload() }
-    func cancel(_ session: ImageSession) { PHImageManager.default().cancelImageRequest(activeRequest); session.cancelImport() }
+    func cancel(_ session: ImageSession) {
+        if let activeRequest { PHAssetResourceManager.default().cancelDataRequest(activeRequest) }
+        activeRequest = nil; activeFile?.cancel(); activeFile = nil; session.cancelImport()
+    }
     func reload() {
         let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         authorized = current == .authorized || current == .limited
@@ -32,17 +36,50 @@ import ColorRaster
         status = assets.isEmpty ? NSLocalizedString("No photos are available in this TV library.", comment: "TV photos status") : ""
     }
     func load(_ asset: PHAsset, into session: ImageSession) {
-        PHImageManager.default().cancelImageRequest(activeRequest)
-        let token = session.beginImport()
-        let options = PHImageRequestOptions(); options.deliveryMode = .highQualityFormat; options.version = .current; options.isNetworkAccessAllowed = true
-        activeRequest = PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) { data, _, _, info in
-            Task { @MainActor in
-                guard session.isCurrent(token) else { return }
-                if let data { session.load(data: data, name: NSLocalizedString("Selected photo", comment: "Source name"), token: token) }
-                else { session.report((info?[PHImageErrorKey] as? Error) ?? CocoaError(.fileReadUnknown), token: token) }
-            }
+        cancel(session)
+        let token = session.beginImport(), cancelled = session.cancellationCheck(for: token)
+        let resources = PHAssetResource.assetResources(for: asset)
+        // fullSizePhoto is the current edited photo; photo is the original fallback.
+        guard let resource = resources.first(where: { $0.type == .fullSizePhoto }) ?? resources.first(where: { $0.type == .photo }) else {
+            session.report(RasterError.unreadable, token: token); return
         }
+        do {
+            let file = try BoundedImageFile(); activeFile = file
+            let options = PHAssetResourceRequestOptions(); options.isNetworkAccessAllowed = true
+            activeRequest = PHAssetResourceManager.default().requestData(for: resource, options: options) { [weak self] chunk in
+                do {
+                    guard !cancelled() else { file.cancel(); return }
+                    try file.append(chunk)
+                } catch {
+                    file.cancel(error: error)
+                    Task { @MainActor in
+                        guard session.isCurrent(token) else { return }
+                        if let request = self?.activeRequest { PHAssetResourceManager.default().cancelDataRequest(request) }
+                        self?.activeRequest = nil; self?.activeFile = nil
+                        session.report(error, token: token)
+                    }
+                }
+            } completionHandler: { [weak self] error in
+                if let error { file.cancel(error: error) }
+                let result = Result { () throws -> URL in
+                    guard !cancelled() else { throw RasterError.cancelled }
+                    return try file.finish()
+                }
+                if case .failure = result { file.cancel() }
+                Task { @MainActor in
+                    guard session.isCurrent(token) else {
+                        if case .success(let url) = result { try? FileManager.default.removeItem(at: url) }; return
+                    }
+                    self?.activeRequest = nil; self?.activeFile = nil
+                    switch result {
+                    case .success(let url): session.loadOwnedFile(url, name: NSLocalizedString("Selected photo", comment: "Source name"), token: token)
+                    case .failure(let error): session.report(error, token: token)
+                    }
+                }
+            }
+        } catch { session.report(error, token: token) }
     }
+
 }
 struct TVPhotoThumb: View {
     let asset: PHAsset

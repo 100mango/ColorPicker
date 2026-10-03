@@ -15,10 +15,20 @@ final class VisionWorkflowTests: XCTestCase {
         app.terminate()
     }
     private func capture(_ name: String) {
-        // The per-app vision capture cropped the magnified scene to logical window bounds.
-        // Retain the actual simulator display so the whole native window can be inspected.
-        guard let bytes = XCUIScreen.main.screenshot().image.jpegData(compressionQuality: 0.5), bytes.count <= 3_000_000 else { return }
-        let shot = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.jpeg"); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        // The spatial XCTest screenshot API can crop or stall. Hold this real UI state
+        // while the CI host uses documented simctl screenshot, with a bounded acknowledgement.
+        let id = UUID().uuidString
+        let root = FileManager.default.temporaryDirectory
+        let request = root.appendingPathComponent("TouchColor-capture-\(id).json")
+        let acknowledgement = root.appendingPathComponent("TouchColor-capture-\(id).ack")
+        defer { try? FileManager.default.removeItem(at: request); try? FileManager.default.removeItem(at: acknowledgement) }
+        do { try JSONSerialization.data(withJSONObject: ["id": id, "name": name]).write(to: request) }
+        catch { XCTFail("Could not request simulator checkpoint: \(error)"); return }
+        print("TOUCHCOLOR_CAPTURE_REQUEST \(id)"); fflush(stdout)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: acknowledgement.path) }, object: nil)
+        guard XCTWaiter.wait(for: [ready], timeout: 25) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
+        let result = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        XCTAssertEqual(result?["success"] as? Bool, true, "Simulator checkpoint failed: \(String(describing: result))")
     }
     private func hex(_ expected: String) {
         let value = app.staticTexts["sample.hex"]
@@ -93,4 +103,30 @@ final class VisionWorkflowTests: XCTestCase {
         }
         XCTAssertEqual(app.staticTexts["palette.count"].label, "0")
     }
+    @MainActor private func audit(_ state: String) throws {
+        if #available(visionOS 27.0, *) {
+            print("VISION_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
+            try app.performAccessibilityAudit(for: .all) { issue in
+                print("VISION_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                return false
+            }
+            print("VISION_ACCESSIBILITY_AUDIT_PASS: \(state)")
+        } else { throw XCTSkip("Native audit qualification targets the installed visionOS 27 runtime") }
+    }
+    @MainActor func testOfficialAccessibilityEmptyAndPastedCanvas() throws {
+        XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 20))
+        try audit("empty workspace")
+        paste(); app.buttons["sample.save"].tap()
+        try audit("pasted image and palette")
+    }
+
+    @MainActor func testOfficialAccessibilityCorruptPasteRetainsPreviousSource() throws {
+        paste()
+        UIPasteboard.general.setData(Data("deliberately invalid synthetic PNG".utf8), forPasteboardType: UTType.png.identifier)
+        app.buttons["image.paste"].tap()
+        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 15), app.debugDescription)
+        try audit("corrupt pasted image error")
+        app.buttons["OK"].tap(); hex("#ff00ff")
+    }
+
 }

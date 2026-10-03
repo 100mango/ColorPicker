@@ -24,7 +24,7 @@ struct WatchHome: View {
                         }.accessibilityIdentifier("watch.color.\(index)")
                     }
                 }
-                NavigationLink("Transfer Status") { WatchTransferView(transfer: transfer) }
+                NavigationLink("Transfer Status") { WatchTransferView(transfer: transfer) }.accessibilityIdentifier("watch.transfer.open")
                 NavigationLink("Privacy") { WatchPrivacy() }
             }.navigationTitle("TouchColor")
         }
@@ -81,9 +81,9 @@ struct WatchTransferView: View {
             VStack(spacing: 12) {
                 Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
                 if let pending = transfer.pending {
-                    Text("\(pending.colors.count) selected colors").font(.caption)
+                    Text("\(pending.colors.count) selected colors").font(.caption).accessibilityIdentifier("watch.transfer.count")
                     Button("Retry") { transfer.retry() }.disabled(transfer.sending).accessibilityIdentifier("watch.transfer.retry")
-                    Button("Cancel Transfer", role: .destructive) { transfer.cancel() }
+                    Button("Cancel Transfer", role: .destructive) { transfer.cancel() }.accessibilityIdentifier("watch.transfer.cancel")
                 }
             }
         }.navigationTitle("Transfer Status")

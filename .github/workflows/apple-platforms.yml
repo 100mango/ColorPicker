@@ -67,7 +67,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$APP/Contents/Info.plist")" = TouchColor
           test -n "$(/usr/libexec/PlistBuddy -c 'Print NSCameraUsageDescription' "$APP/Contents/Info.plist")"
           strings "$APP/Contents/MacOS/TouchColor" > /tmp/touchcolor-mac-release-strings.txt
-          if grep -E -- '--ui-test-|TOUCHCOLOR_TEST_DEFAULTS|TouchColor-fixture-' /tmp/touchcolor-mac-release-strings.txt; then
+          if grep -E -- '--ui-test-|TOUCHCOLOR_TEST_DEFAULTS|TOUCHCOLOR_SANDBOX_PROBE_FILE|debug.sandbox.proof|TouchColor-fixture-' /tmp/touchcolor-mac-release-strings.txt; then
             echo 'Test seam leaked into Release'; exit 1
           fi
       - name: Build x86_64 slice only if accepted by the real SDK
@@ -94,6 +94,7 @@ jobs:
         if: ${{ !cancelled() && steps.units.outcome == 'success' }}
         timeout-minutes: 10
         run: |
+          python3 scripts/prepare_sandbox_probe.py build/mac-tests/probe-info.json
           xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
@@ -102,7 +103,7 @@ jobs:
       - name: Native visionOS executable and real simulator workflows
         id: vision
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 22
+        timeout-minutes: 26
         run: python3 scripts/test_extra_platforms.py vision
       - name: Native watchOS executable and real simulator workflows
         id: watch
@@ -151,6 +152,19 @@ jobs:
           fi
           if test -d build/mac-ui.xcresult; then
             xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
+          fi
+          if test -d build/mac-sandbox.xcresult; then
+            xcrun xcresulttool export attachments --path build/mac-sandbox.xcresult --output-path build/evidence/sandbox-screenshots || true
+          fi
+          if test -f build/mac-sandbox-entitlements.plist; then
+            python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-entitlements.json
+          fi
+          if test -d build/vision-runtime/screenshots; then
+            cp -R build/vision-runtime/screenshots build/evidence/vision-checkpoints
+          fi
+          if test -d build/vision-ui.xcresult; then
+            xcrun xcresulttool get test-results summary --path build/vision-ui.xcresult | tee build/evidence/vision-ui-summary.json || true
+            xcrun xcresulttool export attachments --path build/vision-ui.xcresult --output-path build/evidence/vision-ui-screenshots || true
           fi
           for platform in vision watch tv; do
             if test -d "build/$platform-tests.xcresult"; then

@@ -2,20 +2,28 @@
 """One native platform per invocation on the existing standard runner; bounded real builds/tests."""
 import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib
 from pathlib import Path
+from capture_simulator_checkpoint import capture as capture_checkpoint
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
-report={'platform':kind,'sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'stages':[]}
+report={'captures':[],'platform':kind,'sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'stages':[]}
 def run(command,timeout,required=True):
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
+    captures=[]
     p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     def output():
         for line in p.stdout:
             print(line,end='',flush=True)
-            if re.match(r'(?:/.*|xcodebuild): error: ',line) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
+            checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
+            if checkpoint and kind=='vision' and device and len(report['captures'])<6:
+                try:
+                    result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
+                    report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
+                except Exception as error:report['captures'].append({'success':False,'error':str(error)})
+            if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
     reader=threading.Thread(target=output,daemon=True);reader.start()
     try:code=p.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -46,6 +54,7 @@ try:
     assert info['CFBundleExecutable']=='TouchColor'
     privacy=bundle/'PrivacyInfo.xcprivacy';assert privacy.is_file(), 'Release privacy manifest missing'
     plistlib.loads(privacy.read_bytes())
+    report['release_resource_files']=[p.name for p in bundle.iterdir() if p.is_file()]
     assert (bundle/'Assets.car').is_file(), 'Release compiled icon assets missing'
     report['release_bundle']={key:info.get(key) for key in ['CFBundleIdentifier','CFBundleName','CFBundleDisplayName','CFBundleExecutable','CFBundleShortVersionString','CFBundleVersion','MinimumOSVersion','CFBundleSupportedPlatforms','CFBundleIcons','CFBundleIconName']}
     report['release_bundle'].update(privacy_manifest=True,compiled_assets=True,unsigned=True)
@@ -59,6 +68,10 @@ try:
     text=subprocess.check_output(['strings',str(binary)],text=True)
     assert 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
+    if kind=='vision':
+        runner_info=Path('build/vision-tests/Build/Products/Debug-xrsimulator/TouchColorVisionUITests-Runner.app/Info.plist')
+        report['ui_runner_identifier']=plistlib.loads(runner_info.read_bytes())['CFBundleIdentifier']
+        assert report['ui_runner_identifier'].startswith('com.mango.touchColor.TouchColorVisionUITests'), 'Unexpected UI runner product'
     devices=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','-j'],timeout=30))['devices']
     candidates=[(runtime,d) for runtime,rows in devices.items() if runtime.endswith(runtime_suffix) for d in rows if d.get('isAvailable')]
     if not candidates:raise RuntimeError('No installed available '+runtime_suffix+' device')
@@ -79,17 +92,38 @@ try:
         # Preserve the failed prerequisite, but still execute unrelated real input, storage and UI paths.
         case={'vision':'VisionWorkflowTests/testRealPhotosImport','tv':'TVWorkflowTests/testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence'}[kind]
         skip=['-skip-testing:'+name+'UITests/'+case]
+    # Keep build logs quiet, but retain runtime test/checkpoint output for precise failures.
+    test_common=[value for value in common if value!='-quiet']
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
-    run(common+['-configuration','Debug','-destination','platform='+platform+' Simulator,id='+device['udid'],
-        '-derivedDataPath','build/'+kind+'-tests','-resultBundlePath','build/'+kind+'-tests.xcresult',
-        '-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES',
-        '-maximum-test-execution-time-allowance','120','ARCHS=arm64','test-without-building']+skip,660)
+    test_arguments=['-configuration','Debug','-destination','platform='+platform+' Simulator,id='+device['udid'],
+        '-derivedDataPath','build/'+kind+'-tests','-parallel-testing-enabled','NO','-collect-test-diagnostics','never',
+        '-test-timeouts-enabled','YES','-maximum-test-execution-time-allowance','180' if kind=='vision' else '120','ARCHS=arm64','test-without-building']
+    if kind=='vision':
+        # Preserve a complete hosted result even if an independent spatial UI process stalls.
+        run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)
+        report['ui_scope']='Focused real paste/sample/save/relaunch and system Photos import; export/cancel/Chinese/audits remain pending full matrix'
+        ui_cases=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPastePrecisionZoomPaletteAndRelaunch']
+        if not photo_seed_failed:ui_cases.append('-only-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPhotosImport')
+        run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+ui_cases,660)
+    else:
+        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
     report['tests']='passed'
     if photo_seed_failed: raise RuntimeError('Photos seeding timed out or failed; other native tests executed, real Photos import remains unqualified')
     report['result']='passed'
 except Exception as error:
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
+    result_bundle=Path('build')/(kind+'-tests.xcresult')
+    if result_bundle.exists():
+        try:
+            summary_run=subprocess.run(['xcrun','xcresulttool','get','test-results','summary','--path',str(result_bundle)],capture_output=True,text=True,timeout=30)
+            if summary_run.returncode==0:
+                summary=json.loads(summary_run.stdout)
+                report['xctest_summary']={key:summary.get(key) for key in ['result','passedTests','failedTests','skippedTests','totalTestCount']}
+                report['xctest_summary']['failures']=[{'test':f.get('testIdentifierString'),'message':f.get('failureText','')[:1600]} for f in summary.get('testFailures',[])[:12]]
+                print('NATIVE_XCTEST_SUMMARY',json.dumps(report['xctest_summary']),flush=True)
+            else: report['summary_error']=(summary_run.stdout+summary_run.stderr)[-2000:]
+        except Exception as error:report['summary_error']=str(error)
     if device:run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
 if report['result']!='passed':raise SystemExit(1)

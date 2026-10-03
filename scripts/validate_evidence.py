@@ -4,9 +4,9 @@ import json,os,re,stat,sys
 from pathlib import Path
 root=Path(sys.argv[1] if len(sys.argv)>1 else 'build/evidence')
 assert root.is_dir() and not root.is_symlink(), 'Missing or symlink evidence root'
-allowed_root={'architecture.txt','accessibility-api.json','mac-unit-summary.json','mac-ui-summary.json','mac-sandbox-summary.json','ios-equivalence-summary.json'}
+allowed_root={'architecture.txt','accessibility-api.json','mac-sandbox-entitlements.json','vision-ui-summary.json','mac-unit-summary.json','mac-ui-summary.json','mac-sandbox-summary.json','ios-equivalence-summary.json'}
 allowed_root.update(f'{p}-{suffix}.json' for p in ('vision','watch','tv') for suffix in ('summary','runtime'))
-allowed_dirs={'screenshots','vision-screenshots','watch-screenshots','tv-screenshots'}
+allowed_dirs={'screenshots','vision-checkpoints','sandbox-screenshots','vision-ui-screenshots','vision-screenshots','watch-screenshots','tv-screenshots'}
 total=0;count=0
 for folder,dirs,files in os.walk(root,followlinks=False):
     directory=Path(folder)

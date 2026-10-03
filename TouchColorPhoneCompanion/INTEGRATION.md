@@ -1,11 +1,11 @@
 # Explicit Watch inbox integration
 
-These two UIKit/WatchConnectivity source files are prepared for the iOS/iPad owner; they are not yet members of the shipped iOS app target and have not run on iPhone.
+These UIKit/WatchConnectivity source files are prepared for the iOS/iPad owner; they are not yet members of the shipped iOS app target and have not run on iPhone.
 
-- Add both `.swift` files to the existing TouchColor app target and link the local `ColorDomain` and `ColorPaletteLegacy` products. Keep iOS deployment at 15 and existing Objective-C source/store interfaces.
+- Add the inbox `.swift` files to the existing TouchColor app target and link the local `ColorDomain` and `ColorPaletteLegacy` products. Keep iOS deployment at 15 and existing Objective-C source/store interfaces.
 - In the application launch lifecycle, import the generated `TouchColor-Swift.h` and call `[[TCWatchPaletteInbox sharedInbox] activate]` on the main thread.
 - Add a visible, accessible `Watch Inbox` action (identifier `watch.inbox.open`) to the home/palette workspace and call `[[TCWatchPaletteInbox sharedInbox] presentInboxFrom:self completion:^{ /* release sourceFlowActive exactly once */ }]`. Own the source/modal camera suspension through the existing controller coordinator. The callback is idempotent for Done, interactive dismissal and programmatic sheet removal; use a weak owner capture. Empty/error text is a self-sizing, scrollable table row, including at 320-point widths and accessibility text sizes.
-- Localize the new UI strings in English/Simplified Chinese. Keep the existing privacy text unchanged.
+- Merge the supplied `zh-Hans.strings` keys into the app’s existing Simplified Chinese Localizable.strings (do not create a second conflicting localization file). The source keys provide English. Keep the existing privacy text unchanged.
 - Receiving only stages the complete bounded version-1 request. Add Colors is an explicit append preserving `colorArray`, lowercase order/duplicates and the once-only `colorArrayRecoveryBackup`. No automatic phone/watch sync occurs.
 - Receipt SHA-256 is of the canonical bounded request. Accepted and rejected duplicate delivery returns the saved outcome receipt without another append; a conflicting ID is rejected. On the Watch, only a matching UUID/fingerprint acknowledgement clears the persisted request. A lost acknowledgement is recovered by explicit Retry with the same UUID.
 - No new entitlement, App Group, CloudKit, identifier registration or credential is required by these source edits. Watch signing/distribution remains unconfigured.
@@ -14,3 +14,13 @@ Required foreground runtime gate: use supported `simctl pair` with discovered iP
 
 
 Simulator transport boundary: Apple explicitly excludes `transferUserInfo` and WCSessionFile reception from Simulator. Test only the production foreground `sendMessage` path with both paired apps active/reachable; it stages the same immutable message and sends a matching acceptance receipt. A passing foreground test does not certify queued background delivery. Physical paired iPhone/Watch testing remains required for that path. Sources: https://developer.apple.com/documentation/watchconnectivity/wcsession/transferuserinfo(_:), https://developer.apple.com/documentation/watchconnectivity/wcsessiondelegate/session(_:didreceive:).
+
+## Explicit file/paste palette review
+
+`PhonePaletteImportController.swift` is a separate prepared adapter and is also not an iOS target member yet. After integration, a visible `Import Palette` action should call `+[TCPaletteImportController presentFrom:completion:]` while holding the same source-flow camera suspension. The callback is idempotent after Cancel, accepted Add Colors or interactive dismissal. Add the shared package's `PaletteSelection` implementation and merge the supplied Chinese keys.
+
+The Files selection requests one JSON URL, holds security-scoped access only through the bounded read and never retains a bookmark. Paste uses the system UIPasteControl on iOS16+ and an explicit item-provider paste action on iOS15. Files are coordinated with NSFileCoordinator while scoped access is held. Every new source attempt, including Files opening/cancellation and unsupported paste, invalidates an earlier completion while retaining the last complete preview. Both paths read a provider/file URL in16 KiB chunks with a1 MiB ceiling, validate the complete array and display every ordered hex/RGB row before acceptance. No receive/read operation writes to defaults. Explicit Add Colors appends once through the legacy store, preserving lowercase order/duplicates and the one-time recovery backup. Malformed/oversize/cancelled input cannot partially apply or silently truncate; existing app palettes are not limited or rewritten by this selection ceiling.
+
+Pending required tests: real Files selection/cancel, system Paste, complete preview/acceptance, malformed/oversize refusal, duplicate double-tap guard, app relaunch, and320pt/large-text/iPad sheet dismissal plus camera suspension. Pure file/parser preservation tests run in the shared package; they are not substitutes for the still-unintegrated phone UI route.
+
+`Tests/PhonePaletteImportTests.swift` is a prepared, unregistered phone-hosted late-completion regression. Add only to the integrated test target; do not compile it into the application. It verifies cancellation/unsupported-paste precedence and unchanged stored duplicates.

@@ -23,14 +23,23 @@ final class TVWorkflowTests: XCTestCase {
         XCTAssertTrue(element.waitForExistence(timeout: 15), app.debugDescription)
         for _ in 0..<24 {
             if element.hasFocus { remote.press(.select); return }
-            let focused = root.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+            let button = root.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+            let focused = button.exists ? button : root.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
             if focused.exists {
-                let dx = element.frame.midX - focused.frame.midX, dy = element.frame.midY - focused.frame.midY
-                if abs(dx) > abs(dy) { remote.press(dx >= 0 ? .right : .left) }
-                else { remote.press(dy >= 0 ? .down : .up) }
-            } else { remote.press(.right) }
+                let target = element.frame, current = focused.frame
+                // System permission alerts expose nested buttons with the same title/frame.
+                // Their focused inner button represents the exact same visible choice.
+                if focused.label == element.label && abs(target.midX-current.midX) < 1 && abs(target.midY-current.midY) < 1 && abs(target.width-current.width) < 1 && abs(target.height-current.height) < 1 {
+                    remote.press(.select); return
+                }
+                // Move between rows first. A centered permission choice above two
+                // bottom buttons cannot be reached by repeated horizontal events.
+                if target.minY >= current.maxY { remote.press(.down) }
+                else if target.maxY <= current.minY { remote.press(.up) }
+                else { remote.press(target.midX >= current.midX ? .right : .left) }
+            } else { remote.press(.down) }
         }
-        XCTFail("Remote could not focus \(element.identifier): \(app.debugDescription)")
+        XCTFail("Remote could not focus \(element.identifier) [\(element.label)]: \(root.debugDescription)")
     }
     private func hex(_ expected: String) {
         let element = app.staticTexts["tv.sample.hex"]
@@ -78,4 +87,44 @@ final class TVWorkflowTests: XCTestCase {
         select(app.buttons["tv.editor.save"]); remote.press(.menu)
         XCTAssertTrue(app.buttons["tv.photos"].waitForExistence(timeout: 5)); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
     }
+    @MainActor private func audit(_ state: String) throws {
+        if #available(tvOS 27.0, *) {
+            print("TV_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
+            try app.performAccessibilityAudit(for: .all) { issue in
+                print("TV_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                return false
+            }
+            print("TV_ACCESSIBILITY_AUDIT_PASS: \(state)")
+        } else { throw XCTSkip("Native audit qualification targets the installed tvOS 27 runtime") }
+    }
+    @MainActor func testOfficialAccessibilityEmptyAndRemoteEditor() throws {
+        XCTAssertTrue(app.buttons["tv.editor"].waitForExistence(timeout: 15))
+        try audit("empty workspace")
+        select(app.buttons["tv.editor"])
+        XCTAssertTrue(app.staticTexts["tv.editor.hex"].waitForExistence(timeout: 5))
+        try audit("remote RGB editor")
+    }
+
+    @MainActor func testRealPhotosDenialAndResetKeepPaletteAndEditorUsable() throws {
+        app.terminate(); app.resetAuthorizationStatus(for: .photos); app.launch()
+        select(app.buttons["tv.photos"])
+        let system = XCUIApplication(bundleIdentifier: "com.apple.PineBoard")
+        let deny = system.buttons["Don’t Allow"].firstMatch
+        XCTAssertTrue(deny.waitForExistence(timeout: 10), system.debugDescription)
+        XCTAssertTrue(system.staticTexts.matching(NSPredicate(format: "label CONTAINS 'TouchColor'")).firstMatch.exists)
+        select(deny, in: system)
+        let status = app.staticTexts["tv.photos.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 10)); XCTAssertTrue(status.label.contains("Photo access is unavailable"))
+        try audit("photo permission denied")
+        capture("Native TV Photos denial retains local palette")
+        remote.press(.menu)
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "0")
+        select(app.buttons["tv.editor"]); select(app.buttons["tv.editor.save"]); remote.press(.menu)
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
+        app.terminate(); app.resetAuthorizationStatus(for: .photos)
+        app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
+        XCTAssertTrue(app.staticTexts["tv.palette.count"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
+    }
+
 }

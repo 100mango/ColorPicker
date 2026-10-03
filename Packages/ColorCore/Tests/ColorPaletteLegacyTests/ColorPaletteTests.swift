@@ -47,6 +47,11 @@ final class ColorPaletteTests: XCTestCase {
 }
 
 final class PaletteInboxTests: XCTestCase {
+    func testPersistedInboxStorageIdentifiersRemainByteIdentical() {
+        XCTAssertEqual(PaletteInbox.pendingStorageIdentifier, "colorInboxPendingV1")
+        XCTAssertEqual(PaletteInbox.acceptedReceiptStorageIdentifier, "colorInboxAcceptedV1")
+        XCTAssertEqual(PaletteInbox.rejectedReceiptStorageIdentifier, "colorInboxRejectedV1")
+    }
     func testExplicitAcceptanceAtomicDomainPreservesLegacyBackupOrderAndDuplicateReceipt() throws {
         let suite = "TouchColor.inbox.\(UUID())"
         let isolated = UserDefaults(suiteName: suite)!
@@ -75,7 +80,7 @@ final class PaletteInboxTests: XCTestCase {
         defaults.set(["#123456"], forKey: "colorArray")
         let inbox = PaletteInbox(defaults: defaults, domain: suite)
         let message = try PaletteTransfer(colors: [RGBColor(hex: "#ff0000")!]), data = try message.encoded()
-        try inbox.receive(data)
+        _ = try inbox.receive(data)
         XCTAssertThrowsError(try inbox.receive(data.prefix(data.count / 2)))
         let conflict = try PaletteTransfer(id: message.id, colors: [RGBColor(hex: "#00ff00")!])
         XCTAssertThrowsError(try inbox.receive(conflict.encoded()))
@@ -94,7 +99,7 @@ final class PaletteInboxTests: XCTestCase {
         isolated.set(["#123456"], forKey: "colorArray")
         let inbox = PaletteInbox(defaults: isolated, domain: suite)
         let message = try PaletteTransfer(colors: [RGBColor(hex: "#ff0000")!]), data = try message.encoded()
-        try inbox.receive(data)
+        _ = try inbox.receive(data)
         let receipt = try inbox.reject(message.id)
         let reopened = PaletteInbox(defaults: isolated, domain: suite)
         XCTAssertEqual(try reopened.receive(data), receipt)
@@ -106,4 +111,34 @@ final class PaletteInboxTests: XCTestCase {
         XCTAssertThrowsError(try reopened.receive(conflict.encoded()))
     }
 
+    func testConflictingSavedOutcomesNeverChangeThePaletteOrInbox() throws {
+        let suite = "TouchColor.inbox-conflict.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let request = try PaletteTransfer(colors: [RGBColor(hex: "#abcdef")!])
+        let outcomes = [request.id.uuidString: try PaletteFingerprint.of(request)]
+        let original: [String: Any] = [LegacyPalette.key: ["#ff0000"], PaletteInbox.acceptedReceiptStorageIdentifier: outcomes, PaletteInbox.rejectedReceiptStorageIdentifier: outcomes]
+        defaults.setPersistentDomain(original, forName: suite)
+        let inbox = PaletteInbox(defaults: defaults, domain: suite)
+        XCTAssertThrowsError(try inbox.receive(request.encoded()))
+        XCTAssertThrowsError(try inbox.accept(request.id)); XCTAssertThrowsError(try inbox.reject(request.id))
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, original as NSDictionary)
+    }
+
+}
+
+final class PaletteSelectionTests: XCTestCase {
+    func testCompleteFileSelectionPreservesOrderDuplicatesAndRejectsInvalidInput() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("palette-review-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("[\"#ABCDEF\",\"#123456\",\"#abcdef\"]".utf8).write(to: url)
+        let selected = try PaletteSelection.read(url)
+        XCTAssertEqual(selected.colors.map(\.hex), ["#abcdef", "#123456", "#abcdef"])
+        try Data("[\"#123456\",\"invalid\"]".utf8).write(to: url)
+        XCTAssertThrowsError(try PaletteSelection.read(url))
+        XCTAssertEqual(selected.colors.map(\.hex), ["#abcdef", "#123456", "#abcdef"])
+        XCTAssertThrowsError(try PaletteSelection.read(url, cancelled: { true }))
+        let file = try FileHandle(forWritingTo: url)
+        try file.truncate(atOffset: UInt64(PaletteSelection.maximumBytes + 1)); try file.close()
+        XCTAssertThrowsError(try PaletteSelection.read(url))
+    }
 }

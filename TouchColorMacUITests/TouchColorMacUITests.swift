@@ -10,6 +10,8 @@ import AVFoundation
     private var app: XCUIApplication!
     private var fixture: URL!
     private var suite = ""
+    private var expectedUID: Int?
+    private var expectsSandbox = false
     override func setUpWithError() throws {
         continueAfterFailure = false
         suite = "TouchColor.mac-ui.\(UUID())"
@@ -32,6 +34,15 @@ import AVFoundation
         print("NATIVE_UI_EXACT_APP: \(applicationURL.path)")
         app = XCUIApplication(url: applicationURL)
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = suite
+        expectsSandbox = applicationURL.path.contains("/mac-sandbox/")
+        if name.contains("SandboxBoundary") {
+            var derivedData = products
+            for _ in 0..<3 { derivedData.deleteLastPathComponent() }
+            let record = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(contentsOf: derivedData.appendingPathComponent("probe-info.json"))) as? [String: Any])
+            XCTAssertEqual(record["readControl"] as? Bool, true); XCTAssertEqual(record["writeControl"] as? Bool, true)
+            expectedUID = record["uid"] as? Int
+            app.launchEnvironment["TOUCHCOLOR_SANDBOX_PROBE_FILE"] = try XCTUnwrap(record["file"] as? String)
+        }
         app.launchArguments = ["--ui-test-reset"]; app.launch()
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
         XCTAssertEqual(running.count, 1)
@@ -214,6 +225,65 @@ import AVFoundation
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try Data(contentsOf: fixture), forType: .png)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
+    }
+
+    @MainActor private func audit(_ state: String) throws {
+        if #available(macOS 27.0, *) {
+            print("MAC_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
+            try app.performAccessibilityAudit(for: .all) { issue in
+                print("MAC_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                return false
+            }
+            print("MAC_ACCESSIBILITY_AUDIT_PASS: \(state)")
+        } else { throw XCTSkip("Native audit qualification targets the installed macOS 27 runtime") }
+    }
+    @MainActor func testOfficialAccessibilityEmptyAndPopulatedCanvas() throws {
+        XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 10))
+        try audit("empty workspace")
+        openFile(fixture); assertHex("#ff00ff")
+        app.buttons["sample.save"].click()
+        try audit("full image and palette")
+    }
+    @MainActor func testOfficialAccessibilityCameraAndPrivacy() throws {
+        app.buttons["camera.open"].click()
+        XCTAssertTrue(app.buttons["camera.close"].waitForExistence(timeout: 10), app.debugDescription)
+        try audit("camera availability")
+        app.buttons["camera.close"].click()
+        app.buttons["privacy.open"].click()
+        XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 10))
+        try audit("offline privacy")
+    }
+
+    @MainActor func testOfficialAccessibilityCorruptImportRetainsPreviousSource() throws {
+        openFile(fixture); assertHex("#ff00ff")
+        let bad = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-corrupt-\(UUID()).png")
+        try Data("deliberately invalid synthetic PNG".utf8).write(to: bad)
+        defer { try? FileManager.default.removeItem(at: bad) }
+        openFile(bad)
+        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 10), app.debugDescription)
+        try audit("corrupt import error")
+        app.buttons["OK"].click(); assertHex("#ff00ff")
+    }
+
+    func testSandboxBoundaryMatchesExactAppConfiguration() throws {
+        let proof = app.staticTexts["debug.sandbox.proof"]
+        XCTAssertTrue(proof.waitForExistence(timeout: 10), app.debugDescription)
+        let text = proof.value as? String ?? proof.label
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        XCTAssertEqual(json["uid"] as? Int, try XCTUnwrap(expectedUID))
+        XCTAssertEqual(json["unselectedReadDenied"] as? Bool, expectsSandbox)
+        XCTAssertEqual(json["unselectedWriteDenied"] as? Bool, expectsSandbox)
+        XCTAssertEqual(json["homeHasExpectedContainerPath"] as? Bool, expectsSandbox)
+        XCTAssertEqual(json["applicationSupportIsInHome"] as? Bool, true)
+        XCTAssertEqual(json["containerRoundTrip"] as? Bool, true)
+        if expectsSandbox {
+            XCTAssertEqual(json["readErrorDomain"] as? String, NSCocoaErrorDomain)
+            XCTAssertEqual(json["readErrorCode"] as? Int, NSFileReadNoPermissionError)
+            XCTAssertEqual(json["writeErrorDomain"] as? String, NSCocoaErrorDomain)
+            XCTAssertEqual(json["writeErrorCode"] as? Int, NSFileWriteNoPermissionError)
+        }
+        print("NATIVE_SANDBOX_PROCESS_PROOF: \(text)")
+        let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Native Mac actual sandbox process proof"; attachment.lifetime = .keepAlways; add(attachment)
     }
 
 }

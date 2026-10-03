@@ -64,7 +64,7 @@ import ColorPaletteLegacy
             try ColorRaster.read(url: url, cancelled: cancelled)
         }
     }
-    private func enqueue(name: String, token: UInt64, cleanup: (() -> Void)? = nil,
+    private func enqueue(name: String, token: UInt64, cleanup: (@Sendable () -> Void)? = nil,
                          decode: @escaping (@escaping () -> Bool) throws -> ColorRaster) {
         guard isCurrent(token) else { cleanup?(); return }
         let operation = BlockOperation()

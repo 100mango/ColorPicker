@@ -17,6 +17,13 @@ import AppKit
         WindowGroup("TouchColor") {
             ColorWindow(library: library)
                 .background(NativeWindowMinimumSize())
+                #if DEBUG
+                .overlay(alignment: .topLeading) {
+                    if let proof = SandboxRuntimeProof.json {
+                        Text(proof).font(.caption2).lineLimit(4).accessibilityIdentifier("debug.sandbox.proof")
+                    }
+                }
+                #endif
         }
         .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }

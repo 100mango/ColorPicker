@@ -133,4 +133,21 @@ final class PreviewRasterTests: XCTestCase {
         let cached = try PreviewRaster.decode(preview.pngData())
         XCTAssertEqual(cached.width, 512); XCTAssertEqual(cached.sample(at: .center)?.hex, "#ff0000")
     }
+    func testProgressiveFileBytesCapacityAndCancellation() throws {
+        let bytes = RasterFixture.alphaData()
+        let file = try BoundedImageFile(maximumBytes: bytes.count)
+        try file.append(bytes.prefix(7)); try file.append(bytes.dropFirst(7))
+        let url = try file.finish()
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
+        XCTAssertEqual(try ColorRaster.read(url: url).sample(at: NormalizedPoint(x: 0.1, y: 0.1)!)?.hex, "#ffffff")
+        XCTAssertThrowsError(try file.append(Data([0])))
+        let limited = try BoundedImageFile(maximumBytes: 8)
+        try limited.append(Data(repeating: 1, count: 7))
+        XCTAssertThrowsError(try limited.append(Data([2, 3])))
+        XCTAssertEqual(try Data(contentsOf: limited.url), Data(repeating: 1, count: 7))
+        limited.cancel(); XCTAssertFalse(FileManager.default.fileExists(atPath: limited.url.path))
+        XCTAssertThrowsError(try limited.finish())
+    }
+
 }
