@@ -1,4 +1,5 @@
-import AppKit
+import Foundation
+import Combine
 import ColorDomain
 import ColorRaster
 import ColorPaletteLegacy

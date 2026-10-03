@@ -82,3 +82,31 @@ final class ColorRasterTests: XCTestCase {
         XCTAssertEqual(try ColorRaster.read(url: url).sample(at: NormalizedPoint(x: 1, y: 1)!)?.hex, "#0713e7")
     }
 }
+
+final class PreviewRasterTests: XCTestCase {
+    func testBoundedPreviewMatchesSourceForSmallFixturesAndAllOrientations() throws {
+        for orientation in 1...8 {
+            let data = RasterFixture.data(orientation: orientation)
+            let source = try ColorRaster.decode(data), preview = try PreviewRaster.decode(data)
+            XCTAssertFalse(preview.isReduced)
+            XCTAssertEqual(preview.width, source.width); XCTAssertEqual(preview.height, source.height)
+            for point in [NormalizedPoint(x: 0, y: 0)!, .center, NormalizedPoint(x: 1, y: 1)!] {
+                XCTAssertEqual(preview.sample(at: point), source.sample(at: point))
+            }
+        }
+        XCTAssertThrowsError(try PreviewRaster.decode(Data("corrupt".utf8)))
+        XCTAssertThrowsError(try PreviewRaster.decode(RasterFixture.data(), cancelled: { true }))
+    }
+    func testLargeWatchPreviewIsExplicitlyReducedAndReopensAtBoundedDimensions() throws {
+        let width = 1024, height = 768
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let preview = try PreviewRaster.decode(RasterFixture.data(image: context.makeImage()!))
+        XCTAssertTrue(preview.isReduced); XCTAssertEqual(preview.width, 512); XCTAssertEqual(preview.height, 384)
+        XCTAssertEqual(preview.originalWidth, width); XCTAssertEqual(preview.originalHeight, height)
+        XCTAssertEqual(preview.sample(at: .center)?.hex, "#ff0000")
+        let cached = try PreviewRaster.decode(preview.pngData())
+        XCTAssertEqual(cached.width, 512); XCTAssertEqual(cached.sample(at: .center)?.hex, "#ff0000")
+    }
+}

@@ -1,0 +1,663 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+	};
+	"objectVersion" = 56;
+	"objects" = {
+		"20AAF06F73221E33DC9ABA55" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVision/PaletteLibrary.swift";
+			"sourceTree" = "<group>";
+		};
+		"CBE8A9C2E7F13BFEFD0A1246" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVision/TouchColorVisionApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"6A4B80564A4B14D9524CB5C9" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVision/VisionCanvas.swift";
+			"sourceTree" = "<group>";
+		};
+		"BF2D7BDFE8CD1883E5EBAAB6" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVision/VisionColorWindow.swift";
+			"sourceTree" = "<group>";
+		};
+		"1C94524FFFC40D6C98D899DF" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVision/VisionImportExport.swift";
+			"sourceTree" = "<group>";
+		};
+		"37F1DB6F28A5F8EDDA7B1FBF" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorMac/ImageSession.swift";
+			"sourceTree" = "<group>";
+		};
+		"FE20C536BB3E410FE23DBAC7" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorMac/PrivacyView.swift";
+			"sourceTree" = "<group>";
+		};
+		"1B4549B9B74C7D5F2D0A703B" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVisionTests/VisionWorkspaceTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"A7EB921D1AAB23658F20E981" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"E2F04E8134FD76B4EE8D037B" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"BF89A33FD66C2CED4FB1CF8C" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"8F567D48216B9EBD04471079" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorVisionUITests/VisionWorkflowTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"75270913F8147337CB6DFCE0" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"path" = "TouchColorVision/Assets.xcassets";
+			"sourceTree" = "<group>";
+		};
+		"C3B65A5D4F1F337F8514FD15" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.xml";
+			"path" = "ColorPicker/PrivacyInfo.xcprivacy";
+			"sourceTree" = "<group>";
+		};
+		"8D605CA0397D39126AB119ED" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.strings";
+			"name" = "en";
+			"path" = "TouchColorVision/en.lproj/Localizable.strings";
+			"sourceTree" = "<group>";
+		};
+		"F85B648D63684FD7402745E8" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.strings";
+			"name" = "zh-Hans";
+			"path" = "TouchColorVision/zh-Hans.lproj/Localizable.strings";
+			"sourceTree" = "<group>";
+		};
+		"170F9E7BE5DA97A31A8AF99F" = {
+			"isa" = "PBXVariantGroup";
+			"children" = ("8D605CA0397D39126AB119ED", "F85B648D63684FD7402745E8");
+			"name" = "Localizable.strings";
+			"sourceTree" = "<group>";
+		};
+		"722CF1EBED93D3F92E0946EF" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.strings";
+			"name" = "en";
+			"path" = "TouchColorVision/en.lproj/InfoPlist.strings";
+			"sourceTree" = "<group>";
+		};
+		"9CC66985A55F14B432DE2D4A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.strings";
+			"name" = "zh-Hans";
+			"path" = "TouchColorVision/zh-Hans.lproj/InfoPlist.strings";
+			"sourceTree" = "<group>";
+		};
+		"D1FA0243D13F39C985F4B159" = {
+			"isa" = "PBXVariantGroup";
+			"children" = ("722CF1EBED93D3F92E0946EF", "9CC66985A55F14B432DE2D4A");
+			"name" = "InfoPlist.strings";
+			"sourceTree" = "<group>";
+		};
+		"8A11532FB2382B2213E22CF2" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = "Packages/ColorCore";
+		};
+		"EF93DAF8A7D2772E81B5DF2E" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"includeInIndex" = 0;
+			"path" = "TouchColor.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"7653BAC0B569D87C27269F2B" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorDomain";
+		};
+		"FC920694DCF3EC0FBDD51EE3" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "7653BAC0B569D87C27269F2B";
+		};
+		"FEB56F1A35EB92422D1574DE" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorRaster";
+		};
+		"636ACA2A4308E4753BB9D9BB" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "FEB56F1A35EB92422D1574DE";
+		};
+		"DE61BE2B1EC3BDC9304526D2" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorPaletteLegacy";
+		};
+		"E92EBFE19FA97AD5A9EADD29" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "DE61BE2B1EC3BDC9304526D2";
+		};
+		"C5A20C1DAA7B917A843C70CB" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("FC920694DCF3EC0FBDD51EE3", "636ACA2A4308E4753BB9D9BB", "E92EBFE19FA97AD5A9EADD29");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"23FBC412F1B6B8FB02539D40" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "20AAF06F73221E33DC9ABA55";
+		};
+		"10B5F3F0F4D75915D5DAA231" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CBE8A9C2E7F13BFEFD0A1246";
+		};
+		"812A5300941ED051A9F7F7F7" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "6A4B80564A4B14D9524CB5C9";
+		};
+		"4D666CAE5E6AFAC708808B23" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BF2D7BDFE8CD1883E5EBAAB6";
+		};
+		"53A5A632E718CF846917F8B1" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "1C94524FFFC40D6C98D899DF";
+		};
+		"89D82F0F8959B203D09E9C35" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "37F1DB6F28A5F8EDDA7B1FBF";
+		};
+		"B329A4256AC0A6B6CFC84707" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "FE20C536BB3E410FE23DBAC7";
+		};
+		"FDD2001CA3698BDA02EBDF30" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("23FBC412F1B6B8FB02539D40", "10B5F3F0F4D75915D5DAA231", "812A5300941ED051A9F7F7F7", "4D666CAE5E6AFAC708808B23", "53A5A632E718CF846917F8B1", "89D82F0F8959B203D09E9C35", "B329A4256AC0A6B6CFC84707");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"9CA673018E0BCA8E65C3971C" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "75270913F8147337CB6DFCE0";
+		};
+		"9D05E51BE7D64E2673264305" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "C3B65A5D4F1F337F8514FD15";
+		};
+		"87CE5B0DDC8F450AD4BB6E0C" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "170F9E7BE5DA97A31A8AF99F";
+		};
+		"9F5DAAD1B50573FC66CD54C0" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "D1FA0243D13F39C985F4B159";
+		};
+		"4771B0114AE2F2195272381D" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("9CA673018E0BCA8E65C3971C", "9D05E51BE7D64E2673264305", "87CE5B0DDC8F450AD4BB6E0C", "9F5DAAD1B50573FC66CD54C0");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"873FAA3FCADA1F9E6C081CB5" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "TouchColor";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"SUPPORTED_PLATFORMS" = "xros xrsimulator";
+				"TARGETED_DEVICE_FAMILY" = "7";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_VERSION" = "5.0";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGNING_ALLOWED" = "NO";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				"CLANG_ENABLE_MODULES" = "YES";
+				"PRODUCT_MODULE_NAME" = "TouchColorVision";
+				"INFOPLIST_KEY_CFBundleName" = "TouchColor";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "TouchColor";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents" = "YES";
+				"INFOPLIST_KEY_UIFileSharingEnabled" = "YES";
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace" = "YES";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"MARKETING_VERSION" = "2.0";
+				"CURRENT_PROJECT_VERSION" = "20001";
+				"ONLY_ACTIVE_ARCH" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"ENABLE_TESTABILITY" = "YES";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+		};
+		"2A10CF1FC99F3DDD233CDC3E" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "TouchColor";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"SUPPORTED_PLATFORMS" = "xros xrsimulator";
+				"TARGETED_DEVICE_FAMILY" = "7";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_VERSION" = "5.0";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGNING_ALLOWED" = "NO";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				"CLANG_ENABLE_MODULES" = "YES";
+				"PRODUCT_MODULE_NAME" = "TouchColorVision";
+				"INFOPLIST_KEY_CFBundleName" = "TouchColor";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "TouchColor";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents" = "YES";
+				"INFOPLIST_KEY_UIFileSharingEnabled" = "YES";
+				"INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace" = "YES";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+				"MARKETING_VERSION" = "2.0";
+				"CURRENT_PROJECT_VERSION" = "20001";
+				"ONLY_ACTIVE_ARCH" = "NO";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"ENABLE_TESTABILITY" = "NO";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+		};
+		"A355AB1C0B0B79823DBE54E5" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("873FAA3FCADA1F9E6C081CB5", "2A10CF1FC99F3DDD233CDC3E");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"2B65ACE81ADB061E8115DE64" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "A355AB1C0B0B79823DBE54E5";
+			"buildPhases" = ("FDD2001CA3698BDA02EBDF30", "C5A20C1DAA7B917A843C70CB", "4771B0114AE2F2195272381D");
+			"buildRules" = ();
+			"dependencies" = ();
+			"name" = "TouchColorVision";
+			"productName" = "TouchColorVision";
+			"productReference" = "EF93DAF8A7D2772E81B5DF2E";
+			"productType" = "com.apple.product-type.application";
+			"packageProductDependencies" = ("7653BAC0B569D87C27269F2B", "FEB56F1A35EB92422D1574DE", "DE61BE2B1EC3BDC9304526D2");
+		};
+		"C1FD16510A02E6F5C6B7F6F2" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.cfbundle";
+			"includeInIndex" = 0;
+			"path" = "TouchColorVisionTests.xctest";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"1AA3E2A56B4B4BF53B5E132E" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorDomain";
+		};
+		"2D77809DCFDEA1B535BFB36C" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "1AA3E2A56B4B4BF53B5E132E";
+		};
+		"A8AEE6F52316A569FC9860C6" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorRaster";
+		};
+		"0ECBB44D88AEE8D04860B101" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "A8AEE6F52316A569FC9860C6";
+		};
+		"BD5A9ADB98DF07A14D4FC823" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorPaletteLegacy";
+		};
+		"AA3C5CF620DFB16E2B10DEC3" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "BD5A9ADB98DF07A14D4FC823";
+		};
+		"362C920947F0D5266769FCFB" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("2D77809DCFDEA1B535BFB36C", "0ECBB44D88AEE8D04860B101", "AA3C5CF620DFB16E2B10DEC3");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"840B363263DBE17F6020A324" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "1B4549B9B74C7D5F2D0A703B";
+		};
+		"919CF46FEA0D722095765E90" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A7EB921D1AAB23658F20E981";
+		};
+		"4EF8232A28C269A81CE588BE" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E2F04E8134FD76B4EE8D037B";
+		};
+		"364335DC4FCF0C155352FE25" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BF89A33FD66C2CED4FB1CF8C";
+		};
+		"44B8FE33A1E92CACA01BA9BD" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("840B363263DBE17F6020A324", "919CF46FEA0D722095765E90", "4EF8232A28C269A81CE588BE", "364335DC4FCF0C155352FE25");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"8B258310EA1C2C1DC7F05B51" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"40A572586D2A78555AC59F8D" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "7C292F6A29F7C4C038F51C7D";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "2B65ACE81ADB061E8115DE64";
+			"remoteInfo" = "TouchColorVision";
+		};
+		"A76EE01264AEA444595B9A5B" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "2B65ACE81ADB061E8115DE64";
+			"targetProxy" = "40A572586D2A78555AC59F8D";
+		};
+		"77B8EF3C659D588A877C0124" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor.TouchColorVisionTests";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"SUPPORTED_PLATFORMS" = "xros xrsimulator";
+				"TARGETED_DEVICE_FAMILY" = "7";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_VERSION" = "5.0";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGNING_ALLOWED" = "NO";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"ONLY_ACTIVE_ARCH" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"ENABLE_TESTABILITY" = "YES";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+		};
+		"5E443151CA2A696C6C81A8F0" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor.TouchColorVisionTests";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"SUPPORTED_PLATFORMS" = "xros xrsimulator";
+				"TARGETED_DEVICE_FAMILY" = "7";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_VERSION" = "5.0";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGNING_ALLOWED" = "NO";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"ONLY_ACTIVE_ARCH" = "NO";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"ENABLE_TESTABILITY" = "NO";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+		};
+		"B211D69A24228D5C5F1D72E7" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("77B8EF3C659D588A877C0124", "5E443151CA2A696C6C81A8F0");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"CC1BCC421456853E7E270D63" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "B211D69A24228D5C5F1D72E7";
+			"buildPhases" = ("44B8FE33A1E92CACA01BA9BD", "362C920947F0D5266769FCFB", "8B258310EA1C2C1DC7F05B51");
+			"buildRules" = ();
+			"dependencies" = ("A76EE01264AEA444595B9A5B");
+			"name" = "TouchColorVisionTests";
+			"productName" = "TouchColorVisionTests";
+			"productReference" = "C1FD16510A02E6F5C6B7F6F2";
+			"productType" = "com.apple.product-type.bundle.unit-test";
+			"packageProductDependencies" = ("1AA3E2A56B4B4BF53B5E132E", "A8AEE6F52316A569FC9860C6", "BD5A9ADB98DF07A14D4FC823");
+		};
+		"23DAB9DBB8F63C70B7770947" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.cfbundle";
+			"includeInIndex" = 0;
+			"path" = "TouchColorVisionUITests.xctest";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"3299AA2DEC673BD29F1766AF" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"7B0ACE517284251E5F003CF7" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "8F567D48216B9EBD04471079";
+		};
+		"90403B97D8F52B5210C5C943" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("7B0ACE517284251E5F003CF7");
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"C885C543884B3B5262412361" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"23BD542915AF216F02A8A89D" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "7C292F6A29F7C4C038F51C7D";
+			"proxyType" = 1;
+			"remoteGlobalIDString" = "2B65ACE81ADB061E8115DE64";
+			"remoteInfo" = "TouchColorVision";
+		};
+		"9AB9DEB01BB52F1E735F36DC" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "2B65ACE81ADB061E8115DE64";
+			"targetProxy" = "23BD542915AF216F02A8A89D";
+		};
+		"C39ECA244604B26267EABA2F" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor.TouchColorVisionUITests";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"SUPPORTED_PLATFORMS" = "xros xrsimulator";
+				"TARGETED_DEVICE_FAMILY" = "7";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_VERSION" = "5.0";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGNING_ALLOWED" = "NO";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TEST_TARGET_NAME" = "TouchColorVision";
+				"ONLY_ACTIVE_ARCH" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"ENABLE_TESTABILITY" = "YES";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+		};
+		"C79AF698ABBF0A13B12DAC06" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor.TouchColorVisionUITests";
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"SUPPORTED_PLATFORMS" = "xros xrsimulator";
+				"TARGETED_DEVICE_FAMILY" = "7";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_VERSION" = "5.0";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"CODE_SIGNING_ALLOWED" = "NO";
+				"ENABLE_APP_SANDBOX" = "NO";
+				"ENABLE_HARDENED_RUNTIME" = "NO";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
+				"CLANG_ENABLE_MODULES" = "YES";
+				"TEST_TARGET_NAME" = "TouchColorVision";
+				"ONLY_ACTIVE_ARCH" = "NO";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"ENABLE_TESTABILITY" = "NO";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+		};
+		"D037E941ACEFEC4DCB784B73" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("C39ECA244604B26267EABA2F", "C79AF698ABBF0A13B12DAC06");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"511AC0B8AF23EEA732669B3D" = {
+			"isa" = "PBXNativeTarget";
+			"buildConfigurationList" = "D037E941ACEFEC4DCB784B73";
+			"buildPhases" = ("90403B97D8F52B5210C5C943", "3299AA2DEC673BD29F1766AF", "C885C543884B3B5262412361");
+			"buildRules" = ();
+			"dependencies" = ("9AB9DEB01BB52F1E735F36DC");
+			"name" = "TouchColorVisionUITests";
+			"productName" = "TouchColorVisionUITests";
+			"productReference" = "23DAB9DBB8F63C70B7770947";
+			"productType" = "com.apple.product-type.bundle.ui-testing";
+			"packageProductDependencies" = ();
+		};
+		"C61B01A29427DD4C0F77012D" = {
+			"isa" = "PBXGroup";
+			"children" = ("EF93DAF8A7D2772E81B5DF2E", "C1FD16510A02E6F5C6B7F6F2", "23DAB9DBB8F63C70B7770947");
+			"name" = "Products";
+			"sourceTree" = "<group>";
+		};
+		"C902DADDFB745BCCC1A1B291" = {
+			"isa" = "PBXGroup";
+			"children" = ("20AAF06F73221E33DC9ABA55", "CBE8A9C2E7F13BFEFD0A1246", "6A4B80564A4B14D9524CB5C9", "BF2D7BDFE8CD1883E5EBAAB6", "1C94524FFFC40D6C98D899DF", "37F1DB6F28A5F8EDDA7B1FBF", "FE20C536BB3E410FE23DBAC7", "1B4549B9B74C7D5F2D0A703B", "A7EB921D1AAB23658F20E981", "E2F04E8134FD76B4EE8D037B", "BF89A33FD66C2CED4FB1CF8C", "8F567D48216B9EBD04471079", "75270913F8147337CB6DFCE0", "C3B65A5D4F1F337F8514FD15", "170F9E7BE5DA97A31A8AF99F", "D1FA0243D13F39C985F4B159", "C61B01A29427DD4C0F77012D");
+			"sourceTree" = "<group>";
+		};
+		"B9251D22F8B65D677A4CB26B" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"GCC_C_LANGUAGE_STANDARD" = "gnu17";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"ONLY_ACTIVE_ARCH" = "YES";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+				"ENABLE_TESTABILITY" = "YES";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf";
+			};
+		};
+		"7C696847A7E60E8FBA8B4ACA" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"SWIFT_VERSION" = "5.0";
+				"XROS_DEPLOYMENT_TARGET" = "1.0";
+				"SDKROOT" = "xros";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+				"GCC_C_LANGUAGE_STANDARD" = "gnu17";
+				"ENABLE_USER_SCRIPT_SANDBOXING" = "YES";
+				"ONLY_ACTIVE_ARCH" = "NO";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+				"ENABLE_TESTABILITY" = "NO";
+				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+			};
+		};
+		"75676A76B010B267B7C30110" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("B9251D22F8B65D677A4CB26B", "7C696847A7E60E8FBA8B4ACA");
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"7C292F6A29F7C4C038F51C7D" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"LastUpgradeCheck" = "2700";
+				"TargetAttributes" = {
+					"CC1BCC421456853E7E270D63" = {
+						"TestTargetID" = "2B65ACE81ADB061E8115DE64";
+					};
+					"511AC0B8AF23EEA732669B3D" = {
+						"TestTargetID" = "2B65ACE81ADB061E8115DE64";
+					};
+				};
+			};
+			"buildConfigurationList" = "75676A76B010B267B7C30110";
+			"compatibilityVersion" = "Xcode 14.0";
+			"developmentRegion" = "en";
+			"hasScannedForEncodings" = 0;
+			"knownRegions" = ("en", "zh-Hans", "Base");
+			"mainGroup" = "C902DADDFB745BCCC1A1B291";
+			"productRefGroup" = "C61B01A29427DD4C0F77012D";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("2B65ACE81ADB061E8115DE64", "CC1BCC421456853E7E270D63", "511AC0B8AF23EEA732669B3D");
+			"packageReferences" = ("8A11532FB2382B2213E22CF2");
+		};
+	};
+	"rootObject" = "7C292F6A29F7C4C038F51C7D";
+}

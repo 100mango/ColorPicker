@@ -79,5 +79,5 @@
 "Camera access is unavailable. Check System Settings > Privacy & Security > Camera, or import an image." = "无法访问相机。请检查“系统设置 > 隐私与安全性 > 相机”，或导入图像。";
 "Live center pixel · sRGB video" = "实时中心像素 · sRGB 视频";
 "Camera stopped" = "相机已停止";
-"Camera permission granted. Choose Start Camera when TouchColor is active." = "已获得相机权限。请在 TouchColor 处于活动状态时选择“启动相机”。";
-"Waiting for camera permission. Capture will start only while TouchColor is active." = "正在等待相机权限。仅在 TouchColor 处于活动状态时才会启动采集。";
+"Export completed." = "导出完成。";
+"Image canvas. Select a point, or use the precision pixel controls." = "图片画布。请选择取色位置，或使用精确像素控制。";

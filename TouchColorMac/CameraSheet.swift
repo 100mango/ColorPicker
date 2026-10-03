@@ -50,7 +50,7 @@ struct CameraSheet: View {
 private struct CameraPreview: NSViewRepresentable {
     let session: AVCaptureSession
     func makeNSView(context: Context) -> Preview { Preview(session: session) }
-    func updateNSView(_ view: Preview, context: Context) {}
+    func updateNSView(_ view: Preview, context: Context) { view.setSession(session) }
     final class Preview: NSView {
         private let preview: AVCaptureVideoPreviewLayer
         init(session: AVCaptureSession) {
@@ -58,6 +58,9 @@ private struct CameraPreview: NSViewRepresentable {
             super.init(frame: .zero)
             wantsLayer = true; preview.videoGravity = .resizeAspect
             layer?.addSublayer(preview)
+        }
+        func setSession(_ session: AVCaptureSession) {
+            if preview.session !== session { preview.session = session }
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
         override func layout() { super.layout(); preview.frame = bounds }

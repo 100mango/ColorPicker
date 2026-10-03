@@ -7,7 +7,7 @@ import ColorRaster
 
 private final class FakeCameraDriver: CameraDriving {
     let session = AVCaptureSession()
-    var onInterruption: (() -> Void)?
+    var onInterruption: ((UInt64) -> Void)?
     var available = [CameraDevice(id: "synthetic", name: "Synthetic test camera")]
     var permission = AVAuthorizationStatus.authorized
     var permissionReply: ((Bool) -> Void)?
@@ -26,7 +26,7 @@ private final class FakeCameraDriver: CameraDriving {
     private func settle() async { try? await Task.sleep(nanoseconds: 30_000_000) }
     func testPermissionCancelDeniedNoDeviceAndRepeatedStart() async {
         let driver = FakeCameraDriver(); driver.permission = .notDetermined
-        let model = CameraModel(driver: driver)
+        let model = CameraModel(driver: driver, applicationIsActive: { true })
         model.start(); model.start()
         XCTAssertTrue(model.preparing); XCTAssertNotNil(driver.permissionReply)
         model.stop(); driver.permissionReply?(true); await settle()
@@ -56,7 +56,7 @@ private final class FakeCameraDriver: CameraDriving {
         driver.freezeReplies[0](.success(RasterFixture.data()))
         fresh(.running); fresh(.sample(ColorDomain.RGBColor(hex: "#abcdef")!, width: 3, height: 2)); await settle()
         XCTAssertTrue(model.running); XCTAssertEqual(model.color?.hex, "#abcdef"); XCTAssertEqual(delivered, 0)
-        driver.onInterruption?(); await settle()
+        driver.onInterruption?(driver.starts[1].0); await settle()
         fresh(.sample(ColorDomain.RGBColor(hex: "#ff0000")!, width: 3, height: 2)); await settle()
         XCTAssertFalse(model.running); XCTAssertNil(model.color)
         model.start(); driver.available = []; model.connectionChanged()
@@ -106,4 +106,35 @@ private final class FakeCameraDriver: CameraDriving {
         await settle()
         XCTAssertFalse(model.running); XCTAssertGreaterThan(driver.stopCount, 0)
     }
+    func testInitialPermissionDeactivationWaitsForActiveAppOrGivesExplicitRetry() async {
+        let driver = FakeCameraDriver(); driver.permission = .notDetermined
+        var active = false
+        let model = CameraModel(driver: driver, applicationIsActive: { active })
+        model.start()
+        NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: nil)
+        await settle()
+        XCTAssertTrue(model.preparing); XCTAssertTrue(driver.starts.isEmpty)
+        driver.permissionReply?(true); await settle()
+        XCTAssertFalse(model.preparing); XCTAssertTrue(driver.starts.isEmpty)
+        XCTAssertTrue(model.status.contains("permission granted"))
+        driver.permission = .authorized; active = true; model.start()
+        XCTAssertEqual(driver.starts.count, 1)
+        model.stop()
+        driver.permission = .notDetermined; model.start()
+        model.applicationResignedActive(); active = true
+        driver.permissionReply?(true); await settle()
+        XCTAssertEqual(driver.starts.count, 2)
+        model.stop()
+    }
+    func testDelayedOldSessionInterruptionCannotStopRestartedCapture() async {
+        let driver = FakeCameraDriver(); let model = CameraModel(driver: driver)
+        model.start(); let old = driver.starts[0].0
+        model.stop(); model.start(); let current = driver.starts[1]
+        current.1(.running); current.1(.sample(ColorDomain.RGBColor(hex: "#abcdef")!, width: 3, height: 2)); await settle()
+        driver.onInterruption?(old); await settle()
+        XCTAssertTrue(model.running); XCTAssertEqual(model.color?.hex, "#abcdef")
+        driver.onInterruption?(current.0); await settle()
+        XCTAssertFalse(model.running); XCTAssertNil(model.color)
+    }
+
 }

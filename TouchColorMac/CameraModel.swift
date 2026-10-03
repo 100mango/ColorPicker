@@ -14,15 +14,17 @@ import ColorDomain
     let driver: CameraDriving
     private let epoch = CaptureEpoch()
     private var token: UInt64?
+    private var requestingPermission = false
+    private let applicationIsActive: () -> Bool
     private var observers: [NSObjectProtocol] = []
     var session: AVCaptureSession { driver.session }
 
-    init(driver: CameraDriving = AVColorCameraDriver()) {
+    init(driver: CameraDriving = AVColorCameraDriver(), applicationIsActive: @escaping () -> Bool = { NSApp.isActive }) {
         self.driver = driver
+        self.applicationIsActive = applicationIsActive
         refreshDevices()
         let gate = epoch
-        driver.onInterruption = { [weak self] in
-            guard let interrupted = gate.currentToken() else { return }
+        driver.onInterruption = { [weak self] interrupted in
             Task { @MainActor in
                 guard gate.accepts(interrupted) else { return }
                 self?.stop(message: NSLocalizedString("Camera interrupted. Choose Start Camera to retry.", comment: "Camera status"))
@@ -34,7 +36,7 @@ import ColorDomain
             })
         }
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.stop(message: NSLocalizedString("Camera paused while TouchColor is inactive. Choose Start Camera to resume.", comment: "Camera status")) }
+            Task { @MainActor in self?.applicationResignedActive() }
         })
     }
     deinit { epoch.invalidate(); driver.stop(); observers.forEach(NotificationCenter.default.removeObserver) }
@@ -58,10 +60,15 @@ import ColorDomain
         switch driver.authorization() {
         case .authorized: beginCapture(current)
         case .notDetermined:
+            requestingPermission = true
             driver.requestAccess { [weak self] granted in
                 Task { @MainActor in
                     guard let self, self.epoch.accepts(current) else { return }
-                    if granted { self.beginCapture(current) }
+                    self.requestingPermission = false
+                    if granted {
+                        if self.applicationIsActive() { self.beginCapture(current) }
+                        else { self.stop(message: NSLocalizedString("Camera permission granted. Choose Start Camera when TouchColor is active.", comment: "Camera status")) }
+                    }
                     else { self.stop(message: NSLocalizedString("Camera access was denied. You can enable it in System Settings > Privacy & Security > Camera, or import an image.", comment: "Camera status")) }
                 }
             }
@@ -85,9 +92,18 @@ import ColorDomain
             }
         }
     }
+    func applicationResignedActive() {
+        if requestingPermission {
+            // A system permission panel can deactivate the app. Keep the request epoch,
+            // but its callback may start only while active; otherwise explain the retry.
+            status = NSLocalizedString("Waiting for camera permission. Capture will start only while TouchColor is active.", comment: "Camera status")
+            return
+        }
+        stop(message: NSLocalizedString("Camera paused while TouchColor is inactive. Choose Start Camera to resume.", comment: "Camera status"))
+    }
     func stop(message: String = NSLocalizedString("Camera stopped", comment: "Camera status")) {
         epoch.invalidate(); token = nil
-        preparing = false; running = false; freezing = false; color = nil; dimensions = ""
+        requestingPermission = false; preparing = false; running = false; freezing = false; color = nil; dimensions = ""
         status = message
         driver.stop()
     }

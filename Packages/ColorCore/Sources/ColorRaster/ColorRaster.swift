@@ -64,8 +64,22 @@ public struct ColorRaster: @unchecked Sendable {
 
     /// Explicit sRGB conversion, no interpolation, premultiplied alpha composited over white.
     /// CGImage cropping uses top-left raster coordinates, independent of AppKit's view system.
-    public func sample(at point: NormalizedPoint) -> RGBColor? {
-        guard let pixel = point.pixel(width: width, height: height),
+    public func sample(at point: NormalizedPoint) -> RGBColor? { RasterPixelSampler.sample(image: image, at: point) }
+
+    /// PNG preserves full oriented pixel dimensions and alpha; reopening uses the same policy.
+    public func pngData() throws -> Data {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { throw RasterError.exportFailed }
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: 1] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw RasterError.exportFailed }
+        return data as Data
+    }
+}
+
+/// Shared exact sRGB/white-composite pixel policy for source and explicitly reduced previews.
+public enum RasterPixelSampler {
+    public static func sample(image: CGImage, at point: NormalizedPoint) -> RGBColor? {
+        guard let pixel = point.pixel(width: image.width, height: image.height),
               let crop = image.cropping(to: CGRect(x: pixel.x, y: pixel.y, width: 1, height: 1)),
               let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         var bytes: [UInt8] = [255, 255, 255, 255]
@@ -80,12 +94,4 @@ public struct ColorRaster: @unchecked Sendable {
         }
     }
 
-    /// PNG preserves full oriented pixel dimensions and alpha; reopening uses the same policy.
-    public func pngData() throws -> Data {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { throw RasterError.exportFailed }
-        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: 1] as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw RasterError.exportFailed }
-        return data as Data
-    }
 }

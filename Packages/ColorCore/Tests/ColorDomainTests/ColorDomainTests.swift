@@ -47,3 +47,20 @@ final class CaptureEpochTests: XCTestCase {
         gate.invalidate(); gate.invalidate(); XCTAssertFalse(gate.accepts(second))
     }
 }
+
+final class PaletteTransferTests: XCTestCase {
+    func testVersionedExplicitTransferKeepsDuplicatesAndRejectsInvalidWholeMessage() throws {
+        let colors = ["#ff0000", "#abcdef", "#ff0000"].map { RGBColor(hex: $0)! }
+        let message = try PaletteTransfer(colors: colors)
+        let encoded = try message.encoded()
+        XCTAssertEqual(try PaletteTransfer.decode(encoded), message)
+        XCTAssertEqual(try PaletteTransfer.decode(encoded).colors, colors)
+        for bad in [Data(repeating: 0, count: PaletteTransfer.maximumBytes + 1),
+                    Data("{\"version\":2,\"id\":\"\(message.id)\",\"colors\":[\"#ff0000\"]}".utf8),
+                    Data("{\"version\":1,\"id\":\"\(message.id)\",\"colors\":[\"#ff0000\",\"wrong\"]}".utf8)] {
+            XCTAssertThrowsError(try PaletteTransfer.decode(bad))
+        }
+        XCTAssertThrowsError(try PaletteTransfer(colors: []))
+        XCTAssertThrowsError(try PaletteTransfer(colors: Array(repeating: colors[0], count: 65)))
+    }
+}

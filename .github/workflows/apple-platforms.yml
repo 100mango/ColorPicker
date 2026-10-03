@@ -11,7 +11,7 @@ concurrency:
 jobs:
   native-mac:
     runs-on: xcode-27
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -37,6 +37,8 @@ jobs:
           uname -m | grep -Fx arm64
           python3 scripts/generate_project.py
           python3 scripts/generate_mac_project.py
+          python3 scripts/generate_vision_project.py
+          python3 scripts/generate_watch_project.py
           python3 scripts/verify_mac_icons.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
@@ -91,6 +93,16 @@ jobs:
             -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \
             -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+      - name: Native visionOS executable and real simulator workflows
+        id: vision
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 22
+        run: python3 scripts/test_extra_platforms.py vision
+      - name: Native watchOS executable and real simulator workflows
+        id: watch
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 22
+        run: python3 scripts/test_extra_platforms.py watch
       - name: Build original iOS app and direct cross-language equivalence tests
         id: ios
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.ui.outcome == 'success' }}
@@ -123,15 +135,23 @@ jobs:
           if test -d build/mac-ui.xcresult; then
             xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
           fi
+          for platform in vision watch; do
+            if test -d "build/$platform-tests.xcresult"; then
+              xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
+              xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
+            fi
+            if test -f "build/$platform-runtime/runtime.json"; then
+              cp "build/$platform-runtime/runtime.json" "build/evidence/$platform-runtime.json"
+            fi
+          done
           python3 - <<'PY'
           import json
           from pathlib import Path
           root=Path('build/evidence'); total=0
-          manifest=root/'screenshots/manifest.json'
-          if manifest.exists():
+          for manifest in root.glob('*/manifest.json'):
               groups=json.loads(manifest.read_text()); keep=set()
               for group in groups:
-                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith('Native Mac')]
+                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith(('Native Mac','Native Vision','Native Watch'))]
                   keep.update(a['exportedFileName'] for a in group['attachments'])
               for p in manifest.parent.iterdir():
                   if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()

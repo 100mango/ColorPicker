@@ -1,0 +1,62 @@
+import XCTest
+import Foundation
+import ColorDomain
+import ColorRaster
+@testable import TouchColorWatch
+
+@MainActor final class WatchWorkspaceTests: XCTestCase {
+    func testOfflineRGBEditingKeepsOrderedDuplicatesAndRecoveryBackup() {
+        let suite = "TouchColor.watch-unit.\(UUID())"
+        let isolated = UserDefaults(suiteName: suite)!
+        defer { isolated.removePersistentDomain(forName: suite) }
+        isolated.set(["#FF0000", "malformed", "#FF0000"], forKey: "colorArray")
+        let palette = WatchPalette(defaults: isolated)
+        XCTAssertEqual(palette.colors.map(\.hex), ["#ff0000", "#ff0000"])
+        palette.red = 12; palette.green = 34; palette.blue = 56; palette.save()
+        XCTAssertEqual(palette.selected.hex, "#0c2238")
+        XCTAssertEqual(WatchPalette(defaults: isolated).colors.map(\.hex), ["#ff0000", "#ff0000", "#0c2238"])
+        XCTAssertEqual(isolated.stringArray(forKey: "colorArrayRecoveryBackup"), ["#FF0000", "malformed", "#FF0000"])
+        palette.remove(at: 1)
+        XCTAssertEqual(WatchPalette(defaults: isolated).colors.map(\.hex), ["#ff0000", "#0c2238"])
+    }
+    func testExplicitTransferPersistsOfflineRejectsReplacementAndRequiresRetry() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-transfer-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let transfer = WatchTransfer(directory: directory, activate: false)
+        XCTAssertNil(transfer.pending)
+        let color = RGBColor(hex: "#123456")!
+        transfer.request([color, color])
+        let id = try XCTUnwrap(transfer.pending?.id)
+        XCTAssertEqual(transfer.pending?.colors, [color, color])
+        transfer.request([RGBColor(hex: "#abcdef")!])
+        XCTAssertEqual(transfer.pending?.id, id)
+        let reopened = WatchTransfer(directory: directory, activate: false)
+        XCTAssertEqual(reopened.pending?.id, id); XCTAssertEqual(reopened.pending?.colors, [color, color])
+        reopened.retry(); XCTAssertEqual(reopened.pending?.id, id)
+        reopened.cancel(); XCTAssertNil(WatchTransfer(directory: directory, activate: false).pending)
+    }
+    func testMalformedPendingTransferIsPreservedBeforeAnyNewRequest() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-transfer-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("pending-color-transfer.json"), original = Data("corrupt pending request".utf8)
+        try original.write(to: file)
+        let transfer = WatchTransfer(directory: directory, activate: false)
+        transfer.request([RGBColor(hex: "#ff0000")!])
+        XCTAssertNil(transfer.pending); XCTAssertEqual(try Data(contentsOf: file), original)
+    }
+    func testRealPreviewFileSamplingAndCancellationKeepCurrentSelection() async throws {
+        let model = WatchPhotoModel()
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("watch-photo-\(UUID()).tiff")
+        try RasterFixture.data().write(to: file)
+        model.load(WatchPhotoFile(url: file), token: model.begin())
+        for _ in 0..<100 where model.busy { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertFalse(model.busy); XCTAssertEqual(model.color?.hex, "#ff00ff")
+        model.move(dx: 0, dy: -1); XCTAssertEqual(model.color?.hex, "#00ff00")
+        let old = model.begin(); model.cancel()
+        let stale = FileManager.default.temporaryDirectory.appendingPathComponent("watch-photo-stale-\(UUID()).tiff")
+        try RasterFixture.data(orientation: 3).write(to: stale)
+        model.load(WatchPhotoFile(url: stale), token: old)
+        XCTAssertEqual(model.color?.hex, "#00ff00"); XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+    }
+}

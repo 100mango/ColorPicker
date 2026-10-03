@@ -11,7 +11,7 @@ enum CameraEvent { case running, sample(ColorDomain.RGBColor, width: Int, height
 /// Injectable boundary keeps deterministic lifecycle tests separate from actual hardware.
 protocol CameraDriving: AnyObject {
     var session: AVCaptureSession { get }
-    var onInterruption: (() -> Void)? { get set }
+    var onInterruption: ((UInt64) -> Void)? { get set }
     func devices() -> [CameraDevice]
     func authorization() -> AVAuthorizationStatus
     func requestAccess(_ completion: @escaping (Bool) -> Void)
@@ -55,18 +55,24 @@ enum CameraPixels {
 /// All capture/session and full-frame conversion work is serialized off the main actor.
 /// Each output has an immutable epoch, so callbacks from an old output cannot be relabeled.
 final class AVColorCameraDriver: CameraDriving {
-    let session = AVCaptureSession()
-    var onInterruption: (() -> Void)?
+    private(set) var session = AVCaptureSession()
+    var onInterruption: ((UInt64) -> Void)?
     private let queue = DispatchQueue(label: "TouchColor.camera", qos: .userInitiated)
     private var receiver: ColorFrameReceiver?
+    private var activeSession: AVCaptureSession?
     private var observers: [NSObjectProtocol] = []
 
-    init() {
+    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    private func observe(_ capture: AVCaptureSession, token: UInt64) {
+        observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
         for name in [AVCaptureSession.runtimeErrorNotification, AVCaptureSession.wasInterruptedNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: session, queue: .main) { [weak self] _ in self?.onInterruption?() })
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: capture, queue: .main) { [weak self] _ in
+                // Capture the originating session's epoch now; never look up a newer epoch
+                // when a notification queued before stop/restart finally reaches the UI.
+                self?.onInterruption?(token)
+            })
         }
     }
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     private static func availableDevices() -> [AVCaptureDevice] {
         let types: [AVCaptureDevice.DeviceType]
         if #available(macOS 14, *) { types = [.builtInWideAngleCamera, .external, .continuityCamera] }
@@ -77,24 +83,28 @@ final class AVColorCameraDriver: CameraDriving {
     func authorization() -> AVAuthorizationStatus { AVCaptureDevice.authorizationStatus(for: .video) }
     func requestAccess(_ completion: @escaping (Bool) -> Void) { AVCaptureDevice.requestAccess(for: .video, completionHandler: completion) }
     func start(deviceID: String, token: UInt64, epoch: CaptureEpoch, receive: @escaping (CameraEvent) -> Void) {
+        let capture = AVCaptureSession()
+        session = capture // Called by the main-actor model; preview switches on the next publication.
         queue.async {
             guard epoch.accepts(token) else { return }
-            if self.session.isRunning { self.session.stopRunning() }
+            if let previous = self.activeSession, previous.isRunning { previous.stopRunning() }
+            self.activeSession = capture
+            self.observe(capture, token: token)
             self.receiver = nil
             guard let device = Self.availableDevices().first(where: { $0.uniqueID == deviceID }) else {
                 receive(.failed(NSLocalizedString("The selected camera is no longer available.", comment: "Camera error"))); return
             }
-            self.session.beginConfiguration()
-            for input in self.session.inputs { self.session.removeInput(input) }
-            for output in self.session.outputs { self.session.removeOutput(output) }
+            capture.beginConfiguration()
+            for input in capture.inputs { capture.removeInput(input) }
+            for output in capture.outputs { capture.removeOutput(output) }
             do {
                 let input = try AVCaptureDeviceInput(device: device)
                 let output = AVCaptureVideoDataOutput()
                 output.alwaysDiscardsLateVideoFrames = true
                 output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-                guard self.session.canAddInput(input), self.session.canAddOutput(output) else { throw CocoaError(.featureUnsupported) }
-                self.session.addInput(input); self.session.addOutput(output)
-                if self.session.canSetSessionPreset(.high) { self.session.sessionPreset = .high }
+                guard capture.canAddInput(input), capture.canAddOutput(output) else { throw CocoaError(.featureUnsupported) }
+                capture.addInput(input); capture.addOutput(output)
+                if capture.canSetSessionPreset(.high) { capture.sessionPreset = .high }
                 // macOS exposes device color-space selection; the automatic wide-color
                 // session property is iOS-only. Select sRGB explicitly under the device lock.
                 try device.lockForConfiguration()
@@ -106,14 +116,14 @@ final class AVColorCameraDriver: CameraDriving {
                 let receiver = ColorFrameReceiver(token: token, epoch: epoch, receive: receive)
                 self.receiver = receiver
                 output.setSampleBufferDelegate(receiver, queue: self.queue)
-                self.session.commitConfiguration()
+                capture.commitConfiguration()
                 guard epoch.accepts(token) else { return }
-                self.session.startRunning()
-                guard epoch.accepts(token) else { self.session.stopRunning(); return }
-                if self.session.isRunning { receive(.running) }
+                capture.startRunning()
+                guard epoch.accepts(token) else { capture.stopRunning(); return }
+                if capture.isRunning { receive(.running) }
                 else { receive(.failed(NSLocalizedString("The camera could not start. Try another camera or import an image.", comment: "Camera error"))) }
             } catch {
-                self.session.commitConfiguration()
+                capture.commitConfiguration()
                 receive(.failed(error.localizedDescription))
             }
         }
@@ -121,12 +131,14 @@ final class AVColorCameraDriver: CameraDriving {
     func stop() {
         queue.async {
             self.receiver = nil
-            if self.session.isRunning { self.session.stopRunning() }
-            // Release inputs as well as stopping, so a dismissed sheet relinquishes the device.
-            self.session.beginConfiguration()
-            for output in self.session.outputs { self.session.removeOutput(output) }
-            for input in self.session.inputs { self.session.removeInput(input) }
-            self.session.commitConfiguration()
+            self.observers.forEach(NotificationCenter.default.removeObserver); self.observers.removeAll()
+            guard let capture = self.activeSession else { return }
+            if capture.isRunning { capture.stopRunning() }
+            capture.beginConfiguration()
+            for output in capture.outputs { capture.removeOutput(output) }
+            for input in capture.inputs { capture.removeInput(input) }
+            capture.commitConfiguration()
+            self.activeSession = nil
         }
     }
     func freeze(token: UInt64, epoch: CaptureEpoch, completion: @escaping (Result<Data, Error>) -> Void) {
