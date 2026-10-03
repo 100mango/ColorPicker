@@ -1,4 +1,4 @@
-name: Native iPad and iPhone compatibility
+name: Focused native iPad mini accessibility diagnosis
 on:
   push:
     branches: [codex/native-ipad]
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   compatibility:
     runs-on: xcode-27
-    timeout-minutes: 120
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -91,116 +91,25 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
-      - name: Warm up native iPad simulator
-        id: warm-ipad
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadLarge prepare
-      - name: Native iPad unit and constrained-window layout tests
-        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadLarge TouchColorTests
-      - name: Seed iPadLarge synthetic photo
-        id: seed-ipad
-        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadLarge seed
-      - name: Native iPad canvas palette keyboard and lifecycle UI tests
-        if: ${{ !cancelled() && steps.seed-ipad.outcome == 'success' }}
-        timeout-minutes: 16
-        run: bash scripts/test_simulators.sh iPadLarge TouchColorUITests
-      - name: iPad official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-ipad.outcome == 'success' }}
-        timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPadLarge AccessibilityAudits
-      - name: Shut down iPad simulator
-        if: always()
-        timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPadLarge shutdown
-      - name: Warm up compact iPhone simulator
-        id: warm-iphone-compact
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhoneCompact prepare
-      - name: Compact iPhone unit tests
-        if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
-        timeout-minutes: 8
-        run: bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
-      - name: Seed iPhoneCompact synthetic photo
-        id: seed-iphone-compact
-        if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhoneCompact seed
-      - name: Compact iPhone UI tests and synthetic screenshots
-        if: ${{ !cancelled() && steps.seed-iphone-compact.outcome == 'success' }}
-        # New SE3 UI-runner initialization took almost 7 minutes before cases began.
-        # Preserve each test's 180/240-second limit while allowing startup plus the expanded suite.
-        timeout-minutes: 16
-        run: bash scripts/test_simulators.sh iPhoneCompact TouchColorUITests
-      - name: compact iPhone official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-iphone-compact.outcome == 'success' }}
-        timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPhoneCompact AccessibilityAudits
-      - name: Shut down compact iPhone simulator
-        if: always()
-        timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPhoneCompact shutdown
-      - name: Warm up large iPhone simulator
-        id: warm-iphone-large
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhoneLarge prepare
-      - name: Large iPhone unit tests
-        if: ${{ !cancelled() && steps.warm-iphone-large.outcome == 'success' }}
-        timeout-minutes: 8
-        run: bash scripts/test_simulators.sh iPhoneLarge TouchColorTests
-      - name: Seed iPhoneLarge synthetic photo
-        id: seed-iphone-large
-        if: ${{ !cancelled() && steps.warm-iphone-large.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhoneLarge seed
-      - name: Large iPhone UI tests
-        if: ${{ !cancelled() && steps.seed-iphone-large.outcome == 'success' }}
-        timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPhoneLarge TouchColorUITests
-      - name: large iPhone official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-iphone-large.outcome == 'success' }}
-        timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPhoneLarge AccessibilityAudits
-      - name: Shut down large iPhone simulator
-        if: always()
-        timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPhoneLarge shutdown
-      - name: Warm up iPad mini simulator
+      - name: Warm up fresh iPad mini simulator
         id: warm-ipad-mini
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
         timeout-minutes: 10
         run: bash scripts/test_simulators.sh iPadMini prepare
-      - name: iPad mini unit and constrained-window layout tests
-        if: ${{ !cancelled() && steps.warm-ipad-mini.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadMini TouchColorTests
       - name: Seed iPadMini synthetic photo
         id: seed-ipad-mini
-        if: ${{ !cancelled() && steps.warm-ipad-mini.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: 5
         run: bash scripts/test_simulators.sh iPadMini seed
-      - name: iPad mini native canvas and window-resize UI tests
-        if: ${{ !cancelled() && steps.seed-ipad-mini.outcome == 'success' }}
-        timeout-minutes: 16
-        run: bash scripts/test_simulators.sh iPadMini TouchColorUITests
       - name: iPad mini official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-ipad-mini.outcome == 'success' }}
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh iPadMini AccessibilityAudits
+      - name: Export bounded mini audit failure evidence
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/export_audit_failures.py
       - name: Shut down iPad mini simulator
         if: always()
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh iPadMini shutdown
-      - name: Export two bounded synthetic regression screenshots
-        if: always()
-        timeout-minutes: 3
-        run: python3 scripts/export_test_screenshots.py
       - name: Always report test summaries and simulator diagnostics
         if: always()
         run: |

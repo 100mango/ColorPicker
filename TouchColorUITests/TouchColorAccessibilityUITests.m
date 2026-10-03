@@ -17,9 +17,26 @@
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
 }
 - (void)auditScreen:(NSString *)screen {
+    NSLog(@"ACCESSIBILITY_CHECKPOINT screen=%@ window=%@ deviceOrientation=%ld runnerPreferredContentSizeCategory=%@",screen,NSStringFromCGRect(self.app.windows.firstMatch.frame),(long)XCUIDevice.sharedDevice.orientation,UIApplication.sharedApplication.preferredContentSizeCategory);
     NSError *error=nil;
+    __block BOOL recordedFailure=NO;
     BOOL passed=[self.app performAccessibilityAuditWithAuditTypes:XCUIAccessibilityAuditTypeAll issueHandler:^BOOL(XCUIAccessibilityAuditIssue *issue) {
         NSLog(@"ACCESSIBILITY_ISSUE screen=%@ type=%lu description=%@ detail=%@ element=%@",screen,(unsigned long)issue.auditType,issue.compactDescription,issue.detailedDescription,issue.element.debugDescription);
+        if (!recordedFailure) {
+            recordedFailure=YES;
+            NSLog(@"ACCESSIBILITY_FAILURE_GEOMETRY screen=%@ window=%@ runnerPreferredContentSizeCategory=%@",screen,NSStringFromCGRect(self.app.windows.firstMatch.frame),UIApplication.sharedApplication.preferredContentSizeCategory);
+            NSLog(@"ACCESSIBILITY_FAILURE_HIERARCHY_BEGIN screen=%@\n%@\nACCESSIBILITY_FAILURE_HIERARCHY_END",screen,self.app.debugDescription);
+            NSString *name=nil;
+            if ([screen isEqualToString:@"live camera unavailable"]) name=@"touchcolor-mini-audit-live-failure";
+            if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-failure";
+            if (name) {
+                NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+                XCTAssertLessThanOrEqual(bytes.length,500*1024u);
+                XCTAttachment *attachment=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
+                attachment.name=name;attachment.lifetime=XCTAttachmentLifetimeKeepAlways;
+                [self addAttachment:attachment];
+            }
+        }
         return NO; // No category-wide or element-wide suppression; every reported issue remains actionable.
     } error:&error];
     NSLog(@"ACCESSIBILITY_RESULT screen=%@ passed=%d error=%@",screen,passed,error);
