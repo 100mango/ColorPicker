@@ -15,6 +15,7 @@
 #if DEBUG
 @property (nonatomic, strong) UILabel *permissionStatus;
 @property (nonatomic) NSUInteger permissionActivations;
+@property (nonatomic) NSUInteger sourceAttempts;
 #endif
 @end
 @implementation ColorMainViewController
@@ -171,6 +172,7 @@
     // Anchor a native iPad popover to the selected source when visible, otherwise to the canvas toolbar area.
     if (self.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad && ![controller isKindOfClass:UIImagePickerController.class]) {
         controller.modalPresentationStyle = UIModalPresentationPopover;
+        controller.preferredContentSize = CGSizeMake(600,700); // UIKit adapts this to the available window.
         BOOL visible = sourceView.window != nil;
         for (UIView *ancestor = sourceView; visible && ancestor; ancestor = ancestor.superview) {
             CGRect rect = [sourceView convertRect:sourceView.bounds toView:ancestor];
@@ -207,6 +209,12 @@
     [[self sourcePresenter] presentViewController:alert animated:YES completion:nil];
 }
 - (void)selectSource:(UIButton *)button {
+#if DEBUG
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-reset"]) {
+        UIViewController *presented=[self sourcePresenter].presentedViewController;
+        button.accessibilityValue=[NSString stringWithFormat:@"attempt=%lu presented=%@ dismissing=%d loading=%d",(unsigned long)++self.sourceAttempts,presented ? NSStringFromClass(presented.class) : @"none",presented.isBeingDismissed,self.loading.isAnimating];
+    }
+#endif
     if (self.loading.isAnimating || [self sourcePresenter].presentedViewController) return;
     if (button.tag == 0) [self choosePhoto];
     else if (button.tag == 1) [self takePhoto];

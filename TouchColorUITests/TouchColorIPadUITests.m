@@ -14,8 +14,15 @@
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);
     XCTAssertTrue(self.app.staticTexts[@"workspace.empty"].exists,@"Native canvas must be visible beside the palette");
 }
+- (void)choosePhoto {
+    XCUIElement *source=self.app.buttons[@"choosePhoto"];
+    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == true AND hittable == true"] object:source];
+    XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:5],XCTWaiterResultCompleted,@"%@",self.app.debugDescription);
+    NSLog(@"PHOTO_SOURCE_BEFORE %@",source.value);
+    [source tap];
+}
 - (void)importFixture {
-    [self.app.buttons[@"choosePhoto"] tap];
+    [self choosePhoto];
     XCUIElement *photo=[self.app.images matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"]].firstMatch;
     XCTAssertTrue([photo waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
     [photo tap];
@@ -51,7 +58,7 @@
     XCTNSPredicateExpectation *previewClosed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:self.app.alerts.firstMatch];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[previewClosed] timeout:5],XCTWaiterResultCompleted);
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
-    [self.app.buttons[@"choosePhoto"] tap];
+    [self choosePhoto];
     [self cancelPicker];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     XCTAssertEqual(history.cells.count,1);
@@ -108,7 +115,7 @@
     [self.app.buttons[@"liveColor"] tap];
     XCTAssertTrue([self.app.staticTexts[@"cameraStatus"] waitForExistenceWithTimeout:5]);
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
-    [self.app.buttons[@"choosePhoto"] tap];
+    [self choosePhoto];
     [self cancelPicker];
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];

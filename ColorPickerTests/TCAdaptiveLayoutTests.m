@@ -34,6 +34,13 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
     return nil;
 }
 
+@interface TCLayoutHost : UIViewController
+@property (nonatomic) BOOL appeared;
+@end
+@implementation TCLayoutHost
+- (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; self.appeared=YES; }
+@end
+
 @interface TCAdaptiveLayoutTests : XCTestCase
 @end
 @implementation TCAdaptiveLayoutTests
@@ -51,7 +58,7 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
     window.overrideUserInterfaceStyle=style;
     UIViewController *navigation=[controller isKindOfClass:UISplitViewController.class] ? controller : [[UINavigationController alloc] initWithRootViewController:controller];
     UITraitCollection *largest=[UITraitCollection traitCollectionWithPreferredContentSizeCategory:UIContentSizeCategoryAccessibilityExtraExtraExtraLarge];
-    UIViewController *host = [UIViewController new];
+    TCLayoutHost *host = [TCLayoutHost new];
     [host addChildViewController:navigation];
     navigation.traitOverrides.preferredContentSizeCategory = UIContentSizeCategoryAccessibilityExtraExtraExtraLarge;
     navigation.traitOverrides.horizontalSizeClass = size.width<600 ? UIUserInterfaceSizeClassCompact : UIUserInterfaceSizeClassRegular;
@@ -70,6 +77,10 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             [controller.view setNeedsLayout];
             [controller.view layoutIfNeeded];
         }];
+        // Let UIKit finish presenting this test window before measuring or removing it.
+        // Tearing a root down during its incoming appearance transition produces invalid lifecycle evidence.
+        XCTNSPredicateExpectation *appeared=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"appeared == true"] object:host];
+        XCTAssertEqual([XCTWaiter waitForExpectations:@[appeared] timeout:3],XCTWaiterResultCompleted);
         XCTAssertEqualWithAccuracy(navigation.view.bounds.size.width,size.width,0.5);
         XCTAssertEqualWithAccuracy(navigation.view.bounds.size.height,size.height,0.5);
         XCTAssertEqualWithAccuracy(controller.view.bounds.size.width,size.width,0.5);
@@ -168,6 +179,14 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 }
 - (void)test320x568LargestTextActualViewLayouts { [self exerciseSize:CGSizeMake(320,568)]; }
 - (void)test568x320LargestTextActualViewLayouts { [self exerciseSize:CGSizeMake(568,320)]; }
+- (void)settleWorkspace:(TCWorkspaceViewController *)workspace {
+    XCTestExpectation *settled=[self expectationWithDescription:@"Column transition completed"];
+    id<UIViewControllerTransitionCoordinator> transition=workspace.transitionCoordinator;
+    BOOL scheduled=transition && [transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { [settled fulfill]; }];
+    if (!scheduled) dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+    [self waitForExpectations:@[settled] timeout:3];
+    [workspace.view.window layoutIfNeeded];[workspace.view layoutIfNeeded];
+}
 - (void)testNativeWorkspaceCompactAndSplitWindowGeometry {
     for (NSValue *value in @[[NSValue valueWithCGSize:CGSizeMake(320,568)],[NSValue valueWithCGSize:CGSizeMake(507,768)],[NSValue valueWithCGSize:CGSizeMake(694,507)],[NSValue valueWithCGSize:CGSizeMake(1024,768)]]) {
         TCWorkspaceViewController *workspace=[TCWorkspaceViewController new];
@@ -179,11 +198,7 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             [UIView performWithoutAnimation:^{ [palette.workspaceDelegate palette:palette showCanvas:canvas]; }];
             // Wait for UIKit's transition/layout transaction rather than measuring a newly loaded,
             // still-unattached secondary view against an already laid-out primary column.
-            XCTestExpectation *settled=[self expectationWithDescription:@"Column transition completed"];
-            id<UIViewControllerTransitionCoordinator> transition=workspace.transitionCoordinator;
-            BOOL scheduled=transition && [transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { [settled fulfill]; }];
-            if (!scheduled) dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
-            [self waitForExpectations:@[settled] timeout:3];
+            [self settleWorkspace:workspace];
             XCTNSPredicateExpectation *attached=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return canvas.view.window == workspace.view.window && canvas.view.window != nil; }] object:canvas];
             XCTAssertEqual([XCTWaiter waitForExpectations:@[attached] timeout:3],XCTWaiterResultCompleted,@"Canvas must be attached before comparing column geometry");
             [workspace.view.window layoutIfNeeded];[workspace.view layoutIfNeeded];[canvas.view layoutIfNeeded];
@@ -196,11 +211,26 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             UIScrollView *controls=(UIScrollView *)TCLayoutView(canvas.view,@"photoControls");
             [self assertViewReadable:TCLayoutView(canvas.view,@"sampleCenter") inScroll:controls];
             [self assertViewReadable:TCLayoutView(canvas.view,@"saveColor") inScroll:controls];
-            if (value.CGSizeValue.width>=600) {
-                CGRect paletteFrame=[palette.view convertRect:palette.view.bounds toView:workspace.view];
-                CGRect canvasFrame=[canvas.view convertRect:canvas.view.bounds toView:workspace.view];
+            if (value.CGSizeValue.width>=1000) XCTAssertEqual(workspace.displayMode,UISplitViewControllerDisplayModeOneBesideSecondary);
+            if (workspace.displayMode==UISplitViewControllerDisplayModeOneBesideSecondary) {
+                // Modern UISplitViewController extends the secondary background beneath the sidebar.
+                // Compare usable content, matching the actual table/image non-overlap UI assertion.
+                CGRect paletteFrame=[palette.view convertRect:palette.view.safeAreaLayoutGuide.layoutFrame toView:workspace.view];
+                CGRect canvasFrame=[canvas.view convertRect:canvas.view.safeAreaLayoutGuide.layoutFrame toView:workspace.view];
                 XCTAssertLessThanOrEqual(CGRectGetMaxX(paletteFrame),CGRectGetMinX(canvasFrame)+1);
                 XCTAssertGreaterThanOrEqual(paletteFrame.size.width,280);
+            } else {
+                XCTAssertEqualWithAccuracy(canvas.view.bounds.size.width,value.CGSizeValue.width,1);
+                UIBarButtonItem *showPalette=canvas.navigationItem.leftBarButtonItem;
+                XCTAssertTrue([UIApplication.sharedApplication sendAction:showPalette.action to:showPalette.target from:showPalette forEvent:nil]);
+                [self settleWorkspace:workspace];
+                XCTAssertEqual(palette.view.window,workspace.view.window);
+                UIBarButtonItem *returnToCanvas=palette.navigationItem.leftBarButtonItem;
+                XCTAssertEqualObjects(returnToCanvas.accessibilityIdentifier,@"workspace.canvas");
+                XCTAssertTrue([UIApplication.sharedApplication sendAction:returnToCanvas.action to:returnToCanvas.target from:returnToCanvas forEvent:nil]);
+                [self settleWorkspace:workspace];
+                XCTAssertEqual(canvas.view.window,workspace.view.window);
+                XCTAssertEqualObjects([canvas valueForKey:@"selectedHex"],@"#ff00ff");
             }
         }];
     }
