@@ -47,7 +47,7 @@ import AVFoundation
     }
     override func tearDownWithError() throws {
         if let app {
-            if (testRun?.failureCount ?? 0) > 0 && app.state != .notRunning {
+            if (testRun?.totalFailureCount ?? 0) > 0 && app.state != .notRunning {
                 let failure = XCTAttachment(screenshot: app.screenshot())
                 failure.name = "Native Mac UI failure state"; failure.lifetime = .keepAlways; add(failure)
                 print("NATIVE_UI_FAILURE_AX: \(app.debugDescription)")
@@ -129,10 +129,19 @@ import AVFoundation
         app.buttons["sample.save"].click(); app.buttons["sample.save"].click()
         let paletteURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-palette-\(UUID()).json")
         let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-image-\(UUID()).png")
-        defer { try? FileManager.default.removeItem(at: paletteURL); try? FileManager.default.removeItem(at: imageURL) }
+        defer {
+            for url in [paletteURL, imageURL] where FileManager.default.fileExists(atPath: url.path) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
         XCTAssertTrue(app.buttons["palette.export"].isHittable, app.debugDescription)
         app.buttons["palette.export"].click(); saveFile(paletteURL)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let size = try? paletteURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
+            return size > 0
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 8), .completed, app.debugDescription)
         let stored = try JSONDecoder().decode([String].self, from: Data(contentsOf: paletteURL))
         XCTAssertEqual(stored, ["#ff00ff", "#ff00ff"])
         openFile(paletteURL)
