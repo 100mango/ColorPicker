@@ -46,6 +46,23 @@ import ColorRaster
         try await waitForImport(session)
         XCTAssertNotNil(session.errorMessage); XCTAssertEqual(session.sourceName, "new.tiff")
     }
+    func testPNGExportSnapshotSurvivesNewImportAndReopensActualPixels() async throws {
+        let session = ImageSession()
+        session.load(data: RasterFixture.data(), name: "original.tiff", token: session.beginImport())
+        try await waitForImport(session)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-export-\(UUID()).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        session.exportPNG(to: url)
+        session.load(data: RasterFixture.data(orientation: 3), name: "replacement.tiff", token: session.beginImport())
+        for _ in 0..<100 where session.exporting { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertFalse(session.exporting)
+        let reopened = try ColorRaster.read(url: url)
+        XCTAssertEqual(reopened.width, 3); XCTAssertEqual(reopened.height, 2)
+        XCTAssertEqual(reopened.sample(at: NormalizedPoint(x: 0.1, y: 0.1)!)?.hex, "#ff0000")
+        try await waitForImport(session)
+        XCTAssertEqual(session.sourceName, "replacement.tiff")
+        XCTAssertEqual(session.raster?.sample(at: NormalizedPoint(x: 0.1, y: 0.1)!)?.hex, "#00ffff")
+    }
     func testRealPasteAndPaletteImportKeepOrderAndDuplicates() async throws {
         let suite = "TouchColor.mac-tests.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

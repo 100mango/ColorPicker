@@ -42,7 +42,7 @@ struct ColorWindow: View {
             Button { MacImportExport.paste(session: session, library: library) } label: { Label("Paste Image", systemImage: "doc.on.clipboard") }
                 .accessibilityIdentifier("image.paste")
             Button { MacImportExport.exportImage(session: session) } label: { Label("Export PNG", systemImage: "square.and.arrow.up") }
-                .disabled(session.raster == nil).accessibilityIdentifier("image.export")
+                .disabled(session.raster == nil || session.exporting).accessibilityIdentifier("image.export")
             Button { showingPrivacy = true } label: { Label("Privacy", systemImage: "hand.raised") }
                 .accessibilityIdentifier("privacy.open")
         }
@@ -52,6 +52,9 @@ struct ColorWindow: View {
                     ProgressView().controlSize(.small)
                     Text("Opening full-resolution image…")
                     Button("Cancel") { session.cancelImport(); photo = nil }.accessibilityIdentifier("image.cancel")
+                } else if session.exporting {
+                    ProgressView().controlSize(.small)
+                    Text("Exporting full-resolution image…")
                 } else { Text(session.notice ?? "sRGB · transparent pixels on white · local palette") }
                 Spacer()
             }.font(.caption).padding(8).background(.bar)

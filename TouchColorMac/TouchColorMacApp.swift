@@ -46,7 +46,7 @@ struct ColorCommands: Commands {
             Button("Export Palette…") { if let session, let library { MacImportExport.exportPalette(library: library, session: session) } }
                 .keyboardShortcut("e")
             Button("Export Image as PNG…") { if let session { MacImportExport.exportImage(session: session) } }
-                .disabled(session?.raster == nil)
+                .disabled(session?.raster == nil || session?.exporting == true)
         }
         CommandGroup(after: .pasteboard) {
             Button("Paste Image") { if let session, let library { MacImportExport.paste(session: session, library: library) } }

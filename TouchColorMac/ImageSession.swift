@@ -7,9 +7,10 @@ import ColorPaletteLegacy
 @MainActor final class ImageSession: ObservableObject {
     @Published private(set) var raster: ColorRaster?
     @Published private(set) var selectedPoint: NormalizedPoint = .center
-    @Published private(set) var selectedColor: RGBColor?
+    @Published private(set) var selectedColor: ColorDomain.RGBColor?
     @Published private(set) var sourceName = ""
     @Published private(set) var busy = false
+    @Published private(set) var exporting = false
     @Published var zoom = 1.0
     @Published var errorMessage: String?
     @Published var notice: String?
@@ -17,6 +18,12 @@ import ColorPaletteLegacy
     // Bounded work: one decode at a time; replaced pending operations are cancelled.
     private let work: OperationQueue = {
         let queue = OperationQueue(); queue.name = "TouchColor.image-import"
+        queue.maxConcurrentOperationCount = 1; queue.qualityOfService = .userInitiated
+        return queue
+    }()
+
+    private let exportWork: OperationQueue = {
+        let queue = OperationQueue(); queue.name = "TouchColor.image-export"
         queue.maxConcurrentOperationCount = 1; queue.qualityOfService = .userInitiated
         return queue
     }()
@@ -88,15 +95,16 @@ import ColorPaletteLegacy
         } catch { report(error, token: token) }
     }
     func exportPNG(to url: URL) {
-        guard let raster else { return }
+        guard let raster, !exporting else { return }
+        exporting = true
         // Export owns an immutable source snapshot; subsequent imports cannot change its output.
-        work.addOperation { [weak self] in
+        exportWork.addOperation { [weak self] in
             do {
                 let data = try raster.pngData()
                 try data.write(to: url, options: .atomic)
-                Task { @MainActor [weak self] in self?.notice = "Exported full-size PNG: \(url.lastPathComponent)" }
+                Task { @MainActor [weak self] in self?.exporting = false; self?.notice = "Exported full-size PNG: \(url.lastPathComponent)" }
             } catch {
-                Task { @MainActor [weak self] in self?.errorMessage = error.localizedDescription }
+                Task { @MainActor [weak self] in self?.exporting = false; self?.errorMessage = error.localizedDescription }
             }
         }
     }
