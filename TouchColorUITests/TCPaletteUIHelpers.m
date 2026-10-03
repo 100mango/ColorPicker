@@ -70,7 +70,7 @@
         NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
         XCTAssertLessThanOrEqual(bytes.length,500*1024u);
         XCTAttachment *attachment=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
-        attachment.name=@"touchcolor-largest-paste-control";attachment.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:attachment];
+        attachment.name=UIDeviceOrientationIsLandscape(XCUIDevice.sharedDevice.orientation)?@"touchcolor-largest-paste-control-landscape":@"touchcolor-largest-paste-control-portrait";attachment.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:attachment];
     }
     [paste tap];
 }
@@ -190,18 +190,28 @@
     [app terminate];app.launchArguments=@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];[app launch];
     [self verifyHistory:expected app:app];
 }
+- (void)exerciseLargestTextPaletteRotationReplacesSelection:(XCUIApplication *)app {
+    [app terminate];
+    app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;[app launch];
+    [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app];
+    [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];
+    // Rotate the still-present native control, then activate it again and verify
+    // a changed selection. Previously retained rows cannot prove this second paste.
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
+    UIPasteboard.generalPasteboard.string=@"[\"#112233\",\"#aabbcc\",\"#445566\"]";
+    [self activateVisiblePalettePaste:app];
+    [self verifyPaletteRows:@[@"#112233",@"#aabbcc",@"#445566"] app:app];
+    XCUIElement *close=app.buttons[@"palette.import.close"];
+    XCTAssertTrue(close.hittable);[close tap];[self waitForPalettePresentationToClose:close];
+    [self verifyHistory:@[] app:app];
+}
 - (void)exerciseLargestTextPaletteReviewAndInbox:(XCUIApplication *)app {
     [app terminate];
     app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"--ui-test-scroll-state",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;[app launch];
     [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app];
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];
-    // Rotate the still-present native control, then activate it again and verify
-    // the same actual selection. A visible frame alone cannot prove Paste works.
-    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
-    [self activateVisiblePalettePaste:app];
-    [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];
-    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
     XCUIElement *table=app.tables[@"palette.import.review"];
     for (NSString *text in @[@"#aabbcc",@"R 170   G 187   B 204"]) {
         XCUIElement *label=table.staticTexts[text].firstMatch;

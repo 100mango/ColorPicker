@@ -11,5 +11,6 @@
 - (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app;
 - (void)exercisePaletteFileCancelAndWatchInboxReturn:(XCUIApplication *)app;
 - (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app;
+- (void)exerciseLargestTextPaletteRotationReplacesSelection:(XCUIApplication *)app;
 - (void)exerciseLargestTextPaletteReviewAndInbox:(XCUIApplication *)app;
 @end

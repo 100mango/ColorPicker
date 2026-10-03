@@ -39,6 +39,7 @@
 - (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
 - (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
 - (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
+- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)setUp {
     [super setUp];
     self.continueAfterFailure=NO;
