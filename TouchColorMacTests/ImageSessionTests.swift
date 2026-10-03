@@ -34,7 +34,7 @@ import ColorRaster
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let session = ImageSession()
-        let host = NSHostingView(rootView: ColorWindow(library: PaletteLibrary(defaults: defaults), session: session).frame(minWidth: 740, maxWidth: .infinity, minHeight: 520, maxHeight: .infinity))
+        let host = NSHostingView(rootView: ColorWindow(library: PaletteLibrary(defaults: defaults), session: session).background(NativeWindowMinimumSize()))
         let previous = NSApp.keyWindow
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 588), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.contentView = host
@@ -54,6 +54,9 @@ import ColorRaster
             }
             let scroll = try XCTUnwrap(find(host))
             let viewport = scroll.convert(scroll.bounds, to: host)
+            print("MAC_WINDOW_LAYOUT requested=\(size) window=\(window.frame) layout=\(window.contentLayoutRect) host=\(host.frame) bounds=\(host.bounds) viewport=\(viewport)")
+            XCTAssertEqual(host.bounds.width, size.width, accuracy: 1)
+            XCTAssertEqual(host.bounds.height, size.height, accuracy: 1)
             XCTAssertTrue(host.bounds.insetBy(dx: -1, dy: -1).contains(viewport), "viewport \(viewport), host \(host.bounds)")
             XCTAssertGreaterThan(viewport.height, 100)
             // Leave room for the actual three-row sampler and status, rather than growing the window content.

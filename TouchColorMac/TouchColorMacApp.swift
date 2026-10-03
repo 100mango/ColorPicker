@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main struct TouchColorMacApp: App {
     @StateObject private var library: PaletteLibrary
@@ -15,7 +16,7 @@ import SwiftUI
     var body: some Scene {
         WindowGroup("TouchColor") {
             ColorWindow(library: library)
-                .frame(minWidth: 740, maxWidth: .infinity, minHeight: 520, maxHeight: .infinity)
+                .background(NativeWindowMinimumSize())
         }
         .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }
@@ -60,5 +61,18 @@ struct ColorCommands: Commands {
             Button("Zoom Out") { if let session { session.changeZoom(session.zoom / 2) } }.keyboardShortcut("-")
             Button("Actual Fit (1×)") { session?.changeZoom(1) }.keyboardShortcut("1")
         }
+    }
+}
+
+/// Keep the minimum on the actual NSWindow. A SwiftUI flexible root frame feeds its
+/// ideal height back into NavigationSplitView when an AppKit canvas is inserted.
+struct NativeWindowMinimumSize: NSViewRepresentable {
+    func makeNSView(context: Context) -> MinimumSizeView { MinimumSizeView() }
+    func updateNSView(_ view: MinimumSizeView, context: Context) {}
+}
+final class MinimumSizeView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.contentMinSize = NSSize(width: 740, height: 520)
     }
 }

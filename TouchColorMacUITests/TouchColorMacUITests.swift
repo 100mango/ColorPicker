@@ -3,6 +3,7 @@ import AppKit
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import CryptoKit
 
 @MainActor final class TouchColorMacUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -30,6 +31,13 @@ import UniformTypeIdentifiers
         app = XCUIApplication(url: applicationURL)
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = suite
         app.launchArguments = ["--ui-test-reset"]; app.launch()
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
+        XCTAssertEqual(running.count, 1)
+        let actual = try XCTUnwrap(running.first)
+        XCTAssertEqual(actual.bundleURL?.resolvingSymlinksInPath(), applicationURL.resolvingSymlinksInPath())
+        let executable = try XCTUnwrap(actual.executableURL)
+        let digest = SHA256.hash(data: try Data(contentsOf: executable)).map { String(format: "%02x", $0) }.joined()
+        print("NATIVE_UI_RUNNING_APP path=\(actual.bundleURL?.path ?? "") executable=\(executable.path) sha256=\(digest)")
     }
     override func tearDownWithError() throws {
         if testRun?.hasSucceeded == false {
