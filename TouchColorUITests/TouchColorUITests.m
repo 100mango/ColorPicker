@@ -204,9 +204,19 @@
 }
 - (void)testLargestDynamicTypeControlsRemainReachable {
     [self.app terminate];
-    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"--ui-test-scroll-state",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    XCUIElement *emptyScroll=self.app.scrollViews[@"history.emptyScroll"];
+    XCUIElement *emptyMessage=emptyScroll.staticTexts[@"history.empty"].firstMatch;
+    XCTAssertTrue([emptyMessage waitForExistenceWithTimeout:5]);
+    NSLog(@"EMPTY_INSTRUCTION before frame=%@ viewport=%@ state=%@",NSStringFromCGRect(emptyMessage.frame),NSStringFromCGRect(emptyScroll.frame),emptyScroll.value);
+    XCTAssertGreaterThanOrEqual(CGRectGetMinY(emptyMessage.frame),CGRectGetMinY(emptyScroll.frame)-1);
+    for (NSUInteger attempt=0;attempt<5 && CGRectGetMaxY(emptyMessage.frame)>CGRectGetMaxY(emptyScroll.frame)+1;attempt++) {
+        [emptyScroll swipeUpWithVelocity:XCUIGestureVelocitySlow];
+    }
+    NSLog(@"EMPTY_INSTRUCTION after frame=%@ viewport=%@ state=%@",NSStringFromCGRect(emptyMessage.frame),NSStringFromCGRect(emptyScroll.frame),emptyScroll.value);
+    XCTAssertLessThanOrEqual(CGRectGetMaxY(emptyMessage.frame),CGRectGetMaxY(emptyScroll.frame)+1,@"The complete instruction's final line must be revealable by actual user scrolling");
     [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];

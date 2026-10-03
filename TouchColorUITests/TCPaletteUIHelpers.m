@@ -5,13 +5,17 @@
 - (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll {
     CGRect viewport=scroll.frame,target=element.frame;
     CGFloat distance=CGRectGetMidY(target)-CGRectGetMidY(viewport);
-    CGFloat limit=CGRectGetHeight(viewport)*0.35;
+    CGFloat limit=CGRectGetHeight(viewport)*0.45;
     distance=MAX(-limit,MIN(limit,distance));
-    XCUICoordinate *start=[scroll coordinateWithNormalizedOffset:CGVectorMake(0.5,0.5)];
+    // Start in the observed 16-point content gutter, outside UIButton tracking.
+    // A held drag starting on a control can legitimately remain owned by that control.
+    XCUICoordinate *start=[[scroll coordinateWithNormalizedOffset:CGVectorMake(0,0.5)] coordinateWithOffset:CGVectorMake(8,0)];
     XCUICoordinate *end=[start coordinateWithOffset:CGVectorMake(0,-distance)];
     // Full-speed flicks overshoot this short viewport and oscillate between its
     // ends. A measured held drag uses the same real scrolling without inertia.
+    NSLog(@"CONTROL_SCROLL before target=%@ frame=%@ viewport=%@ state=%@ gutterX=8 delta=%.2f",element.identifier,NSStringFromCGRect(target),NSStringFromCGRect(viewport),scroll.value,distance);
     [start pressForDuration:0.05 thenDragToCoordinate:end withVelocity:100 thenHoldForDuration:0.15];
+    NSLog(@"CONTROL_SCROLL after target=%@ frame=%@ viewport=%@ state=%@",element.identifier,NSStringFromCGRect(element.frame),NSStringFromCGRect(scroll.frame),scroll.value);
 }
 - (XCUIElement *)paletteElement:(NSString *)identifier app:(XCUIApplication *)app {
     return [[app descendantsMatchingType:XCUIElementTypeAny] matchingIdentifier:identifier].firstMatch;
@@ -124,7 +128,12 @@
         XCTAssertTrue([folder waitForExistenceWithTimeout:10],@"%@",app.debugDescription);[folder tap];
     }
     XCTAssertTrue([file waitForExistenceWithTimeout:10],@"%@",app.debugDescription);
-    XCTAssertTrue(file.hittable);[file tap];
+    XCUIElement *tile=[app.cells containingType:XCUIElementTypeStaticText identifier:@"TouchColor-Ordered-Colors.json"].firstMatch;
+    XCTAssertTrue([tile waitForExistenceWithTimeout:5]);
+    XCUIElement *icon=tile.images.firstMatch;
+    XCTAssertTrue(icon.exists);XCTAssertTrue(icon.hittable);[icon tap];
+    // A visible filename is not evidence that the picker handed a URL to the app.
+    [self waitForPalettePresentationToClose:tile];
     [self verifyPaletteRows:@[@"#445566",@"#445566",@"#aabbcc"] app:app];
 }
 - (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app {
@@ -141,7 +150,7 @@
 }
 - (void)exerciseLargestTextPaletteReviewAndInbox:(XCUIApplication *)app {
     [app terminate];
-    app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"--ui-test-scroll-state",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;[app launch];
     [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app];
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];

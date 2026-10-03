@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Export bounded per-device evidence within one source-defined run envelope."""
 import base64
+import hashlib
 import json
 import os
 import pathlib
@@ -60,6 +61,7 @@ def export_named(suite, names, limit):
         data = path.read_bytes()
         assert data.startswith(b'\xff\xd8') and len(data) <= MAX_IMAGE_BYTES
         encoded = base64.b64encode(data).decode('ascii')
+        print('SCREENSHOT_META:' + json.dumps({'name':family+'-'+name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()},sort_keys=True))
         print(f'SCREENSHOT_BEGIN:{family}-{name}')
         for offset in range(0, len(encoded), 4096):
             print('SCREENSHOT_CHUNK:' + encoded[offset:offset + 4096])

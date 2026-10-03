@@ -16,6 +16,8 @@
     XCUIDevice.sharedDevice.orientation=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad ? UIDeviceOrientationLandscapeLeft : UIDeviceOrientationPortrait;
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
+    NSString *sourceValue=[self.app.scrollViews[@"sourceControls"].value description];
+    XCTAssertFalse([sourceValue containsString:@"offsetY="],@"Official audits must use the production accessibility tree without diagnostic values");
     [self assertEmptyHistoryDoesNotOverlapHeader];
 }
 - (void)assertEmptyHistoryDoesNotOverlapHeader {

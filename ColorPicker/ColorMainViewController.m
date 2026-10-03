@@ -6,6 +6,19 @@
 #import "TCPrivacyViewController.h"
 #import "TouchColor-Swift.h"
 
+#if DEBUG
+// Read-only test diagnostics. Touch handling and layout remain UIScrollView's.
+@interface TCScrollStateProbe : UIScrollView
+@end
+@implementation TCScrollStateProbe
+- (NSString *)accessibilityValue {
+    return [NSString stringWithFormat:@"offsetY=%.3f contentHeight=%.3f boundsHeight=%.3f insetTop=%.3f insetBottom=%.3f canCancelTouches=%d",
+        self.contentOffset.y,self.contentSize.height,self.bounds.size.height,
+        self.adjustedContentInset.top,self.adjustedContentInset.bottom,self.canCancelContentTouches];
+}
+@end
+#endif
+
 @interface ColorMainViewController () <UITableViewDelegate, UITableViewDataSource, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIAdaptivePresentationControllerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) UIStackView *sourceButtons;
@@ -66,7 +79,12 @@
         [button addTarget:self action:@selector(selectSource:) forControlEvents:UIControlEventTouchUpInside];
         [buttons addArrangedSubview:button];
     }
-    UIScrollView *sourceControls = [UIScrollView new];
+    UIScrollView *sourceControls;
+#if DEBUG
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-scroll-state"]) sourceControls=[TCScrollStateProbe new];
+    else
+#endif
+    sourceControls = [UIScrollView new];
     sourceControls.accessibilityIdentifier = @"sourceControls";
     sourceControls.translatesAutoresizingMaskIntoConstraints = NO;
     [sourceControls addSubview:buttons];
@@ -149,7 +167,12 @@
     empty.textColor = UIColor.secondaryLabelColor;
     empty.accessibilityIdentifier = @"history.empty";
     empty.translatesAutoresizingMaskIntoConstraints = NO;
-    UIScrollView *emptyScroll = [UIScrollView new];
+    UIScrollView *emptyScroll;
+#if DEBUG
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-scroll-state"]) emptyScroll=[TCScrollStateProbe new];
+    else
+#endif
+    emptyScroll = [UIScrollView new];
     emptyScroll.accessibilityIdentifier = @"history.emptyScroll";
     [emptyScroll addSubview:empty];
     [NSLayoutConstraint activateConstraints:@[
