@@ -1,0 +1,84 @@
+import XCTest
+import Foundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
+import ColorDomain
+import ColorRaster
+
+// Synthetic asymmetric source. These helpers are test-target-only, never app resources.
+enum RasterFixture {
+    static let bytes: [UInt8] = [255,0,0,255, 0,255,0,255, 0,0,255,255,
+                                 255,255,0,255, 255,0,255,255, 0,255,255,255]
+    static func image(bytes: [UInt8] = RasterFixture.bytes, width: Int = 3, height: Int = 2, colorSpace: CGColorSpace? = nil) -> CGImage {
+        let space = colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let provider = CGDataProvider(data: Data(bytes) as CFData)!
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                       space: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+    }
+    static func data(orientation: Int = 1, image: CGImage = RasterFixture.image()) -> Data {
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, UTType.tiff.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: orientation] as CFDictionary)
+        precondition(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
+}
+
+final class ColorRasterTests: XCTestCase {
+    func testAllEightOrientationsMatchFrozenUIKitOracleAndExportReopen() throws {
+        // Frozen actual UIKit tests: up, upMirrored, down, downMirrored,
+        // leftMirrored, right, rightMirrored, left, translated to EXIF 1...8.
+        let corners = [
+            ["#ff0000", "#0000ff", "#ffff00", "#00ffff"],
+            ["#0000ff", "#ff0000", "#00ffff", "#ffff00"],
+            ["#00ffff", "#ffff00", "#0000ff", "#ff0000"],
+            ["#ffff00", "#00ffff", "#ff0000", "#0000ff"],
+            ["#ff0000", "#ffff00", "#0000ff", "#00ffff"],
+            ["#ffff00", "#ff0000", "#00ffff", "#0000ff"],
+            ["#00ffff", "#0000ff", "#ffff00", "#ff0000"],
+            ["#0000ff", "#00ffff", "#ff0000", "#ffff00"]
+        ]
+        let points = [(0.1,0.1),(0.9,0.1),(0.1,0.9),(0.9,0.9)]
+        for orientation in 1...8 {
+            let original = RasterFixture.data(orientation: orientation)
+            let raster = try ColorRaster.decode(original)
+            XCTAssertEqual(raster.sourceData, original)
+            XCTAssertEqual(raster.width, orientation >= 5 ? 2 : 3)
+            XCTAssertEqual(raster.height, orientation >= 5 ? 3 : 2)
+            let reopened = try ColorRaster.decode(raster.pngData())
+            for (index, point) in points.enumerated() {
+                let location = NormalizedPoint(x: point.0, y: point.1)!
+                XCTAssertEqual(raster.sample(at: location)?.hex, corners[orientation - 1][index], "EXIF \(orientation), corner \(index)")
+                XCTAssertEqual(reopened.sample(at: location), raster.sample(at: location))
+            }
+        }
+    }
+    func testAlphaIsCompositedOnWhiteAndP3IsConvertedToSRGB() throws {
+        let image = RasterFixture.image(bytes: [0,0,0,0, 128,0,0,128], width: 2, height: 1)
+        let raster = try ColorRaster.decode(RasterFixture.data(image: image))
+        XCTAssertEqual(raster.sample(at: NormalizedPoint(x: 0, y: 0)!)?.hex, "#ffffff")
+        let half = try XCTUnwrap(raster.sample(at: NormalizedPoint(x: 1, y: 1)!))
+        XCTAssertEqual(half.red, 255); XCTAssertEqual(Double(half.green), 127, accuracy: 1); XCTAssertEqual(Double(half.blue), 127, accuracy: 1)
+        let p3 = RasterFixture.image(bytes: [255,0,0,255], width: 1, height: 1, colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!)
+        let converted = try ColorRaster.decode(RasterFixture.data(image: p3))
+        XCTAssertEqual(converted.sample(at: .center)?.hex, "#ff0000")
+    }
+    func testFullSourceDimensionsEdgesCorruptAndCancel() throws {
+        let width = 2049
+        var bytes = [UInt8](repeating: 255, count: width * 3 * 4)
+        bytes.replaceSubrange((bytes.count - 4)..<bytes.count, with: [7,19,231,255])
+        let data = RasterFixture.data(image: RasterFixture.image(bytes: bytes, width: width, height: 3))
+        let raster = try ColorRaster.decode(data)
+        XCTAssertEqual(raster.width, width); XCTAssertEqual(raster.height, 3)
+        XCTAssertEqual(raster.sample(at: NormalizedPoint(x: 1, y: 1)!)?.hex, "#0713e7")
+        XCTAssertThrowsError(try ColorRaster.decode(Data("broken".utf8)))
+        XCTAssertThrowsError(try ColorRaster.decode(data, cancelled: { true }))
+        XCTAssertThrowsError(try ColorRaster.read(url: URL(fileURLWithPath: "/missing/TouchColor-test-file.png")))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-\(UUID()).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try raster.pngData().write(to: url, options: .atomic)
+        XCTAssertEqual(try ColorRaster.read(url: url).sample(at: NormalizedPoint(x: 1, y: 1)!)?.hex, "#0713e7")
+    }
+}

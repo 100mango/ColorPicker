@@ -1,0 +1,123 @@
+name: Native Apple platform milestone
+on:
+  push:
+    branches: [codex/apple-platforms]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-platforms-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-mac:
+    runs-on: xcode-27
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify source and stable toolchain
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/apple-platforms
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sw_vers
+          sw_vers -buildVersion | grep -Fx 26A428
+          xcodebuild -version | tee /tmp/touchcolor-platform-xcode.txt
+          grep -Fx 'Xcode 27.0' /tmp/touchcolor-platform-xcode.txt
+          grep -Fx 'Build version 27A266a' /tmp/touchcolor-platform-xcode.txt
+          xcodebuild -showsdks
+          uname -m | grep -Fx arm64
+          python3 scripts/generate_project.py
+          python3 scripts/generate_mac_project.py
+          git diff --exit-code HEAD --
+          xcodebuild -list -project TouchColorMac.xcodeproj
+      - name: Portable domain, raster and preservation tests
+        timeout-minutes: 8
+        run: swift test --package-path Packages/ColorCore --scratch-path build/package
+      - name: Build native arm64 Release app and inspect identity
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+          APP=build/mac-arm64/Build/Products/Release/TouchColorMac.app
+          file "$APP/Contents/MacOS/TouchColorMac"
+          lipo -info "$APP/Contents/MacOS/TouchColorMac"
+          otool -L "$APP/Contents/MacOS/TouchColorMac"
+          otool -l "$APP/Contents/MacOS/TouchColorMac" | grep -A8 LC_BUILD_VERSION
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")" = com.mango.touchColor
+          strings "$APP/Contents/MacOS/TouchColorMac" > /tmp/touchcolor-mac-release-strings.txt
+          if grep -E -- '--ui-test-|TOUCHCOLOR_TEST_DEFAULTS|TouchColor-fixture-' /tmp/touchcolor-mac-release-strings.txt; then
+            echo 'Test seam leaked into Release'; exit 1
+          fi
+      - name: Build x86_64 slice only if accepted by the real SDK
+        id: intel
+        continue-on-error: true
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/mac-x86_64 \
+            ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
+          lipo -info build/mac-x86_64/Build/Products/Release/TouchColorMac.app/Contents/MacOS/TouchColorMac
+          echo 'x86_64 build only; no Intel runtime execution claimed'
+      - name: Native Mac app-hosted unit tests
+        id: units
+        timeout-minutes: 8
+        run: |
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
+            -resultBundlePath build/mac-unit.xcresult -parallel-testing-enabled NO \
+            -collect-test-diagnostics never -only-testing:TouchColorMacTests CODE_SIGNING_ALLOWED=NO test
+      - name: Native Mac UI runtime workflows
+        id: ui
+        if: ${{ !cancelled() && steps.units.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
+            -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
+            -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \
+            -only-testing:TouchColorMacUITests CODE_SIGNING_ALLOWED=NO test
+      - name: Report bounded evidence and unchanged source
+        if: always()
+        run: |
+          mkdir -p build/evidence
+          echo 'Intel slice build outcome: ${{ steps.intel.outcome }}; Intel runtime: not tested' | tee build/evidence/architecture.txt
+          for name in unit ui; do
+            if test -d "build/mac-$name.xcresult"; then
+              xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
+            fi
+          done
+          if test -d build/mac-ui.xcresult; then
+            xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('build/evidence'); total=0
+          for p in sorted(root.rglob('*')):
+              if p.is_file():
+                  size=p.stat().st_size
+                  if size>5_000_000 or total+size>20_000_000: p.unlink()
+                  else: total+=size
+          print('Bounded evidence bytes:',total)
+          PY
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+      - name: Retain small test evidence for review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-native-mac-evidence
+          path: build/evidence
+          retention-days: 3
+          compression-level: 9
+          if-no-files-found: ignore
