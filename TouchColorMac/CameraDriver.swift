@@ -95,7 +95,8 @@ final class AVColorCameraDriver: CameraDriving {
                 guard self.session.canAddInput(input), self.session.canAddOutput(output) else { throw CocoaError(.featureUnsupported) }
                 self.session.addInput(input); self.session.addOutput(output)
                 if self.session.canSetSessionPreset(.high) { self.session.sessionPreset = .high }
-                self.session.automaticallyConfiguresCaptureDeviceForWideColor = false
+                // macOS exposes device color-space selection; the automatic wide-color
+                // session property is iOS-only. Select sRGB explicitly under the device lock.
                 try device.lockForConfiguration()
                 guard device.activeFormat.supportedColorSpaces.contains(.sRGB) else {
                     device.unlockForConfiguration(); throw CocoaError(.featureUnsupported)
