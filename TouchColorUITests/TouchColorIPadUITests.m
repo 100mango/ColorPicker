@@ -90,10 +90,19 @@
         XCTAssertTrue(!CGRectIsEmpty(cancelFrame) && !CGRectIsNull(cancelFrame) && CGRectContainsRect(window,cancelFrame),@"Adapted sheet Cancel must remain usable: %@",self.app.debugDescription);
         [cancel tap];
     }
-    XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        return !popover.exists && !content.exists && !cancel.exists;
-    }] object:self.app];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[closed] timeout:5],XCTWaiterResultCompleted,@"The system picker must actually dismiss: %@",self.app.debugDescription);
+    XCUIElement *presentation=dismissedPopover ? popover : cancel;
+    // Three remote AX queries inside one predicate can exhaust its deadline even
+    // after Photos has dismissed. Wait for that presentation once, then verify
+    // every picker element is absent without another gesture or a longer timeout.
+    if (@available(iOS 18.0, *)) {
+        XCTAssertTrue([presentation waitForNonExistenceWithTimeout:5],@"The system picker must actually dismiss: %@",self.app.debugDescription);
+    } else {
+        XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:presentation];
+        XCTAssertEqual([XCTWaiter waitForExpectations:@[closed] timeout:5],XCTWaiterResultCompleted,@"The system picker must actually dismiss: %@",self.app.debugDescription);
+    }
+    XCTAssertFalse(popover.exists,@"No Photos popover may remain after cancellation");
+    XCTAssertFalse(content.exists,@"No Photos content may remain after cancellation");
+    XCTAssertFalse(cancel.exists,@"No Photos Cancel control may remain after cancellation");
 }
 - (void)testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch {
     [self importFixture];
