@@ -10,45 +10,47 @@ struct ColorWindow: View {
     @State private var targeted = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            HSplitView {
-                PaletteSidebar(library: library, session: session).frame(minWidth: 220, idealWidth: 250, maxWidth: 300)
-                VStack(spacing: 0) {
-                    if session.raster != nil {
-                        ImageCanvas(session: session)
-                            .frame(minHeight: 160, maxHeight: .infinity)
-                            .overlay(alignment: .topLeading) {
-                                Text(session.sourceName).padding(8).background(.regularMaterial).padding(8).allowsHitTesting(false)
-                            }
-                    } else {
-                        VStack(spacing: 18) {
-                            Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary)
-                            Text("Choose an image to sample colors").font(.title2)
-                            Text("Open a file, choose a photo, drop an image here, or paste an image.")
-                                .foregroundStyle(.secondary).multilineTextAlignment(.center)
-                            Button("Open Image…") { MacImportExport.open(session: session, library: library) }
-                                .accessibilityIdentifier("image.open.empty")
-                        }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30)
-                    }
-                    Divider()
-                    SamplingControls(session: session, library: library).fixedSize(horizontal: false, vertical: true)
+        NavigationSplitView {
+            PaletteSidebar(library: library, session: session)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
+        } detail: {
+            VStack(spacing: 0) {
+                if session.raster != nil {
+                    ImageCanvas(session: session)
+                        .frame(minHeight: 160, maxHeight: .infinity)
+                        .layoutPriority(-1)
+                        .overlay(alignment: .topLeading) {
+                            Text(session.sourceName).padding(8).background(.regularMaterial).padding(8).allowsHitTesting(false)
+                        }
+                } else {
+                    VStack(spacing: 18) {
+                        Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary)
+                        Text("Choose an image to sample colors").font(.title2)
+                        Text("Open a file, choose a photo, drop an image here, or paste an image.")
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Open Image…") { MacImportExport.open(session: session, library: library) }
+                            .accessibilityIdentifier("image.open.empty")
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30)
                 }
-                .overlay { if targeted { RoundedRectangle(cornerRadius: 8).stroke(.blue, lineWidth: 3).allowsHitTesting(false) } }
-                .onDrop(of: [.fileURL, .image], isTargeted: $targeted) { MacImportExport.drop($0, session: session, library: library) }
+                Divider()
+                SamplingControls(session: session, library: library).fixedSize(horizontal: false, vertical: true)
+                Divider()
+                HStack {
+                    if session.busy {
+                        ProgressView().controlSize(.small)
+                        Text("Opening full-resolution image…")
+                        Button("Cancel") { session.cancelImport(); photo = nil }.accessibilityIdentifier("image.cancel")
+                    } else if session.exporting {
+                        ProgressView().controlSize(.small)
+                        Text("Exporting full-resolution image…")
+                    } else { Text(session.notice ?? NSLocalizedString("sRGB · transparent pixels on white · local palette", comment: "Sampling policy")) }
+                    Spacer()
+                }.font(.caption).padding(8).background(.bar).fixedSize(horizontal: false, vertical: true)
             }
-
-            HStack {
-                if session.busy {
-                    ProgressView().controlSize(.small)
-                    Text("Opening full-resolution image…")
-                    Button("Cancel") { session.cancelImport(); photo = nil }.accessibilityIdentifier("image.cancel")
-                } else if session.exporting {
-                    ProgressView().controlSize(.small)
-                    Text("Exporting full-resolution image…")
-                } else { Text(session.notice ?? NSLocalizedString("sRGB · transparent pixels on white · local palette", comment: "Sampling policy")) }
-                Spacer()
-            }.font(.caption).padding(8).background(.bar)
+            .overlay { if targeted { RoundedRectangle(cornerRadius: 8).stroke(.blue, lineWidth: 3).allowsHitTesting(false) } }
+            .onDrop(of: [.fileURL, .image], isTargeted: $targeted) { MacImportExport.drop($0, session: session, library: library) }
         }
+        .navigationSplitViewStyle(.balanced)
         .toolbar {
             Button { MacImportExport.open(session: session, library: library) } label: { Label("Open", systemImage: "folder") }
                 .accessibilityIdentifier("image.open")

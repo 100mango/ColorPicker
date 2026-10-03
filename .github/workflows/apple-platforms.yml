@@ -89,7 +89,8 @@ jobs:
             -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \
             -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
       - name: Build original iOS app and direct cross-language equivalence tests
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        id: ios
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.ui.outcome == 'success' }}
         timeout-minutes: 10
         run: |
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
@@ -100,7 +101,7 @@ jobs:
           bash scripts/test_simulators.sh iPhoneCompact prepare
           bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
       - name: Shut down iOS test simulator
-        if: always()
+        if: ${{ always() && steps.ios.outcome != 'skipped' }}
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh iPhoneCompact shutdown || true
       - name: Report bounded evidence and unchanged source

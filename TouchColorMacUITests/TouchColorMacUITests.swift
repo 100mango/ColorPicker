@@ -57,6 +57,8 @@ import UniformTypeIdentifiers
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).click()
         assertHex("#ff0000")
+        app.typeKey(.rightArrow, modifierFlags: []); assertHex("#00ff00")
+        app.typeKey(.leftArrow, modifierFlags: []); assertHex("#ff0000")
         app.buttons["sample.save"].click(); app.buttons["sample.save"].click()
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
         app.buttons["sample.copy"].click()
@@ -79,10 +81,13 @@ import UniformTypeIdentifiers
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
     }
     private func saveFile(_ url: URL) {
+        XCTAssertTrue(app.dialogs.buttons["OKButton"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         print("NATIVE_SAVE_PANEL_AX: \(app.debugDescription)")
-        // NSSavePanel initially focuses/selects its Save As name. Choose the directory separately.
-        app.typeKey("a", modifierFlags: [.command])
-        app.typeText(url.lastPathComponent)
+        // Use the actual native Save As field; choose its parent directory separately.
+        let name = app.dialogs.textFields["saveAsNameTextField"].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5), app.debugDescription)
+        name.typeKey("a", modifierFlags: [.command])
+        name.typeText(url.lastPathComponent)
         app.typeKey("g", modifierFlags: [.command, .shift])
         let field = app.textFields["PathTextField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
@@ -99,6 +104,8 @@ import UniformTypeIdentifiers
         let paletteURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-palette-\(UUID()).json")
         let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-image-\(UUID()).png")
         defer { try? FileManager.default.removeItem(at: paletteURL); try? FileManager.default.removeItem(at: imageURL) }
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
+        XCTAssertTrue(app.buttons["palette.export"].isHittable, app.debugDescription)
         app.buttons["palette.export"].click(); saveFile(paletteURL)
         let stored = try JSONDecoder().decode([String].self, from: Data(contentsOf: paletteURL))
         XCTAssertEqual(stored, ["#ff00ff", "#ff00ff"])
