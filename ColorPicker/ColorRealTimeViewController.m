@@ -105,7 +105,7 @@
     if (sourceFlowActive) [self pauseCapture]; else [self resumeCapture];
 }
 - (void)resumeCapture {
-    if (self.sourceFlowActive || !self.visible || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive || self.interrupted) return;
+    if (self.sourceFlowActive || !self.visible || !self.view.window || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive || self.interrupted) return;
     [self.captureGate invalidate];
     self.saveButton.enabled = NO;
     AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionBack] ?: [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];

@@ -53,7 +53,9 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
     UITraitCollection *largest=[UITraitCollection traitCollectionWithPreferredContentSizeCategory:UIContentSizeCategoryAccessibilityExtraExtraExtraLarge];
     UIViewController *host = [UIViewController new];
     [host addChildViewController:navigation];
-    [host setOverrideTraitCollection:[UITraitCollection traitCollectionWithTraitsFromCollections:@[largest,[UITraitCollection traitCollectionWithHorizontalSizeClass:size.width<600 ? UIUserInterfaceSizeClassCompact : UIUserInterfaceSizeClassRegular],[UITraitCollection traitCollectionWithVerticalSizeClass:size.height>400 ? UIUserInterfaceSizeClassRegular : UIUserInterfaceSizeClassCompact]]]] forChildViewController:navigation];
+    navigation.traitOverrides.preferredContentSizeCategory = UIContentSizeCategoryAccessibilityExtraExtraExtraLarge;
+    navigation.traitOverrides.horizontalSizeClass = size.width<600 ? UIUserInterfaceSizeClassCompact : UIUserInterfaceSizeClassRegular;
+    navigation.traitOverrides.verticalSizeClass = size.height>400 ? UIUserInterfaceSizeClassRegular : UIUserInterfaceSizeClassCompact;
     navigation.view.translatesAutoresizingMaskIntoConstraints = NO;
     [host.view addSubview:navigation.view];
     [navigation didMoveToParentViewController:host];
