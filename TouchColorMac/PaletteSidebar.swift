@@ -23,11 +23,11 @@ struct PaletteSidebar: View {
                         Menu {
                             Button("Copy Color") { library.copy(color) }
                             Button("Delete Color", role: .destructive) { library.remove(at: index) }.accessibilityIdentifier("palette.delete.\(index)")
-                        } label: { Image(systemName: "ellipsis.circle") }
+                        } label: { Label("Actions for color \(index + 1)", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
                             .menuStyle(.borderlessButton).frame(width: 24)
                             .accessibilityLabel("Actions for color \(index + 1)")
                             .accessibilityIdentifier("palette.actions.\(index)")
-                    }.padding(.vertical, 4).accessibilityIdentifier("palette.row.\(index)")
+                    }.padding(.vertical, 4)
                 }
             }
             if library.colors.isEmpty { Text("Saved colors appear here, in order.").foregroundStyle(.secondary).lineLimit(2).padding() }

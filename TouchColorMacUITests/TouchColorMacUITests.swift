@@ -42,7 +42,7 @@ import CryptoKit
     }
     override func tearDownWithError() throws {
         if let app {
-            if testRun?.hasSucceeded == false && app.state != .notRunning {
+            if (testRun?.failureCount ?? 0) > 0 && app.state != .notRunning {
                 let failure = XCTAttachment(screenshot: app.screenshot())
                 failure.name = "Native Mac UI failure state"; failure.lifetime = .keepAlways; add(failure)
                 print("NATIVE_UI_FAILURE_AX: \(app.debugDescription)")
@@ -134,7 +134,7 @@ import CryptoKit
         let count = app.staticTexts["palette.count"]
         expectation(for: NSPredicate(format: "value == '4' OR label == '4'"), evaluatedWith: count)
         waitForExpectations(timeout: 5)
-        app.descendants(matching: .any).matching(identifier: "palette.actions.1").firstMatch.click()
+        app.menuButtons["palette.actions.1"].click()
         app.menuItems["palette.delete.1"].click()
         XCTAssertEqual(count.value as? String ?? count.label, "3")
         app.buttons["image.export"].click(); saveFile(imageURL)
