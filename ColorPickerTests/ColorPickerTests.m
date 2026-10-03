@@ -118,6 +118,20 @@
     UIImage *transparent=[[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(3,2) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {}];
     XCTAssertEqualObjects(TCSampleImage(transparent,CGPointMake(0.5,0.5)),@"#ffffff");
 }
+- (void)testCameraBGRACenterUsesPaddedRowStride {
+    uint8_t bytes[96] = {0};
+    // 3x3 pixels with 32-byte rows: the center is row1/pixel1, not tightly packed offset16.
+    bytes[36] = 20; bytes[37] = 80; bytes[38] = 200; bytes[39] = 255;
+    CVPixelBufferRef buffer = NULL;
+    XCTAssertEqual(CVPixelBufferCreateWithBytes(kCFAllocatorDefault,3,3,kCVPixelFormatType_32BGRA,bytes,32,NULL,NULL,NULL,&buffer),kCVReturnSuccess);
+    XCTAssertEqualObjects(TCSampleCameraBuffer(buffer),@"#c85014");
+    CVPixelBufferRelease(buffer);
+    XCTAssertNil(TCSampleCameraBuffer(NULL));
+    CVPixelBufferRef unsupported = NULL;
+    XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault,2,2,kCVPixelFormatType_32ARGB,NULL,&unsupported),kCVReturnSuccess);
+    XCTAssertNil(TCSampleCameraBuffer(unsupported));
+    CVPixelBufferRelease(unsupported);
+}
 - (void)testCameraPermissionDecisionsNeverRequireRealHardware {
     XCTAssertEqual(TCCameraAccessForStatus(AVAuthorizationStatusNotDetermined,YES),TCCameraAccessAsk);
     XCTAssertEqual(TCCameraAccessForStatus(AVAuthorizationStatusAuthorized,YES),TCCameraAccessReady);

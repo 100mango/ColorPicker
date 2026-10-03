@@ -52,6 +52,18 @@ NSString *TCSampleImage(UIImage *image, CGPoint p) {
     CGContextRelease(context);
     return TCHexColor(pixel[0], pixel[1], pixel[2]);
 }
+NSString *TCSampleCameraBuffer(CVPixelBufferRef buffer) {
+    if (!buffer || CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_32BGRA || CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) return nil;
+    size_t width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer), stride = CVPixelBufferGetBytesPerRow(buffer);
+    uint8_t *bytes = CVPixelBufferGetBaseAddress(buffer);
+    NSString *hex = nil;
+    if (bytes && width && height && width <= SIZE_MAX / 4 && stride >= width * 4) {
+        uint8_t *pixel = bytes + (height / 2) * stride + (width / 2) * 4;
+        hex = TCHexColor(pixel[2], pixel[1], pixel[0]);
+    }
+    CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+    return hex;
+}
 TCCameraAccess TCCameraAccessForStatus(AVAuthorizationStatus status, BOOL available) {
     if (!available) return TCCameraAccessUnavailable;
     switch (status) {

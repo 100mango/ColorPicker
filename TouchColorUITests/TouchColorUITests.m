@@ -1,8 +1,29 @@
 #import <XCTest/XCTest.h>
+#import <UIKit/UIKit.h>
+#include <stdio.h>
 @interface TouchColorUITests : XCTestCase
 @property (nonatomic, strong) XCUIApplication *app;
 @end
 @implementation TouchColorUITests
+- (void)emitScreenshot:(NSString *)name {
+    // At most two synthetic-fixture JPEGs in the entire serial iPhone+iPad job.
+    if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone) return;
+    NSString *marker=[NSTemporaryDirectory() stringByAppendingPathComponent:[name stringByAppendingString:@".logged"]];
+    if ([NSFileManager.defaultManager fileExistsAtPath:marker]) return;
+    NSData *data=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+    XCTAssertGreaterThan(data.length,0);
+    XCTAssertLessThanOrEqual(data.length,500*1024);
+    if (data.length > 500*1024) return;
+    [@"logged" writeToFile:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    NSString *encoded=[data base64EncodedStringWithOptions:0];
+    printf("SCREENSHOT_BEGIN:%s\n",name.UTF8String);
+    for (NSUInteger offset=0;offset<encoded.length;offset+=4096) {
+        NSString *chunk=[encoded substringWithRange:NSMakeRange(offset,MIN(4096,encoded.length-offset))];
+        printf("%s\n",chunk.UTF8String);
+    }
+    printf("SCREENSHOT_END:%s\n",name.UTF8String);
+    fflush(stdout);
+}
 - (void)setUp {
     [super setUp];
     self.continueAfterFailure=NO;
@@ -28,6 +49,7 @@
     XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
     [self.app.buttons[@"sampleCenter"] tap];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
+    [self emitScreenshot:@"touchcolor-photo-sampled"];
     [self.app.buttons[@"saveColor"] tap];
     XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
@@ -67,6 +89,24 @@
     XCTAssertTrue(self.app.buttons[@"saveColor"].hittable);
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
+}
+- (void)testLargestDynamicTypeControlsRemainReachable {
+    [self.app terminate];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    [self.app launch];
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    XCTAssertTrue(self.app.buttons[@"liveColor"].hittable);
+    [self.app.buttons[@"Sample Fixture"] tap];
+    XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
+    XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
+    [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue(self.app.buttons[@"saveColor"].hittable);
+    XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
+    [self.app.buttons[@"saveColor"] tap];
+    [self.app.navigationBars.buttons.firstMatch tap];
+    XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
+    [self emitScreenshot:@"touchcolor-history-large-text"];
 }
 - (void)testSystemPhotoSelectionAndSampling {
     // CI seeds an opaque red PNG into this simulator's Photos library.

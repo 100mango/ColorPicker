@@ -37,5 +37,32 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
-      - name: Run unit and UI tests on iPhone and iPad
-        run: bash scripts/test_simulators.sh
+      - name: Build simulator test products
+        id: build-tests
+        timeout-minutes: 8
+        run: |
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
+            build-for-testing
+      - name: iPhone unit tests
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 8
+        run: bash scripts/test_simulators.sh iPhone TouchColorTests
+      - name: iPhone UI tests and synthetic screenshots
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 12
+        run: bash scripts/test_simulators.sh iPhone TouchColorUITests
+      - name: iPad unit tests
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 8
+        run: bash scripts/test_simulators.sh iPad TouchColorTests
+      - name: iPad UI tests
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 12
+        run: bash scripts/test_simulators.sh iPad TouchColorUITests
+      - name: Always report test summaries and simulator diagnostics
+        if: always()
+        run: |
+          xcrun simctl list devices
+          find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
+          find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true

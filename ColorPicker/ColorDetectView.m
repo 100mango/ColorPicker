@@ -49,7 +49,8 @@
         self.contentSize = self.imageView.bounds.size;
         self.marker.hidden = YES;
     }
-    self.contentInset = UIEdgeInsetsMake(MAX(0, (self.bounds.size.height-self.contentSize.height)/2), MAX(0, (self.bounds.size.width-self.contentSize.width)/2), 0, 0);
+    UIEdgeInsets inset = UIEdgeInsetsMake(MAX(0, (self.bounds.size.height-self.contentSize.height)/2), MAX(0, (self.bounds.size.width-self.contentSize.width)/2), 0, 0);
+    if (!UIEdgeInsetsEqualToEdgeInsets(self.contentInset, inset)) self.contentInset = inset;
     self.marker.transform = CGAffineTransformMakeScale(1/self.zoomScale, 1/self.zoomScale);
 }
 - (void)sampleGesture:(UIGestureRecognizer *)gesture {

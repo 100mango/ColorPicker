@@ -9,6 +9,8 @@ FOUNDATION_EXPORT UIColor * _Nullable TCUIColorFromHex(id _Nullable value);
 FOUNDATION_EXPORT NSString *TCRGBDescription(NSString *hex);
 /// UIKit applies all eight UIImage orientations. Transparent pixels are composited on white.
 FOUNDATION_EXPORT NSString * _Nullable TCSampleImage(UIImage * _Nullable image, CGPoint normalizedPoint);
+/// Reads a locked BGRA buffer using its actual row stride, or returns nil for unsupported data.
+FOUNDATION_EXPORT NSString * _Nullable TCSampleCameraBuffer(CVPixelBufferRef _Nullable buffer);
 FOUNDATION_EXPORT BOOL TCNormalizedPoint(CGPoint point, CGRect imageRect, CGPoint * _Nullable normalized);
 typedef NS_ENUM(NSInteger, TCCameraAccess) { TCCameraAccessUnavailable, TCCameraAccessAsk, TCCameraAccessReady, TCCameraAccessBlocked };
 FOUNDATION_EXPORT TCCameraAccess TCCameraAccessForStatus(AVAuthorizationStatus status, BOOL available);

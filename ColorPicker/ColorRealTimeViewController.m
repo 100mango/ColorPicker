@@ -2,7 +2,7 @@
 #import "TCColorUtilities.h"
 
 @interface ColorRealTimeViewController ()
-@property (nonatomic, strong) AVCaptureSession *session;
+@property (atomic, strong) AVCaptureSession *session;
 @property (nonatomic, strong) AVCaptureVideoDataOutput *output;
 @property (nonatomic, strong) AVCaptureVideoPreviewLayer *preview;
 @property (nonatomic, strong) UIView *cameraView;
@@ -83,7 +83,7 @@
 }
 - (void)resumeCapture {
     if (!self.visible || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive) return;
-    AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
+    AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionBack] ?: [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
     TCCameraAccess access = TCCameraAccessForStatus([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo], device != nil);
     if (access == TCCameraAccessUnavailable || access == TCCameraAccessBlocked) {
         self.wantsCapture = NO;
@@ -105,6 +105,7 @@
         if (!self || !self.wantsCapture) return;
         if (!self.session) {
             AVCaptureSession *session = [AVCaptureSession new];
+            session.automaticallyConfiguresCaptureDeviceForWideColor = NO;
             [session beginConfiguration];
             if ([session canSetSessionPreset:AVCaptureSessionPreset640x480]) session.sessionPreset = AVCaptureSessionPreset640x480;
             NSError *error;
@@ -180,17 +181,8 @@
     CFTimeInterval now = CACurrentMediaTime();
     if (now - self.lastSampleTime < 0.1) return;
     self.lastSampleTime = now;
-    CVPixelBufferRef buffer = CMSampleBufferGetImageBuffer(sampleBuffer);
-    if (!buffer || CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_32BGRA || CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) return;
-    size_t width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer), stride = CVPixelBufferGetBytesPerRow(buffer);
-    uint8_t *bytes = CVPixelBufferGetBaseAddress(buffer);
-    NSString *hex;
     // Aspect-fill crop and rotations share the sensor's center; no assumed dimensions/row stride.
-    if (bytes && width && height && stride >= width * 4) {
-        uint8_t *pixel = bytes + (height / 2) * stride + (width / 2) * 4;
-        hex = TCHexColor(pixel[2], pixel[1], pixel[0]);
-    }
-    CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
+    NSString *hex = TCSampleCameraBuffer(CMSampleBufferGetImageBuffer(sampleBuffer));
     if (!hex) return;
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{

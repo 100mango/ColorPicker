@@ -72,6 +72,9 @@
 }
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self reloadHistory];
+}
+- (void)reloadHistory {
     self.colors = self.store.colors;
     [self.tableView reloadData];
     UILabel *empty = [UILabel new];
@@ -178,7 +181,7 @@
     return cell;
 }
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (style == UITableViewCellEditingStyleDelete && [self.store removeColorAtIndex:indexPath.row]) [self viewWillAppear:NO];
+    if (style == UITableViewCellEditingStyleDelete && [self.store removeColorAtIndex:indexPath.row]) [self reloadHistory];
 }
 #if DEBUG
 - (void)openFixture {
