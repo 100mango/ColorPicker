@@ -41,6 +41,7 @@
     [palette.workspaceDelegate palette:palette showCanvas:canvas];
     XCTAssertEqual(secondary.topViewController,canvas);
     XCTAssertEqual(primary.topViewController,palette);
+    XCTAssertEqualObjects(palette.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.canvas");
     [canvas loadViewIfNeeded];
     XCTAssertEqual(((ColorDetectView *)[canvas valueForKey:@"colorDetectView"]).imageView.image,image,@"No downsampling or replacement of the imported image");
     XCTAssertEqualObjects(canvas.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.palette");

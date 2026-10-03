@@ -83,6 +83,16 @@
     naturalHeight.priority = UILayoutPriorityDefaultLow;
     naturalHeight.active = YES;
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    // Prefer a balanced canvas, but give each individual readout/action enough vertical room
+    // to be fully visible when large text meets a short window or a large safe-area inset.
+    NSLayoutConstraint *balancedHeight = [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.6];
+    balancedHeight.priority = UILayoutPriorityDefaultHigh;
+    balancedHeight.active = YES;
+    for (UIView *component in @[readout, self.zoomSlider, actions]) {
+        NSLayoutConstraint *readableHeight = [controls.heightAnchor constraintGreaterThanOrEqualToAnchor:component.heightAnchor];
+        readableHeight.priority = UILayoutPriorityDefaultHigh + 1;
+        readableHeight.active = YES;
+    }
     [NSLayoutConstraint activateConstraints:@[
         [self.colorDetectView.topAnchor constraintEqualToAnchor:safe.topAnchor],
         [self.colorDetectView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
@@ -91,7 +101,8 @@
         [controls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
         [controls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
         [controls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
-        [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.6],
+        [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor constant:-52],
+        [self.colorDetectView.heightAnchor constraintGreaterThanOrEqualToConstant:44],
         [panel.leadingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.leadingAnchor constant:16],
         [panel.trailingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.trailingAnchor constant:-16],
         [panel.topAnchor constraintEqualToAnchor:controls.contentLayoutGuide.topAnchor constant:8],

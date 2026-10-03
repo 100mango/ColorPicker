@@ -143,7 +143,19 @@
     empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     empty.adjustsFontForContentSizeCategory = YES;
     empty.textColor = UIColor.secondaryLabelColor;
-    self.tableView.backgroundView = self.colors.count ? nil : empty;
+    empty.accessibilityIdentifier = @"history.empty";
+    empty.translatesAutoresizingMaskIntoConstraints = NO;
+    UIScrollView *emptyScroll = [UIScrollView new];
+    emptyScroll.accessibilityIdentifier = @"history.emptyScroll";
+    [emptyScroll addSubview:empty];
+    [NSLayoutConstraint activateConstraints:@[
+        [empty.topAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.topAnchor constant:16],
+        [empty.bottomAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.bottomAnchor constant:-16],
+        [empty.leadingAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.leadingAnchor constant:16],
+        [empty.trailingAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.trailingAnchor constant:-16],
+        [empty.widthAnchor constraintEqualToAnchor:emptyScroll.frameLayoutGuide.widthAnchor constant:-32]
+    ]];
+    self.tableView.backgroundView = self.colors.count ? nil : emptyScroll;
 }
 - (void)showPrivacyButton {
     UIBarButtonItem *privacy = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Privacy Policy", nil) style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)];
@@ -159,9 +171,18 @@
     // Anchor a native iPad popover to the selected source when visible, otherwise to the canvas toolbar area.
     if (self.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad && ![controller isKindOfClass:UIImagePickerController.class]) {
         controller.modalPresentationStyle = UIModalPresentationPopover;
-        UIView *anchor = sourceView.window ? sourceView : presenter.view;
-        controller.popoverPresentationController.sourceView = anchor;
-        controller.popoverPresentationController.sourceRect = sourceView.window ? anchor.bounds : CGRectMake(CGRectGetMidX(anchor.bounds), anchor.safeAreaInsets.top + 1, 1, 1);
+        BOOL visible = sourceView.window != nil;
+        for (UIView *ancestor = sourceView; visible && ancestor; ancestor = ancestor.superview) {
+            CGRect rect = [sourceView convertRect:sourceView.bounds toView:ancestor];
+            visible = !ancestor.hidden && ancestor.alpha > 0 && CGRectIntersectsRect(ancestor.bounds,rect);
+        }
+        UIBarButtonItem *toolbarAnchor = visible ? nil : [self.workspaceDelegate sourceAnchorForPalette:self];
+        if (toolbarAnchor) controller.popoverPresentationController.barButtonItem = toolbarAnchor;
+        else {
+            UIView *anchor = visible ? sourceView : presenter.view;
+            controller.popoverPresentationController.sourceView = anchor;
+            controller.popoverPresentationController.sourceRect = visible ? anchor.bounds : CGRectMake(CGRectGetMidX(anchor.bounds), anchor.safeAreaInsets.top + 1, 1, 1);
+        }
         controller.popoverPresentationController.permittedArrowDirections = UIPopoverArrowDirectionAny;
     }
     controller.presentationController.delegate = self;
@@ -169,7 +190,7 @@
 }
 - (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController { [self sourceFlowActive:NO]; }
 - (void)openPrivacyPolicy {
-    if ([self sourcePresenter].presentedViewController) return;
+    if ([self sourcePresenter].presentedViewController || self.loading.isAnimating) return;
     TCPrivacyViewController *document = [TCPrivacyViewController new];
     __weak typeof(self) weakSelf = self;
     document.dismissalHandler = ^{ [weakSelf sourceFlowActive:NO]; };
@@ -256,12 +277,14 @@
         }
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.loading];
         [self.loading startAnimating];
+        [self.workspaceDelegate palette:self loadingPhoto:YES];
         __weak typeof(self) weakSelf = self;
         [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 typeof(self) self = weakSelf;
                 if (!self || generation != self.selectionGeneration) return;
                 [self.loading stopAnimating];
+                [self.workspaceDelegate palette:self loadingPhoto:NO];
                 [self showPrivacyButton];
                 [self sourceFlowActive:NO];
                 [self showImage:[object isKindOfClass:UIImage.class] ? (UIImage *)object : nil];
@@ -302,6 +325,7 @@
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (self.loading.isAnimating) return;
     if (indexPath.row < self.colors.count) [self.workspaceDelegate palette:self previewSavedColor:self.colors[indexPath.row]];
 }
 - (void)defaultsChanged:(NSNotification *)notification {

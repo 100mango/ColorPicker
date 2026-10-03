@@ -58,6 +58,13 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Analyze production Objective-C source
+        timeout-minutes: 5
+        run: |
+          set -o pipefail
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO CLANG_ANALYZER_OUTPUT=plist analyze
       - name: Record unsigned app framework inventory
         run: |
           python3 - <<'PYFRAMEWORKS'
@@ -84,6 +91,23 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
+      - name: Warm up native iPad simulator
+        id: warm-ipad
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPadLarge prepare
+      - name: Native iPad unit and constrained-window layout tests
+        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPadLarge TouchColorTests
+      - name: Native iPad canvas palette keyboard and lifecycle UI tests
+        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
+        timeout-minutes: 16
+        run: bash scripts/test_simulators.sh iPadLarge TouchColorUITests
+      - name: Shut down iPad simulator
+        if: always()
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh iPadLarge shutdown
       - name: Warm up compact iPhone simulator
         id: warm-iphone-compact
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
@@ -120,23 +144,6 @@ jobs:
         if: always()
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh iPhoneLarge shutdown
-      - name: Warm up native iPad simulator
-        id: warm-ipad
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadLarge prepare
-      - name: Native iPad unit and constrained-window layout tests
-        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadLarge TouchColorTests
-      - name: Native iPad canvas palette keyboard and lifecycle UI tests
-        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
-        timeout-minutes: 16
-        run: bash scripts/test_simulators.sh iPadLarge TouchColorUITests
-      - name: Shut down iPad simulator
-        if: always()
-        timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPadLarge shutdown
       - name: Export two bounded synthetic regression screenshots
         if: always()
         timeout-minutes: 3

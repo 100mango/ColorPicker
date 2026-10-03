@@ -25,6 +25,14 @@
     [sample tap];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
 }
+- (void)cancelPicker {
+    XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
+    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == true AND hittable == true"] object:cancel];
+    XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:15],XCTWaiterResultCompleted,@"System picker Cancel must be interactive: %@",self.app.debugDescription);
+    [cancel tap];
+    XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:cancel];
+    XCTAssertEqual([XCTWaiter waitForExpectations:@[closed] timeout:5],XCTWaiterResultCompleted,@"%@",self.app.debugDescription);
+}
 - (void)testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch {
     [self importFixture];
     XCUIElement *history=self.app.tables[@"colorHistory"], *photo=self.app.images[@"sampleImage"];
@@ -33,27 +41,27 @@
     [self.app.buttons[@"saveColor"] tap];
     XCTAssertTrue([history.cells.firstMatch waitForExistenceWithTimeout:5]);
     XCTAssertTrue([history.cells.firstMatch.label containsString:@"#ff00ff"]);
-    [history.cells.firstMatch tap];
-    XCTAssertTrue([self.app.alerts.firstMatch waitForExistenceWithTimeout:5]);
-    [self.app.alerts.buttons[@"Close"] tap];
-    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
-    [self.app.buttons[@"choosePhoto"] tap];
-    XCTAssertTrue([self.app.buttons[@"Cancel"].firstMatch waitForExistenceWithTimeout:5]);
-    [self.app.buttons[@"Cancel"].firstMatch tap];
-    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
-    XCTAssertEqual(history.cells.count,1);
     NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
     XCTAssertLessThanOrEqual(bytes.length,500*1024);
     XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
     image.name=@"touchcolor-ipad-native-canvas";image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
+    [history.cells.firstMatch tap];
+    XCTAssertTrue([self.app.alerts.firstMatch waitForExistenceWithTimeout:5]);
+    [self.app.alerts.buttons[@"Close"] tap];
+    XCTNSPredicateExpectation *previewClosed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:self.app.alerts.firstMatch];
+    XCTAssertEqual([XCTWaiter waitForExpectations:@[previewClosed] timeout:5],XCTWaiterResultCompleted);
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
+    [self.app.buttons[@"choosePhoto"] tap];
+    [self cancelPicker];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
+    XCTAssertEqual(history.cells.count,1);
     [self.app terminate];self.app.launchArguments=@[@"-AppleLanguages",@"(en)"];[self.app launch];
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch.label containsString:@"#ff00ff"]);
 }
 - (void)testKeyboardImportSamplingZoomSaveAndRotation {
     [self.app typeKey:@"o" modifierFlags:XCUIKeyModifierCommand];
-    XCTAssertTrue([self.app.buttons[@"Cancel"].firstMatch waitForExistenceWithTimeout:5]);
-    [self.app.buttons[@"Cancel"].firstMatch tap];
+    [self cancelPicker];
     [self importFixture];
     [self.app.images[@"sampleImage"] tap];
     CGFloat before=self.app.images[@"sampleImage"].frame.size.width;
@@ -72,6 +80,9 @@
     XCTAssertTrue([self.app.images[@"sampleMarker"].value containsString:@"#ff00ff"]);
     [self.app.buttons[@"workspace.palette"] tap];
     XCTAssertTrue(self.app.tables[@"colorHistory"].hittable);
+    [self.app.buttons[@"workspace.canvas"] tap];
+    XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
 }
 - (void)testLargestTextNativePaletteAndCanvasControls {
     [self.app terminate];self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];[self.app launch];
@@ -98,8 +109,7 @@
     XCTAssertTrue([self.app.staticTexts[@"cameraStatus"] waitForExistenceWithTimeout:5]);
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
     [self.app.buttons[@"choosePhoto"] tap];
-    XCTAssertTrue([self.app.buttons[@"Cancel"].firstMatch waitForExistenceWithTimeout:5]);
-    [self.app.buttons[@"Cancel"].firstMatch tap];
+    [self cancelPicker];
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];
     XCTAssertTrue([self.app.staticTexts[@"cameraStatus"].label containsString:@"not available"]);

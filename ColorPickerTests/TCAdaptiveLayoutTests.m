@@ -101,6 +101,18 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             [self withController:[ColorMainViewController new] size:size style:appearance.integerValue check:^(UIViewController *controller) {
                 ColorMainViewController *main=(ColorMainViewController *)controller;
                 [main setValue:store forKey:@"store"];
+                [defaults setObject:@[] forKey:@"colorArray"];
+                [main reloadHistory];[main.view layoutIfNeeded];
+                UIScrollView *emptyScroll=(UIScrollView *)TCLayoutView(main.view,@"history.emptyScroll");
+                UILabel *empty=(UILabel *)TCLayoutView(main.view,@"history.empty");
+                [emptyScroll layoutIfNeeded];
+                XCTAssertNotNil(emptyScroll);XCTAssertNotNil(empty);
+                XCTAssertGreaterThanOrEqual(emptyScroll.contentSize.height,empty.bounds.size.height);
+                // A long empty-state paragraph can span screens; both its beginning and end must scroll into view.
+                CGRect paragraph=[empty convertRect:empty.bounds toView:emptyScroll];
+                [emptyScroll scrollRectToVisible:CGRectMake(paragraph.origin.x,CGRectGetMaxY(paragraph)-1,paragraph.size.width,1) animated:NO];
+                XCTAssertGreaterThanOrEqual(CGRectGetMaxY(emptyScroll.bounds)+1,CGRectGetMaxY(paragraph));
+                [defaults setObject:@[@"#ff0000"] forKey:@"colorArray"];
                 [main reloadHistory];
                 [main.view layoutIfNeeded];
                 UITableView *history=(UITableView *)TCLayoutView(main.view,@"colorHistory");
@@ -164,8 +176,18 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             ColorViewController *canvas=[ColorViewController new];
             UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(3,2)];
             [canvas setChooseImage:[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) { [UIColor.magentaColor setFill];[context fillRect:CGRectMake(0,0,3,2)]; }]];
-            [palette.workspaceDelegate palette:palette showCanvas:canvas];
-            [workspace.view layoutIfNeeded];[canvas.view layoutIfNeeded];
+            [UIView performWithoutAnimation:^{ [palette.workspaceDelegate palette:palette showCanvas:canvas]; }];
+            // Wait for UIKit's transition/layout transaction rather than measuring a newly loaded,
+            // still-unattached secondary view against an already laid-out primary column.
+            XCTestExpectation *settled=[self expectationWithDescription:@"Column transition completed"];
+            id<UIViewControllerTransitionCoordinator> transition=workspace.transitionCoordinator;
+            BOOL scheduled=transition && [transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { [settled fulfill]; }];
+            if (!scheduled) dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
+            [self waitForExpectations:@[settled] timeout:3];
+            XCTNSPredicateExpectation *attached=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return canvas.view.window == workspace.view.window && canvas.view.window != nil; }] object:canvas];
+            XCTAssertEqual([XCTWaiter waitForExpectations:@[attached] timeout:3],XCTWaiterResultCompleted,@"Canvas must be attached before comparing column geometry");
+            [workspace.view.window layoutIfNeeded];[workspace.view layoutIfNeeded];[canvas.view layoutIfNeeded];
+            NSLog(@"SPLIT_GEOMETRY size=%@ horizontal=%ld collapsed=%d mode=%ld primaryWidth=%.1f palette=%@ canvas=%@",NSStringFromCGSize(value.CGSizeValue),(long)workspace.traitCollection.horizontalSizeClass,workspace.collapsed,(long)workspace.displayMode,workspace.primaryColumnWidth,NSStringFromCGRect([palette.view convertRect:palette.view.bounds toView:workspace.view]),NSStringFromCGRect([canvas.view convertRect:canvas.view.bounds toView:workspace.view]));
             ColorDetectView *viewport=(ColorDetectView *)TCLayoutView(canvas.view,@"photoViewport");
             [viewport layoutIfNeeded];
             XCTAssertGreaterThan(viewport.bounds.size.width,44);

@@ -29,7 +29,7 @@
     UILabel *message = [UILabel new];
     message.numberOfLines = 0;
     message.textAlignment = NSTextAlignmentCenter;
-    message.text = NSLocalizedString(@"Choose a photo or use the camera. Your palette stays beside the canvas as you explore colors.", nil);
+    message.text = NSLocalizedString(@"Choose a photo or use the camera. Save colors to build your palette.", nil);
     message.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle2];
     message.adjustsFontForContentSizeCategory = YES;
     message.textColor = UIColor.secondaryLabelColor;
@@ -73,16 +73,33 @@
     canvas.navigationItem.rightBarButtonItem = sources;
 }
 - (void)showPalette { [self showColumn:UISplitViewControllerColumnPrimary]; }
+- (void)showCurrentCanvas { if (self.hasCanvas) [self showColumn:UISplitViewControllerColumnSecondary]; }
 - (UIViewController *)sourcePresenterForPalette:(ColorMainViewController *)palette { return self; }
+- (UIBarButtonItem *)sourceAnchorForPalette:(ColorMainViewController *)palette { return self.canvasNavigation.topViewController.navigationItem.rightBarButtonItem; }
 - (void)palette:(ColorMainViewController *)palette showCanvas:(UIViewController *)canvas {
     [self configureCanvasNavigation:canvas];
     self.hasCanvas = YES;
+    UIBarButtonItem *returnToCanvas = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"rectangle"] style:UIBarButtonItemStylePlain target:self action:@selector(showCurrentCanvas)];
+    returnToCanvas.accessibilityLabel = NSLocalizedString(@"Color Canvas", nil);
+    returnToCanvas.accessibilityIdentifier = @"workspace.canvas";
+    self.palette.navigationItem.leftBarButtonItem = returnToCanvas;
     [self.canvasNavigation setViewControllers:@[canvas] animated:NO];
     [self showColumn:UISplitViewControllerColumnSecondary];
 }
 - (void)palette:(ColorMainViewController *)palette sourceFlowActive:(BOOL)active {
     UIViewController *canvas = self.canvasNavigation.topViewController;
     if ([canvas isKindOfClass:ColorRealTimeViewController.class]) ((ColorRealTimeViewController *)canvas).sourceFlowActive = active;
+}
+- (void)palette:(ColorMainViewController *)palette loadingPhoto:(BOOL)loading {
+    UIViewController *canvas = self.canvasNavigation.topViewController;
+    if (loading) {
+        UIActivityIndicatorView *activity = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        activity.accessibilityIdentifier = @"workspace.loading";
+        activity.isAccessibilityElement = YES;
+        activity.accessibilityLabel = NSLocalizedString(@"Opening Photo", nil);
+        [activity startAnimating];
+        canvas.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:activity];
+    } else [self configureCanvasNavigation:canvas];
 }
 - (void)palette:(ColorMainViewController *)palette previewSavedColor:(NSString *)hex {
     // A palette preview never replaces the current photo or its selected pixel/zoom state.
