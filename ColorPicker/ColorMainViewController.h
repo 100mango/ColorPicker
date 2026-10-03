@@ -8,6 +8,18 @@
 
 #import <UIKit/UIKit.h>
 
-@interface ColorMainViewController : UIViewController
+@class ColorMainViewController;
+@protocol TCColorWorkspaceDelegate <NSObject>
+- (UIViewController *)sourcePresenterForPalette:(ColorMainViewController *)palette;
+- (void)palette:(ColorMainViewController *)palette showCanvas:(UIViewController *)canvas;
+- (void)palette:(ColorMainViewController *)palette sourceFlowActive:(BOOL)active;
+- (void)palette:(ColorMainViewController *)palette previewSavedColor:(NSString *)hex;
+@end
 
+@interface ColorMainViewController : UIViewController
+@property (nonatomic, weak) id<TCColorWorkspaceDelegate> workspaceDelegate;
+- (void)choosePhoto;
+- (void)takePhoto;
+- (void)openLiveColor;
+- (void)openPrivacyPolicy;
 @end

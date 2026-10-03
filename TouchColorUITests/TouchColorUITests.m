@@ -6,25 +6,11 @@
 @end
 @implementation TouchColorUITests
 - (void)emitScreenshot:(NSString *)name {
-    // Log at most two synthetic-fixture JPEGs, from the compact iPhone only.
-    if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone) return;
-    CGSize displaySize=UIScreen.mainScreen.bounds.size;
-    if (MIN(displaySize.width,displaySize.height)>400) return;
-    NSString *marker=[NSTemporaryDirectory() stringByAppendingPathComponent:[name stringByAppendingString:@".logged"]];
-    if ([NSFileManager.defaultManager fileExistsAtPath:marker]) return;
-    NSData *data=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
-    XCTAssertGreaterThan(data.length,0);
-    XCTAssertLessThanOrEqual(data.length,500*1024);
-    if (data.length > 500*1024) return;
-    [@"logged" writeToFile:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    NSString *encoded=[data base64EncodedStringWithOptions:0];
-    printf("SCREENSHOT_BEGIN:%s\n",name.UTF8String);
-    for (NSUInteger offset=0;offset<encoded.length;offset+=4096) {
-        NSString *chunk=[encoded substringWithRange:NSMakeRange(offset,MIN(4096,encoded.length-offset))];
-        printf("%s\n",chunk.UTF8String);
-    }
-    printf("SCREENSHOT_END:%s\n",name.UTF8String);
-    fflush(stdout);
+    if (![name isEqualToString:@"touchcolor-history-large-text"] || UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone || MIN(UIScreen.mainScreen.bounds.size.width,UIScreen.mainScreen.bounds.size.height)>400) return;
+    NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+    XCTAssertLessThanOrEqual(bytes.length,500*1024);
+    XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
+    image.name=name;image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
 }
 - (void)setUp {
     [super setUp];

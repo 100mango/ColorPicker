@@ -38,9 +38,19 @@
     UIButton *sample = [UIButton buttonWithType:UIButtonTypeSystem];
     [sample setTitle:NSLocalizedString(@"Sample Center", nil) forState:UIControlStateNormal];
     sample.accessibilityIdentifier = @"sampleCenter";
+    sample.pointerInteractionEnabled = YES;
+    sample.titleLabel.numberOfLines = 0;
+    sample.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    sample.titleLabel.adjustsFontForContentSizeCategory = YES;
+    [sample setContentCompressionResistancePriority:999 forAxis:UILayoutConstraintAxisVertical];
     [sample addTarget:self action:@selector(sampleCenter) forControlEvents:UIControlEventTouchUpInside];
     self.saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.saveButton.configuration = UIButtonConfiguration.filledButtonConfiguration;
+    UIButtonConfiguration *saveConfiguration = UIButtonConfiguration.filledButtonConfiguration;
+    saveConfiguration.titleLineBreakMode = NSLineBreakByWordWrapping;
+    self.saveButton.configuration = saveConfiguration;
+    self.saveButton.titleLabel.numberOfLines = 0;
+    self.saveButton.pointerInteractionEnabled = YES;
+    [self.saveButton setContentCompressionResistancePriority:999 forAxis:UILayoutConstraintAxisVertical];
     [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
     self.saveButton.accessibilityIdentifier = @"saveColor";
     self.saveButton.enabled = NO;
@@ -70,7 +80,7 @@
     [self.view addSubview:controls];
     [controls addSubview:panel];
     NSLayoutConstraint *naturalHeight = [controls.heightAnchor constraintEqualToAnchor:panel.heightAnchor constant:16];
-    naturalHeight.priority = UILayoutPriorityDefaultHigh;
+    naturalHeight.priority = UILayoutPriorityDefaultLow;
     naturalHeight.active = YES;
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
@@ -112,5 +122,45 @@
         [self.saveButton setTitle:NSLocalizedString(@"Saved", nil) forState:UIControlStateNormal];
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil));
     }
+}
+- (BOOL)canBecomeFirstResponder { return YES; }
+- (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; [self becomeFirstResponder]; }
+- (NSArray<UIKeyCommand *> *)keyCommands {
+    if (self.presentedViewController || self.splitViewController.presentedViewController) return @[];
+    NSMutableArray *commands = [NSMutableArray new];
+    NSArray *inputs = @[@"s", @" ", @"+", @"-", @"0", UIKeyInputLeftArrow, UIKeyInputRightArrow, UIKeyInputUpArrow, UIKeyInputDownArrow];
+    NSArray *actions = @[@"saveColor", @"sampleCenter", @"zoomIn", @"zoomOut", @"resetZoom", @"movePixel:", @"movePixel:", @"movePixel:", @"movePixel:"];
+    NSArray *titles = @[NSLocalizedString(@"Save Color", nil), NSLocalizedString(@"Sample Center", nil), NSLocalizedString(@"Zoom In", nil), NSLocalizedString(@"Zoom Out", nil), NSLocalizedString(@"Actual Fit", nil)];
+    for (NSUInteger i = 0; i < inputs.count; i++) {
+        UIKeyCommand *command = [UIKeyCommand keyCommandWithInput:inputs[i] modifierFlags:(i == 0 || i == 4) ? UIKeyModifierCommand : 0 action:NSSelectorFromString(actions[i])];
+        command.discoverabilityTitle = i < titles.count ? titles[i] : NSLocalizedString(@"Move Selected Pixel", nil);
+        if (@available(iOS 15.0, *)) command.wantsPriorityOverSystemBehavior = i >= 5;
+        [commands addObject:command];
+    }
+    return commands;
+}
+- (BOOL)canPerformAction:(SEL)action withSender:(id)sender {
+    if (action == @selector(saveColor)) return self.saveButton.enabled && !self.presentedViewController && !self.splitViewController.presentedViewController;
+    return [super canPerformAction:action withSender:sender];
+}
+- (void)zoomIn { [self.colorDetectView setZoomScale:MIN(100,self.colorDetectView.zoomScale * 2) animated:NO]; }
+- (void)zoomOut { [self.colorDetectView setZoomScale:MAX(1,self.colorDetectView.zoomScale / 2) animated:NO]; }
+- (void)resetZoom { [self.colorDetectView setZoomScale:1 animated:NO]; }
+- (void)movePixel:(UIKeyCommand *)command {
+    ColorDetectView *canvas = self.colorDetectView;
+    if (!canvas.hasSelectedPoint) { [canvas sampleVisibleCenter]; return; }
+    CGSize pixels = CGSizeMake(CGImageGetWidth(self.image.CGImage),CGImageGetHeight(self.image.CGImage));
+    if (self.image.imageOrientation == UIImageOrientationLeft || self.image.imageOrientation == UIImageOrientationRight || self.image.imageOrientation == UIImageOrientationLeftMirrored || self.image.imageOrientation == UIImageOrientationRightMirrored) pixels = CGSizeMake(pixels.height,pixels.width);
+    if (pixels.width <= 0 || pixels.height <= 0) return;
+    CGPoint point = canvas.selectedNormalizedPoint;
+    if ([command.input isEqualToString:UIKeyInputLeftArrow]) point.x -= 1 / pixels.width;
+    if ([command.input isEqualToString:UIKeyInputRightArrow]) point.x += 1 / pixels.width;
+    if ([command.input isEqualToString:UIKeyInputUpArrow]) point.y -= 1 / pixels.height;
+    if ([command.input isEqualToString:UIKeyInputDownArrow]) point.y += 1 / pixels.height;
+    point.x = MAX(0,MIN(1 - 0.5 / pixels.width,point.x));
+    point.y = MAX(0,MIN(1 - 0.5 / pixels.height,point.y));
+    [canvas sampleAtImagePoint:CGPointMake(point.x * canvas.imageView.bounds.size.width,point.y * canvas.imageView.bounds.size.height)];
+    CGPoint selected = [canvas.imageView convertPoint:CGPointMake(point.x * canvas.imageView.bounds.size.width,point.y * canvas.imageView.bounds.size.height) toView:canvas];
+    [canvas scrollRectToVisible:CGRectMake(selected.x-22,selected.y-22,44,44) animated:NO];
 }
 @end

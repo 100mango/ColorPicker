@@ -1,7 +1,7 @@
-name: iOS 27 compatibility
+name: Native iPad and iPhone compatibility
 on:
   push:
-    branches: [codex/ios-modernization]
+    branches: [codex/native-ipad]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +11,7 @@ concurrency:
 jobs:
   compatibility:
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 85
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/ios-modernization
+          test "$GITHUB_REF" = refs/heads/codex/native-ipad
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -66,8 +66,8 @@ jobs:
           app=Path('build/device/Build/Products/Release-iphoneos/TouchColor.app')
           assert (app/'TouchColor').is_file()
           metadata=plistlib.loads((app/'Info.plist').read_bytes())
-          assert metadata['UIDeviceFamily']==[1], metadata['UIDeviceFamily']
-          print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'historical iPhone-only'}))
+          assert metadata['UIDeviceFamily']==[1,2], metadata['UIDeviceFamily']
+          print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'native iPhone and iPad'}))
           directory=app/'Frameworks'
           entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
           print(json.dumps({'app':'TouchColor.app','embedded_framework_directory_entries':entries}))
@@ -120,6 +120,27 @@ jobs:
         if: always()
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh iPhoneLarge shutdown
+      - name: Warm up native iPad simulator
+        id: warm-ipad
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPadLarge prepare
+      - name: Native iPad unit and constrained-window layout tests
+        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPadLarge TouchColorTests
+      - name: Native iPad canvas palette keyboard and lifecycle UI tests
+        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
+        timeout-minutes: 16
+        run: bash scripts/test_simulators.sh iPadLarge TouchColorUITests
+      - name: Shut down iPad simulator
+        if: always()
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh iPadLarge shutdown
+      - name: Export two bounded synthetic regression screenshots
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/export_test_screenshots.py
       - name: Always report test summaries and simulator diagnostics
         if: always()
         run: |

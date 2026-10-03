@@ -26,15 +26,15 @@ def configlist(name, settings):
         configs.append(add(name+configuration,'XCBuildConfiguration',name=configuration,buildSettings=values))
     return add(name+'configs','XCConfigurationList', buildConfigurations=configs, defaultConfigurationIsVisible=0,defaultConfigurationName='Release')
 
-sources=['main.m','ColorAppDelegate.m','ColorSceneDelegate.m','ColorMainViewController.m','ColorViewController.m','ColorRealTimeViewController.m','ColorDetectView.m','TCColorUtilities.m','TCPrivacyViewController.m']
+sources=['main.m','ColorAppDelegate.m','ColorSceneDelegate.m','ColorMainViewController.m','ColorViewController.m','ColorRealTimeViewController.m','ColorDetectView.m','TCColorUtilities.m','TCPrivacyViewController.m','TCWorkspaceViewController.m']
 headers=[p.replace('.m','.h') for p in sources if p!='main.m']
 apprefs=[ref('ColorPicker/'+p,filetype(p)) for p in sources+headers]
 resources=[ref('ColorPicker/Images.xcassets','folder.assetcatalog'),ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')]
 for filename in ['Localizable.strings','InfoPlist.strings']:
     children=[add('loc:'+lang+filename, 'PBXFileReference', lastKnownFileType='text.plist.strings', name=lang, path='ColorPicker/'+lang+'.lproj/'+filename, sourceTree='<group>') for lang in ['en','zh-Hans']]
     resources.append(add('variant:'+filename,'PBXVariantGroup',children=children,name=filename,sourceTree='<group>'))
-testrefs=[ref('ColorPickerTests/ColorPickerTests.m','sourcecode.c.objc')]
-uirefs=[ref('TouchColorUITests/TouchColorUITests.m','sourcecode.c.objc')]
+testrefs=[ref('ColorPickerTests/'+name,'sourcecode.c.objc') for name in ['ColorPickerTests.m','TCAdaptiveLayoutTests.m','TCWorkspaceTests.m']]
+uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m']]
 products=[]
 projectid=uid('Project')
 appTarget=uid('TouchColor')
@@ -56,7 +56,7 @@ for name,kind,refs in [('TouchColor','application',apprefs[:len(sources)]),('Tou
     targets.append(add(name,'PBXNativeTarget',buildConfigurationList=configlist(name,settings),buildPhases=phases,buildRules=[],dependencies=dependencies,name=name,productName=name,productReference=product,productType='com.apple.product-type.'+kind))
 productgroup=add('Products','PBXGroup',children=products,name='Products',sourceTree='<group>')
 group=add('MainGroup','PBXGroup',children=apprefs+resources+testrefs+uirefs+[ref('ColorPicker/TouchColor-Info.plist','text.plist.xml'), productgroup],sourceTree='<group>')
-settings=dict(ALWAYS_SEARCH_USER_PATHS='NO',CLANG_ENABLE_MODULES='YES',CLANG_ENABLE_OBJC_ARC='YES',CLANG_WARN_BOOL_CONVERSION='YES',CLANG_WARN_CONSTANT_CONVERSION='YES',CLANG_WARN_ENUM_CONVERSION='YES',CLANG_WARN_INT_CONVERSION='YES',CLANG_WARN_OBJC_ROOT_CLASS='YES_ERROR',GCC_C_LANGUAGE_STANDARD='gnu17',GCC_WARN_ABOUT_RETURN_TYPE='YES_ERROR',GCC_WARN_UNINITIALIZED_AUTOS='YES',GCC_WARN_UNUSED_VARIABLE='YES',IPHONEOS_DEPLOYMENT_TARGET='15.0',SDKROOT='iphoneos',TARGETED_DEVICE_FAMILY='1',SUPPORTED_PLATFORMS='iphoneos iphonesimulator',SUPPORTS_MACCATALYST='NO',ENABLE_USER_SCRIPT_SANDBOXING='YES')
+settings=dict(ALWAYS_SEARCH_USER_PATHS='NO',CLANG_ENABLE_MODULES='YES',CLANG_ENABLE_OBJC_ARC='YES',CLANG_WARN_BOOL_CONVERSION='YES',CLANG_WARN_CONSTANT_CONVERSION='YES',CLANG_WARN_ENUM_CONVERSION='YES',CLANG_WARN_INT_CONVERSION='YES',CLANG_WARN_OBJC_ROOT_CLASS='YES_ERROR',GCC_C_LANGUAGE_STANDARD='gnu17',GCC_WARN_ABOUT_RETURN_TYPE='YES_ERROR',GCC_WARN_UNINITIALIZED_AUTOS='YES',GCC_WARN_UNUSED_VARIABLE='YES',IPHONEOS_DEPLOYMENT_TARGET='15.0',SDKROOT='iphoneos',TARGETED_DEVICE_FAMILY='1,2',SUPPORTED_PLATFORMS='iphoneos iphonesimulator',SUPPORTS_MACCATALYST='NO',ENABLE_USER_SCRIPT_SANDBOXING='YES')
 add('Project','PBXProject',attributes=dict(LastUpgradeCheck='2700',TargetAttributes={targets[1]:dict(TestTargetID=appTarget),targets[2]:dict(TestTargetID=appTarget)}),buildConfigurationList=configlist('Project',settings),compatibilityVersion='Xcode 14.0',developmentRegion='en',hasScannedForEncodings=0,knownRegions=['en','zh-Hans','Base'],mainGroup=group,productRefGroup=productgroup,projectDirPath='',projectRoot='',targets=targets)
 def serialize(value, level=0):
     indent='\t'*level

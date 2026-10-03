@@ -1,7 +1,7 @@
 #import "ColorDetectView.h"
 #import "TCColorUtilities.h"
 
-@interface ColorDetectView ()
+@interface ColorDetectView () <UIPointerInteractionDelegate>
 @property (nonatomic, strong, readwrite) UIImageView *imageView;
 @property (nonatomic, strong) UIImageView *marker;
 @property (nonatomic) CGSize previousSize;
@@ -27,6 +27,7 @@
         self.imageView.accessibilityLabel = NSLocalizedString(@"Photo for sampling", nil);
         self.imageView.accessibilityHint = NSLocalizedString(@"Use Sample Center, or tap and drag on the photo to pick a color. Pinch or use Zoom to magnify.", nil);
         [self addSubview:self.imageView];
+        [self.imageView addInteraction:[[UIPointerInteraction alloc] initWithDelegate:self]];
         [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(sampleGesture:)]];
         UILongPressGestureRecognizer *drag = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(sampleGesture:)];
         drag.minimumPressDuration = 0.15;
@@ -91,5 +92,11 @@
 - (void)sampleGesture:(UIGestureRecognizer *)gesture {
     if (gesture.state != UIGestureRecognizerStateEnded && gesture.state != UIGestureRecognizerStateBegan && gesture.state != UIGestureRecognizerStateChanged) return;
     [self sampleAtImagePoint:[gesture locationInView:self.imageView]];
+}
+- (UIPointerStyle *)pointerInteraction:(UIPointerInteraction *)interaction styleForRegion:(UIPointerRegion *)region {
+    // A precise crosshair indicates the same pixel selected by clicking; hover never changes a saved selection.
+    UIBezierPath *path = [UIBezierPath bezierPathWithRect:CGRectMake(-1,-10,2,20)];
+    [path appendPath:[UIBezierPath bezierPathWithRect:CGRectMake(-10,-1,20,2)]];
+    return [UIPointerStyle styleWithShape:[UIPointerShape shapeWithPath:path] constrainedAxes:UIAxisNeither];
 }
 @end
