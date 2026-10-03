@@ -12,6 +12,10 @@
 @property (nonatomic, copy) NSArray<NSString *> *colors;
 @property (nonatomic, strong) UIActivityIndicatorView *loading;
 @property (nonatomic) NSUInteger selectionGeneration;
+#if DEBUG
+@property (nonatomic, strong) UILabel *permissionStatus;
+@property (nonatomic) NSUInteger permissionActivations;
+#endif
 @end
 @implementation ColorMainViewController
 - (void)viewDidLoad {
@@ -76,6 +80,14 @@
         [self.tableView.bottomAnchor constraintEqualToAnchor:sourceControls.topAnchor constant:-8]
     ]];
 #if DEBUG
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-camera-permission"]) {
+        self.permissionStatus = [UILabel new];
+        self.permissionStatus.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+        self.permissionStatus.accessibilityIdentifier = @"cameraPermissionStatus";
+        self.navigationItem.titleView = self.permissionStatus;
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(permissionProbeSceneActivated:) name:UISceneDidActivateNotification object:nil];
+        [self updatePermissionProbe];
+    }
     // Deterministic test fixture: never compiled into Release/App Store builds.
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-reset"]) {
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"colorArray"];
@@ -158,7 +170,7 @@
 #if DEBUG
     // Simulator-only test route uses the real TCC API/dialog, then stops before camera presentation.
     BOOL permissionProbe = [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-camera-permission"];
-    if (permissionProbe) available = YES;
+    if (permissionProbe) { available = YES; [self updatePermissionProbe]; }
 #endif
     TCCameraAccess access = TCCameraAccessForStatus([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo], available);
     if (access == TCCameraAccessUnavailable) {
@@ -172,7 +184,7 @@
         }];
     } else {
 #if DEBUG
-        if (permissionProbe) { [self showMessage:@"CAMERA_PERMISSION_ALLOWED"]; return; }
+        if (permissionProbe) return;
 #endif
         UIImagePickerController *picker = [UIImagePickerController new];
         picker.sourceType = UIImagePickerControllerSourceTypeCamera;
@@ -243,6 +255,20 @@
     if (style == UITableViewCellEditingStyleDelete && [self.store removeColorAtIndex:indexPath.row]) [self reloadHistory];
 }
 #if DEBUG
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+- (void)updatePermissionProbe {
+    AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+    NSString *value = status == AVAuthorizationStatusAuthorized ? @"allowed" : status == AVAuthorizationStatusDenied ? @"denied" : status == AVAuthorizationStatusRestricted ? @"restricted" : @"not determined";
+    self.permissionStatus.text = [@"Camera: " stringByAppendingString:value];
+    self.permissionStatus.accessibilityValue = [NSString stringWithFormat:@"%lu",(unsigned long)self.permissionActivations];
+}
+- (void)permissionProbeSceneActivated:(NSNotification *)notification {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (notification.object != self.view.window.windowScene) return;
+        self.permissionActivations++;
+        [self updatePermissionProbe];
+    });
+}
 - (void)openFixture {
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
     format.scale = 1;
