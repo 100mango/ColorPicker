@@ -2,6 +2,9 @@ import SwiftUI
 import PhotosUI
 import ColorDomain
 import ColorRaster
+#if DEBUG
+import OSLog
+#endif
 
 struct WatchHome: View {
     @ObservedObject var palette: WatchPalette
@@ -45,10 +48,29 @@ struct WatchColorEditor: View {
     @ObservedObject var transfer: WatchTransfer
     @State private var channel = 0
     @State private var sendSelection: RGBColor?
+    @State private var editorIsVisible = false
+    @State private var editorID = UUID()
     @FocusState private var crownFocused: Bool
     private var component: Binding<Double> {
         Binding(get: { channel == 0 ? palette.red : channel == 1 ? palette.green : palette.blue },
-                set: { value in if channel == 0 { palette.red = value } else if channel == 1 { palette.green = value } else { palette.blue = value } })
+                set: { value in
+                    // A retained navigation destination must not keep writing its
+                    // Crown binding after another editor becomes visible.
+                    guard editorIsVisible else {
+                        #if DEBUG
+                        WatchEditorDiagnostics.writeback(editorID, changed: false, visible: false)
+                        #endif
+                        return
+                    }
+                    #if DEBUG
+                    let before = channel == 0 ? palette.red : channel == 1 ? palette.green : palette.blue
+                    #endif
+                    palette.setComponent(value, channel: channel)
+                    #if DEBUG
+                    let after = channel == 0 ? palette.red : channel == 1 ? palette.green : palette.blue
+                    WatchEditorDiagnostics.writeback(editorID, changed: before != after, visible: true)
+                    #endif
+                })
     }
     var body: some View {
         ScrollView {
@@ -77,8 +99,24 @@ struct WatchColorEditor: View {
                 Text(transfer.status).font(.caption2).accessibilityIdentifier("watch.transfer.status")
             }.padding(.horizontal, 8)
         }
-        .onAppear { crownFocused = true }
-        .onChange(of: channel) { _ in crownFocused = true }
+        .onAppear {
+            editorIsVisible = true; crownFocused = true
+            #if DEBUG
+            WatchEditorDiagnostics.appeared(editorID)
+            #endif
+        }
+        .onDisappear {
+            editorIsVisible = false; crownFocused = false
+            #if DEBUG
+            WatchEditorDiagnostics.disappeared(editorID)
+            #endif
+        }
+        .onChange(of: channel) { _ in if editorIsVisible { crownFocused = true } }
+        .onChange(of: crownFocused) { focused in
+            #if DEBUG
+            WatchEditorDiagnostics.focus(editorID, focused: focused, visible: editorIsVisible)
+            #endif
+        }
         .navigationTitle("Create Color")
         .confirmationDialog("Send this color to iPhone for review?",
             isPresented: Binding(get: { sendSelection != nil }, set: { if !$0 { sendSelection = nil } }),
@@ -88,6 +126,23 @@ struct WatchColorEditor: View {
         } message: { color in Text(color.hex) }
     }
 }
+#if DEBUG
+/// Bounded local lifecycle diagnostics for the actual nested-navigation/Crown
+/// regression. No values, photos or palette contents are logged.
+@MainActor private enum WatchEditorDiagnostics {
+    private static var visibleEditors = Set<UUID>()
+    private static var events = 0
+    private static let logger = Logger(subsystem: "com.mango.touchColor.WatchDiagnostics", category: "editor")
+    private static func emit(_ kind: String, _ id: UUID, focused: Bool = false, visible: Bool) {
+        guard events < 80 else { return }; events += 1
+        logger.notice("WATCH_EDITOR \(kind, privacy: .public) id=\(id.uuidString, privacy: .public) visible=\(visible) focused=\(focused) active=\(visibleEditors.count)")
+    }
+    static func appeared(_ id: UUID) { visibleEditors.insert(id); emit("appear", id, visible: true) }
+    static func disappeared(_ id: UUID) { visibleEditors.remove(id); emit("disappear", id, visible: false) }
+    static func focus(_ id: UUID, focused: Bool, visible: Bool) { emit("focus", id, focused: focused, visible: visible) }
+    static func writeback(_ id: UUID, changed: Bool, visible: Bool) { emit(changed ? "component changed" : "component unchanged", id, visible: visible) }
+}
+#endif
 struct WatchTransferView: View {
     @ObservedObject var transfer: WatchTransfer
     var body: some View {

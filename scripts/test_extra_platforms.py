@@ -125,6 +125,7 @@ try:
     report['binary_platform_minimum']=summary;print('\n'.join(summary),flush=True)
     text=check_output(['strings',str(binary)],text=True,timeout=30)
     assert 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
+    assert 'WATCH_EDITOR' not in text and 'com.mango.touchColor.WatchDiagnostics' not in text, 'Debug Watch lifecycle diagnostics leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
     if kind=='vision':
         runner_info=Path('build/vision-tests/Build/Products/Debug-xrsimulator/TouchColorVisionUITests-Runner.app/Info.plist')
@@ -195,8 +196,16 @@ try:
         selected=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/'+method for method in VISION_SUITES[suite]]
         print('VISION_UI_EXACT_SCOPE',json.dumps(report['ui_scope']),flush=True)
         run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip,1200)
+    elif kind=='watch':
+        # Preserve completed hosted evidence independently. The observed49mm cold
+        # install/hosted startup consumed much of a shared840s command, so later UI
+        # cases never ran. Each phase remains bounded on the same fresh VM; the
+        # outer25-minute job and per-case120/240s allowances are unchanged.
+        report['xctest_summary_scope']='hosted tests only; watch-ui-summary.json contains the separate UI result'
+        run(test_common+test_arguments+['-resultBundlePath','build/watch-tests.xcresult','-only-testing:TouchColorWatchTests'],480)
+        run(test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests'],840)
     else:
-        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,840 if kind=='watch' else 660)
+        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
     report['tests']='passed'
     if photo_seed_failed: raise RuntimeError('Photos seeding timed out or failed; other native tests executed, real Photos import remains unqualified')
     report['result']='passed'
@@ -204,6 +213,17 @@ except Exception as error:
     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
+    if kind=='watch' and device and not report.get('cleanup_unconfirmed'):
+        try:
+            lifecycle=run_captured(['xcrun','simctl','spawn',device['udid'],'log','show','--last','20m','--style','compact',
+                '--predicate','subsystem == "com.mango.touchColor.WatchDiagnostics"'],text=True,timeout=15)
+            lines=[line[:400] for line in lifecycle.stdout.splitlines() if 'WATCH_EDITOR' in line]
+            retained=(lines[:16]+lines[-64:]) if len(lines)>80 else lines
+            report['watch_editor_lifecycle']={'exit':lifecycle.returncode,'matched_events':len(lines),'events':retained}
+            print('WATCH_EDITOR_LIFECYCLE',json.dumps(report['watch_editor_lifecycle']),flush=True)
+        except Exception as error:
+            report['watch_editor_lifecycle']={'error':type(error).__name__}
+            if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     if kind=='vision' and not report.get('cleanup_unconfirmed'): diagnose('after platform attempt')
     if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')

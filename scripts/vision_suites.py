@@ -11,5 +11,6 @@ SUITES = {
         'testNativeExportSaveAndReopenActualPNG',
         'testNativePaletteExportReopensActualChangedSelectionAndDuplicates',
         'testNativeFileAndPhotosCancelRepeatedly',
+        'testRealFilesPickerSelectsExportedPNG',
     ],
 }

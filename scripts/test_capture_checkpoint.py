@@ -76,5 +76,34 @@ class CaptureCheckpointTests(unittest.TestCase):
         self.assertFalse((self.output/(self.identifier+'.jpeg')).exists())
         self.assertFalse((self.output/'manifest.json').exists())
 
+    def test_ack_is_absent_during_partial_write_then_complete_at_publication(self):
+        outcome = {'id': self.identifier, 'success': True, 'name': 'Native Vision synthetic atomic capture'}
+        snapshots = []
+        replace = checkpoint.os.replace
+        def partial_dump(value, stream):
+            encoded = json.dumps(value)
+            stream.write(encoded[:1]); stream.flush()
+            snapshots.append(self.ack.exists())
+            stream.write(encoded[1:])
+        def observe_publication(source, destination):
+            self.assertEqual(Path(source).parent, self.ack.parent)
+            self.assertFalse(self.ack.exists())
+            self.assertEqual(json.loads(Path(source).read_text()), outcome)
+            replace(source, destination)
+            self.assertEqual(json.loads(self.ack.read_text()), outcome)
+        with patch.object(checkpoint.json, 'dump', side_effect=partial_dump), \
+             patch.object(checkpoint.os, 'replace', side_effect=observe_publication):
+            checkpoint.publish_acknowledgement(self.ack, outcome)
+        self.assertEqual(snapshots, [False])
+        self.assertEqual(list(self.root.joinpath('tmp').glob('*.tmp')), [])
+
+    def test_failed_ack_write_preserves_previous_complete_value_and_cleans_partial(self):
+        original = {'success': False, 'error': 'synthetic previous result'}
+        self.ack.write_text(json.dumps(original))
+        with self.assertRaises(TypeError):
+            checkpoint.publish_acknowledgement(self.ack, {'invalid': object()})
+        self.assertEqual(json.loads(self.ack.read_text()), original)
+        self.assertEqual(list(self.root.joinpath('tmp').glob('*.tmp')), [])
+
 
 if __name__=='__main__': unittest.main()

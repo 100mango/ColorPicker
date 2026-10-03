@@ -223,6 +223,10 @@ jobs:
             xcrun xcresulttool get test-results summary --path build/vision-ui.xcresult | tee build/evidence/vision-ui-summary.json || true
             xcrun xcresulttool export attachments --path build/vision-ui.xcresult --output-path build/evidence/vision-ui-screenshots || true
           fi
+          if test -d build/watch-ui.xcresult; then
+            xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
+            xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
+          fi
           for platform in vision watch tv; do
             if test -d "build/$platform-tests.xcresult"; then
               xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true

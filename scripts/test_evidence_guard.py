@@ -25,6 +25,12 @@ def valid(root):
     name = str(uuid.uuid4()).upper()+'.txt'
     (directory/name).write_text('Synthetic accessibility issue, no user data')
     (directory/'manifest.json').write_text(json.dumps([{'attachments': [{'exportedFileName': name, 'suggestedHumanReadableName': 'Native Mac accessibility issue_0.txt'}]}]))
+def watch_ui(root):
+    (root/'watch-ui-summary.json').write_text('{}')
+    directory=root/'watch-ui-screenshots'; directory.mkdir()
+    name=str(uuid.uuid4()).upper()+'.png'
+    (directory/name).write_bytes(b'synthetic image bytes')
+    (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native Watch synthetic UI image'}]}]))
 def unknown(root): (root/'unapproved.txt').write_text('synthetic')
 def oversize(root): (root/'architecture.txt').write_bytes(b'x'*5_000_001)
 def aggregate(root):
@@ -49,6 +55,7 @@ def oversize_text(root):
     valid(root)
     next((root/'screenshots').glob('*.txt')).write_bytes(b'x'*256_001)
 check(valid, True)
+check(watch_ui, True)
 check(lambda root: None, False)
 for prepare in [unknown, oversize, symlink, directory_link, hardlink, bad_manifest, unapproved_text, oversize_text, orphan_text]: check(prepare, False)
 check(aggregate, False, 5000)

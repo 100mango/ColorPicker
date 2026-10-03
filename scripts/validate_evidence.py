@@ -6,9 +6,9 @@ root=Path(sys.argv[1] if len(sys.argv)>1 else 'build/evidence')
 maximum_total=int(sys.argv[2]) if len(sys.argv)>2 else 8_000_000
 assert 0<maximum_total<=8_000_000, 'Invalid evidence limit'
 assert root.is_dir() and not root.is_symlink(), 'Missing or symlink evidence root'
-allowed_root={'architecture.txt','accessibility-api.json','mac-sandbox-entitlements.json','mac-sandbox-post-entitlements.json','vision-ui-summary.json','mac-unit-summary.json','mac-ui-summary.json','mac-sandbox-summary.json','ios-equivalence-summary.json'}
+allowed_root={'architecture.txt','accessibility-api.json','mac-sandbox-entitlements.json','mac-sandbox-post-entitlements.json','vision-ui-summary.json','watch-ui-summary.json','mac-unit-summary.json','mac-ui-summary.json','mac-sandbox-summary.json','ios-equivalence-summary.json'}
 allowed_root.update(f'{p}-{suffix}.json' for p in ('vision','watch','tv') for suffix in ('summary','runtime'))
-allowed_dirs={'screenshots','vision-checkpoints','sandbox-screenshots','vision-ui-screenshots','vision-screenshots','watch-screenshots','tv-screenshots'}
+allowed_dirs={'screenshots','vision-checkpoints','sandbox-screenshots','vision-ui-screenshots','vision-screenshots','watch-screenshots','watch-ui-screenshots','tv-screenshots'}
 total=0;count=0
 text_files=set(); approved_text_files=set()
 for folder,dirs,files in os.walk(root,followlinks=False):

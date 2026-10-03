@@ -8,6 +8,33 @@ import ColorPaletteLegacy
 @testable import TouchColorWatch
 
 @MainActor final class WatchWorkspaceTests: XCTestCase {
+    func testCrownComponentWritebacksIgnoreIdenticalNonfiniteAndUnselectedValues() {
+        let suite = "TouchColor.watch-crown-writeback.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let palette = WatchPalette(defaults: defaults)
+        palette.select(RGBColor(hex: "#fe2238")!); palette.save(); palette.save()
+        var red: [Double] = [], green: [Double] = [], blue: [Double] = []
+        let tokens = [palette.$red.dropFirst().sink { red.append($0) },
+                      palette.$green.dropFirst().sink { green.append($0) },
+                      palette.$blue.dropFirst().sink { blue.append($0) }]
+        withExtendedLifetime(tokens) {
+            for _ in 0..<20 {
+                palette.setComponent(254, channel: 0)
+                palette.setComponent(34, channel: 1)
+                palette.setComponent(56, channel: 2)
+            }
+            palette.setComponent(.nan, channel: 0); palette.setComponent(.infinity, channel: 1)
+            palette.setComponent(123, channel: 3)
+            XCTAssertTrue(red.isEmpty && green.isEmpty && blue.isEmpty)
+            palette.setComponent(253, channel: 0); palette.setComponent(253, channel: 0)
+            XCTAssertEqual(red, [253]); XCTAssertTrue(green.isEmpty && blue.isEmpty)
+            XCTAssertEqual(palette.selected.hex, "#fd2238")
+            XCTAssertEqual(palette.colors.map(\.hex), ["#fe2238", "#fe2238"])
+            palette.setComponent(-1, channel: 1); palette.setComponent(256, channel: 2)
+            XCTAssertEqual(green, [0]); XCTAssertEqual(blue, [255])
+        }
+    }
     func testRepeatedEditCopySelectionDoesNotRepublishOrMutateSavedHistory() {
         let suite = "TouchColor.watch-copy-unit.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

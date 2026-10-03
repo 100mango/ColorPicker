@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
 """Capture a held test-owned simulator checkpoint through supported simctl APIs."""
-import json,subprocess,uuid
+import json,os,subprocess,uuid
 from pathlib import Path
 from bounded_process import run_captured, check_output
 
 _containers = {}
+
+def publish_acknowledgement(destination, outcome):
+    # XCTest treats existence as readiness. Publish a complete closed file with a
+    # same-directory rename, so it can never observe an empty/partial JSON write.
+    temporary = destination.with_name(destination.name + '.' + str(uuid.uuid4()) + '.tmp')
+    try:
+        with temporary.open('x', encoding='utf-8') as stream:
+            json.dump(outcome, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 def capture(device,runner_identifier,request_id,output):
     assert str(uuid.UUID(request_id)).upper()==request_id
@@ -48,5 +61,5 @@ def capture(device,runner_identifier,request_id,output):
         manifest.write_text(json.dumps(groups,indent=2)+'\n')
     except Exception as error:outcome['error']=str(error)
     finally:
-        ack.write_text(json.dumps(outcome))
+        publish_acknowledgement(ack, outcome)
     return outcome

@@ -128,6 +128,37 @@ final class VisionWorkflowTests: XCTestCase {
         print("VISION_JSON_REOPEN_VERIFIED: actual Copy values magenta, magenta, green")
         capture("Native Vision changed-color JSON export reopened with duplicates")
     }
+    func testRealFilesPickerSelectsExportedPNG() {
+        executionTimeAllowance = 360
+        paste(); app.buttons["image.export"].tap()
+        let filename = "TouchSelect-" + String(UUID().uuidString.prefix(6))
+        let field = app.textFields["DOCPicker.filenameTextField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 45), app.debugDescription)
+        field.tap()
+        if let value = field.value as? String, !value.isEmpty {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
+        }
+        field.typeText(filename)
+        let save = app.buttons["DOCPicker.actionButton"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10)); XCTAssertEqual(save.label, "Save"); save.tap()
+        XCTAssertTrue(app.buttons["export.reopen"].waitForExistence(timeout: 15), app.debugDescription)
+        // Leave a different selection before opening the genuine system picker.
+        // A cancelled or ineffective selection must not satisfy the import oracle.
+        app.buttons["sample.above"].tap(); hex("#00ff00")
+        app.buttons["image.open"].tap()
+        let picker = app.navigationBars["DOCSidebarView"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 45), app.debugDescription)
+        let savedFile = app.cells.matching(NSPredicate(format: "label CONTAINS %@", filename)).firstMatch
+        XCTAssertTrue(savedFile.waitForExistence(timeout: 30), app.debugDescription)
+        savedFile.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: picker)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 20), .completed, app.debugDescription)
+        hex("#ff00ff")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", filename)).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["sample.above"].tap(); hex("#00ff00")
+        print("VISION_FILES_SELECTION_VERIFIED: actual saved PNG selected in system Files and sampled")
+        capture("Native Vision actual Files picker selected exported PNG")
+    }
     func testChinesePasteAndPrecisionControls() {
         paste(); app.buttons["sample.above"].tap(); hex("#00ff00")
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
