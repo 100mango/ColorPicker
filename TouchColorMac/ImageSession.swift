@@ -36,7 +36,7 @@ import ColorPaletteLegacy
     func isCurrent(_ token: UInt64) -> Bool { generation.accepts(token) }
     func cancelImport() {
         generation.advance(); work.cancelAllOperations(); busy = false
-        notice = "Import cancelled. Your current image is unchanged."
+        notice = NSLocalizedString("Import cancelled. Your current image is unchanged.", comment: "Import status")
     }
     func report(_ error: Error, token: UInt64) {
         guard isCurrent(token) else { return }
@@ -91,7 +91,7 @@ import ColorPaletteLegacy
         do {
             let colors = try PaletteFile.decode(data)
             library.append(colors); busy = false
-            notice = "Imported \(colors.count) colors. Existing colors and duplicates were kept."
+            notice = String(format: NSLocalizedString("Imported %ld colors. Existing colors and duplicates were kept.", comment: "Import status"), colors.count)
         } catch { report(error, token: token) }
     }
     func exportPNG(to url: URL) {
@@ -102,7 +102,7 @@ import ColorPaletteLegacy
             do {
                 let data = try raster.pngData()
                 try data.write(to: url, options: .atomic)
-                Task { @MainActor [weak self] in self?.exporting = false; self?.notice = "Exported full-size PNG: \(url.lastPathComponent)" }
+                Task { @MainActor [weak self] in self?.exporting = false; self?.notice = String(format: NSLocalizedString("Exported full-size PNG: %@", comment: "Export status"), url.lastPathComponent) }
             } catch {
                 Task { @MainActor [weak self] in self?.exporting = false; self?.errorMessage = error.localizedDescription }
             }

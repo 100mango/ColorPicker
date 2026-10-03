@@ -22,7 +22,7 @@ struct PaletteSidebar: View {
                         Spacer(minLength: 0)
                         Menu {
                             Button("Copy Color") { library.copy(color) }
-                            Button("Delete Color", role: .destructive) { library.remove(at: index) }
+                            Button("Delete Color", role: .destructive) { library.remove(at: index) }.accessibilityIdentifier("palette.delete.\(index)")
                         } label: { Image(systemName: "ellipsis.circle") }
                             .menuStyle(.borderlessButton).frame(width: 24)
                             .accessibilityLabel("Actions for color \(index + 1)")

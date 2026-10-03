@@ -23,23 +23,31 @@ import UniformTypeIdentifiers
         app.launchArguments = ["--ui-test-reset"]; app.launch()
     }
     override func tearDownWithError() throws {
+        if testRun?.hasSucceeded == false {
+            let failure = XCTAttachment(screenshot: app.screenshot())
+            failure.name = "Native Mac UI failure state"; failure.lifetime = .keepAlways; add(failure)
+            print("NATIVE_UI_FAILURE_AX: \(app.debugDescription)")
+        }
         app.terminate(); try? FileManager.default.removeItem(at: fixture)
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
     }
     private func openFile(_ url: URL) {
         app.buttons["image.open"].click()
         app.typeKey("g", modifierFlags: [.command, .shift])
-        let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let field = app.textFields["PathTextField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
         field.typeText(url.path)
         app.typeKey(.return, modifierFlags: [])
-        app.typeKey(.return, modifierFlags: [])
+        let open = app.buttons["Open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 5), app.debugDescription)
+        open.click()
     }
     private func assertHex(_ expected: String) {
         let value = app.staticTexts["sample.hex"]
         XCTAssertTrue(value.waitForExistence(timeout: 8))
-        expectation(for: NSPredicate(format: "value == %@ OR label == %@", expected, expected), evaluatedWith: value)
-        waitForExpectations(timeout: 8)
+        let expectedValue = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ OR label == %@", expected, expected), object: value)
+        let outcome = XCTWaiter.wait(for: [expectedValue], timeout: 8)
+        XCTAssertEqual(outcome, .completed, "Expected \(expected), actual value \(String(describing: value.value)), label \(value.label). \(app.debugDescription)")
     }
     func testNativeFileSamplingZoomPalettePersistenceAndPrivacy() {
         openFile(fixture)
@@ -52,8 +60,14 @@ import UniformTypeIdentifiers
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
         app.buttons["sample.copy"].click()
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "#ff0000")
-        app.buttons["Zoom in"].click()
+        let unzoomedFrame = canvas.frame
+        app.buttons["sample.zoom.in"].click()
+        XCTAssertGreaterThan(canvas.frame.width, unzoomedFrame.width * 1.5)
         XCTAssertTrue(app.staticTexts["sample.zoom.value"].exists)
+        app.buttons["sample.center"].click(); assertHex("#ff00ff")
+        let window = app.windows.firstMatch
+        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
+        edge.click(forDuration: 0.2, thenDragTo: edge.withOffset(CGVector(dx: -120, dy: -60)))
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Mac sampled source and ordered palette"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["privacy.open"].click()
@@ -63,6 +77,54 @@ import UniformTypeIdentifiers
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
     }
+    private func saveFile(_ url: URL) {
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        let field = app.textFields["PathTextField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        field.typeText(url.path)
+        app.typeKey(.return, modifierFlags: [])
+        let save = app.buttons["Save"].firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
+        save.click()
+    }
+    func testNativePaletteAndImageExportReopenAndDelete() throws {
+        openFile(fixture); assertHex("#ff00ff")
+        app.buttons["sample.save"].click(); app.buttons["sample.save"].click()
+        let paletteURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-palette-\(UUID()).json")
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-image-\(UUID()).png")
+        defer { try? FileManager.default.removeItem(at: paletteURL); try? FileManager.default.removeItem(at: imageURL) }
+        app.buttons["palette.export"].click(); saveFile(paletteURL)
+        let stored = try JSONDecoder().decode([String].self, from: Data(contentsOf: paletteURL))
+        XCTAssertEqual(stored, ["#ff00ff", "#ff00ff"])
+        openFile(paletteURL)
+        let count = app.staticTexts["palette.count"]
+        expectation(for: NSPredicate(format: "value == '4' OR label == '4'"), evaluatedWith: count)
+        waitForExpectations(timeout: 5)
+        app.descendants(matching: .any).matching(identifier: "palette.actions.1").firstMatch.click()
+        app.menuItems["palette.delete.1"].click()
+        XCTAssertEqual(count.value as? String ?? count.label, "3")
+        app.buttons["image.export"].click(); saveFile(imageURL)
+        expectation(for: NSPredicate { _,_ in FileManager.default.fileExists(atPath: imageURL.path) }, evaluatedWith: nil)
+        waitForExpectations(timeout: 8)
+        openFile(imageURL); assertHex("#ff00ff")
+        let canvas = app.images["image.canvas"]
+        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).click(); assertHex("#ff0000")
+    }
+    func testSimplifiedChineseNativeSamplingFlowAndScreenshot() {
+        app.terminate()
+        app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
+        app.buttons["image.paste"].click(); assertHex("#ff00ff")
+        app.buttons["sample.save"].click()
+        XCTAssertTrue(app.staticTexts["调色板"].exists)
+        XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
+        app.buttons["sample.above"].click(); assertHex("#00ff00")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Native Mac Simplified Chinese sampling and palette"
+        shot.lifetime = .keepAlways; add(shot)
+    }
     func testPasteImageAndOpenCancelRetainSource() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
@@ -70,7 +132,7 @@ import UniformTypeIdentifiers
         app.buttons["image.open"].click()
         app.typeKey(.escape, modifierFlags: [])
         assertHex("#ff00ff")
-        app.buttons["Pixel above"].click(); assertHex("#00ff00")
-        app.buttons["Previous pixel"].click(); assertHex("#ff0000")
+        app.buttons["sample.above"].click(); assertHex("#00ff00")
+        app.buttons["sample.previous"].click(); assertHex("#ff0000")
     }
 }

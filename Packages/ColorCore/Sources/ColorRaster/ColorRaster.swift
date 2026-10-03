@@ -8,10 +8,10 @@ public enum RasterError: LocalizedError {
     case unreadable, tooLarge, cancelled, exportFailed
     public var errorDescription: String? {
         switch self {
-        case .unreadable: return "This image could not be opened. Choose a readable image file."
-        case .tooLarge: return "This image exceeds the 100-megapixel or 128 MB safety limit. The original was not changed or reduced."
-        case .cancelled: return "Import cancelled."
-        case .exportFailed: return "The image could not be exported. The original was not changed."
+        case .unreadable: return NSLocalizedString("This image could not be opened. Choose a readable image file.", comment: "Image operation error")
+        case .tooLarge: return NSLocalizedString("This image exceeds the 100-megapixel or 128 MB safety limit. The original was not changed or reduced.", comment: "Image operation error")
+        case .cancelled: return NSLocalizedString("Import cancelled.", comment: "Image operation error")
+        case .exportFailed: return NSLocalizedString("The image could not be exported. The original was not changed.", comment: "Image operation error")
         }
     }
 }

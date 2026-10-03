@@ -96,7 +96,7 @@ jobs:
             -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO build
           test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ios-device/Build/Products/Release-iphoneos/TouchColor.app/Info.plist)" = 15.0
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator build-for-testing
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator ARCHS=arm64 build-for-testing
           bash scripts/test_simulators.sh iPhoneCompact prepare
           bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
       - name: Shut down iOS test simulator
@@ -120,12 +120,22 @@ jobs:
             xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
           fi
           python3 - <<'PY'
+          import json
           from pathlib import Path
           root=Path('build/evidence'); total=0
+          manifest=root/'screenshots/manifest.json'
+          if manifest.exists():
+              groups=json.loads(manifest.read_text()); keep=set()
+              for group in groups:
+                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith('Native Mac')]
+                  keep.update(a['exportedFileName'] for a in group['attachments'])
+              for p in manifest.parent.iterdir():
+                  if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()
+              manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
           for p in sorted(root.rglob('*')):
               if p.is_file():
                   size=p.stat().st_size
-                  if size>5_000_000 or total+size>20_000_000: p.unlink()
+                  if size>5_000_000 or total+size>8_000_000: p.unlink()
                   else: total+=size
           print('Bounded evidence bytes:',total)
           PY

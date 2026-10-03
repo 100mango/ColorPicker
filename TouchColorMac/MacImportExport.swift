@@ -8,7 +8,7 @@ import ColorPaletteLegacy
         panel.allowedContentTypes = [.image, .json]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.message = "Open an image to sample, or a JSON palette to append."
+        panel.message = NSLocalizedString("Open an image to sample, or a JSON palette to append.", comment: "File operation")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         importURL(url, session: session, library: library)
     }
@@ -30,10 +30,10 @@ import ColorPaletteLegacy
         }
         for type in [NSPasteboard.PasteboardType.png, .tiff] {
             if let data = NSPasteboard.general.data(forType: type) {
-                session.load(data: data, name: "Pasted image", token: session.beginImport()); return
+                session.load(data: data, name: NSLocalizedString("Pasted image", comment: "File operation"), token: session.beginImport()); return
             }
         }
-        session.errorMessage = "The clipboard does not contain an image or an image file."
+        session.errorMessage = NSLocalizedString("The clipboard does not contain an image or an image file.", comment: "File operation")
     }
     static func drop(_ providers: [NSItemProvider], session: ImageSession, library: PaletteLibrary) -> Bool {
         guard let provider = providers.first else { return false }
@@ -53,7 +53,7 @@ import ColorPaletteLegacy
             provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
                 Task { @MainActor in
                     guard session.isCurrent(token) else { return }
-                    if let data { session.load(data: data, name: "Dropped image", token: token) }
+                    if let data { session.load(data: data, name: NSLocalizedString("Dropped image", comment: "File operation"), token: token) }
                     else { session.report(error ?? CocoaError(.fileReadUnknown), token: token) }
                 }
             }
@@ -64,16 +64,16 @@ import ColorPaletteLegacy
     }
     static func exportPalette(library: PaletteLibrary, session: ImageSession) {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "TouchColor Palette.json"
+        panel.nameFieldStringValue = NSLocalizedString("TouchColor Palette.json", comment: "File operation")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try PaletteFile.encode(library.colors).write(to: url, options: .atomic)
-            session.notice = "Exported \(library.colors.count) colors."
+            session.notice = String(format: NSLocalizedString("Exported %ld colors.", comment: "Palette export"), library.colors.count)
         } catch { session.errorMessage = error.localizedDescription }
     }
     static func exportImage(session: ImageSession) {
         let panel = NSSavePanel(); panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "TouchColor Image.png"
+        panel.nameFieldStringValue = NSLocalizedString("TouchColor Image.png", comment: "File operation")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         session.exportPNG(to: url)
     }

@@ -54,7 +54,7 @@ final class PixelCanvas: NSView {
         super.init(frame: frameRect)
         setAccessibilityElement(true); setAccessibilityRole(.image)
         setAccessibilityIdentifier("image.canvas")
-        setAccessibilityLabel("Image canvas. Click to sample a pixel; arrow keys move one pixel.")
+        setAccessibilityLabel(NSLocalizedString("Image canvas. Click to sample a pixel; arrow keys move one pixel.", comment: "Image accessibility"))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func draw(_ dirtyRect: NSRect) {

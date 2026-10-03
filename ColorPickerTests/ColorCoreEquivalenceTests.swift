@@ -53,6 +53,57 @@ final class ColorCoreEquivalenceTests: XCTestCase {
             }
         }
     }
+    @MainActor func testZoomedUIKitCoordinatesKeepNormalizedPointsAndRejectLetterbox() {
+        let scroll = UIScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        let image = UIImageView(frame: CGRect(x: 20, y: 40, width: 200, height: 100))
+        let delegate = ZoomOracleDelegate(image: image)
+        scroll.addSubview(image); scroll.contentSize = CGSize(width: 240, height: 180)
+        scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 100; scroll.delegate = delegate
+        let expected = NormalizedPoint(x: 0.3, y: 0.7)!
+        for zoom in [1.0, 2.0, 20.0, 100.0] {
+            scroll.setZoomScale(zoom, animated: false)
+            scroll.contentOffset = CGPoint(x: 15 * zoom, y: 10 * zoom)
+            scroll.layoutIfNeeded()
+            let marker = CGPoint(x: expected.x * image.bounds.width, y: expected.y * image.bounds.height)
+            let screenPoint = image.convert(marker, to: scroll)
+            let recovered = image.convert(screenPoint, from: scroll)
+            var legacy = CGPoint.zero
+            XCTAssertTrue(TCNormalizedPoint(recovered, image.bounds, &legacy))
+            let portable = NormalizedPoint.inside(x: recovered.x, y: recovered.y, originX: image.bounds.minX,
+                                                 originY: image.bounds.minY, width: image.bounds.width, height: image.bounds.height)
+            XCTAssertEqual(portable?.x ?? -1, expected.x, accuracy: 0.000001)
+            XCTAssertEqual(portable?.y ?? -1, expected.y, accuracy: 0.000001)
+            XCTAssertEqual(portable?.x ?? -1, legacy.x, accuracy: 0.000001)
+            XCTAssertEqual(portable?.y ?? -1, legacy.y, accuracy: 0.000001)
+            for outside in [CGPoint(x: -1, y: 50), CGPoint(x: 200, y: 100), CGPoint(x: 50, y: -1)] {
+                XCTAssertFalse(TCNormalizedPoint(outside, image.bounds, nil))
+                XCTAssertNil(NormalizedPoint.inside(x: outside.x, y: outside.y, originX: 0, originY: 0,
+                                                    width: image.bounds.width, height: image.bounds.height))
+            }
+        }
+        XCTAssertEqual(ColorZoom.clamped(scroll.zoomScale), 100)
+    }
+    func testTransparentPartialAlphaAndWideGamutMatchActualUIKitSRGBSampling() throws {
+        for space in [CGColorSpace(name: CGColorSpace.sRGB)!, CGColorSpace(name: CGColorSpace.displayP3)!] {
+            let bytes: [UInt8] = [0,0,0,0, 128,0,0,128, 128,64,32,255]
+            let cg = CGImage(width: 3, height: 1, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 12, space: space,
+                             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+                             provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+            let data = NSMutableData()
+            let destination = CGImageDestinationCreateWithData(data, UTType.tiff.identifier as CFString, 1, nil)!
+            CGImageDestinationAddImage(destination, cg, nil); XCTAssertTrue(CGImageDestinationFinalize(destination))
+            let portable = try ColorRaster.decode(data as Data)
+            for scale in [1.0, 2.0, 3.0] {
+                let legacy = UIImage(cgImage: cg, scale: scale, orientation: .up)
+                for x in [0.1, 0.5, 0.9, 1.0] {
+                    XCTAssertEqual(portable.sample(at: NormalizedPoint(x: x, y: 0.5)!)?.hex,
+                                   TCSampleImage(legacy, CGPoint(x: x, y: 0.5)))
+                }
+            }
+            XCTAssertEqual(portable.sample(at: NormalizedPoint(x: 0.1, y: 0.5)!)?.hex, "#ffffff")
+            if space.name == CGColorSpace.displayP3 { XCTAssertNotEqual(portable.sample(at: NormalizedPoint(x: 0.9, y: 0.5)!)?.hex, "#804020") }
+        }
+    }
     func testNewAdapterAndLegacyStoreProduceEquivalentBackupsOrderAndDuplicates() {
         let firstSuite = "TouchColor.compare.legacy.\(UUID())", secondSuite = "TouchColor.compare.portable.\(UUID())"
         let first = UserDefaults(suiteName: firstSuite)!, second = UserDefaults(suiteName: secondSuite)!
@@ -67,4 +118,10 @@ final class ColorCoreEquivalenceTests: XCTestCase {
         XCTAssertEqual(first.array(forKey: "colorArrayRecoveryBackup")! as NSArray, second.array(forKey: "colorArrayRecoveryBackup")! as NSArray)
         XCTAssertEqual(first.array(forKey: "colorArray")! as NSArray, second.array(forKey: "colorArray")! as NSArray)
     }
+}
+
+@MainActor private final class ZoomOracleDelegate: NSObject, UIScrollViewDelegate {
+    let image: UIImageView
+    init(image: UIImageView) { self.image = image }
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { image }
 }

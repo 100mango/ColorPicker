@@ -28,6 +28,32 @@ import ColorRaster
         XCTAssertEqual(first.selectedPoint, selected)
         XCTAssertEqual(first.raster?.sample(at: selected), first.selectedColor)
     }
+    func testNativeScrollMagnificationPanResizeAndMarkerUseOneCoordinateSpace() async throws {
+        let session = ImageSession()
+        session.load(data: RasterFixture.data(), name: "geometry.tiff", token: session.beginImport())
+        try await waitForImport(session)
+        let scroll = ColorScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 450))
+        scroll.allowsMagnification = true; scroll.minMagnification = 1; scroll.maxMagnification = 100
+        let canvas = PixelCanvas(); canvas.session = session
+        scroll.session = session; scroll.documentView = canvas; scroll.updateCanvasSize()
+        let baseWidth = canvas.convert(canvas.bounds, to: scroll).width
+        scroll.setMagnification(4, centeredAt: NSPoint(x: canvas.bounds.midX, y: canvas.bounds.midY))
+        scroll.updateCanvasSize()
+        XCTAssertEqual(scroll.magnification, 4, accuracy: 0.001)
+        XCTAssertEqual(canvas.convert(canvas.bounds, to: scroll).width, baseWidth * 4, accuracy: 0.01)
+        scroll.contentView.scroll(to: NSPoint(x: 25, y: 30)); scroll.reflectScrolledClipView(scroll.contentView)
+        session.select(NormalizedPoint(x: 0.9, y: 0.9)!)
+        for size in [NSSize(width: 600, height: 450), NSSize(width: 400, height: 300)] {
+            scroll.setFrameSize(size); scroll.updateCanvasSize()
+            let marker = NSPoint(x: session.selectedPoint.x * canvas.bounds.width, y: session.selectedPoint.y * canvas.bounds.height)
+            let visible = canvas.convert(marker, to: scroll)
+            let recovered = canvas.convert(visible, from: scroll)
+            XCTAssertEqual(recovered.x / canvas.bounds.width, session.selectedPoint.x, accuracy: 0.000001)
+            XCTAssertEqual(recovered.y / canvas.bounds.height, session.selectedPoint.y, accuracy: 0.000001)
+            XCTAssertEqual(session.selectedColor?.hex, "#00ffff")
+            XCTAssertEqual(scroll.magnification, 4, accuracy: 0.001)
+        }
+    }
     func testReplacingCancellingAndFailingImportCannotOverwriteValidSource() async throws {
         let session = ImageSession()
         let stale = session.beginImport()

@@ -25,6 +25,8 @@ unitrefs=sources('TouchColorMacTests')+sources('Packages/ColorCore/Tests')
 uirefs=sources('TouchColorMacUITests')
 resource=ref('TouchColorMac/Assets.xcassets','folder.assetcatalog')
 privacy=ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')
+localizations=[add('loc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorMac/'+lang+'.lproj/Localizable.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]
+strings=add('strings','PBXVariantGroup',children=localizations,name='Localizable.strings',sourceTree='<group>')
 package=add('ColorCorePackage','XCLocalSwiftPackageReference',relativePath='Packages/ColorCore')
 products=[]; targets=[]; testattrs={}
 for name,kind,files in [('TouchColorMac','application',apprefs),('TouchColorMacTests','bundle.unit-test',unitrefs),('TouchColorMacUITests','bundle.ui-testing',uirefs)]:
@@ -36,7 +38,7 @@ for name,kind,files in [('TouchColorMac','application',apprefs),('TouchColorMacT
             dep=add(name+module,'XCSwiftPackageProductDependency',productName=module)
             modules.append(dep); links.append(add(name+'link'+module,'PBXBuildFile',productRef=dep))
     framework=add(name+'frameworks','PBXFrameworksBuildPhase',buildActionMask=2147483647,files=links,runOnlyForDeploymentPostprocessing=0)
-    phases=[phase(name+'sources','PBXSourcesBuildPhase',files),framework,phase(name+'resources','PBXResourcesBuildPhase',[resource,privacy] if app else [])]
+    phases=[phase(name+'sources','PBXSourcesBuildPhase',files),framework,phase(name+'resources','PBXResourcesBuildPhase',[resource,privacy,strings] if app else [])]
     settings=dict(PRODUCT_NAME='$(TARGET_NAME)',PRODUCT_BUNDLE_IDENTIFIER='com.mango.touchColor' if app else 'com.mango.touchColor.'+name,GENERATE_INFOPLIST_FILE='YES',MACOSX_DEPLOYMENT_TARGET='13.0',SDKROOT='macosx',SUPPORTED_PLATFORMS='macosx',SWIFT_VERSION='5.0',CODE_SIGN_STYLE='Automatic',CODE_SIGNING_ALLOWED='NO',ENABLE_APP_SANDBOX='NO',ENABLE_HARDENED_RUNTIME='NO',LD_RUNPATH_SEARCH_PATHS=['$(inherited)','@executable_path/../Frameworks','@loader_path/../Frameworks'],CLANG_ENABLE_MODULES='YES')
     if app:
         settings.update(INFOPLIST_KEY_CFBundleDisplayName='TouchColor',INFOPLIST_KEY_LSApplicationCategoryType='public.app-category.graphics-design',ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',MARKETING_VERSION='2.0',CURRENT_PROJECT_VERSION='20001')
@@ -49,7 +51,7 @@ for name,kind,files in [('TouchColorMac','application',apprefs),('TouchColorMacT
         testattrs[uid(name)]=dict(TestTargetID=uid('TouchColorMac'))
     targets.append(add(name,'PBXNativeTarget',buildConfigurationList=configs(name,settings),buildPhases=phases,buildRules=[],dependencies=dependencies,name=name,productName=name,productReference=product,productType='com.apple.product-type.'+kind,packageProductDependencies=modules))
 productgroup=add('Products','PBXGroup',children=products,name='Products',sourceTree='<group>')
-group=add('MainGroup','PBXGroup',children=allrefs+[resource,privacy,productgroup],sourceTree='<group>')
+group=add('MainGroup','PBXGroup',children=allrefs+[resource,privacy,strings,productgroup],sourceTree='<group>')
 add('Project','PBXProject',attributes=dict(LastUpgradeCheck='2700',TargetAttributes=testattrs),buildConfigurationList=configs('Project',dict(SWIFT_VERSION='5.0',MACOSX_DEPLOYMENT_TARGET='13.0',SDKROOT='macosx',CLANG_ENABLE_MODULES='YES',CLANG_ENABLE_OBJC_ARC='YES',GCC_C_LANGUAGE_STANDARD='gnu17',ENABLE_USER_SCRIPT_SANDBOXING='YES')),compatibilityVersion='Xcode 14.0',developmentRegion='en',hasScannedForEncodings=0,knownRegions=['en','zh-Hans','Base'],mainGroup=group,productRefGroup=productgroup,projectDirPath='',projectRoot='',targets=targets,packageReferences=[package])
 def serialize(value,level=0):
     indent='\t'*level

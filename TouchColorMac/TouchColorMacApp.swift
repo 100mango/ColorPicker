@@ -17,7 +17,7 @@ import SwiftUI
             ColorWindow(library: library)
                 .frame(minWidth: 740, minHeight: 520)
         }
-        .defaultSize(width: 1080, height: 740)
+        .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }
         Settings { PrivacyView() }
     }

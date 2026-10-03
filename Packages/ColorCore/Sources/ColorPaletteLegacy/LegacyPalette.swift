@@ -47,7 +47,7 @@ public final class LegacyPalette {
 public enum PaletteFileError: LocalizedError {
     case invalid
     public var errorDescription: String? {
-        "The palette must contain only #rrggbb colors. Nothing was imported."
+        NSLocalizedString("The palette must contain only #rrggbb colors. Nothing was imported.", comment: "Palette import error")
     }
 }
 
