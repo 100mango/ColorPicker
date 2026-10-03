@@ -124,7 +124,7 @@
 }
 - (void)testAccessibilitySavedPalette {
     [self importAndSample];[self.app.buttons[@"saveColor"] tap];
-    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone) [self.app.navigationBars.buttons.firstMatch tap];
+    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone) [self returnToPaletteFrom:@"Photo Color" app:self.app];
     else if (self.app.buttons[@"workspace.palette"].exists) [self.app.buttons[@"workspace.palette"] tap];
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch.label containsString:@"R 255   G 0   B 255"]);

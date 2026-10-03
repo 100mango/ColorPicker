@@ -17,6 +17,7 @@ import ColorPaletteLegacy
     private var completion: (() -> Void)?
     private var finished = false
     private var addButton: UIBarButtonItem!
+    private var textSizeObservation: NSObjectProtocol?
     init(defaults: UserDefaults = .standard) { self.defaults = defaults; super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     @objc class func present(from owner: UIViewController, completion: @escaping () -> Void) {
@@ -34,8 +35,12 @@ import ColorPaletteLegacy
         navigationItem.leftBarButtonItem?.accessibilityIdentifier = "palette.import.close"
         addButton = UIBarButtonItem(title: NSLocalizedString("Add Colors", comment: "Palette import acceptance"), style: .done, target: self, action: #selector(accept))
         addButton.accessibilityIdentifier = "palette.import.accept"; navigationItem.rightBarButtonItem = addButton
+        textSizeObservation = NotificationCenter.default.addObserver(forName: UIContentSizeCategory.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.tableView.reloadData() }
+        }
         reload()
     }
+    deinit { if let textSizeObservation { NotificationCenter.default.removeObserver(textSizeObservation) } }
     private func reload() { addButton?.isEnabled = !busy && !(selection?.colors.isEmpty ?? true); tableView.reloadData() }
     func begin() -> UInt64 {
         providerProgress?.cancel(); queue.cancelAllOperations(); busy = true
@@ -118,9 +123,15 @@ import ColorPaletteLegacy
             if indexPath.row == 1, #available(iOS 16.0, *) {
                 let control = UIPasteControl(configuration: .init()); control.target = self
                 control.accessibilityIdentifier = "palette.import.paste"; control.translatesAutoresizingMaskIntoConstraints = false
+                control.setContentCompressionResistancePriority(.required, for: .vertical)
+                control.setContentCompressionResistancePriority(.required, for: .horizontal)
                 cell.contentView.addSubview(control)
                 let margins = cell.contentView.layoutMarginsGuide
-                NSLayoutConstraint.activate([control.leadingAnchor.constraint(equalTo: margins.leadingAnchor), control.topAnchor.constraint(equalTo: margins.topAnchor), control.bottomAnchor.constraint(equalTo: margins.bottomAnchor), control.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)])
+                // The system control's text width grows with Dynamic Type, while
+                // its default height can remain 45pt. Give its content a scaled
+                // touch area and let the table row grow instead of clipping it.
+                let minimumHeight = UIFontMetrics(forTextStyle: .body).scaledValue(for: 44, compatibleWith: traitCollection)
+                NSLayoutConstraint.activate([control.leadingAnchor.constraint(equalTo: margins.leadingAnchor), control.trailingAnchor.constraint(lessThanOrEqualTo: margins.trailingAnchor), control.topAnchor.constraint(equalTo: margins.topAnchor), control.bottomAnchor.constraint(equalTo: margins.bottomAnchor), control.heightAnchor.constraint(greaterThanOrEqualToConstant: max(44, minimumHeight))])
                 cell.selectionStyle = .none
             } else {
                 cell.textLabel?.text = NSLocalizedString(indexPath.row == 0 ? "Choose JSON File" : "Paste JSON", comment: "Palette import source")

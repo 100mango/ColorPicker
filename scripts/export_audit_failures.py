@@ -84,6 +84,8 @@ if count < limit:
     count += export_named('TouchColorUITests', [functional_prefix + '2'], limit - count)
 if family == 'iPadMini' and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-mini-audit-photo-state', 'touchcolor-mini-audit-saved-state'], limit - count)
+if family == 'iPhoneCompact' and count < limit:
+    count += export_named('TouchColorUITests', ['touchcolor-largest-paste-control'], limit - count)
 if family in ('iPhoneCompact', 'iPadLarge') and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review'], limit - count)
 if family == 'iPhoneLarge' and count < limit:

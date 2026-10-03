@@ -189,7 +189,7 @@
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
     [self.app activate];
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
-    [self.app.navigationBars.buttons.firstMatch tap];
+    [self returnToPaletteFrom:@"Live Color" app:self.app];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
 }
 - (void)testAdaptiveLandscapePhotoSampling {
@@ -229,7 +229,7 @@
     [self revealControl:self.app.buttons[@"saveColor"] inScrollView:self.app.scrollViews[@"photoControls"]];
     XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
     [self.app.buttons[@"saveColor"] tap];
-    [self.app.navigationBars.buttons.firstMatch tap];
+    [self returnToPaletteFrom:@"Photo Color" app:self.app];
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
     XCUIElement *table=self.app.tables[@"colorHistory"];
     XCUIElement *detail=table.staticTexts[@"R 255   G 0   B 0"];

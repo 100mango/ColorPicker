@@ -63,6 +63,7 @@ jobs:
           git diff --exit-code -- TestFixtures
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
+          python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Shared domain raster and legacy palette tests
         timeout-minutes: 6
