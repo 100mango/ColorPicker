@@ -36,6 +36,6 @@ fi
 xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/simulator \
   -resultBundlePath "build/$family-$suite.xcresult" -parallel-testing-enabled NO \
-  -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
+  -collect-test-diagnostics never -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
   -maximum-test-execution-time-allowance 240 -only-testing:"$suite" \
   test-without-building

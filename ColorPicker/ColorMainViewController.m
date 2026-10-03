@@ -48,7 +48,6 @@
     [self.view addSubview:buttons];
     self.loading = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.loading.hidesWhenStopped = YES;
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.loading];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [buttons.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
@@ -144,6 +143,7 @@
             [self showMessage:NSLocalizedString(@"This image could not be opened. Please choose another photo.", nil)];
             return;
         }
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.loading];
         [self.loading startAnimating];
         __weak typeof(self) weakSelf = self;
         [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
@@ -151,6 +151,7 @@
                 typeof(self) self = weakSelf;
                 if (!self || generation != self.selectionGeneration) return;
                 [self.loading stopAnimating];
+                self.navigationItem.rightBarButtonItem = nil;
                 [self showImage:[object isKindOfClass:UIImage.class] ? (UIImage *)object : nil];
             });
         }];

@@ -9,7 +9,7 @@ The published 1.0 app is identified by App Store ID **859727780** and bundle ID 
 - Ordered, duplicate-preserving saved colors and individual deletion
 - `NSUserDefaults` key `colorArray` storing lowercase `#rrggbb` strings
 
-This branch continues from `df48f02` but does not assume its unfinished 2.0 interface is release-ready. It keeps those behaviors with safe-area, Dynamic Type, VoiceOver-labeled UIKit controls; PhotosUI's system picker requires no broad photo-library authorization. Scene lifecycle and a system launch screen replace the old app-only lifecycle/XIB launch path. The three feature paths remain available. The app retains its bundle identity and original icon assets.
+This branch continues from `df48f02` but does not assume its unfinished 2.0 interface is release-ready. It keeps those behaviors with safe-area, Dynamic Type, VoiceOver-labeled UIKit controls; PhotosUI's system picker requires no broad photo-library authorization. Scene lifecycle and a system launch screen replace the old app-only lifecycle/XIB launch path. The three feature paths remain available. The app retains its bundle identity and published droplet icon identity. See recovered artwork provenance below.
 
 GPUImage 0.1.7 and the unused Masonry dependency are no longer linked. Live sampling uses AVFoundation 32BGRA frames, actual row stride and center coordinates, serial session work off the main thread, permission gating, interruption handling and a bounded 10 Hz UI update. Automatic wide-color configuration is disabled before explicitly requesting sRGB. Photo sampling renders exactly one displayed-image pixel into explicit sRGB, applies UIImage orientation and composites transparency on white. Camera exposure/white balance are device-dependent: this is a color picker, not a calibrated colorimeter.
 
@@ -27,8 +27,11 @@ The single-job Actions workflow records `sw_vers`, Xcode/SDK versions and simula
 - VoiceOver navigation, largest accessibility text sizes, iPad multitasking, very large/iCloud/HEIC/wide-gamut photos, memory/performance and visual review
 - Earliest supported iOS 15 run on a suitable archived test environment/device (the stable modern runner may not include it)
 - Existing-install upgrade test from the actually published binary; historical source is evidence, not a signed installed baseline
-- Recover the current icon's original high-resolution source. This repo's matching current icon is at most 152px and lacks 180px/1024px assets. The older 1024px CP-Icon1 artwork is a different identity and must not silently replace it
 - Owner reviews intended UI refresh, deployment-floor change, App Store version/build availability, privacy questionnaire, age rating, screenshots/support URLs; current `2.0`/`20001` values are proposed only
 - Confirm developer-team access, signing/provisioning and App Store Connect record with the owner. No credentials are embedded and no submission is authorized by a green compile alone
 
 Official references: [PHPicker](https://developer.apple.com/documentation/photosui/phpickerviewcontroller), [scene lifecycle](https://developer.apple.com/documentation/uikit/transitioning-to-the-uikit-scene-based-life-cycle), [privacy manifests](https://developer.apple.com/documentation/technotes/tn3183-adding-required-reason-api-entries-to-your-privacy-manifest), [runner toolchains](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md).
+
+## Recovered icon provenance
+
+The published TouchColor App Store icon was recovered as an Apple-served 1024px derivative, visually checked against the released droplet identity. It is not represented as the original designer source. Original downloaded PNG SHA-256: `f76d9649746cafe4d93228322fe4b8eb298b05af39cf0b1638d445bb4c534231`. [Apple CDN source](https://is1-ssl.mzstatic.com/image/thumb/Purple/v4/99/90/ad/9990ad96-b4cc-7c2a-9daf-92b94f399df6/mzl.qymjxyuo.png/1024x1024bb.png). The alpha plane was verified fully opaque, then removed without changing RGB values. All required iPhone/iPad/App Store icon slots are generated from that same artwork by ordinary resizing. No identity replacement or generated artwork was used. The released 1.0 App Store record is verified; the currently proposed build number remains subject to checking before upload.
