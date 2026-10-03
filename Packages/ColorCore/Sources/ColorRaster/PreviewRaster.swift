@@ -22,6 +22,8 @@ public struct PreviewRaster: @unchecked Sendable {
     }
     public static func decode(_ data: Data, cancelled: () -> Bool = { false }) throws -> Self {
         guard data.count <= maximumEncodedBytes else { throw RasterError.tooLarge }
+        if cancelled() { throw RasterError.cancelled }
+        try PNGFraming.validateIfPNG(data, cancelled: cancelled)
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw RasterError.unreadable }
         return try decode(source, cancelled: cancelled)
     }
