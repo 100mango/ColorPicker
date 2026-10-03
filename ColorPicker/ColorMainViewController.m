@@ -3,6 +3,7 @@
 #import "ColorRealTimeViewController.h"
 #import "TCColorUtilities.h"
 #import <PhotosUI/PhotosUI.h>
+#import <SafariServices/SafariServices.h>
 
 @interface ColorMainViewController () <UITableViewDelegate, UITableViewDataSource, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
@@ -50,6 +51,7 @@
     [self.view addSubview:buttons];
     self.loading = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.loading.hidesWhenStopped = YES;
+    [self showPrivacyButton];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [buttons.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
@@ -106,6 +108,17 @@
     empty.adjustsFontForContentSizeCategory = YES;
     empty.textColor = UIColor.secondaryLabelColor;
     self.tableView.backgroundView = self.colors.count ? nil : empty;
+}
+- (void)showPrivacyButton {
+    UIBarButtonItem *privacy = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Privacy Policy", nil) style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)];
+    privacy.accessibilityIdentifier = @"privacyPolicy";
+    self.navigationItem.rightBarButtonItem = privacy;
+}
+- (void)openPrivacyPolicy {
+    NSURL *url = [NSURL URLWithString:@"https://100mango.github.io/app-privacy/"];
+    SFSafariViewController *browser = [[SFSafariViewController alloc] initWithURL:url];
+    browser.dismissButtonStyle = SFSafariViewControllerDismissButtonStyleDone;
+    [self presentViewController:browser animated:YES completion:nil];
 }
 - (void)showMessage:(NSString *)message {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"TouchColor", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
@@ -173,7 +186,7 @@
                 typeof(self) self = weakSelf;
                 if (!self || generation != self.selectionGeneration) return;
                 [self.loading stopAnimating];
-                self.navigationItem.rightBarButtonItem = nil;
+                [self showPrivacyButton];
                 [self showImage:[object isKindOfClass:UIImage.class] ? (UIImage *)object : nil];
             });
         }];

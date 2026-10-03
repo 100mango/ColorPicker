@@ -1,6 +1,7 @@
 name: iOS 27 compatibility
 on:
-  pull_request:
+  push:
+    branches: [codex/ios-modernization]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +17,23 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify exact tested commit
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/ios-modernization
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          echo "Tested commit: $(git rev-parse HEAD)"
+          echo "Tested tree: $(git rev-parse 'HEAD^{tree}')"
+          shasum -a 256 .github/workflows/ios.yml
       - name: Record exact stable toolchain and simulators
         run: |
           sw_vers
@@ -25,6 +43,7 @@ jobs:
           xcrun simctl list devices available
           xcodebuild -version > /tmp/touchcolor-xcode.txt
           grep 'Xcode 27.0' /tmp/touchcolor-xcode.txt
+          grep -F '27A266a' /tmp/touchcolor-xcode.txt
           xcodebuild -showsdks > /tmp/touchcolor-sdks.txt
           grep 'iphoneos27.0' /tmp/touchcolor-sdks.txt
       - name: Validate checked-in project and metadata
@@ -37,6 +56,18 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Record unsigned app framework inventory
+        run: |
+          python3 - <<'PYFRAMEWORKS'
+          import json
+          from pathlib import Path
+          app=Path('build/device/Build/Products/Release-iphoneos/TouchColor.app')
+          assert (app/'TouchColor').is_file()
+          directory=app/'Frameworks'
+          entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
+          print(json.dumps({'app':'TouchColor.app','embedded_framework_directory_entries':entries}))
+          PYFRAMEWORKS
+          otool -L build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor
       - name: Build simulator test products
         id: build-tests
         timeout-minutes: 8
@@ -84,3 +115,12 @@ jobs:
           xcrun simctl list devices
           find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
           find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true
+      - name: Verify tested source stayed unchanged
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          echo "Final tested tree: $(git rev-parse 'HEAD^{tree}')"
+          shasum -a 256 .github/workflows/ios.yml

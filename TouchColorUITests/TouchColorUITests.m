@@ -32,6 +32,16 @@
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     [self.app launch];
 }
+- (void)testPrivacyPolicyEntryOpensAndCloses {
+    XCUIElement *privacy=self.app.buttons[@"privacyPolicy"];
+    XCTAssertTrue([privacy waitForExistenceWithTimeout:5]);
+    XCTAssertTrue(privacy.hittable);
+    [privacy tap];
+    XCUIElement *done=self.app.buttons[@"Done"].firstMatch;
+    XCTAssertTrue([done waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
+    [done tap];
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+}
 - (void)testLaunchAndPhotoPickerCancelRepeatedly {
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
     for (NSUInteger i=0;i<2;i++) {

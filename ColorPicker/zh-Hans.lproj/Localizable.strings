@@ -21,3 +21,5 @@
 "Camera access is off. Enable it for TouchColor in Settings, or choose a photo instead." = "相机权限未开启。请在系统设置中允许 TouchColor 使用相机，或选择照片。";
 "The camera could not start. Go back and try again, or choose a photo." = "相机无法启动。请返回重试，或选择照片。";
 "Camera interrupted. Waiting to resume." = "相机已中断，正在等待恢复。";
+
+"Privacy Policy" = "隐私政策";
