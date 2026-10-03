@@ -1,4 +1,4 @@
-name: Validate native iPad mini accessibility repair
+name: Native iPad and iPhone compatibility
 on:
   push:
     branches: [codex/native-ipad]
@@ -10,9 +10,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   compatibility:
+    name: ${{ matrix.family }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
+      TC_TEST_FAMILY: ${{ matrix.family }}
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
       - name: Check out source
@@ -91,32 +98,40 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
-      - name: Warm up fresh iPad mini simulator
-        id: warm-ipad-mini
+      - name: Warm up required simulator
+        id: warm-device
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadMini prepare
-      - name: iPad mini unit and constrained-window regression tests
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" prepare
+      - name: Unit and constrained-window layout tests
+        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPadMini TouchColorTests
-      - name: Seed iPadMini synthetic photo
-        id: seed-ipad-mini
-        timeout-minutes: 5
-        run: bash scripts/test_simulators.sh iPadMini seed
-      - name: iPad mini official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-ipad-mini.outcome == 'success' }}
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorTests
+      - name: Seed synthetic photo
+        id: seed-device
+        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" seed
+      - name: Functional UI tests
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
+        timeout-minutes: 16
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
+      - name: Official XCTest accessibility audits
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPadMini AccessibilityAudits
-      - name: Export bounded mini audit state evidence
-        if: always()
-        timeout-minutes: 3
-        run: python3 scripts/export_audit_failures.py
-      - name: Shut down iPad mini simulator
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
+      - name: Shut down simulator
         if: always()
         timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPadMini shutdown
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
+      - name: Export two bounded mini audit screenshots
+        if: ${{ always() && matrix.family == 'iPadMini' }}
+        timeout-minutes: 3
+        run: python3 scripts/export_audit_failures.py
       - name: Always report test summaries and simulator diagnostics
         if: always()
         run: |
+          vm_stat
           xcrun simctl list devices
           find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
           find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true
