@@ -40,6 +40,9 @@ import ColorRaster
         window.contentView = host
         window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil); window.contentView = nil; previous?.makeKeyAndOrderFront(nil) }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        host.layoutSubtreeIfNeeded()
+        print("MAC_WINDOW_INITIAL window=\(window.frame) minimum=\(window.contentMinSize) host=\(host.frame) fitting=\(host.fittingSize)")
         session.load(data: RasterFixture.data(), name: "layout.tiff", token: session.beginImport())
         try await waitForImport(session)
         for size in [NSSize(width: 960, height: 588), NSSize(width: 800, height: 530)] {

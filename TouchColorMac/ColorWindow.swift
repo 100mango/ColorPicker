@@ -26,19 +26,19 @@ struct ColorWindow: View {
                             .frame(width: viewport.size.width, height: viewport.size.height)
                             .clipped()
                             .overlay(alignment: .topLeading) {
-                                Text(session.sourceName).padding(8).background(.regularMaterial).padding(8).allowsHitTesting(false)
+                                Text(session.sourceName).lineLimit(1).help(session.sourceName).padding(8).background(.regularMaterial).padding(8).allowsHitTesting(false)
                             }
                     }
                     .frame(minHeight: 160, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 18) {
                         Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary)
-                        Text("Choose an image to sample colors").font(.title2)
+                        Text("Choose an image to sample colors").font(.title2).lineLimit(2)
                         Text("Open a file, choose a photo, drop an image here, or paste an image.")
-                            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(3)
                         Button("Open Image…") { MacImportExport.open(session: session, library: library) }
                             .accessibilityIdentifier("image.open.empty")
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(30)
+                    }.frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity).padding(30)
                 }
                 Divider()
                 SamplingControls(session: session, library: library).fixedSize(horizontal: false, vertical: true)
@@ -53,8 +53,9 @@ struct ColorWindow: View {
                         Text("Exporting full-resolution image…")
                     } else { Text(session.notice ?? NSLocalizedString("sRGB · transparent pixels on white · local palette", comment: "Sampling policy")) }
                     Spacer()
-                }.font(.caption).padding(8).background(.bar).fixedSize(horizontal: false, vertical: true)
+                }.font(.caption).lineLimit(2).padding(8).background(.bar).fixedSize(horizontal: false, vertical: true)
             }
+            .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             .overlay { if targeted { RoundedRectangle(cornerRadius: 8).stroke(.blue, lineWidth: 3).allowsHitTesting(false) } }
             .onDrop(of: [.fileURL, .image], isTargeted: $targeted) { MacImportExport.drop($0, session: session, library: library) }
         }

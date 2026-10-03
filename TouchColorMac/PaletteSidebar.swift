@@ -30,9 +30,9 @@ struct PaletteSidebar: View {
                     }.padding(.vertical, 4).accessibilityIdentifier("palette.row.\(index)")
                 }
             }
-            if library.colors.isEmpty { Text("Saved colors appear here, in order.").foregroundStyle(.secondary).padding() }
+            if library.colors.isEmpty { Text("Saved colors appear here, in order.").foregroundStyle(.secondary).lineLimit(2).padding() }
             Button("Export Palette…") { MacImportExport.exportPalette(library: library, session: session) }
                 .disabled(library.colors.isEmpty).accessibilityIdentifier("palette.export").padding()
-        }
+        }.frame(minWidth: 220, maxWidth: .infinity, maxHeight: .infinity)
     }
 }
