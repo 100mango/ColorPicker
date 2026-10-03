@@ -82,5 +82,9 @@ if count < limit:
     count += export_named('TouchColorUITests', [functional_prefix + '2'], limit - count)
 if family == 'iPadMini' and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-mini-audit-photo-state', 'touchcolor-mini-audit-saved-state'], limit - count)
+if family in ('iPhoneCompact', 'iPadLarge') and count < limit:
+    count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review'], limit - count)
+if family == 'iPhoneLarge' and count < limit:
+    count += export_named('AccessibilityAudits', ['touchcolor-watch-inbox-status'], limit - count)
 assert count <= limit
 print('EVIDENCE_IMAGES:' + json.dumps({'family': family, 'count': count, 'allocation': limit}))

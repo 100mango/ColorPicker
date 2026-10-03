@@ -45,6 +45,7 @@ public struct ColorRaster: @unchecked Sendable {
     public static func decode(_ data: Data, cancelled: () -> Bool = { false }) throws -> ColorRaster {
         guard data.count <= maximumEncodedBytes else { throw RasterError.tooLarge }
         if cancelled() { throw RasterError.cancelled }
+        try PNGFraming.validateIfPNG(data, cancelled: cancelled)
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetStatus(source) == .statusComplete,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],

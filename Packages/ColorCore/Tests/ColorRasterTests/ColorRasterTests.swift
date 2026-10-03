@@ -31,7 +31,118 @@ enum RasterFixture {
     }
 }
 
+private enum PNGTestChunks {
+    static func split(_ data: Data) -> [(String, Data)] {
+        let bytes = Array(data); var offset = 8; var result: [(String, Data)] = []
+        while offset < bytes.count {
+            let length = Int(UInt32(bytes[offset]) << 24 | UInt32(bytes[offset + 1]) << 16
+                | UInt32(bytes[offset + 2]) << 8 | UInt32(bytes[offset + 3]))
+            let type = String(bytes: bytes[(offset + 4)..<(offset + 8)], encoding: .ascii)!
+            result.append((type, Data(bytes[(offset + 8)..<(offset + 8 + length)])))
+            offset += length + 12
+        }
+        return result
+    }
+    static func join(_ chunks: [(String, Data)]) -> Data {
+        var result = Data([137, 80, 78, 71, 13, 10, 26, 10])
+        func appendWord(_ value: UInt32) {
+            result.append(contentsOf: [UInt8((value >> 24) & 255), UInt8((value >> 16) & 255), UInt8((value >> 8) & 255), UInt8(value & 255)])
+        }
+        for (type, payload) in chunks {
+            appendWord(UInt32(payload.count))
+            let body = Data(type.utf8) + payload
+            result.append(body)
+            // Independent bit-at-a-time fixture CRC; production uses a lookup table.
+            var crc = UInt32.max
+            for byte in body {
+                crc ^= UInt32(byte)
+                for _ in 0..<8 { crc = (crc & 1) == 1 ? (crc >> 1) ^ 0xedb88320 : crc >> 1 }
+            }
+            appendWord(crc ^ UInt32.max)
+        }
+        return result
+    }
+}
+
 final class ColorRasterTests: XCTestCase {
+    func testPNGChunkBoundsCRCAndTerminalBoundaryRejectMalformedFiles() throws {
+        let complete = try ColorRaster.decode(RasterFixture.data()).pngData()
+        var badCRC = complete; badCRC[badCRC.count - 1] ^= 1
+        var oversizedLength = complete
+        oversizedLength.replaceSubrange(8..<12, with: [255, 255, 255, 255])
+        let chunks = PNGTestChunks.split(complete)
+        let nonemptyEnd = PNGTestChunks.join(Array(chunks.dropLast()) + [("IEND", Data([1]))])
+        let afterEnd = complete + PNGTestChunks.join([("tEXt", Data("Note\0extra".utf8))]).dropFirst(8)
+        let incomplete: [Data] = [Data(complete.prefix(10)), Data(complete.prefix(14)),
+            Data(complete.prefix(22)), Data(complete.prefix(31)), Data(complete.dropLast()),
+            Data(complete.dropLast(12)), badCRC, oversizedLength, nonemptyEnd, afterEnd]
+        for (index, data) in incomplete.enumerated() {
+            XCTAssertThrowsError(try ColorRaster.decode(data), "Malformed PNG variant \(index)")
+            XCTAssertThrowsError(try PreviewRaster.decode(data), "Malformed PNG preview variant \(index)")
+        }
+    }
+    func testValidPNGAncillaryAndMultipleIDATKeepOriginalBytesAndPixels() throws {
+        let original = try ColorRaster.decode(RasterFixture.data()).pngData()
+        var chunks: [(String, Data)] = []
+        for (type, payload) in PNGTestChunks.split(original) {
+            if type == "IDAT" {
+                if !chunks.contains(where: { $0.0 == "IDAT" }) { chunks.append(("tEXt", Data("Comment\0synthetic metadata".utf8))) }
+                let middle = payload.count / 2
+                chunks.append((type, Data(payload.prefix(middle))))
+                chunks.append((type, Data(payload.dropFirst(middle))))
+            } else { chunks.append((type, payload)) }
+        }
+        let modified = PNGTestChunks.join(chunks)
+        XCTAssertEqual(Array(modified.suffix(4)), [174, 66, 96, 130], "Standard IEND CRC")
+        let baseline = try ColorRaster.decode(original), source = try ColorRaster.decode(modified)
+        let preview = try PreviewRaster.decode(modified)
+        XCTAssertEqual(source.sourceData, modified)
+        XCTAssertEqual(source.width, 3); XCTAssertEqual(source.height, 2)
+        for point in [NormalizedPoint(x: 0, y: 0)!, .center, NormalizedPoint(x: 1, y: 1)!] {
+            XCTAssertEqual(source.sample(at: point), baseline.sample(at: point))
+            XCTAssertEqual(preview.sample(at: point), baseline.sample(at: point))
+        }
+    }
+    func testPNGCRCScanCancelsWithinOneLargeIDATWithoutDecoding() throws {
+        var pixels = [UInt8](); pixels.reserveCapacity(256 * 256 * 4)
+        var state: UInt32 = 0x12345678
+        for _ in 0..<(256 * 256) {
+            state ^= state << 13; state ^= state >> 17; state ^= state << 5
+            pixels.append(contentsOf: [UInt8(state & 255), UInt8((state >> 8) & 255), UInt8((state >> 16) & 255), 255])
+        }
+        let complete = try ColorRaster.decode(RasterFixture.data(image: RasterFixture.image(bytes: pixels, width: 256, height: 256))).pngData()
+        let chunks = PNGTestChunks.split(complete)
+        var compressed = Data()
+        for (type, payload) in chunks where type == "IDAT" { compressed.append(payload) }
+        XCTAssertGreaterThan(compressed.count, 128 * 1024)
+        let single = PNGTestChunks.join([try XCTUnwrap(chunks.first(where: { $0.0 == "IHDR" })), ("IDAT", compressed), ("IEND", Data())])
+        var checks = 0
+        XCTAssertThrowsError(try ColorRaster.decode(single, cancelled: { checks += 1; return checks == 6 })) {
+            guard let error = $0 as? RasterError, case .cancelled = error else { return XCTFail("Expected cancellation inside CRC scan, got \($0)") }
+        }
+        XCTAssertEqual(checks, 6)
+        checks = 0
+        XCTAssertThrowsError(try PreviewRaster.decode(single, cancelled: { checks += 1; return checks == 6 })) {
+            guard let error = $0 as? RasterError, case .cancelled = error else { return XCTFail("Expected preview cancellation inside CRC scan, got \($0)") }
+        }
+        XCTAssertEqual(checks, 6)
+    }
+    private func assertCompleteNonPNGRemainsReadable(_ type: UTType) throws {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil) else {
+            throw XCTSkip("No synthetic \(type.identifier) encoder on this runtime")
+        }
+        var pixels = [UInt8]()
+        for _ in 0..<(64 * 64) { pixels.append(contentsOf: [17, 34, 51, 255]) }
+        let image = RasterFixture.image(bytes: pixels, width: 64, height: 64)
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 1] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw XCTSkip("Synthetic \(type.identifier) encoding is unavailable on this runtime") }
+        let encoded = data as Data, raster = try ColorRaster.decode(encoded), preview = try PreviewRaster.decode(encoded)
+        XCTAssertEqual(raster.sourceData, encoded); XCTAssertEqual(raster.width, 64); XCTAssertEqual(raster.height, 64)
+        XCTAssertEqual(preview.sample(at: .center), raster.sample(at: .center))
+    }
+    func testCompleteJPEGStillUsesOriginalImageIOPath() throws { try assertCompleteNonPNGRemainsReadable(.jpeg) }
+    func testCompleteHEIFStillUsesOriginalImageIOPath() throws { try assertCompleteNonPNGRemainsReadable(.heic) }
     func testDimensionBearingTruncatedPNGIsRejectedBySourceAndPreviewDecoders() throws {
         let complete = try ColorRaster.decode(RasterFixture.data()).pngData()
         let truncated = Data(complete.dropLast(12)) // Entire terminal PNG IEND chunk.

@@ -33,6 +33,8 @@
     } else {
         if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
         if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
+        if ([screen isEqualToString:@"palette import review"]) name=@"touchcolor-palette-import-review";
+        if ([screen isEqualToString:@"watch inbox status"]) name=@"touchcolor-watch-inbox-status";
     }
     if (!name) return;
     NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
