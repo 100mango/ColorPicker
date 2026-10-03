@@ -226,9 +226,16 @@
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
     format.scale = 1;
     format.preferredRange = UIGraphicsImageRendererFormatRangeStandard;
-    UIImage *image = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(200, 200) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+    UIImage *image = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(300, 200) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
         [[UIColor colorWithRed:1 green:0 blue:0 alpha:1] setFill];
-        [context fillRect:CGRectMake(0, 0, 200, 200)];
+        [context fillRect:CGRectMake(0, 0, 300, 200)];
+        if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-asymmetric"]) {
+            NSArray *colors=@[UIColor.redColor,UIColor.greenColor,UIColor.blueColor,UIColor.cyanColor,UIColor.magentaColor,UIColor.yellowColor];
+            for (NSUInteger i=0;i<colors.count;i++) {
+                [colors[i] setFill];
+                [context fillRect:CGRectMake((i%3)*100,(i/3)*100,100,100)];
+            }
+        }
     }];
     [self showImage:image];
 }

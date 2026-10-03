@@ -1,6 +1,7 @@
 #import "ColorViewController.h"
 #import "ColorDetectView.h"
 #import "TCColorUtilities.h"
+#import <math.h>
 
 @interface ColorViewController () <ColorDetectViewDelegate>
 @property (nonatomic, strong) UIImage *image;
@@ -9,6 +10,7 @@
 @property (nonatomic, strong) UIButton *saveButton;
 @property (nonatomic, copy) NSString *selectedHex;
 @property (nonatomic, strong) UIView *swatch;
+@property (nonatomic, strong) UISlider *zoomSlider;
 @end
 @implementation ColorViewController
 - (void)setChooseImage:(UIImage *)image { self.image = image; }
@@ -48,30 +50,51 @@
     UIStackView *actions = [[UIStackView alloc] initWithArrangedSubviews:@[sample, self.saveButton]];
     actions.distribution = UIStackViewDistributionFillEqually;
     actions.spacing = 12;
-    UIStackView *panel = [[UIStackView alloc] initWithArrangedSubviews:@[readout, actions]];
+    self.zoomSlider = [UISlider new];
+    self.zoomSlider.minimumValue = 0;
+    self.zoomSlider.maximumValue = 2; // Logarithmic 1–100×, matching the original zoom range.
+    self.zoomSlider.accessibilityLabel = NSLocalizedString(@"Zoom", nil);
+    self.zoomSlider.accessibilityIdentifier = @"photoZoom";
+    self.zoomSlider.accessibilityValue = @"1.0×";
+    [self.zoomSlider.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    [self.zoomSlider addTarget:self action:@selector(zoomChanged:) forControlEvents:UIControlEventValueChanged];
+    UIStackView *panel = [[UIStackView alloc] initWithArrangedSubviews:@[readout, self.zoomSlider, actions]];
     panel.axis = UILayoutConstraintAxisVertical;
     panel.spacing = 8;
     panel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:panel];
+    UIScrollView *controls = [UIScrollView new];
+    controls.accessibilityIdentifier = @"photoControls";
+    controls.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:controls];
+    [controls addSubview:panel];
+    NSLayoutConstraint *naturalHeight = [controls.heightAnchor constraintEqualToAnchor:panel.heightAnchor constant:16];
+    naturalHeight.priority = UILayoutPriorityDefaultHigh;
+    naturalHeight.active = YES;
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [self.colorDetectView.topAnchor constraintEqualToAnchor:safe.topAnchor],
         [self.colorDetectView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
         [self.colorDetectView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [self.colorDetectView.bottomAnchor constraintEqualToAnchor:panel.topAnchor constant:-8],
-        [panel.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
-        [panel.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
-        [panel.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8]
+        [self.colorDetectView.bottomAnchor constraintEqualToAnchor:controls.topAnchor constant:-8],
+        [controls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [controls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [controls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
+        [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.6],
+        [panel.leadingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.leadingAnchor constant:16],
+        [panel.trailingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.trailingAnchor constant:-16],
+        [panel.topAnchor constraintEqualToAnchor:controls.contentLayoutGuide.topAnchor constant:8],
+        [panel.bottomAnchor constraintEqualToAnchor:controls.contentLayoutGuide.bottomAnchor constant:-8],
+        [panel.widthAnchor constraintEqualToAnchor:controls.frameLayoutGuide.widthAnchor constant:-32]
     ]];
 }
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView { return self.colorDetectView.imageView; }
-- (void)scrollViewDidZoom:(UIScrollView *)scrollView { [self.colorDetectView setNeedsLayout]; }
-- (void)sampleCenter {
-    // Sample the visible center, including the user's pan/zoom position.
-    CGPoint point = [self.colorDetectView convertPoint:CGPointMake(CGRectGetMidX(self.colorDetectView.bounds), CGRectGetMidY(self.colorDetectView.bounds)) toView:self.colorDetectView.imageView];
-    CGPoint normalized;
-    if (TCNormalizedPoint(point, self.colorDetectView.imageView.bounds, &normalized)) [self handelColor:TCSampleImage(self.image, normalized)];
+- (void)scrollViewDidZoom:(UIScrollView *)scrollView {
+    [self.colorDetectView setNeedsLayout];
+    self.zoomSlider.value = log10(MAX(1,scrollView.zoomScale));
+    self.zoomSlider.accessibilityValue = [NSString stringWithFormat:@"%.1f×",scrollView.zoomScale];
 }
+- (void)zoomChanged:(UISlider *)slider { [self.colorDetectView setZoomScale:pow(10,slider.value) animated:NO]; }
+- (void)sampleCenter { [self.colorDetectView sampleVisibleCenter]; }
 - (void)handelColor:(NSString *)hex {
     if (!TCNormalizeHexColor(hex)) return;
     self.selectedHex = hex;

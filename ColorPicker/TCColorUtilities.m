@@ -73,6 +73,27 @@ TCCameraAccess TCCameraAccessForStatus(AVAuthorizationStatus status, BOOL availa
     }
 }
 
+@implementation TCCaptureGate {
+    NSUInteger _generation;
+    BOOL _accepting;
+    NSString *_selectedHex;
+}
+- (NSUInteger)generation { @synchronized(self) { return _generation; } }
+- (NSString *)selectedHex { @synchronized(self) { return _selectedHex; } }
+- (NSUInteger)beginCapture { @synchronized(self) { _selectedHex=nil; _accepting=YES; return ++_generation; } }
+- (NSUInteger)beginCaptureAfterGeneration:(NSUInteger)generation { @synchronized(self) { if (generation!=_generation) return 0; _selectedHex=nil; _accepting=YES; return ++_generation; } }
+- (NSUInteger)invalidate { @synchronized(self) { _selectedHex=nil; _accepting=NO; return ++_generation; } }
+- (BOOL)acceptsGeneration:(NSUInteger)generation { @synchronized(self) { return _accepting && generation==_generation; } }
+- (BOOL)acceptHex:(NSString *)hex generation:(NSUInteger)generation {
+    NSString *valid=TCNormalizeHexColor(hex);
+    @synchronized(self) {
+        if (!valid || !_accepting || generation!=_generation) return NO;
+        _selectedHex=valid;
+        return YES;
+    }
+}
+@end
+
 @interface TCColorStore ()
 @property (nonatomic, strong) NSUserDefaults *defaults;
 @end

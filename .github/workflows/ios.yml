@@ -41,6 +41,8 @@ jobs:
           xcodebuild -showsdks
           xcrun simctl list runtimes
           xcrun simctl list devices available
+          xcrun simctl list devicetypes -j
+          xcrun simctl help privacy
           xcodebuild -version > /tmp/touchcolor-xcode.txt
           grep 'Xcode 27.0' /tmp/touchcolor-xcode.txt
           grep -F '27A266a' /tmp/touchcolor-xcode.txt
@@ -71,6 +73,10 @@ jobs:
           print(json.dumps({'app':'TouchColor.app','embedded_framework_directory_entries':entries}))
           PYFRAMEWORKS
           otool -L build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor
+          strings build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor > /tmp/touchcolor-release-strings.txt
+          if grep -E -- '--ui-test-(reset|image|asymmetric|dark|policy-offline)' /tmp/touchcolor-release-strings.txt; then
+            echo 'Test-only seams leaked into Release'; exit 1
+          fi
       - name: Build simulator test products
         id: build-tests
         timeout-minutes: 8

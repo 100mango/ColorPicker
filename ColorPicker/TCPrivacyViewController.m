@@ -8,6 +8,10 @@ BOOL TCPrivacyAllowsDocumentURL(NSURL *URL) {
         [parts.path isEqualToString:@"/app-privacy/"] && !parts.query.length && !parts.user.length && !parts.password.length &&
         (!parts.port || parts.port.integerValue == 443);
 }
+BOOL TCPrivacyAllowsResponse(NSURLResponse *response) {
+    return TCPrivacyAllowsDocumentURL(response.URL) &&
+        (![response isKindOfClass:NSHTTPURLResponse.class] || [(NSHTTPURLResponse *)response statusCode] < 400);
+}
 BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     if (!URL || !userActivated) return NO;
     NSURLComponents *parts = [NSURLComponents componentsWithURL:URL resolvingAgainstBaseURL:NO];
@@ -18,6 +22,7 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
 @interface TCPrivacyViewController () <WKNavigationDelegate>
 @property (nonatomic, strong) WKWebView *webView;
 @property (nonatomic, strong) UIStackView *errorView;
+@property (nonatomic, strong) UIScrollView *errorScroll;
 @property (nonatomic, strong) UIActivityIndicatorView *activity;
 @property (nonatomic) BOOL closing;
 #if DEBUG
@@ -53,6 +58,8 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     UIButton *retry = [UIButton buttonWithType:UIButtonTypeSystem];
     [retry setTitle:NSLocalizedString(@"Retry", nil) forState:UIControlStateNormal];
     retry.accessibilityIdentifier = @"privacy.retry";
+    retry.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    retry.titleLabel.adjustsFontForContentSizeCategory = YES;
     [retry addTarget:self action:@selector(loadPolicy) forControlEvents:UIControlEventTouchUpInside];
     [retry.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
     self.errorView = [[UIStackView alloc] initWithArrangedSubviews:@[message, retry]];
@@ -60,7 +67,12 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     self.errorView.spacing = 16;
     self.errorView.translatesAutoresizingMaskIntoConstraints = NO;
     self.errorView.hidden = YES;
-    [self.view addSubview:self.errorView];
+    self.errorScroll = [UIScrollView new];
+    self.errorScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    self.errorScroll.accessibilityIdentifier = @"privacy.errorScroll";
+    self.errorScroll.hidden = YES;
+    [self.view addSubview:self.errorScroll];
+    [self.errorScroll addSubview:self.errorView];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [self.webView.topAnchor constraintEqualToAnchor:safe.topAnchor],
@@ -69,9 +81,15 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
         [self.webView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
         [self.activity.centerXAnchor constraintEqualToAnchor:safe.centerXAnchor],
         [self.activity.centerYAnchor constraintEqualToAnchor:safe.centerYAnchor],
-        [self.errorView.centerYAnchor constraintEqualToAnchor:safe.centerYAnchor],
-        [self.errorView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:24],
-        [self.errorView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-24]
+        [self.errorScroll.topAnchor constraintEqualToAnchor:safe.topAnchor],
+        [self.errorScroll.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
+        [self.errorScroll.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [self.errorScroll.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [self.errorView.topAnchor constraintEqualToAnchor:self.errorScroll.contentLayoutGuide.topAnchor constant:24],
+        [self.errorView.bottomAnchor constraintEqualToAnchor:self.errorScroll.contentLayoutGuide.bottomAnchor constant:-24],
+        [self.errorView.leadingAnchor constraintEqualToAnchor:self.errorScroll.contentLayoutGuide.leadingAnchor constant:24],
+        [self.errorView.trailingAnchor constraintEqualToAnchor:self.errorScroll.contentLayoutGuide.trailingAnchor constant:-24],
+        [self.errorView.widthAnchor constraintEqualToAnchor:self.errorScroll.frameLayoutGuide.widthAnchor constant:-48]
     ]];
     [self loadPolicy];
 }
@@ -86,6 +104,7 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     }
 #endif
     self.errorView.hidden = YES;
+    self.errorScroll.hidden = YES;
     self.webView.hidden = NO;
     [self.activity startAnimating];
     NSURL *URL = [NSURL URLWithString:@"https://100mango.github.io/app-privacy/"];
@@ -98,6 +117,7 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     if (self.closing || ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled)) return;
     [self.activity stopAnimating];
     self.errorView.hidden = NO;
+    self.errorScroll.hidden = NO;
     self.webView.hidden = YES;
 }
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error { [self showLoadError:error]; }
@@ -106,8 +126,7 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     [self showLoadError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil]];
 }
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-    BOOL allowed = TCPrivacyAllowsDocumentURL(response.response.URL);
-    if ([response.response isKindOfClass:NSHTTPURLResponse.class] && [(NSHTTPURLResponse *)response.response statusCode] >= 400) allowed = NO;
+    BOOL allowed = TCPrivacyAllowsResponse(response.response);
     if (!allowed) [self showLoadError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorBadServerResponse userInfo:nil]];
     decisionHandler(allowed ? WKNavigationResponsePolicyAllow : WKNavigationResponsePolicyCancel);
 }

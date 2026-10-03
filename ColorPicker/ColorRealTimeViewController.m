@@ -9,7 +9,9 @@
 @property (nonatomic, strong) UILabel *statusLabel;
 @property (nonatomic, strong) UIButton *saveButton;
 @property (nonatomic, strong) UIImageView *reticle;
-@property (nonatomic, copy) NSString *selectedHex;
+@property (nonatomic, strong) TCCaptureGate *captureGate;
+@property (atomic) BOOL interrupted;
+@property (nonatomic) BOOL permissionRequestPending;
 @property (nonatomic, strong) dispatch_queue_t sessionQueue;
 @property (atomic) BOOL wantsCapture;
 @property (nonatomic) BOOL visible;
@@ -20,6 +22,7 @@
     [super viewDidLoad];
     self.title = NSLocalizedString(@"Live Color", nil);
     self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.captureGate = [TCCaptureGate new];
     self.sessionQueue = dispatch_queue_create("com.mango.touchColor.camera", DISPATCH_QUEUE_SERIAL);
     self.cameraView = [UIView new];
     self.cameraView.backgroundColor = UIColor.blackColor;
@@ -69,20 +72,23 @@
 - (void)viewWillDisappear:(BOOL)animated { [super viewWillDisappear:animated]; self.visible = NO; [self pauseCapture]; }
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
-    [_output setSampleBufferDelegate:nil queue:NULL];
+    [_captureGate invalidate];
     AVCaptureSession *session = _session;
-    if (_sessionQueue) dispatch_async(_sessionQueue, ^{ [session stopRunning]; });
+    AVCaptureVideoDataOutput *output = _output;
+    if (_sessionQueue) dispatch_async(_sessionQueue, ^{ [output setSampleBufferDelegate:nil queue:NULL]; [session stopRunning]; });
 }
 - (void)sceneActivated:(NSNotification *)notification { if (notification.object == self.view.window.windowScene) [self resumeCapture]; }
 - (void)sceneDeactivated:(NSNotification *)notification { if (notification.object == self.view.window.windowScene) [self pauseCapture]; }
 - (void)pauseCapture {
     self.wantsCapture = NO;
-    self.selectedHex = nil;
+    [self.captureGate invalidate];
     self.saveButton.enabled = NO;
     dispatch_async(self.sessionQueue, ^{ [self.session stopRunning]; });
 }
 - (void)resumeCapture {
-    if (!self.visible || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive) return;
+    if (!self.visible || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive || self.interrupted) return;
+    [self.captureGate invalidate];
+    self.saveButton.enabled = NO;
     AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionBack] ?: [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
     TCCameraAccess access = TCCameraAccessForStatus([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo], device != nil);
     if (access == TCCameraAccessUnavailable || access == TCCameraAccessBlocked) {
@@ -91,18 +97,24 @@
         return;
     }
     if (access == TCCameraAccessAsk) {
+        self.wantsCapture = NO;
+        if (self.permissionRequestPending) return;
+        self.permissionRequestPending = YES;
         __weak typeof(self) weakSelf = self;
         [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf resumeCapture]; });
+            dispatch_async(dispatch_get_main_queue(), ^{ weakSelf.permissionRequestPending = NO; [weakSelf resumeCapture]; });
         }];
         return;
     }
     self.wantsCapture = YES;
+    NSUInteger requestedGeneration = self.captureGate.generation;
     self.statusLabel.text = NSLocalizedString(@"Waiting for camera", nil);
     __weak typeof(self) weakSelf = self;
     dispatch_async(self.sessionQueue, ^{
         typeof(self) self = weakSelf;
-        if (!self || !self.wantsCapture) return;
+        if (!self || !self.wantsCapture || self.interrupted || self.captureGate.generation != requestedGeneration) return;
+        NSUInteger generation = [self.captureGate beginCaptureAfterGeneration:requestedGeneration];
+        if (!generation) return;
         if (!self.session) {
             AVCaptureSession *session = [AVCaptureSession new];
             session.automaticallyConfiguresCaptureDeviceForWideColor = NO;
@@ -115,7 +127,7 @@
             output.alwaysDiscardsLateVideoFrames = YES;
             if (!input || ![session canAddInput:input] || ![session canAddOutput:output]) {
                 [session commitConfiguration];
-                dispatch_async(dispatch_get_main_queue(), ^{ [self showCaptureFailure]; });
+                dispatch_async(dispatch_get_main_queue(), ^{ if ([self.captureGate acceptsGeneration:generation]) [self showCaptureFailure]; });
                 return;
             }
             [session addInput:input];
@@ -136,7 +148,7 @@
                 [self.view setNeedsLayout];
             });
         }
-        if (self.wantsCapture && !self.session.running) [self.session startRunning];
+        if (self.wantsCapture && [self.captureGate acceptsGeneration:generation] && !self.session.running) [self.session startRunning];
     });
 }
 - (void)viewDidLayoutSubviews {
@@ -158,26 +170,41 @@
 }
 - (void)showCaptureFailure {
     self.wantsCapture = NO;
-    self.selectedHex = nil;
+    [self.captureGate invalidate];
     self.saveButton.enabled = NO;
     self.statusLabel.text = NSLocalizedString(@"The camera could not start. Go back and try again, or choose a photo.", nil);
 }
 - (void)captureInterrupted:(NSNotification *)notification {
     if (notification.object != self.session) return;
-    dispatch_async(dispatch_get_main_queue(), ^{ self.selectedHex = nil; self.saveButton.enabled = NO; self.statusLabel.text = NSLocalizedString(@"Camera interrupted. Waiting to resume.", nil); });
+    // Invalidate immediately on the notification thread, before any queued UI delivery can run.
+    self.interrupted = YES;
+    self.wantsCapture = NO;
+    NSUInteger generation = [self.captureGate invalidate];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.captureGate.generation != generation) return;
+        self.saveButton.enabled = NO;
+        self.statusLabel.text = NSLocalizedString(@"Camera interrupted. Waiting to resume.", nil);
+    });
 }
 - (void)captureEndedInterruption:(NSNotification *)notification {
-    if (notification.object == self.session) dispatch_async(dispatch_get_main_queue(), ^{ [self resumeCapture]; });
+    if (notification.object != self.session) return;
+    self.interrupted = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ [self resumeCapture]; });
 }
 - (void)captureError:(NSNotification *)notification {
     if (notification.object != self.session) return;
+    self.wantsCapture = NO;
+    NSUInteger generation = [self.captureGate invalidate];
     NSError *error = notification.userInfo[AVCaptureSessionErrorKey];
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.captureGate.generation != generation) return;
+        self.saveButton.enabled = NO;
         if (error.code == AVErrorMediaServicesWereReset) [self resumeCapture]; else [self showCaptureFailure];
     });
 }
 - (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
-    if (!self.wantsCapture) return;
+    NSUInteger generation = self.captureGate.generation;
+    if (!self.wantsCapture || self.interrupted || output != self.output || ![self.captureGate acceptsGeneration:generation]) return;
     CFTimeInterval now = CACurrentMediaTime();
     if (now - self.lastSampleTime < 0.1) return;
     self.lastSampleTime = now;
@@ -185,16 +212,15 @@
     NSString *hex = TCSampleCameraBuffer(CMSampleBufferGetImageBuffer(sampleBuffer));
     if (!hex) return;
     __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        typeof(self) self = weakSelf;
-        if (!self.wantsCapture || !self.visible) return;
-        self.selectedHex = hex;
-        self.statusLabel.text = [NSString stringWithFormat:@"%@  •  %@", hex, TCRGBDescription(hex)];
-        self.saveButton.enabled = YES;
-    });
+    dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf displaySample:hex generation:generation]; });
+}
+- (void)displaySample:(NSString *)hex generation:(NSUInteger)generation {
+    if (!self.wantsCapture || self.interrupted || !self.visible || ![self.captureGate acceptHex:hex generation:generation]) return;
+    self.statusLabel.text = [NSString stringWithFormat:@"%@  •  %@", hex, TCRGBDescription(hex)];
+    self.saveButton.enabled = YES;
 }
 - (void)save {
     TCColorStore *store = [[TCColorStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
-    if ([store addColor:self.selectedHex]) UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil));
+    if ([store addColor:self.captureGate.selectedHex]) UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil));
 }
 @end

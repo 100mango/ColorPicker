@@ -15,6 +15,17 @@ FOUNDATION_EXPORT BOOL TCNormalizedPoint(CGPoint point, CGRect imageRect, CGPoin
 typedef NS_ENUM(NSInteger, TCCameraAccess) { TCCameraAccessUnavailable, TCCameraAccessAsk, TCCameraAccessReady, TCCameraAccessBlocked };
 FOUNDATION_EXPORT TCCameraAccess TCCameraAccessForStatus(AVAuthorizationStatus status, BOOL available);
 
+/// Thread-safe capture epochs invalidate frames queued before interruption, pause or restart.
+@interface TCCaptureGate : NSObject
+@property (nonatomic, readonly) NSUInteger generation;
+@property (nonatomic, readonly, nullable) NSString *selectedHex;
+- (NSUInteger)beginCapture;
+- (NSUInteger)beginCaptureAfterGeneration:(NSUInteger)generation;
+- (NSUInteger)invalidate;
+- (BOOL)acceptsGeneration:(NSUInteger)generation;
+- (BOOL)acceptHex:(NSString *)hex generation:(NSUInteger)generation;
+@end
+
 @interface TCColorStore : NSObject
 - (instancetype)initWithDefaults:(NSUserDefaults *)defaults;
 @property (nonatomic, readonly) NSArray<NSString *> *colors;

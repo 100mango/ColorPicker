@@ -1,7 +1,34 @@
 #import <XCTest/XCTest.h>
 #import "TCColorUtilities.h"
 #import "TCPrivacyViewController.h"
+#import "ColorDetectView.h"
+#import "ColorViewController.h"
+#import "ColorRealTimeViewController.h"
+#import <WebKit/WebKit.h>
 
+@interface ColorRealTimeViewController (LifecycleTests)
+- (void)captureInterrupted:(NSNotification *)notification;
+- (void)pauseCapture;
+- (void)displaySample:(NSString *)hex generation:(NSUInteger)generation;
+@end
+@interface TCGeometryDelegate : NSObject <ColorDetectViewDelegate>
+@property (nonatomic, copy) NSString *hex;
+@end
+@implementation TCGeometryDelegate
+- (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView { return [(ColorDetectView *)scrollView imageView]; }
+- (void)handelColor:(NSString *)hex { self.hex=hex; }
+@end
+@interface TCPrivacyViewController (FailureTests)
+- (void)loadPolicy;
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView;
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error;
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler;
+@end
+@interface TCPolicyNoNetwork : TCPrivacyViewController
+@end
+@implementation TCPolicyNoNetwork
+- (void)loadPolicy {} // Isolates delegate/UI behavior without fetching a remote document.
+@end
 @interface ColorPickerTests : XCTestCase
 @property (nonatomic, copy) NSString *suite;
 @property (nonatomic, strong) NSUserDefaults *defaults;
@@ -151,5 +178,112 @@
     XCTAssertFalse(TCPrivacyAllowsContactURL(contact,NO));
     for (NSString *value in @[@"mailto:other@example.com", @"mailto:100mango@gmail.com?body=private", @"mailto:100mango@gmail.com#fragment", @"https://100mango.github.io/app-privacy/"]) XCTAssertFalse(TCPrivacyAllowsContactURL([NSURL URLWithString:value],YES));
     XCTAssertFalse(TCPrivacyAllowsContactURL(nil,YES));
+}
+- (void)testQueuedFramesCannotSurviveInterruptionPauseOrRestart {
+    TCCaptureGate *gate=[TCCaptureGate new];
+    NSUInteger before=[gate beginCapture];
+    XCTAssertTrue([gate acceptHex:@"#ff0000" generation:before]);
+    BOOL (^queuedBeforeInterruption)(void)=^{ return [gate acceptHex:@"#00ff00" generation:before]; };
+    [gate invalidate];
+    XCTAssertFalse(queuedBeforeInterruption());
+    XCTAssertNil(gate.selectedHex);
+    NSUInteger resumed=[gate beginCapture];
+    XCTAssertFalse(queuedBeforeInterruption());
+    XCTAssertTrue([gate acceptHex:@"#0000ff" generation:resumed]);
+    [gate invalidate]; // Background/disappearance also clears the last savable value.
+    XCTAssertFalse([gate acceptHex:@"#ff0000" generation:resumed]);
+    XCTAssertNil(gate.selectedHex);
+    NSUInteger pending=gate.generation;
+    [gate invalidate]; // Interruption races with a queued session-start request.
+    XCTAssertEqual([gate beginCaptureAfterGeneration:pending],0);
+    XCTAssertFalse([gate acceptsGeneration:pending]);
+}
+- (void)testRealInterruptionHandlerInvalidatesBeforeQueuedMainDelivery {
+    ColorRealTimeViewController *controller=[ColorRealTimeViewController new];
+    [controller loadViewIfNeeded];
+    AVCaptureSession *session=[AVCaptureSession new];
+    [controller setValue:session forKey:@"session"];
+    [controller setValue:@YES forKey:@"visible"];
+    [controller setValue:@YES forKey:@"wantsCapture"];
+    TCCaptureGate *gate=[controller valueForKey:@"captureGate"];
+    NSUInteger generation=[gate beginCapture];
+    [controller displaySample:@"#ff0000" generation:generation];
+    UIButton *save=[controller valueForKey:@"saveButton"];
+    XCTAssertTrue(save.enabled);
+    XCTestExpectation *delivery=[self expectationWithDescription:@"old frame delivered after interruption cleanup"];
+    [controller captureInterrupted:[NSNotification notificationWithName:AVCaptureSessionWasInterruptedNotification object:session]];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [controller displaySample:@"#00ff00" generation:generation];
+        XCTAssertNil(gate.selectedHex);XCTAssertFalse(save.enabled);
+        [controller setValue:@NO forKey:@"interrupted"];
+        [controller setValue:@YES forKey:@"wantsCapture"];
+        NSUInteger resumed=[gate beginCapture];
+        [controller displaySample:@"#00ff00" generation:generation];
+        XCTAssertNil(gate.selectedHex);XCTAssertFalse(save.enabled);
+        [controller displaySample:@"#0000ff" generation:resumed];
+        XCTAssertEqualObjects(gate.selectedHex,@"#0000ff");XCTAssertTrue(save.enabled);
+        [controller pauseCapture];
+        [controller displaySample:@"#ff0000" generation:resumed];
+        XCTAssertNil(gate.selectedHex);XCTAssertFalse(save.enabled);
+        [delivery fulfill];
+    });
+    [self waitForExpectations:@[delivery] timeout:2];
+}
+- (void)testMarkerAndPixelStayTogetherThroughCenterResizeZoomAndPan {
+    TCGeometryDelegate *delegate=[TCGeometryDelegate new];
+    ColorDetectView *view=[[ColorDetectView alloc] initWithFrame:CGRectMake(0,0,300,500) andUIImage:[self fixtureWithOrientation:UIImageOrientationUp scale:1]];
+    view.delegate=delegate;
+    [view layoutIfNeeded];
+    XCTAssertTrue([view sampleAtImagePoint:CGPointMake(25,25)]);
+    XCTAssertEqualObjects(delegate.hex,@"#ff0000");
+    XCTAssertTrue([view sampleVisibleCenter]);
+    XCTAssertEqualObjects(delegate.hex,@"#ff00ff");
+    CGPoint normalized=view.selectedNormalizedPoint;
+    UIImageView *marker=[view valueForKey:@"marker"];
+    for (NSValue *size in @[[NSValue valueWithCGSize:CGSizeMake(500,200)],[NSValue valueWithCGSize:CGSizeMake(250,400)]]) {
+        view.frame=(CGRect){CGPointZero,size.CGSizeValue};
+        [view setNeedsLayout];[view layoutIfNeeded];
+        CGPoint point=[view convertPoint:marker.center toView:view.imageView];
+        XCTAssertEqualWithAccuracy(point.x/view.imageView.bounds.size.width,normalized.x,0.0001);
+        XCTAssertEqualWithAccuracy(point.y/view.imageView.bounds.size.height,normalized.y,0.0001);
+        XCTAssertEqualObjects(TCSampleImage(view.imageView.image,normalized),delegate.hex);
+    }
+    NSString *before=delegate.hex;
+    XCTAssertFalse([view sampleAtImagePoint:CGPointMake(-1,-1)]); // A letterbox tap cannot move the selection.
+    XCTAssertEqualObjects(delegate.hex,before);
+    [view setZoomScale:3 animated:NO];[view layoutIfNeeded];
+    [view setContentOffset:CGPointMake(60,40) animated:NO];[view layoutIfNeeded];
+    CGPoint center=[view convertPoint:CGPointMake(CGRectGetMidX(view.bounds),CGRectGetMidY(view.bounds)) toView:view.imageView];
+    CGPoint expected;
+    XCTAssertTrue(TCNormalizedPoint(center,view.imageView.bounds,&expected));
+    XCTAssertTrue([view sampleVisibleCenter]);
+    XCTAssertEqualObjects(delegate.hex,TCSampleImage(view.imageView.image,expected));
+    CGPoint markerPoint=[view convertPoint:marker.center toView:view.imageView];
+    XCTAssertEqualWithAccuracy(markerPoint.x,center.x,0.001);
+    XCTAssertEqualWithAccuracy(markerPoint.y,center.y,0.001);
+}
+- (void)testRecoveryBackupSurvivesDeleteAndRelaunch {
+    NSArray *original=@[@"#ff0000",@"broken",@"#00ff00"];
+    [self.defaults setObject:original forKey:@"colorArray"];
+    XCTAssertTrue([self.store removeColorAtIndex:0]);
+    TCColorStore *reopened=[[TCColorStore alloc] initWithDefaults:[[NSUserDefaults alloc] initWithSuiteName:self.suite]];
+    XCTAssertEqualObjects(reopened.colors,(@[@"#00ff00"]));
+    XCTAssertEqualObjects([self.defaults objectForKey:@"colorArrayRecoveryBackup"],original);
+    XCTAssertTrue([reopened removeColorAtIndex:0]);
+    XCTAssertEqual(reopened.colors.count,0);
+    XCTAssertEqualObjects([self.defaults objectForKey:@"colorArrayRecoveryBackup"],original);
+}
+- (void)testPolicyHTTPFailuresAndWebProcessTerminationExposeRetry {
+    for (NSNumber *status in @[@200,@404,@500]) {
+        NSURLResponse *response=[[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://100mango.github.io/app-privacy/"] statusCode:status.integerValue HTTPVersion:@"HTTP/1.1" headerFields:@{}];
+        XCTAssertEqual(TCPrivacyAllowsResponse(response),status.integerValue<400);
+    }
+    NSURLResponse *foreign=[[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://example.com/"] statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{}];
+    XCTAssertFalse(TCPrivacyAllowsResponse(foreign));
+    TCPolicyNoNetwork *controller=[TCPolicyNoNetwork new];[controller loadViewIfNeeded];
+    [controller webView:nil didFailNavigation:nil withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
+    XCTAssertTrue([[controller valueForKey:@"errorScroll"] isHidden]);
+    [controller webViewWebContentProcessDidTerminate:nil];
+    XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
 }
 @end

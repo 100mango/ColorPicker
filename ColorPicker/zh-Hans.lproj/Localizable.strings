@@ -27,3 +27,7 @@
 "Close" = "关闭";
 "Retry" = "重试";
 "The privacy policy could not load. Check your connection and try again." = "无法载入隐私政策。请检查网络连接后重试。";
+
+"Zoom" = "缩放";
+"Selected pixel" = "已选择的像素";
+"Use Sample Center, or tap and drag on the photo to pick a color. Pinch or use Zoom to magnify." = "使用中心取色，或轻点、长按拖动照片取色。可双指或使用缩放滑块放大。";

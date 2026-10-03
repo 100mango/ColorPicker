@@ -34,6 +34,12 @@
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     [self.app launch];
 }
+- (void)revealControl:(XCUIElement *)element inScrollView:(XCUIElement *)scroll {
+    for (NSUInteger attempt=0;attempt<5 && (!element.hittable || !CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)));attempt++) {
+        if (CGRectGetMinY(element.frame)<CGRectGetMinY(scroll.frame)) [scroll swipeDown]; else [scroll swipeUp];
+    }
+    XCTAssertTrue(element.hittable,@"%@",self.app.debugDescription);
+}
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     for (NSUInteger attempt=0; attempt<2; attempt++) {
         XCUIElement *privacy=self.app.buttons[@"privacyPolicy"];
@@ -64,6 +70,8 @@
     [retry tap];
     XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
     XCTAssertTrue(self.app.webViews[@"privacy.content"].exists);
+    XCUIElement *policyText=[self.app.webViews.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'TouchColor'"]].firstMatch;
+    XCTAssertTrue([policyText waitForExistenceWithTimeout:30],@"The approved policy body must load after Retry");
     [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
     XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
@@ -85,7 +93,7 @@
     XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
     [self.app.buttons[@"sampleCenter"] tap];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
-    [self emitScreenshot:@"touchcolor-photo-sampled"];
+
     [self.app.buttons[@"saveColor"] tap];
     XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
@@ -101,6 +109,9 @@
     [table.cells.firstMatch swipeLeft];
     [self.app.buttons[@"Delete"] tap];
     XCTAssertEqual(table.cells.count,0);
+    [self.app terminate];[self.app launch];
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
 }
 - (void)testNoCameraAndLiveLifecycleDoNotEnableInvalidSave {
     [self.app.buttons[@"takePhoto"] tap];
@@ -120,9 +131,9 @@
     [self.app.buttons[@"Sample Fixture"] tap];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
-    XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
+    [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
     [self.app.buttons[@"sampleCenter"] tap];
-    XCTAssertTrue(self.app.buttons[@"saveColor"].hittable);
+    [self revealControl:self.app.buttons[@"saveColor"] inScrollView:self.app.scrollViews[@"photoControls"]];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
 }
@@ -135,9 +146,9 @@
     XCTAssertTrue(self.app.buttons[@"liveColor"].hittable);
     [self.app.buttons[@"Sample Fixture"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
-    XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
+    [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
     [self.app.buttons[@"sampleCenter"] tap];
-    XCTAssertTrue(self.app.buttons[@"saveColor"].hittable);
+    [self revealControl:self.app.buttons[@"saveColor"] inScrollView:self.app.scrollViews[@"photoControls"]];
     XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
     [self.app.buttons[@"saveColor"] tap];
     [self.app.navigationBars.buttons.firstMatch tap];
@@ -161,14 +172,75 @@
     XCTAssertTrue(CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1)),@"Landscape RGB detail must remain readable at largest text size");
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
 }
+- (void)assertMarkerAtImageX:(CGFloat)x y:(CGFloat)y {
+    XCUIElement *photo=self.app.images[@"sampleImage"], *marker=self.app.images[@"sampleMarker"];
+    XCTAssertTrue(marker.exists,@"%@",self.app.debugDescription);
+    XCTAssertEqualWithAccuracy(CGRectGetMidX(marker.frame),photo.frame.origin.x+photo.frame.size.width*x,2);
+    XCTAssertEqualWithAccuracy(CGRectGetMidY(marker.frame),photo.frame.origin.y+photo.frame.size.height*y,2);
+}
+- (void)testAsymmetricMarkerCenterRotationLetterboxAndAccessibleZoomInDarkMode {
+    [self.app terminate];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-asymmetric",@"--ui-test-dark"]];
+    [self.app launch];[self.app.buttons[@"Sample Fixture"] tap];
+    XCUIElement *photo=self.app.images[@"sampleImage"];
+    XCTAssertTrue([photo waitForExistenceWithTimeout:5]);
+    [[photo coordinateWithNormalizedOffset:CGVectorMake(0.15,0.25)] tap];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
+    [self assertMarkerAtImageX:0.15 y:0.25];
+    [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
+    [self assertMarkerAtImageX:0.5 y:0.5];
+    [self emitScreenshot:@"touchcolor-asymmetric-dark"];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
+    [self assertMarkerAtImageX:0.5 y:0.5];
+    XCUIElement *viewport=self.app.scrollViews[@"photoViewport"];
+    XCTAssertGreaterThan(viewport.frame.size.width,photo.frame.size.width+20);
+    [[viewport coordinateWithNormalizedOffset:CGVectorMake(0.02,0.5)] tap];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
+    [self assertMarkerAtImageX:0.5 y:0.5];
+    XCUIElement *zoom=self.app.sliders[@"photoZoom"];
+    [self revealControl:zoom inScrollView:self.app.scrollViews[@"photoControls"]];
+    XCTAssertEqualObjects(zoom.label,@"Zoom");
+    [zoom adjustToNormalizedSliderPosition:0.15];
+    XCTAssertGreaterThan([zoom.value doubleValue],1.5);
+    XCTAssertLessThan([zoom.value doubleValue],2.5);
+    [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
+    [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue(self.app.images[@"sampleMarker"].exists);
+    NSString *hex=[self.app.staticTexts[@"sampledColor"].label componentsSeparatedByString:@"\n"].firstObject;
+    XCTAssertTrue([self.app.images[@"sampleMarker"].value containsString:hex]);
+    CGRect photoFrame=photo.frame, markerFrame=self.app.images[@"sampleMarker"].frame;
+    CGFloat x=(CGRectGetMidX(markerFrame)-photoFrame.origin.x)/photoFrame.size.width;
+    CGFloat y=(CGRectGetMidY(markerFrame)-photoFrame.origin.y)/photoFrame.size.height;
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
+    [self assertMarkerAtImageX:x y:y];
+}
+- (void)testLargestTextOfflinePolicyCanScrollRetryAndCloseInLandscape {
+    [self.app terminate];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-policy-offline",@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];
+    [self.app launch];[self.app.buttons[@"privacyPolicy"] tap];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
+    XCUIElement *retry=self.app.buttons[@"privacy.retry"];
+    XCTAssertTrue([retry waitForExistenceWithTimeout:5]);
+    [self revealControl:retry inScrollView:self.app.scrollViews[@"privacy.errorScroll"]];
+    XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable);
+    [retry tap];
+    XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
+    [self.app.buttons[@"privacy.close"] tap];
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
+}
 - (void)testSystemPhotoSelectionAndSampling {
-    // CI seeds an opaque red PNG into this simulator's Photos library.
+    // CI seeds one known 300×200 RGB fixture. iOS17 labels it Photo; iOS27 adds a grid identifier.
     [self.app.buttons[@"choosePhoto"] tap];
-    XCUIElement *cell=[self.app.images matchingIdentifier:@"PXGGridLayout-Info"].firstMatch;
-    XCTAssertTrue([cell waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
-    [cell tap];
+    NSPredicate *photoPredicate=[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"];
+    XCUIElement *photo=[self.app.images matchingPredicate:photoPredicate].firstMatch;
+    XCTAssertTrue([photo waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
+    [photo tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
     [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
+    [[self.app.images[@"sampleImage"] coordinateWithNormalizedOffset:CGVectorMake(0.15,0.25)] tap];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
 }
 @end
