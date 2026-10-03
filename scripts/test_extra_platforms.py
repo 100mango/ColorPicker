@@ -6,12 +6,20 @@ from capture_simulator_checkpoint import capture as capture_checkpoint
 from watch_profiles import select_profile
 from bounded_process import run_captured, check_output
 from vision_suites import SUITES as VISION_SUITES
+from native_runtime_diagnostics import snapshot as runtime_snapshot, MAX_SNAPSHOTS
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'captures':[],'platform':kind,'sha':check_output(['git','rev-parse','HEAD'],text=True,timeout=10).strip(),'stages':[]}
+runtime_started=time.time()
+def diagnose(label):
+    if report.get('cleanup_unconfirmed') or len(report.get('runtime_diagnostics',[]))>=MAX_SNAPSHOTS: return
+    sample=runtime_snapshot(label,device['udid'] if device else None,runtime_started)
+    report.setdefault('runtime_diagnostics',[]).append(sample)
+    if sample.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
+    print('NATIVE_PROCESS_DIAGNOSTIC',json.dumps(sample),flush=True)
 def run(command,timeout,required=True):
     if report.get('cleanup_unconfirmed'):
         if required: raise RuntimeError('Prior process exit is unconfirmed; no new work on this VM')
@@ -28,8 +36,10 @@ def run(command,timeout,required=True):
     def output():
         for line in p.stdout:
             print(line,end='',flush=True)
+            if kind=='vision' and 'ui_scope' in report and (re.search(r"Test Case .*(?:started\.|failed \()",line) or 'kAXErrorServerNotFound' in line):
+                diagnose(line.strip()[:180])
             checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
-            if checkpoint and kind=='vision' and device and len(report['captures'])<16:
+            if checkpoint and kind=='vision' and device and not report.get('cleanup_unconfirmed') and len(report['captures'])<16:
                 try:
                     result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
@@ -168,6 +178,7 @@ try:
         case={'vision':'VisionWorkflowTests/testRealPhotosImport','tv':'TVWorkflowTests/testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence'}[kind]
         skip=['-skip-testing:'+name+'UITests/'+case]
     resources('before tests')
+    if kind=='vision': diagnose('before tests')
     # Keep build logs quiet, but retain runtime test/checkpoint output for precise failures.
     test_common=[value for value in common if value!='-quiet']
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
@@ -193,6 +204,7 @@ except Exception as error:
     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
+    if kind=='vision' and not report.get('cleanup_unconfirmed'): diagnose('after platform attempt')
     if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
     if result_bundle.exists() and not report.get('cleanup_unconfirmed'):

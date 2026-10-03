@@ -94,7 +94,11 @@ final class WatchWorkflowTests: XCTestCase {
         try audit("explicit Send confirmation")
         let confirmation = XCTAttachment(screenshot: app.screenshot())
         confirmation.name = "Native Watch device-sized Send and Cancel"; confirmation.lifetime = .keepAlways; add(confirmation)
-        app.buttons["Cancel"].firstMatch.tap()
+        // watchOS renders the cancel-role action as the observed top-left Close
+        // control, not as a table row titled Cancel (including the 40mm layout).
+        let close = app.buttons["AX_ActionContentControllerCancelButton"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(close.label, "Close"); close.tap()
         XCTAssertTrue(app.buttons["watch.send"].waitForExistence(timeout: 5))
         app.buttons["BackButton"].tap()
         for _ in 0..<5 where !app.buttons["watch.transfer.open"].isHittable { app.swipeUp() }
@@ -159,22 +163,36 @@ final class WatchWorkflowTests: XCTestCase {
     }
 
     func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() {
-        func reach(_ button: XCUIElement) {
-            for _ in 0..<6 where !button.isHittable { app.swipeUp() }
+        func reach(_ identifier: String) {
+            let button = app.buttons[identifier]
+            for _ in 0..<12 {
+                if button.exists && button.isHittable { break }
+                var above = button.exists && button.frame.midY < app.frame.midY
+                if !button.exists, let targetIndex = Int(identifier.replacingOccurrences(of: "watch.color.", with: "")) {
+                    // Lists virtualize offscreen rows. A fast full-screen swipe can
+                    // skip color 0 on the 40mm display; use the actual neighboring
+                    // row identities to reverse direction instead of scrolling
+                    // farther toward the end after every unsuccessful query.
+                    let indices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "watch.color."))
+                        .allElementsBoundByIndex.compactMap { Int($0.identifier.dropFirst("watch.color.".count)) }
+                    if let first = indices.min() { above = targetIndex < first }
+                }
+                if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+            }
             XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()
         }
         func back() { app.buttons["BackButton"].tap() }
         app.buttons["watch.editor"].tap(); app.buttons["watch.component.down"].tap()
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
-        reach(app.buttons["watch.save"]); app.buttons["watch.save"].tap(); back()
-        reach(app.buttons["watch.color.1"])
+        reach("watch.save"); app.buttons["watch.save"].tap(); back()
+        reach("watch.color.1")
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
-        reach(app.buttons["watch.edit.copy"])
+        reach("watch.edit.copy")
         app.buttons["watch.component.down"].tap()
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fd0000")
-        reach(app.buttons["watch.save"]); back(); back()
+        reach("watch.save"); back(); back()
         for _ in 0..<4 { app.swipeDown() }
-        reach(app.buttons["watch.color.0"]); reach(app.buttons["watch.delete.0"])
+        reach("watch.color.0"); reach("watch.delete.0")
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
         XCTAssertTrue(app.staticTexts["watch.count"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["watch.count"].label, "2")

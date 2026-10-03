@@ -85,6 +85,7 @@ jobs:
           python3 scripts/test_watch_profiles.py
           python3 scripts/test_bounded_process.py
           python3 scripts/test_vision_suites.py
+          python3 scripts/test_native_runtime_diagnostics.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Probe native XCTest accessibility audit availability
