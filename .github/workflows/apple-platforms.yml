@@ -11,7 +11,7 @@ concurrency:
 jobs:
   native-mac:
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 85
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -39,6 +39,7 @@ jobs:
           python3 scripts/generate_mac_project.py
           python3 scripts/generate_vision_project.py
           python3 scripts/generate_watch_project.py
+          python3 scripts/generate_tv_project.py
           python3 scripts/verify_mac_icons.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
@@ -103,6 +104,16 @@ jobs:
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
         timeout-minutes: 22
         run: python3 scripts/test_extra_platforms.py watch
+      - name: Native tvOS executable and real remote workflows
+        id: tv
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 22
+        run: python3 scripts/test_extra_platforms.py tv
+      - name: Minimal ad-hoc sandbox native Mac UI workflows
+        id: sandbox
+        if: ${{ !cancelled() && steps.units.outcome == 'success' }}
+        timeout-minutes: 12
+        run: bash scripts/test_mac_sandbox.sh
       - name: Build original iOS app and direct cross-language equivalence tests
         id: ios
         if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.ui.outcome == 'success' }}
@@ -124,7 +135,7 @@ jobs:
         run: |
           mkdir -p build/evidence
           echo 'Intel slice build outcome: ${{ steps.intel.outcome }}; Intel runtime: not tested' | tee build/evidence/architecture.txt
-          for name in unit ui; do
+          for name in unit ui sandbox; do
             if test -d "build/mac-$name.xcresult"; then
               xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
             fi
@@ -135,7 +146,7 @@ jobs:
           if test -d build/mac-ui.xcresult; then
             xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
           fi
-          for platform in vision watch; do
+          for platform in vision watch tv; do
             if test -d "build/$platform-tests.xcresult"; then
               xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
               xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
@@ -151,7 +162,7 @@ jobs:
           for manifest in root.glob('*/manifest.json'):
               groups=json.loads(manifest.read_text()); keep=set()
               for group in groups:
-                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith(('Native Mac','Native Vision','Native Watch'))]
+                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith(('Native Mac','Native Vision','Native Watch','Native TV'))]
                   keep.update(a['exportedFileName'] for a in group['attachments'])
               for p in manifest.parent.iterdir():
                   if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()

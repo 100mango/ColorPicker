@@ -66,16 +66,18 @@ struct VisionColorWindow: View {
             }.padding(16)
                 .onDrop(of: [.image], isTargeted: nil) { VisionImport.providers($0, session: session) }
                 .navigationTitle("TouchColor")
-        }
-        .toolbar {
-            Button { importing = true } label: { Label("Open", systemImage: "folder") }.accessibilityIdentifier("image.open")
-            PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) { Label("Photos", systemImage: "photo") }
-                .accessibilityIdentifier("image.photos")
-            PasteButton(supportedContentTypes: [.image]) { _ = VisionImport.providers($0, session: session) }
-                .accessibilityIdentifier("image.paste")
-            Button { prepareImageExport() } label: { Label("Export PNG", systemImage: "square.and.arrow.up") }
-                .disabled(session.raster == nil || preparingExport).accessibilityIdentifier("image.export")
-            Button { privacy = true } label: { Label("Privacy", systemImage: "hand.raised") }.accessibilityIdentifier("privacy.open")
+                .toolbar {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { importing = true } label: { Label("Open", systemImage: "folder") }.accessibilityIdentifier("image.open")
+                        PhotosPicker(selection: $photo, matching: .images, preferredItemEncoding: .current) { Label("Photos", systemImage: "photo") }
+                            .accessibilityIdentifier("image.photos")
+                        PasteButton(supportedContentTypes: [.image]) { _ = VisionImport.providers($0, session: session) }
+                            .accessibilityIdentifier("image.paste")
+                        Button { prepareImageExport() } label: { Label("Export PNG", systemImage: "square.and.arrow.up") }
+                            .disabled(session.raster == nil || preparingExport).accessibilityIdentifier("image.export")
+                        Button { privacy = true } label: { Label("Privacy", systemImage: "hand.raised") }.accessibilityIdentifier("privacy.open")
+                    }
+                }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.image, .json]) { result in
             switch result {

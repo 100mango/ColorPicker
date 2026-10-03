@@ -27,3 +27,21 @@ public struct PaletteTransfer: Equatable, Sendable {
     }
 }
 public enum PaletteTransferError: Error { case invalid }
+
+public struct PaletteTransferReceipt: Codable, Equatable, Sendable {
+    public enum Outcome: String, Codable, Sendable { case accepted, rejected }
+    public let version: Int
+    public let requestID: UUID
+    public let fingerprint: String
+    public let outcome: Outcome
+    public init(requestID: UUID, fingerprint: String, outcome: Outcome) {
+        version = 1; self.requestID = requestID; self.fingerprint = fingerprint; self.outcome = outcome
+    }
+    public func encoded() throws -> Data { try JSONEncoder().encode(self) }
+    public static func decode(_ data: Data) throws -> Self {
+        guard data.count <= 1024, let result = try? JSONDecoder().decode(Self.self, from: data), result.version == 1,
+              result.fingerprint.utf8.count == 64,
+              result.fingerprint.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw PaletteTransferError.invalid }
+        return result
+    }
+}

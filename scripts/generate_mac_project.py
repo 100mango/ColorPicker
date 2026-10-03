@@ -43,7 +43,7 @@ for name,kind,files in [('TouchColorMac','application',apprefs),('TouchColorMacT
     phases=[phase(name+'sources','PBXSourcesBuildPhase',files),framework,phase(name+'resources','PBXResourcesBuildPhase',[resource,privacy,strings,infoStrings] if app else [])]
     settings=dict(PRODUCT_NAME='$(TARGET_NAME)',PRODUCT_BUNDLE_IDENTIFIER='com.mango.touchColor' if app else 'com.mango.touchColor.'+name,GENERATE_INFOPLIST_FILE='YES',MACOSX_DEPLOYMENT_TARGET='13.0',SDKROOT='macosx',SUPPORTED_PLATFORMS='macosx',SWIFT_VERSION='5.0',CODE_SIGN_STYLE='Automatic',CODE_SIGNING_ALLOWED='NO',ENABLE_APP_SANDBOX='NO',ENABLE_HARDENED_RUNTIME='NO',LD_RUNPATH_SEARCH_PATHS=['$(inherited)','@executable_path/../Frameworks','@loader_path/../Frameworks'],CLANG_ENABLE_MODULES='YES')
     if app:
-        settings.update(PRODUCT_NAME='TouchColor',PRODUCT_MODULE_NAME='TouchColorMac',INFOPLIST_KEY_CFBundleName='TouchColor',INFOPLIST_KEY_CFBundleDisplayName='TouchColor',INFOPLIST_KEY_LSApplicationCategoryType='public.app-category.graphics-design',INFOPLIST_KEY_NSCameraUsageDescription='TouchColor uses the camera to sample colors from live scenes and frames you choose to freeze.',ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',MARKETING_VERSION='2.0',CURRENT_PROJECT_VERSION='20001')
+        settings.update(TOUCHCOLOR_ENABLE_SANDBOX='NO',TOUCHCOLOR_SANDBOX_ENTITLEMENTS='',ENABLE_APP_SANDBOX='$(TOUCHCOLOR_ENABLE_SANDBOX)',CODE_SIGN_ENTITLEMENTS='$(TOUCHCOLOR_SANDBOX_ENTITLEMENTS)',PRODUCT_NAME='TouchColor',PRODUCT_MODULE_NAME='TouchColorMac',INFOPLIST_KEY_CFBundleName='TouchColor',INFOPLIST_KEY_CFBundleDisplayName='TouchColor',INFOPLIST_KEY_LSApplicationCategoryType='public.app-category.graphics-design',INFOPLIST_KEY_NSCameraUsageDescription='TouchColor uses the camera to sample colors from live scenes and frames you choose to freeze.',ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',MARKETING_VERSION='2.0',CURRENT_PROJECT_VERSION='20001')
     if kind=='bundle.unit-test': settings.update(TEST_HOST='$(BUILT_PRODUCTS_DIR)/TouchColor.app/Contents/MacOS/TouchColor',BUNDLE_LOADER='$(TEST_HOST)')
     if kind=='bundle.ui-testing': settings.update(TEST_TARGET_NAME='TouchColorMac')
     dependencies=[]
@@ -75,3 +75,12 @@ launch=ET.SubElement(scheme,'LaunchAction',buildConfiguration='Debug',selectedDe
 reference(ET.SubElement(launch,'BuildableProductRunnable',runnableDebuggingMode='0'),'TouchColorMac')
 ET.SubElement(scheme,'AnalyzeAction',buildConfiguration='Debug'); ET.SubElement(scheme,'ArchiveAction',buildConfiguration='Release',revealArchiveInOrganizer='YES')
 ET.indent(scheme); ET.ElementTree(scheme).write(projectdir/'xcshareddata/xcschemes/TouchColorMac.xcscheme',encoding='UTF-8',xml_declaration=True)
+
+# External UI automation does not embed the app-hosted unit bundle in the sandboxed app.
+import copy
+sandbox=copy.deepcopy(scheme)
+for action in sandbox.findall('TestAction'):
+    for tests in action.findall('Testables'):
+        for child in list(tests):
+            if child.find('BuildableReference').get('BlueprintName')=='TouchColorMacTests': tests.remove(child)
+ET.indent(sandbox); ET.ElementTree(sandbox).write(projectdir/'xcshareddata/xcschemes/TouchColorMacSandbox.xcscheme',encoding='UTF-8',xml_declaration=True)

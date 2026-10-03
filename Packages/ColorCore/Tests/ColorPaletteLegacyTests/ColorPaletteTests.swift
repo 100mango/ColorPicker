@@ -45,3 +45,46 @@ final class ColorPaletteTests: XCTestCase {
         XCTAssertEqual(try PaletteFile.decode(Data("[]".utf8)), [])
     }
 }
+
+final class PaletteInboxTests: XCTestCase {
+    func testExplicitAcceptanceAtomicDomainPreservesLegacyBackupOrderAndDuplicateReceipt() throws {
+        let suite = "TouchColor.inbox.\(UUID())"
+        let isolated = UserDefaults(suiteName: suite)!
+        defer { isolated.removePersistentDomain(forName: suite) }
+        isolated.setPersistentDomain(["colorArray": ["#FF0000", "bad", "#ff0000"], "unrelated": "keep"], forName: suite)
+        let inbox = PaletteInbox(defaults: isolated, domain: suite)
+        let message = try PaletteTransfer(colors: [RGBColor(hex: "#abcdef")!, RGBColor(hex: "#abcdef")!])
+        let data = try message.encoded()
+        XCTAssertNil(try inbox.receive(data)); XCTAssertNil(try inbox.receive(data))
+        XCTAssertEqual(try inbox.pending().count, 1)
+        XCTAssertEqual(isolated.stringArray(forKey: "colorArray"), ["#FF0000", "bad", "#ff0000"])
+        let receipt = try inbox.accept(message.id)
+        XCTAssertEqual(receipt.outcome, .accepted)
+        XCTAssertEqual(isolated.stringArray(forKey: "colorArray"), ["#ff0000", "#ff0000", "#abcdef", "#abcdef"])
+        XCTAssertEqual(isolated.stringArray(forKey: "colorArrayRecoveryBackup"), ["#FF0000", "bad", "#ff0000"])
+        XCTAssertEqual(isolated.string(forKey: "unrelated"), "keep")
+        let reopened = PaletteInbox(defaults: isolated, domain: suite)
+        XCTAssertEqual(try reopened.receive(data), receipt); XCTAssertEqual(try reopened.accept(message.id), receipt)
+        XCTAssertEqual(isolated.stringArray(forKey: "colorArray")?.count, 4)
+        XCTAssertTrue(try reopened.pending().isEmpty)
+    }
+    func testPartialMalformedConflictingAndRejectedTransfersCannotChangePhonePalette() throws {
+        let suite = "TouchColor.inbox.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["#123456"], forKey: "colorArray")
+        let inbox = PaletteInbox(defaults: defaults, domain: suite)
+        let message = try PaletteTransfer(colors: [RGBColor(hex: "#ff0000")!]), data = try message.encoded()
+        try inbox.receive(data)
+        XCTAssertThrowsError(try inbox.receive(data.prefix(data.count / 2)))
+        let conflict = try PaletteTransfer(id: message.id, colors: [RGBColor(hex: "#00ff00")!])
+        XCTAssertThrowsError(try inbox.receive(conflict.encoded()))
+        XCTAssertEqual(try inbox.pending(), [message])
+        let receipt = try inbox.reject(message.id)
+        XCTAssertEqual(receipt.outcome, .rejected)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), ["#123456"])
+        XCTAssertTrue(try inbox.pending().isEmpty)
+        XCTAssertEqual(try PaletteTransferReceipt.decode(receipt.encoded()), receipt)
+        XCTAssertThrowsError(try PaletteTransferReceipt.decode(Data(repeating: 0, count: 1025)))
+    }
+}

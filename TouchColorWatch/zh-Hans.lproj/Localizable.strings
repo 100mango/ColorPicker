@@ -108,3 +108,6 @@
 "Queued for iPhone. This has not changed the phone palette." = "已排队发送到 iPhone，手机调色板尚未变更。";
 "Transfer cancelled. If it already arrived, review it on iPhone." = "已取消传输。如果已经送达，请在 iPhone 上查看。";
 "Delivered to iPhone for review. The phone palette changes only after acceptance." = "已送达 iPhone 等待确认。接受后才会更改手机调色板。";
+"Accepted on iPhone." = "iPhone 已接受。";
+"Declined on iPhone. Your watch palette is unchanged." = "iPhone 已拒绝，手表调色板未变更。";
+"The transfer acknowledgement could not be saved. The request was kept for retry." = "无法保存传输回执，原请求已保留，可再次重试。";

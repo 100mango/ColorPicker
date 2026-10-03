@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class VisionWorkflowTests: XCTestCase {
     private var app: XCUIApplication!
@@ -12,7 +13,10 @@ final class VisionWorkflowTests: XCTestCase {
         app.terminate()
     }
     private func capture(_ name: String) {
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        // The per-app vision capture cropped the magnified scene to logical window bounds.
+        // Retain the actual simulator display so the whole native window can be inspected.
+        guard let bytes = XCUIScreen.main.screenshot().image.jpegData(compressionQuality: 0.5), bytes.count <= 3_000_000 else { return }
+        let shot = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.jpeg"); shot.name = name; shot.lifetime = .keepAlways; add(shot)
     }
     private func hex(_ expected: String) {
         let value = app.staticTexts["sample.hex"]

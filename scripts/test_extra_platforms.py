@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
 """One native platform per invocation on the existing standard runner; bounded real builds/tests."""
-import datetime,json,os,signal,subprocess,sys,struct,zlib
+import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re
 from pathlib import Path
-kind=sys.argv[1]; assert kind in ('vision','watch')
-name='TouchColor'+kind.title(); project=name+'.xcodeproj'
-platform='visionOS' if kind=='vision' else 'watchOS'
-runtime_suffix='xrOS-27-0' if kind=='vision' else 'watchOS-27-0'
+kind=sys.argv[1]; assert kind in ('vision','watch','tv')
+name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
+platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
+runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'platform':kind,'sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'stages':[]}
 def run(command,timeout,required=True):
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
-    p=subprocess.Popen(command,start_new_session=True)
+    diagnostics=[]
+    p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    def output():
+        for line in p.stdout:
+            print(line,end='',flush=True)
+            if re.match(r'(?:/.*|xcodebuild): error: ',line) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
+    reader=threading.Thread(target=output,daemon=True);reader.start()
     try:code=p.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         os.killpg(p.pid,signal.SIGTERM)
         try:p.wait(timeout=10)
         except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait()
         code=124
-    report['stages'].append({'command':command,'exit':code})
+    reader.join(timeout=5)
+    # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
+    if code==0 and diagnostics: code=65
+    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics})
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
@@ -25,7 +34,7 @@ device=None
 try:
     common=['xcodebuild','-project',project,'-scheme',name,'CODE_SIGNING_ALLOWED=NO']
     run(common+['-configuration','Release','-destination','generic/platform='+platform,'-derivedDataPath','build/'+kind+'-device','build'],420)
-    binary=Path('build')/(kind+'-device')/'Build/Products'/('Release-xros' if kind=='vision' else 'Release-watchos')/'TouchColor.app/TouchColor'
+    binary=Path('build')/(kind+'-device')/'Build/Products'/{'vision':'Release-xros','watch':'Release-watchos','tv':'Release-appletvos'}[kind]/'TouchColor.app/TouchColor'
     run(['file',str(binary)],30);run(['otool','-l',str(binary)],30)
     text=subprocess.check_output(['strings',str(binary)],text=True)
     assert 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
@@ -37,7 +46,7 @@ try:
     report.update(runtime=runtime,device=device)
     run(['xcrun','simctl','boot',device['udid']],180,required=False)
     run(['xcrun','simctl','bootstatus',device['udid'],'-b'],420)
-    if kind=='vision':
+    if kind in ('vision','tv'):
         w,h=300,200
         palette=[bytes(v) for v in [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255)]]
         rows=b''.join(b'\0'+b''.join(palette[(y//100)*3+x//100] for x in range(w)) for y in range(h))

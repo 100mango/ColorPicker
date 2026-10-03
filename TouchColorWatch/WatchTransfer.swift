@@ -2,24 +2,37 @@ import Foundation
 import Combine
 import WatchConnectivity
 import ColorDomain
+import ColorPaletteLegacy
 
 /// Only an explicit Send creates a queued message. Pending payload survives relaunch;
 /// retry keeps its UUID so the phone inbox can reject duplicate delivery.
 @MainActor final class WatchTransfer: NSObject, ObservableObject, WCSessionDelegate {
     @Published private(set) var status = NSLocalizedString("Select Send to iPhone to request a transfer.", comment: "Watch transfer status")
     @Published private(set) var pending: PaletteTransfer?
+    @Published private(set) var lastReceipt: PaletteTransferReceipt?
     private let file: URL
+    private let receiptFile: URL
     private var activeTransfer: WCSessionUserInfoTransfer?
     private var session: WCSession?
     init(directory: URL? = nil, activate: Bool = true) {
         let folder = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         file = folder.appendingPathComponent("pending-color-transfer.json")
+        receiptFile = folder.appendingPathComponent("last-color-transfer-receipt.json")
         super.init()
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: file.path) {
                 pending = try PaletteTransfer.decode(Data(contentsOf: file))
                 status = NSLocalizedString("A transfer is pending. Open TouchColor on iPhone, then choose Retry.", comment: "Watch transfer status")
+            }
+            if FileManager.default.fileExists(atPath: receiptFile.path) {
+                let receipt = try PaletteTransferReceipt.decode(Data(contentsOf: receiptFile))
+                lastReceipt = receipt
+                if let pending, receipt.requestID == pending.id, receipt.fingerprint == (try PaletteFingerprint.of(pending)) {
+                    if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+                    self.pending = nil
+                    status = receipt.outcome == .accepted ? NSLocalizedString("Accepted on iPhone.", comment: "Transfer receipt") : NSLocalizedString("Declined on iPhone. Your watch palette is unchanged.", comment: "Transfer receipt")
+                }
             }
         } catch { status = NSLocalizedString("The pending transfer could not be read. Its file was kept.", comment: "Watch transfer error") }
         if activate && WCSession.isSupported() { session = .default; session?.delegate = self; session?.activate() }
@@ -52,6 +65,23 @@ import ColorDomain
         do { if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }; pending = nil
             status = NSLocalizedString("Transfer cancelled. If it already arrived, review it on iPhone.", comment: "Watch transfer status")
         } catch { status = error.localizedDescription }
+    }
+    func receiveReceipt(_ data: Data) {
+        do {
+            let receipt = try PaletteTransferReceipt.decode(data)
+            guard let pending, receipt.requestID == pending.id, receipt.fingerprint == (try PaletteFingerprint.of(pending)) else { return }
+            // Persist the acknowledgement before clearing its request; a relaunch reconciles
+            // either ordering without resending or applying an old acknowledgement to a new request.
+            try receipt.encoded().write(to: receiptFile, options: .atomic)
+            lastReceipt = receipt
+            if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+            self.pending = nil; activeTransfer = nil
+            status = receipt.outcome == .accepted ? NSLocalizedString("Accepted on iPhone.", comment: "Transfer receipt") : NSLocalizedString("Declined on iPhone. Your watch palette is unchanged.", comment: "Transfer receipt")
+        } catch { status = NSLocalizedString("The transfer acknowledgement could not be saved. The request was kept for retry.", comment: "Transfer receipt") }
+    }
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
+        guard let data = userInfo["touchColorReceiptV1"] as? Data else { return }
+        Task { @MainActor in self.receiveReceipt(data) }
     }
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         Task { @MainActor in

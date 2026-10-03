@@ -2,6 +2,7 @@ import XCTest
 import Foundation
 import ColorDomain
 import ColorRaster
+import ColorPaletteLegacy
 @testable import TouchColorWatch
 
 @MainActor final class WatchWorkspaceTests: XCTestCase {
@@ -59,4 +60,23 @@ import ColorRaster
         model.load(WatchPhotoFile(url: stale), token: old)
         XCTAssertEqual(model.color?.hex, "#00ff00"); XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
     }
+    func testAcknowledgementsPersistAndIgnoreStaleOrDuplicateMessages() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-ack-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = WatchTransfer(directory: directory, activate: false)
+        model.request([RGBColor(hex: "#123456")!])
+        let first = try XCTUnwrap(model.pending)
+        let receipt = PaletteTransferReceipt(requestID: first.id, fingerprint: try PaletteFingerprint.of(first), outcome: .accepted)
+        model.receiveReceipt(try receipt.encoded())
+        XCTAssertNil(model.pending); XCTAssertEqual(model.lastReceipt, receipt)
+        let reopened = WatchTransfer(directory: directory, activate: false)
+        XCTAssertNil(reopened.pending); XCTAssertEqual(reopened.lastReceipt, receipt)
+        reopened.request([RGBColor(hex: "#abcdef")!])
+        let next = reopened.pending
+        reopened.receiveReceipt(try receipt.encoded())
+        XCTAssertEqual(reopened.pending, next)
+        reopened.receiveReceipt(Data("partial acknowledgement".utf8))
+        XCTAssertEqual(reopened.pending, next)
+    }
+
 }

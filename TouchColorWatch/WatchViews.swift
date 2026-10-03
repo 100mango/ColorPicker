@@ -52,7 +52,7 @@ struct WatchColorEditor: View {
         ScrollView {
             VStack(spacing: 12) {
                 WatchSwatch(color: palette.selected)
-                Picker("Component", selection: $channel) { Text("R").tag(0); Text("G").tag(1); Text("B").tag(2) }.pickerStyle(.segmented)
+                Picker("Component", selection: $channel) { Text("R").tag(0); Text("G").tag(1); Text("B").tag(2) }.pickerStyle(.navigationLink)
                 HStack {
                     Button("−") { component.wrappedValue = max(0, component.wrappedValue - 1) }.accessibilityIdentifier("watch.component.down")
                     Text("\(Int(component.wrappedValue.rounded()))").monospacedDigit().frame(maxWidth: .infinity)

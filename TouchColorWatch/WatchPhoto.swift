@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import PhotosUI
+import CoreTransferable
 import UniformTypeIdentifiers
 import ColorDomain
 import ColorRaster
