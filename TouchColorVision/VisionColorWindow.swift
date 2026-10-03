@@ -95,7 +95,7 @@ struct VisionColorWindow: View {
             }
             exportDocument = nil
         }
-        .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil }, set: { if !$0 { session.errorMessage = nil } })) {
+        .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil }, set: { if !$0, session.errorMessage != nil { session.errorMessage = nil } })) {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: { Text(session.errorMessage ?? "") }
         .sheet(isPresented: $privacy) { PrivacyView() }

@@ -85,3 +85,51 @@ final class MinimumSizeView: NSView {
         window?.contentView?.setAccessibilityIdentifier("workspace.content")
     }
 }
+
+/// NavigationSplitView creates a separate accessible hosting group for each pane.
+/// Label the outermost existing group inside this marker's split pane, without
+/// changing its role, children, or the window's own accessibility container.
+struct NativePaneAccessibility: NSViewRepresentable {
+    let label: String
+    let identifier: String
+    func makeNSView(context: Context) -> PaneAccessibilityView {
+        let view = PaneAccessibilityView()
+        view.setAccessibilityElement(false)
+        return view
+    }
+    func updateNSView(_ view: PaneAccessibilityView, context: Context) {
+        view.paneLabel = label; view.paneIdentifier = identifier
+        view.labelPane()
+        DispatchQueue.main.async { [weak view] in view?.labelPane() }
+    }
+}
+
+final class PaneAccessibilityView: NSView {
+    var paneLabel = ""
+    var paneIdentifier = ""
+    private(set) weak var labeledPane: NSView?
+
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); labelPane() }
+    override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); labelPane() }
+    override func layout() { super.layout(); labelPane() }
+
+    func labelPane() {
+        guard window != nil, !paneLabel.isEmpty else { return }
+        var ancestor = superview
+        var candidate: NSView?
+        for _ in 0..<32 {
+            guard let view = ancestor else { return }
+            if view is NSSplitView {
+                guard let candidate else { return }
+                // AppKit's glass/sidebar wrappers may add extra view levels;
+                // identify the boundary by public role and split containment.
+                if candidate.accessibilityLabel() != paneLabel { candidate.setAccessibilityLabel(paneLabel) }
+                if candidate.accessibilityIdentifier() != paneIdentifier { candidate.setAccessibilityIdentifier(paneIdentifier) }
+                labeledPane = candidate
+                return
+            }
+            if view.isAccessibilityElement(), view.accessibilityRole() == .group { candidate = view }
+            ancestor = view.superview
+        }
+    }
+}

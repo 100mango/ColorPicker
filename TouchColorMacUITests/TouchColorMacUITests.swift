@@ -117,6 +117,74 @@ import AVFoundation
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
     }
+    func testSystemPhotosImportSamplesActualImageInsideSandbox() throws {
+        try XCTSkipUnless(expectsSandbox, "Qualify the populated system Photos route once in the minimal sandbox lane")
+        let photos = XCUIApplication(bundleIdentifier: "com.apple.Photos")
+        photos.launch()
+        defer {
+            if (testRun?.totalFailureCount ?? 0) > 0 {
+                print("NATIVE_PHOTOS_FAILURE_AX: \(String(photos.debugDescription.prefix(18_000)))")
+                let shot = XCTAttachment(screenshot: photos.screenshot())
+                shot.name = "Native Mac system Photos failure state"; shot.lifetime = .keepAlways; add(shot)
+            }
+            photos.terminate()
+        }
+        // This disposable runner contains only synthetic images. Use Photos' own
+        // normal library/import UI, without accounts, iCloud or database changes.
+        if photos.buttons["Get Started"].waitForExistence(timeout: 5) { photos.buttons["Get Started"].click() }
+        let file = photos.menuBarItems["File"]
+        XCTAssertTrue(file.waitForExistence(timeout: 15), photos.debugDescription); file.click()
+        let command = photos.menuItems["_NS:1096"]
+        XCTAssertTrue(command.isEnabled, photos.debugDescription); command.click()
+        photos.typeKey("g", modifierFlags: [.command, .shift])
+        let path = photos.sheets.textFields.firstMatch
+        XCTAssertTrue(path.waitForExistence(timeout: 5), photos.debugDescription)
+        path.typeKey("a", modifierFlags: [.command]); path.typeText(fixture.path)
+        photos.typeKey(.return, modifierFlags: [])
+        let importButton = photos.sheets["open-panel"].buttons["OKButton"]
+        XCTAssertTrue(importButton.waitForExistence(timeout: 5), photos.debugDescription); importButton.click()
+        let review = photos.buttons["Review for Import"]
+        if review.waitForExistence(timeout: 3) { review.click() }
+        let importAll = photos.buttons["Import All New Photos"]
+        if importAll.waitForExistence(timeout: 3) { importAll.click() }
+        let imported = photos.collectionViews["photos_collection_view"].descendants(matching: .any).matching(identifier: "mediaKind_asset").firstMatch
+        XCTAssertTrue(imported.waitForExistence(timeout: 25), photos.debugDescription)
+        XCTAssertFalse(photos.sheets["open-panel"].exists)
+        app.activate(); app.buttons["image.photos"].click()
+        print("NATIVE_POPULATED_PHOTOS_PICKER_AX: \(String(app.debugDescription.prefix(32_000)))")
+        for helper in NSWorkspace.shared.runningApplications.filter({ application in
+            let identifier = (application.bundleIdentifier ?? "").lowercased()
+            return identifier.contains("photos") || identifier.contains("photopicker")
+        }).prefix(8) {
+            print("NATIVE_PHOTOS_UI_OWNER: \(helper.bundleIdentifier ?? "unknown") pid=\(helper.processIdentifier)")
+        }
+        let pickerShot = XCTAttachment(screenshot: app.screenshot())
+        pickerShot.name = "Native Mac populated system Photos picker"; pickerShot.lifetime = .keepAlways; add(pickerShot)
+        let photo = app.images["PXGGridLayout-Info"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 15), "Populated library was verified; a missing app-scoped AX image is a picker automation gap, not proof of an empty library. \(app.debugDescription)")
+        photo.click()
+        assertHex("#ff00ff")
+        app.buttons["sample.above"].click(); assertHex("#00ff00")
+        let dimensions = app.staticTexts["sample.pixel"]
+        XCTAssertTrue((dimensions.value as? String ?? dimensions.label).contains("3 × 2"))
+        app.buttons["sample.save"].click()
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "1")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Native Mac actual Photos imported source and green pixel"; shot.lifetime = .keepAlways; add(shot)
+        app.buttons["image.photos"].click()
+        XCTAssertTrue(photo.waitForExistence(timeout: 10), app.debugDescription)
+        app.typeKey(.escape, modifierFlags: [])
+        if #available(macOS 15.0, *) {
+            XCTAssertTrue(photo.waitForNonExistence(timeout: 10), app.debugDescription)
+        } else {
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: photo)
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed, app.debugDescription)
+        }
+        assertHex("#00ff00")
+        app.terminate(); app.launchArguments = []; app.launch()
+        XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "1")
+    }
     private func saveFile(_ url: URL) {
         XCTAssertTrue(app.dialogs.buttons["OKButton"].firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         // Use the actual native Save As field; choose its parent directory separately.
@@ -255,6 +323,10 @@ import AVFoundation
     }
     @MainActor func testOfficialAccessibilityEmptyAndPopulatedCanvas() throws {
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.groups["workspace.palette"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.groups["workspace.sampler"].exists, app.debugDescription)
+        XCTAssertTrue(app.groups["workspace.palette"].staticTexts["palette.count"].exists)
+        XCTAssertTrue(app.groups["workspace.sampler"].buttons["image.open.empty"].exists)
         try audit("empty workspace")
         openFile(fixture); assertHex("#ff00ff")
         app.buttons["sample.save"].click()

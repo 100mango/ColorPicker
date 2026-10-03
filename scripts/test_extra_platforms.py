@@ -27,16 +27,22 @@ def run(command,timeout,required=True):
                     report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
     reader=threading.Thread(target=output,daemon=True);reader.start()
+    cleanup_error=None
     try:code=p.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        os.killpg(p.pid,signal.SIGTERM)
-        try:p.wait(timeout=10)
-        except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait()
+        # A stuck test process must not turn our command deadline into an
+        # unbounded wait while reaping after SIGKILL. The VM job owns final cleanup.
+        for stop_signal in (signal.SIGTERM,signal.SIGKILL):
+            try:os.killpg(p.pid,stop_signal)
+            except ProcessLookupError:break
+            try:p.wait(timeout=10);break
+            except subprocess.TimeoutExpired:continue
+        if p.poll() is None:cleanup_error='Process exit was not confirmed after bounded TERM/KILL waits'
         code=124
     reader.join(timeout=5)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3)})
+    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3)})
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
@@ -71,6 +77,10 @@ try:
     report['release_bundle'].update(privacy_manifest=True,compiled_assets=True,unsigned=True)
     print('RELEASE_BUNDLE',json.dumps(report['release_bundle']),flush=True)
     run(['file',str(binary)],30)
+    linked_libraries=subprocess.check_output(['otool','-L',str(binary)],text=True,timeout=30).splitlines()[1:]
+    report['release_linked_libraries']=[line.strip() for line in linked_libraries]
+    assert not any(name in line for line in linked_libraries for name in ('Pods/','GPUImage','Masonry')), 'Retired dependency linked into native Release'
+    print('NATIVE_RELEASE_LINKED_LIBRARIES',json.dumps(report['release_linked_libraries']),flush=True)
     load_commands=subprocess.check_output(['otool','-l',str(binary)],text=True,timeout=30).splitlines()
     summary=[]
     for index,line in enumerate(load_commands):
@@ -127,7 +137,8 @@ try:
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
     test_arguments=['-configuration','Debug','-destination','platform='+platform+' Simulator,id='+device['udid'],
         '-derivedDataPath','build/'+kind+'-tests','-parallel-testing-enabled','NO','-collect-test-diagnostics','never',
-        '-test-timeouts-enabled','YES','-maximum-test-execution-time-allowance','180' if kind=='vision' else '120','ARCHS=arm64','test-without-building']
+        '-test-timeouts-enabled','YES','-default-test-execution-time-allowance','180' if kind=='vision' else '120',
+        '-maximum-test-execution-time-allowance','360' if kind=='vision' else '120','ARCHS=arm64','test-without-building']
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
         run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)

@@ -1,3 +1,7 @@
 /* English source strings are the canonical fallbacks. */
 
 "TouchColor workspace" = "TouchColor workspace";
+
+"Saved color palette" = "Saved color palette";
+
+"Image color sampler" = "Image color sampler";

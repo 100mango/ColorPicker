@@ -18,6 +18,7 @@ struct ColorWindow: View {
     var body: some View {
         NavigationSplitView {
             PaletteSidebar(library: library, session: session)
+                .background(NativePaneAccessibility(label: NSLocalizedString("Saved color palette", comment: "Palette pane accessibility"), identifier: "workspace.palette"))
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 300)
         } detail: {
             VStack(spacing: 0) {
@@ -36,7 +37,7 @@ struct ColorWindow: View {
                         Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary).accessibilityHidden(true)
                         Text("Choose an image to sample colors").font(.title2).lineLimit(2)
                         Text("Open a file, choose a photo, drop an image here, or paste an image.")
-                            .foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(3)
+                            .foregroundStyle(.primary).multilineTextAlignment(.center).lineLimit(3)
                         Button("Open Image…") { MacImportExport.open(session: session, library: library) }
                             .accessibilityIdentifier("image.open.empty")
                     }.frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity).padding(30)
@@ -59,6 +60,7 @@ struct ColorWindow: View {
             .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
             .overlay { if targeted { RoundedRectangle(cornerRadius: 8).stroke(.blue, lineWidth: 3).allowsHitTesting(false) } }
             .onDrop(of: [.fileURL, .image], isTargeted: $targeted) { MacImportExport.drop($0, session: session, library: library) }
+            .background(NativePaneAccessibility(label: NSLocalizedString("Image color sampler", comment: "Sampler pane accessibility"), identifier: "workspace.sampler"))
         }
         .navigationSplitViewStyle(.balanced)
         .accessibilityElement(children: .contain)
@@ -79,7 +81,7 @@ struct ColorWindow: View {
         }
         .focusedSceneValue(\.colorSession, session)
         .focusedSceneValue(\.colorLibrary, library)
-        .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil }, set: { if !$0 { session.errorMessage = nil } })) {
+        .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil }, set: { if !$0, session.errorMessage != nil { session.errorMessage = nil } })) {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: { Text(session.errorMessage ?? "") }
         .sheet(isPresented: $showingPrivacy) { PrivacyView() }
@@ -117,7 +119,7 @@ private struct SamplingControls: View {
                         Text(color.hex).font(.title2.monospaced()).accessibilityIdentifier("sample.hex")
                         Text(color.rgbDescription).font(.callout.monospacedDigit()).accessibilityIdentifier("sample.rgb")
                     }
-                } else { Text("No color selected").foregroundStyle(.secondary) }
+                } else { Text("No color selected").foregroundStyle(.primary) }
                 Spacer()
                 Button("Copy") { if let color = session.selectedColor { library.copy(color) } }
                     .disabled(session.selectedColor == nil).accessibilityIdentifier("sample.copy")

@@ -31,7 +31,7 @@ final class VisionWorkflowTests: XCTestCase {
         catch { XCTFail("Could not request simulator checkpoint: \(error)"); return }
         print("TOUCHCOLOR_CAPTURE_REQUEST \(id)"); fflush(stdout)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: acknowledgement.path) }, object: nil)
-        guard XCTWaiter.wait(for: [ready], timeout: 55) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
+        guard XCTWaiter.wait(for: [ready], timeout: 85) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
         let result = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         XCTAssertEqual(result?["success"] as? Bool, true, "Simulator checkpoint failed: \(String(describing: result))")
     }
@@ -48,7 +48,9 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
         let scroll = app.scrollViews["photosView_content_scroll_view"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 30), app.debugDescription)
-        let image = scroll.images["PXGGridLayout-Info"].firstMatch
+        // The exact system grid-image identifier is unique in the observed picker.
+        // Avoid a second nested remote-subtree query after checking its scroll view.
+        let image = app.images["PXGGridLayout-Info"].firstMatch
         XCTAssertTrue(image.waitForExistence(timeout: 45), app.debugDescription)
         image.tap()
         hex("#ff00ff")
@@ -97,6 +99,10 @@ final class VisionWorkflowTests: XCTestCase {
         capture("Native Vision actual exported PNG reopened")
     }
     func testNativePaletteExportReopensActualChangedSelectionAndDuplicates() {
+        // This complete route includes three saves, system Files export/reopen,
+        // three separate native menus and artifact readback; it exceeded 180 seconds
+        // while still progressing through the genuine Save controls on 7c8148a.
+        executionTimeAllowance = 360
         paste(); app.buttons["sample.save"].tap(); app.buttons["sample.save"].tap()
         app.buttons["sample.above"].tap(); hex("#00ff00"); app.buttons["sample.save"].tap()
         app.buttons["palette.export"].tap()

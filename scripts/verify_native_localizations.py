@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 literal=r'"((?:\\.|[^"\\])*)"'
 api=re.compile(r'(?:Text|Button|NavigationLink|Section|Picker|Label|NSLocalizedString|accessibilityLabel|navigationTitle)\s*\(\s*'+literal)
-for folder in ('TouchColorWatch','TouchColorTV','TouchColorVision'):
+for folder in ('TouchColorMac','TouchColorWatch','TouchColorTV','TouchColorVision'):
     catalog=(Path(folder)/'zh-Hans.lproj/Localizable.strings').read_text()
     keys=re.findall(r'^'+literal+r'\s*=',catalog,re.M)
     assert len(keys)==len(set(keys)), f'Duplicate localization keys: {folder}'

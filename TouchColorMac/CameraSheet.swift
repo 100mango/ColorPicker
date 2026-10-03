@@ -24,7 +24,7 @@ struct CameraSheet: View {
                     Text(color.hex).monospaced().accessibilityIdentifier("camera.hex")
                     Text(color.rgbDescription).monospacedDigit()
                     Text(camera.dimensions).font(.caption)
-                } else { Text("No color selected").foregroundStyle(.secondary) }
+                } else { Text("No color selected").foregroundStyle(.primary) }
             }.frame(height: 22)
             HStack {
                 Button("Start Camera") { camera.start() }
@@ -39,7 +39,7 @@ struct CameraSheet: View {
                     .disabled(!camera.running || camera.color == nil || camera.freezing).accessibilityIdentifier("camera.freeze")
             }
             HStack {
-                Text("Freeze keeps the full video frame, not a still-photo capture.").font(.caption).foregroundStyle(.secondary)
+                Text("Freeze keeps the full video frame, not a still-photo capture.").font(.caption).foregroundStyle(.primary)
                 Spacer()
                 Button("Done") { camera.stop(); dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("camera.close")
             }

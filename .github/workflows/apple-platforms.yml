@@ -16,16 +16,16 @@ jobs:
       max-parallel: 1
       matrix:
         include:
+          - platform: tv
+            minutes: 25
           - platform: mac
             minutes: 40
           - platform: vision
             minutes: 40
-          - platform: watch
-            minutes: 25
-          - platform: tv
-            minutes: 25
           - platform: ios
             minutes: 20
+          - platform: watch
+            minutes: 25
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
@@ -59,6 +59,7 @@ jobs:
           python3 scripts/verify_mac_icons.py
           python3 scripts/verify_native_localizations.py
           python3 scripts/test_evidence_guard.py
+          python3 scripts/test_capture_checkpoint.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Probe native XCTest accessibility audit availability
@@ -162,6 +163,7 @@ jobs:
         run: bash scripts/test_simulators.sh iPhoneCompact shutdown || true
       - name: Report bounded evidence and unchanged source
         if: always()
+        timeout-minutes: 2
         run: |
           mkdir -p build/evidence
           if test -f build/accessibility-api/results.json; then cp build/accessibility-api/results.json build/evidence/accessibility-api.json; fi
@@ -214,6 +216,12 @@ jobs:
               for p in manifest.parent.iterdir():
                   if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()
               manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
+              for group in groups:
+                  for item in group['attachments']:
+                      diagnostic=manifest.parent/item['exportedFileName']
+                      if diagnostic.suffix=='.txt' and item.get('suggestedHumanReadableName','').startswith('Native Mac accessibility issue'):
+                          text=diagnostic.read_text().split('\nHierarchy:',1)[0]
+                          print('RETAINED_MAC_ACCESSIBILITY_DIAGNOSTIC',text[:12000],flush=True)
           for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
               if p.is_file():
                   size=p.stat().st_size

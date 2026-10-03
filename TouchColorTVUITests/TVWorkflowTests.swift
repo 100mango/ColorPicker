@@ -34,7 +34,22 @@ final class TVWorkflowTests: XCTestCase {
                 if focused.label == element.label && abs(target.midX-current.midX) < 1 && abs(target.midY-current.midY) < 1 && abs(target.width-current.width) < 1 && abs(target.height-current.height) < 1 {
                     remote.press(.select); return
                 }
-                let state = focused.identifier.isEmpty ? focused.label : focused.identifier
+                if focused.elementType == .cell, !element.identifier.isEmpty, current.contains(target) {
+                    // A native List focuses its row. Select it only when every
+                    // exposed button is the same single action (SwiftUI may expose
+                    // that button twice). Never treat a multi-action cell as one button.
+                    let children = focused.buttons.allElementsBoundByIndex
+                    if !children.isEmpty, children.count <= 4, children.allSatisfy({ child in
+                        let frame = child.frame
+                        return child.identifier == element.identifier && child.label == element.label &&
+                            abs(frame.midX-target.midX) < 1 && abs(frame.midY-target.midY) < 1 &&
+                            abs(frame.width-target.width) < 1 && abs(frame.height-target.height) < 1
+                    }) {
+                        remote.press(.select); return
+                    }
+                }
+                // Duplicate saved colors have identical labels but distinct row positions.
+                let state = "\(focused.elementType.rawValue)|\(focused.identifier)|\(focused.label)|\(current.integral)"
                 let vertical: String = target.midY >= current.midY ? "down" : "up"
                 let horizontal: String = target.midX >= current.midX ? "right" : "left"
                 let preferred = target.minY >= current.maxY || target.maxY <= current.minY ? [vertical,horizontal] : [horizontal,vertical]
@@ -71,6 +86,7 @@ final class TVWorkflowTests: XCTestCase {
         XCTAssertEqual(payloads.count, 1)
         let payload = try XCTUnwrap(payloads.first)
         XCTAssertEqual(try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String], [expected])
+        print("TV_DISPLAYED_QR_VERIFIED: \(expected)")
     }
     func testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence() throws {
         select(app.buttons["tv.photos"])

@@ -51,6 +51,9 @@ for name,kind,files in [('TouchColorMac','application',apprefs),('TouchColorMacT
     if kind=='bundle.ui-testing': settings.update(TEST_TARGET_NAME='TouchColorMac')
     dependencies=[]
     if not app:
+        # Xcode27's XCTest/XCUIAutomation binaries require macOS14. The app
+        # retains macOS13; this floor applies only to the development test bundles.
+        settings['MACOSX_DEPLOYMENT_TARGET']='14.0'
         proxy=add(name+'proxy','PBXContainerItemProxy',containerPortal=uid('Project'),proxyType=1,remoteGlobalIDString=uid('TouchColorMac'),remoteInfo='TouchColorMac')
         dependencies=[add(name+'dependency','PBXTargetDependency',target=uid('TouchColorMac'),targetProxy=proxy)]
         testattrs[uid(name)]=dict(TestTargetID=uid('TouchColorMac'))

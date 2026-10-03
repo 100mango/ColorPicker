@@ -8,7 +8,7 @@ struct PaletteSidebar: View {
             HStack {
                 Text("Palette").font(.headline)
                 Spacer()
-                Text("\(library.colors.count)").foregroundStyle(.secondary).accessibilityIdentifier("palette.count")
+                Text("\(library.colors.count)").foregroundStyle(.primary).accessibilityIdentifier("palette.count")
             }.padding()
             List {
                 ForEach(Array(library.colors.enumerated()), id: \.offset) { index, color in
@@ -17,7 +17,7 @@ struct PaletteSidebar: View {
                             .frame(width: 24, height: 36).border(.gray.opacity(0.5)).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(color.hex).font(.body.monospaced())
-                            Text(color.rgbDescription).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                            Text(color.rgbDescription).font(.caption2.monospacedDigit()).foregroundStyle(.primary)
                         }
                         Spacer(minLength: 0)
                         Menu {
@@ -30,7 +30,7 @@ struct PaletteSidebar: View {
                     }.padding(.vertical, 4)
                 }
             }
-            if library.colors.isEmpty { Text("Saved colors appear here, in order.").foregroundStyle(.secondary).lineLimit(2).padding() }
+            if library.colors.isEmpty { Text("Saved colors appear here, in order.").foregroundStyle(.primary).lineLimit(2).padding() }
             Button("Export Palette…") { MacImportExport.exportPalette(library: library, session: session) }
                 .disabled(library.colors.isEmpty).accessibilityIdentifier("palette.export").padding()
         }.frame(minWidth: 220, maxWidth: .infinity, maxHeight: .infinity)

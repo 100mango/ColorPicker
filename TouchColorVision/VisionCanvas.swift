@@ -23,6 +23,7 @@ final class VisionColorScrollView: UIScrollView, UIScrollViewDelegate {
     let canvas = VisionPixelCanvas()
     private var lastViewport = CGSize.zero
     private var fitting = false
+    private var applyingModel = false
     override init(frame: CGRect) {
         super.init(frame: frame)
         delegate = self; minimumZoomScale = 1; maximumZoomScale = 100
@@ -40,6 +41,9 @@ final class VisionColorScrollView: UIScrollView, UIScrollViewDelegate {
     }
     func refresh() {
         guard let session, let raster = session.raster else { return }
+        // UIViewRepresentable updates apply model values to UIKit. The synchronous
+        // UIScrollView delegate must not publish the same value back into SwiftUI.
+        applyingModel = true; defer { applyingModel = false }
         let newImage = canvas.image !== raster.image
         canvas.image = raster.image; canvas.session = session
         if newImage || bounds.size != lastViewport { refreshLayout() }
@@ -74,7 +78,9 @@ final class VisionColorScrollView: UIScrollView, UIScrollViewDelegate {
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { canvas }
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         centerSmallImage(); canvas.setNeedsDisplay()
-        if !fitting { session?.changeZoom(Double(zoomScale)) }
+        if !fitting, !applyingModel, let session, abs(session.zoom - Double(zoomScale)) > 0.001 {
+            session.changeZoom(Double(zoomScale))
+        }
     }
     @objc private func sample(_ gesture: UITapGestureRecognizer) {
         choose(gesture.location(in: canvas))

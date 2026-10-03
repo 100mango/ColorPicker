@@ -96,7 +96,11 @@ import ColorPaletteLegacy
         let y = min(raster.height - 1, max(0, pixel.y + dy))
         select(NormalizedPoint(x: (Double(x) + 0.5) / Double(raster.width), y: (Double(y) + 0.5) / Double(raster.height))!)
     }
-    func changeZoom(_ value: Double) { zoom = ColorZoom.clamped(value) }
+    func changeZoom(_ value: Double) {
+        let next = ColorZoom.clamped(value)
+        guard zoom != next else { return }
+        zoom = next
+    }
     func finishPaletteImport(_ data: Data, token: UInt64, library: PaletteLibrary) {
         guard isCurrent(token) else { return }
         do {

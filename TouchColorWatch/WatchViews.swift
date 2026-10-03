@@ -82,7 +82,7 @@ struct WatchColorEditor: View {
         .navigationTitle("Create Color")
         .confirmationDialog("Send this color to iPhone for review?",
             isPresented: Binding(get: { sendSelection != nil }, set: { if !$0 { sendSelection = nil } }),
-            presenting: sendSelection) { color in
+            titleVisibility: .visible, presenting: sendSelection) { color in
             Button("Send") { transfer.request([color]) }.accessibilityIdentifier("watch.send.confirm")
             Button("Cancel", role: .cancel) {}
         } message: { color in Text(color.hex) }

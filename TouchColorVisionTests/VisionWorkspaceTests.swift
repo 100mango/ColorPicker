@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import SwiftUI
+import Combine
 import ColorDomain
 import ColorRaster
 import ColorPaletteLegacy
@@ -35,6 +36,26 @@ import ColorPaletteLegacy
         }
         scroll.choose(CGPoint(x: -1, y: -1)); XCTAssertEqual(session.selectedPoint, selected)
         scroll.choose(CGPoint(x: scroll.canvas.bounds.width, y: 0)); XCTAssertEqual(session.selectedPoint, selected)
+    }
+    func testModelZoomAndLayoutDoNotPublishFromRepresentableUpdates() async throws {
+        let session = ImageSession(); try await load(session)
+        let scroll = VisionColorScrollView(frame: CGRect(x: 0, y: 0, width: 600, height: 450))
+        scroll.session = session; scroll.refresh(); scroll.layoutIfNeeded()
+        session.changeZoom(4)
+        var published: [Double] = []
+        let observation = session.$zoom.dropFirst().sink { published.append($0) }
+        defer { observation.cancel() }
+        scroll.refresh(); scroll.layoutIfNeeded()
+        scroll.frame.size = CGSize(width: 500, height: 300)
+        scroll.layoutIfNeeded(); scroll.refresh()
+        XCTAssertEqual(scroll.zoomScale, 4, accuracy: 0.001)
+        XCTAssertTrue(published.isEmpty, "Model-to-view application republished \(published)")
+        // A real UIKit zoom change outside a representable update still reaches the model.
+        scroll.setZoomScale(2, animated: false)
+        XCTAssertEqual(session.zoom, 2, accuracy: 0.001)
+        XCTAssertEqual(published, [2])
+        scroll.refresh(); session.changeZoom(2)
+        XCTAssertEqual(published, [2])
     }
     func testPaletteExportAndNativeFileImportPreserveDuplicateOrdering() async throws {
         let suite = "TouchColor.vision-unit.\(UUID())"

@@ -83,3 +83,7 @@
 "Waiting for camera permission. Capture will start only while TouchColor is active." = "正在等待相机权限。仅在 TouchColor 处于活动状态时才会启动采集。";
 
 "TouchColor workspace" = "TouchColor 工作区";
+
+"Saved color palette" = "已保存的调色板";
+
+"Image color sampler" = "图片颜色取样";
