@@ -69,9 +69,20 @@
         XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
         XCTAssertTrue([cancel waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);
         [cancel tap];
+        [self assertPresentationDisappears:cancel];
         XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+        XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable,@"Photo cancellation must restore the usable source action");
     }
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
+}
+- (void)assertPresentationDisappears:(XCUIElement *)presentation {
+    BOOL disappeared;
+    if (@available(iOS 18.0, *)) disappeared=[presentation waitForNonExistenceWithTimeout:5];
+    else {
+        XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:presentation];
+        disappeared=[XCTWaiter waitForExpectations:@[closed] timeout:5]==XCTWaiterResultCompleted;
+    }
+    XCTAssertTrue(disappeared,@"The observed system presentation must disappear within five seconds");
 }
 - (void)respondToRealCameraPromptAllow:(BOOL)allow {
     XCUIApplication *system=[[XCUIApplication alloc] initWithBundleIdentifier:@"com.apple.springboard"];
@@ -84,8 +95,7 @@
     if (!button.exists) button=alert.buttons[allow ? @"OK" : @"Don't Allow"];
     XCTAssertTrue(button.exists,@"%@",alert.debugDescription);
     [button tap];
-    XCTNSPredicateExpectation *dismissed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:alert];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[dismissed] timeout:5],XCTWaiterResultCompleted,@"The system dialog must disappear before checking app authorization state");
+    [self assertPresentationDisappears:alert];
     NSLog(@"REAL_OS_CAMERA_PROMPT_%@",allow ? @"ALLOW" : @"DENY");
 }
 - (void)testRealCameraPermissionAllowThenResetAndDeny {

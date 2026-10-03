@@ -20,7 +20,12 @@
 @interface TCMinimumLayoutPolicy : TCPrivacyViewController
 @end
 @implementation TCMinimumLayoutPolicy
-- (void)loadPolicy {} // Exercise native error layout without a network request.
+- (void)loadPolicy {
+    // Establish the actual native error state before attaching the test window.
+    // Leaving an unused, visible WKWebView here starts WebKit during the host's
+    // appearance transition and makes this geometry test depend on a cold service.
+    [self webViewWebContentProcessDidTerminate:nil];
+}
 @end
 
 static UIView *TCLayoutView(UIView *root, NSString *identifier) {
@@ -177,10 +182,10 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
                 }
             }];
             [self withController:[TCMinimumLayoutPolicy new] size:size style:appearance.integerValue check:^(UIViewController *controller) {
-                [(TCPrivacyViewController *)controller webViewWebContentProcessDidTerminate:nil];
                 [controller.view layoutIfNeeded];
                 UIScrollView *error=(UIScrollView *)TCLayoutView(controller.view,@"privacy.errorScroll");
                 UIButton *retry=(UIButton *)TCLayoutView(controller.view,@"privacy.retry");
+                XCTAssertFalse(error.hidden,@"The native failure state must be visible before layout is measured");
                 XCTAssertGreaterThanOrEqual(retry.bounds.size.height,44);
                 [self assertViewReadable:retry inScroll:error];
                 XCTAssertEqualObjects(controller.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"privacy.close");

@@ -3,7 +3,10 @@
 import base64
 import json
 import pathlib
+import re
 import subprocess
+
+exports = {}
 
 
 def records(value):
@@ -17,17 +20,24 @@ def records(value):
             yield from records(child)
 
 
-def export_named(suite, names):
+def export_named(suite, names, limit):
+    if limit <= 0:
+        return 0
     result = pathlib.Path('build', 'iPadMini-' + suite + '.xcresult')
     if not (result / 'Info.plist').is_file():
         return 0
-    destination = pathlib.Path('build', 'mini-evidence', suite)
-    destination.mkdir(parents=True, exist_ok=True)
-    subprocess.run(['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(destination)], check=True)
-    manifest = json.loads((destination / 'manifest.json').read_text())
+    if suite not in exports:
+        destination = pathlib.Path('build', 'mini-evidence', suite)
+        destination.mkdir(parents=True, exist_ok=True)
+        subprocess.run(['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(destination)], check=True)
+        exports[suite] = destination, list(records(json.loads((destination / 'manifest.json').read_text())))
+    destination, attachments = exports[suite]
     count = 0
     for name in names:
-        matches = [item for item in records(manifest) if name in ' '.join(v for v in item.values() if isinstance(v, str))]
+        if count >= limit:
+            break
+        exact_name = re.compile(r'(?<![A-Za-z0-9-])' + re.escape(name) + r'(?![A-Za-z0-9-])')
+        matches = [item for item in attachments if any(exact_name.search(value) for value in item.values() if isinstance(value, str))]
         if not matches:
             continue
         assert len(matches) == 1, f'Expected one {name}, found {len(matches)}'
@@ -44,6 +54,15 @@ def export_named(suite, names):
     return count
 
 
-failures = export_named('TouchColorUITests', ['touchcolor-ipad-functional-failure-1', 'touchcolor-ipad-functional-failure-2'])
-if not failures:
-    export_named('AccessibilityAudits', ['touchcolor-mini-audit-photo-state', 'touchcolor-mini-audit-saved-state'])
+# Keep one functional failure and the first distinct audit failure when both occur.
+# Never let one suite consume both slots before the other suite's failure is checked.
+count = export_named('TouchColorUITests', ['touchcolor-ipad-functional-failure-1'], 1)
+count += export_named('AccessibilityAudits', [
+    'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
+    'touchcolor-audit-failure-live', 'touchcolor-audit-failure-policy',
+    'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
+], 2 - count)
+if count < 2:
+    count += export_named('TouchColorUITests', ['touchcolor-ipad-functional-failure-2'], 2 - count)
+if count < 2:
+    export_named('AccessibilityAudits', ['touchcolor-mini-audit-photo-state', 'touchcolor-mini-audit-saved-state'], 2 - count)

@@ -24,10 +24,15 @@
     XCUIElement *header=self.app.tables[@"colorHistory"].staticTexts[@"Saved Colors"].firstMatch;
     if (header.exists) XCTAssertFalse(CGRectIntersectsRect(header.frame,message.frame),@"Empty-state paragraph overlaps section header: %@ / %@",NSStringFromCGRect(message.frame),NSStringFromCGRect(header.frame));
 }
-- (void)recordAuditScreenshot:(NSString *)screen {
+- (void)recordAuditScreenshot:(NSString *)screen failure:(BOOL)failure {
     NSString *name=nil;
-    if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
-    if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
+    if (failure) {
+        NSDictionary *states=@{@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
+        if (states[screen]) name=[@"touchcolor-audit-failure-" stringByAppendingString:states[screen]];
+    } else {
+        if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
+        if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
+    }
     if (!name) return;
     NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
     XCTAssertLessThanOrEqual(bytes.length,500*1024u);
@@ -43,13 +48,13 @@
         NSLog(@"ACCESSIBILITY_ISSUE screen=%@ type=%lu description=%@ detail=%@ element=%@",screen,(unsigned long)issue.auditType,issue.compactDescription,issue.detailedDescription,issue.element.debugDescription);
         if (!recordedFailure) {
             recordedFailure=YES;
+            [self recordAuditScreenshot:screen failure:YES];
             NSLog(@"ACCESSIBILITY_FAILURE_GEOMETRY screen=%@ window=%@ runnerPreferredContentSizeCategory=%@",screen,NSStringFromCGRect(self.app.windows.firstMatch.frame),UIApplication.sharedApplication.preferredContentSizeCategory);
             NSLog(@"ACCESSIBILITY_FAILURE_HIERARCHY_BEGIN screen=%@\n%@\nACCESSIBILITY_FAILURE_HIERARCHY_END",screen,self.app.debugDescription);
-            [self recordAuditScreenshot:screen];
         }
         return NO; // No category-wide or element-wide suppression; every reported issue remains actionable.
     } error:&error];
-    if (!recordedFailure) [self recordAuditScreenshot:screen];
+    if (!recordedFailure) [self recordAuditScreenshot:screen failure:NO];
     NSLog(@"ACCESSIBILITY_RESULT screen=%@ passed=%d error=%@",screen,passed,error);
     XCTAssertTrue(passed,@"%@ accessibility audit: %@",screen,error);
 }
@@ -91,7 +96,8 @@
     if (fabs(window.frame.size.width-self.originalWindowSize.width)>4) {
         [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
         XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
-            return fabs(window.frame.size.width-self.originalWindowSize.width)<4 && fabs(window.frame.size.height-self.originalWindowSize.height)<4;
+            CGSize size=window.frame.size;
+            return fabs(size.width-self.originalWindowSize.width)<4 && fabs(size.height-self.originalWindowSize.height)<4;
         }] object:window];
         XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore window after accessibility audit: %@",self.app.debugDescription);
     }

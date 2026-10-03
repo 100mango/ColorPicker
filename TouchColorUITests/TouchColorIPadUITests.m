@@ -12,7 +12,6 @@
     if (self.recordingIssue) { [super recordIssue:issue]; return; }
     self.recordingIssue=YES;
     // Preserve real failure evidence before continueAfterFailure aborts the case.
-    NSLog(@"IPAD_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,self.app.debugDescription);
     static NSMutableSet<NSString *> *recordedCases;
     static dispatch_once_t once;dispatch_once(&once,^{ recordedCases=[NSMutableSet new]; });
     if (self.app.state==XCUIApplicationStateRunningForeground && recordedCases.count<2 && ![recordedCases containsObject:self.name]) {
@@ -24,6 +23,8 @@
             attachment.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:attachment];
         }
     }
+    // Capture pixels before the potentially slow remote hierarchy query.
+    NSLog(@"IPAD_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,self.app.debugDescription);
     self.recordingIssue=NO;
     [super recordIssue:issue];
 }
@@ -38,8 +39,8 @@
 }
 - (void)choosePhoto {
     XCUIElement *source=self.app.buttons[@"choosePhoto"];
-    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == true AND hittable == true"] object:source];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:5],XCTWaiterResultCompleted,@"%@",self.app.debugDescription);
+    XCTAssertTrue([source waitForExistenceWithTimeout:5],@"The photo source must exist");
+    XCTAssertTrue(source.hittable,@"The photo source must be directly usable");
     NSLog(@"PHOTO_SOURCE_BEFORE %@",source.value);
     [source tap];
 }
@@ -60,17 +61,13 @@
 }
 - (void)cancelPicker {
     XCUIElement *popover=self.app.popovers.firstMatch;
-    XCUIElement *photosBar=self.app.navigationBars[@"Photos"];
     XCUIElement *content=self.app.scrollViews[@"photosView_content_scroll_view"];
     XCUIElement *cancel=self.app.navigationBars[@"Photos"].buttons[@"Cancel"].firstMatch;
-    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        // A cold Photos service can expose its sidebar/popover before its image grid.
-        // Regular-width cancellation needs the actual popover, not a loaded photo library.
-        if (popover.exists && photosBar.exists && !CGRectIsEmpty(popover.frame)) return YES;
-        // A compact remote sheet must have valid content before its Cancel activation frame is queried.
-        return content.exists && content.frame.size.width>0 && content.frame.size.height>0;
-    }] object:self.app];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:15],XCTWaiterResultCompleted,@"System picker must be ready: %@",self.app.debugDescription);
+    // Resolve either observed system presentation in one native existence wait.
+    // Import still waits separately for the real image and validates its RGB pixels.
+    NSPredicate *presentationType=[NSPredicate predicateWithFormat:@"elementType == %lu OR (elementType == %lu AND identifier == %@)",(unsigned long)XCUIElementTypePopover,(unsigned long)XCUIElementTypeNavigationBar,@"Photos"];
+    XCUIElement *presented=[[self.app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:presentationType].firstMatch;
+    XCTAssertTrue([presented waitForExistenceWithTimeout:15],@"The system Photos presentation must exist before cancellation");
     CGRect window=self.app.windows.firstMatch.frame;
     CGRect picker=popover.exists ? popover.frame : CGRectZero;
     BOOL dismissedPopover=NO;
@@ -94,15 +91,19 @@
     // Three remote AX queries inside one predicate can exhaust its deadline even
     // after Photos has dismissed. Wait for that presentation once, then verify
     // every picker element is absent without another gesture or a longer timeout.
-    if (@available(iOS 18.0, *)) {
-        XCTAssertTrue([presentation waitForNonExistenceWithTimeout:5],@"The system picker must actually dismiss: %@",self.app.debugDescription);
-    } else {
-        XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:presentation];
-        XCTAssertEqual([XCTWaiter waitForExpectations:@[closed] timeout:5],XCTWaiterResultCompleted,@"The system picker must actually dismiss: %@",self.app.debugDescription);
-    }
+    [self assertPresentationDisappears:presentation];
     XCTAssertFalse(popover.exists,@"No Photos popover may remain after cancellation");
     XCTAssertFalse(content.exists,@"No Photos content may remain after cancellation");
     XCTAssertFalse(cancel.exists,@"No Photos Cancel control may remain after cancellation");
+}
+- (void)assertPresentationDisappears:(XCUIElement *)presentation {
+    BOOL disappeared;
+    if (@available(iOS 18.0, *)) disappeared=[presentation waitForNonExistenceWithTimeout:5];
+    else {
+        XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:presentation];
+        disappeared=[XCTWaiter waitForExpectations:@[closed] timeout:5]==XCTWaiterResultCompleted;
+    }
+    XCTAssertTrue(disappeared,@"The observed presentation must disappear within five seconds");
 }
 - (void)testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch {
     [self importFixture];
@@ -124,8 +125,7 @@
         XCUIElement *close=self.app.alerts.buttons[@"Close"];
         NSLog(@"PREVIEW_CLOSE attempt=%lu alert=%@ close=%@ hittable=%d",(unsigned long)attempt,NSStringFromCGRect(self.app.alerts.firstMatch.frame),NSStringFromCGRect(close.frame),close.hittable);
         [close tap];
-        XCTNSPredicateExpectation *previewClosed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:self.app.alerts.firstMatch];
-        XCTAssertEqual([XCTWaiter waitForExpectations:@[previewClosed] timeout:5],XCTWaiterResultCompleted,@"Preview must dismiss on every open/close cycle");
+        [self assertPresentationDisappears:self.app.alerts.firstMatch];
     }
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     [self choosePhoto];
@@ -233,7 +233,7 @@
         if (window.frame.size.width < original.size.width-20) {
             // Apple documents double-tapping the top of a window to return it to full screen.
             [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
-            XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return fabs(window.frame.size.width-original.size.width)<4 && fabs(window.frame.size.height-original.size.height)<4; }] object:window];
+            XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { CGSize size=window.frame.size; return fabs(size.width-original.size.width)<4 && fabs(size.height-original.size.height)<4; }] object:window];
             XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore full window: %@",self.app.debugDescription);
             NSLog(@"NATIVE_WINDOW_RESTORED %@",NSStringFromCGRect(window.frame));
             self.originalWindowSize=CGSizeZero;
@@ -249,7 +249,8 @@
         if (fabs(window.frame.size.width-self.originalWindowSize.width)>4) {
             [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
             XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
-                return fabs(window.frame.size.width-self.originalWindowSize.width)<4 && fabs(window.frame.size.height-self.originalWindowSize.height)<4;
+                CGSize size=window.frame.size;
+                return fabs(size.width-self.originalWindowSize.width)<4 && fabs(size.height-self.originalWindowSize.height)<4;
             }] object:window];
             XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore OS window after failed case: %@",self.app.debugDescription);
         }
