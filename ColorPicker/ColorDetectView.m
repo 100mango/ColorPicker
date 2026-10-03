@@ -1,122 +1,65 @@
-//
-//  ColorScrollView.m
-//  ColorPicker
-//
-//  Created by Mango on 14-2-11.
-//  Copyright (c) 2014年 Mango. All rights reserved.
-//
-
 #import "ColorDetectView.h"
-#import "Masonry.h"
+#import "TCColorUtilities.h"
 
 @interface ColorDetectView ()
-@property (strong,nonatomic) UIImageView *pickerView;
-@property (strong,readwrite,nonatomic) UIImageView *imageView;
-@property (assign,nonatomic) CGPoint pointInImageView;
+@property (nonatomic, strong, readwrite) UIImageView *imageView;
+@property (nonatomic, strong) UIImageView *marker;
+@property (nonatomic) CGSize previousSize;
 @end
-
 @implementation ColorDetectView
-
 @dynamic delegate;
-
-- (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage *)image
-{
-    self = [super initWithFrame:frame];
-    if (self)
-    {
-        //初始化自身设置
-        self.maximumZoomScale = 100.0;
-        self.minimumZoomScale = 1.0;
-        self.contentSize = frame.size;
-        self.bounces = NO;
-        self.bouncesZoom = NO; //禁止缩小至最小比例之下
-        self.backgroundColor = [UIColor colorWithRed:55/255.0 green:55/255.0 blue:54/255.0 alpha:1];
-        [self.pinchGestureRecognizer addTarget:self action:@selector(handelPinchGeture:)];
-
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]initWithTarget:self action:@selector(handelTapGesture:)];
-        [self addGestureRecognizer:tap];
-        [self.imageView addGestureRecognizer:tap];
-        
-        
-        //初始化要放大的Imageview
-        self.imageView = [[UIImageView alloc]initWithFrame:self.bounds];
-        self.imageView.image = image;
+- (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage *)image {
+    if ((self = [super initWithFrame:frame])) {
+        self.backgroundColor = UIColor.secondarySystemBackgroundColor;
+        self.maximumZoomScale = 100;
+        self.minimumZoomScale = 1;
+        self.bouncesZoom = NO;
+        self.imageView = [[UIImageView alloc] initWithImage:image];
         self.imageView.contentMode = UIViewContentModeScaleAspectFit;
+        self.imageView.userInteractionEnabled = YES;
+        self.imageView.accessibilityIdentifier = @"sampleImage";
+        self.imageView.isAccessibilityElement = YES;
+        self.imageView.accessibilityLabel = NSLocalizedString(@"Photo for sampling", nil);
+        self.imageView.accessibilityHint = NSLocalizedString(@"Use Sample Center, or tap and drag on the photo to pick a color. Pinch to zoom.", nil);
         [self addSubview:self.imageView];
-        
-        //初始取色器
-        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]initWithTarget:self action:@selector(handelPangesture:)];
-        self.pickerView = [[UIImageView alloc]initWithImage:[UIImage imageNamed:@"picker"]];
-        [self.pickerView addGestureRecognizer:pan];
-        //self.pickerView.exclusiveTouch = YES;
-        self.pickerView.userInteractionEnabled = YES;
-        self.pickerView.hidden = YES;
-        [self addSubview:self.pickerView];
-        
+        [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(sampleGesture:)]];
+        UILongPressGestureRecognizer *drag = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(sampleGesture:)];
+        drag.minimumPressDuration = 0.15;
+        [self addGestureRecognizer:drag];
+        self.marker = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"plus.circle"]];
+        self.marker.bounds = CGRectMake(0, 0, 28, 28);
+        self.marker.tintColor = UIColor.whiteColor;
+        self.marker.layer.shadowColor = UIColor.blackColor.CGColor;
+        self.marker.layer.shadowOpacity = 1;
+        self.marker.layer.shadowRadius = 2;
+        self.marker.hidden = YES;
+        [self.imageView addSubview:self.marker];
     }
     return self;
 }
-
-
-- (void)setFrame:(CGRect)frame
-{
-    [super setFrame:frame];
-    self.imageView.frame = frame;
-}
-
-- (void)handelColor:(NSString *)hexColor
-{
-    [self.delegate handelColor:hexColor];
-}
-
-- (void) getColorOfPoint:(CGPoint)point InView:(UIView*)view
-{
-    
-    unsigned char pixel[4] = {0};
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(pixel,
-                                                 1, 1, 8, 4, colorSpace, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
-    
-    CGContextTranslateCTM(context, -point.x, -point.y);
-    
-    [view.layer renderInContext:context];
-    
-    CGContextRelease(context);
-    CGColorSpaceRelease(colorSpace);
-    
-    NSString *hexColor = [NSString stringWithFormat:@"#%02x%02x%02x",pixel[0],pixel[1],pixel[2]];
-    
-    [self.delegate handelColor:hexColor];
-}
-
-
-#pragma mark - tap gesture delegate
-- (void)handelTapGesture:(UITapGestureRecognizer*)gesture
-{
-    CGPoint point = [gesture locationInView:self];
-    self.pointInImageView = [gesture locationInView:self.imageView];
-    self.pickerView.center = point;
-    self.pickerView.hidden = NO;
-    [self getColorOfPoint:self.pointInImageView InView:self.imageView];
-    
-}
-
-#pragma mark - pinch gesture delegate
-- (void)handelPinchGeture:(UIPinchGestureRecognizer*)gesture
-{
-    if (gesture.state == UIGestureRecognizerStateChanged) {
-        self.pickerView.center = [self convertPoint:self.pointInImageView fromView:self.imageView];
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if (!CGSizeEqualToSize(self.previousSize, self.bounds.size) && self.bounds.size.width > 0 && self.bounds.size.height > 0) {
+        self.previousSize = self.bounds.size;
+        self.zoomScale = 1;
+        CGSize imageSize = self.imageView.image.size;
+        if (imageSize.width <= 0 || imageSize.height <= 0) return;
+        CGFloat fit = MIN(self.bounds.size.width/imageSize.width, self.bounds.size.height/imageSize.height);
+        self.imageView.frame = CGRectMake(0, 0, imageSize.width*fit, imageSize.height*fit);
+        self.contentSize = self.imageView.bounds.size;
+        self.marker.hidden = YES;
     }
+    self.contentInset = UIEdgeInsetsMake(MAX(0, (self.bounds.size.height-self.contentSize.height)/2), MAX(0, (self.bounds.size.width-self.contentSize.width)/2), 0, 0);
+    self.marker.transform = CGAffineTransformMakeScale(1/self.zoomScale, 1/self.zoomScale);
 }
-
-#pragma mark - pan gesture delegate
-- (void)handelPangesture:(UIPanGestureRecognizer*)gesture
-{
-    if (gesture.state == UIGestureRecognizerStateChanged) {
-        self.pickerView.center = [gesture locationInView:self];
-        [self getColorOfPoint:[gesture locationInView:self.imageView] InView:self.imageView];
-    }
+- (void)sampleGesture:(UIGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateEnded && gesture.state != UIGestureRecognizerStateBegan && gesture.state != UIGestureRecognizerStateChanged) return;
+    CGPoint point = [gesture locationInView:self.imageView], normalized;
+    if (!TCNormalizedPoint(point, self.imageView.bounds, &normalized)) return;
+    NSString *hex = TCSampleImage(self.imageView.image, normalized);
+    if (!hex) return;
+    self.marker.center = point;
+    self.marker.hidden = NO;
+    if ([self.delegate respondsToSelector:@selector(handelColor:)]) [self.delegate handelColor:hex];
 }
-
-
 @end

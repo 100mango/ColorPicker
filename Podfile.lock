@@ -1,13 +1,1 @@
-PODS:
-  - GPUImage (0.1.7)
-  - Masonry (0.6.2)
-
-DEPENDENCIES:
-  - GPUImage
-  - Masonry
-
-SPEC CHECKSUMS:
-  GPUImage: 733a5f0fab92df9de1c37ba9df520a833ccb406d
-  Masonry: 362e8a1cc0beada4a4c4832d5e863da2a51533be
-
-COCOAPODS: 0.39.0
+# No CocoaPods dependencies. See MODERNIZATION.md.

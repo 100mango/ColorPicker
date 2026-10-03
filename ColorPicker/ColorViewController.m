@@ -1,162 +1,91 @@
-//
-//  ColorViewController.m
-//  ColorPicker
-//
-//  Created by Mango on 14-2-5.
-//  Copyright (c) 2014年 Mango. All rights reserved.
-//
-
 #import "ColorViewController.h"
-#import <QuartzCore/QuartzCore.h>
-
-//view
-#import "UIView+Tools.h"
 #import "ColorDetectView.h"
+#import "TCColorUtilities.h"
 
-@interface ColorViewController ()<ColorDetectViewDelegate>
-
-@property (strong, nonatomic)  ColorDetectView *colorDetectView;
-@property (nonatomic,strong) UIImage *image;
-
-@property (weak, nonatomic) IBOutlet UILabel *red;
-@property (weak, nonatomic) IBOutlet UILabel *green;
-@property (weak, nonatomic) IBOutlet UILabel *blue;
-@property (weak, nonatomic) IBOutlet UILabel *hexRGB;
-@property (weak, nonatomic) IBOutlet UIView *scrollViewSizeView;
-@property (weak, nonatomic) IBOutlet UIButton *saveButton;
-
-@property (weak, nonatomic) IBOutlet UIView *bottomBar;
-
+@interface ColorViewController () <ColorDetectViewDelegate>
+@property (nonatomic, strong) UIImage *image;
+@property (nonatomic, strong) ColorDetectView *colorDetectView;
+@property (nonatomic, strong) UILabel *colorLabel;
+@property (nonatomic, strong) UIButton *saveButton;
+@property (nonatomic, copy) NSString *selectedHex;
+@property (nonatomic, strong) UIView *swatch;
 @end
-
 @implementation ColorViewController
-
-//设置状态栏
-- (BOOL)prefersStatusBarHidden
-{
-    return YES;
-}
-
-
-- (void)didReceiveMemoryWarning
-{
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
-}
-
-
-#pragma mark - public method
-
-- (void)setChooseImage:(UIImage *)image
-{
-    //不能在这里直接赋值照片给ColorScrollView 因为ScrollView还为Null
-    self.image = image;
-}
-
-#pragma mark - view life cycle
-
-- (void)viewDidLoad
-{
+- (void)setChooseImage:(UIImage *)image { self.image = image; }
+- (void)viewDidLoad {
     [super viewDidLoad];
-    
-    //setup view
-    [self setupBackgroud];
-    [self setupScrollView];
-    
-    //init text
-    self.red.text = @"255";
-    self.green.text = @"255";
-    self.blue.text = @"255";
-    self.hexRGB.text = @"#ffffff";
-    
-}
-
-- (void)viewDidLayoutSubviews
-{
-    [super viewDidLayoutSubviews];
-    
-    //update scrollView frame
-    // fix reset imageview frame by comparing first
-    if (!CGRectEqualToRect(self.colorDetectView.frame,self.scrollViewSizeView.bounds)) {
-        self.colorDetectView.frame = self.scrollViewSizeView.bounds;
-    }
-}
-
-- (void)setupScrollView
-{
-    CGRect frame = self.scrollViewSizeView.bounds;
-    self.colorDetectView = [[ColorDetectView alloc]initWithFrame:frame andUIImage:self.image];
+    self.title = NSLocalizedString(@"Photo Color", nil);
+    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.colorDetectView = [[ColorDetectView alloc] initWithFrame:CGRectZero andUIImage:self.image];
     self.colorDetectView.delegate = self;
-    [self.scrollViewSizeView addSubview:self.colorDetectView];
+    self.colorDetectView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.colorDetectView];
+    self.colorLabel = [UILabel new];
+    self.colorLabel.text = NSLocalizedString(@"Tap a pixel or sample the center", nil);
+    self.colorLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    self.colorLabel.adjustsFontForContentSizeCategory = YES;
+    self.colorLabel.numberOfLines = 0;
+    self.colorLabel.accessibilityIdentifier = @"sampledColor";
+    self.swatch = [UIView new];
+    self.swatch.layer.cornerRadius = 10;
+    [self.swatch.widthAnchor constraintEqualToConstant:44].active = YES;
+    [self.swatch.heightAnchor constraintEqualToConstant:44].active = YES;
+    UIStackView *readout = [[UIStackView alloc] initWithArrangedSubviews:@[self.swatch, self.colorLabel]];
+    readout.spacing = 12;
+    readout.alignment = UIStackViewAlignmentCenter;
+    UIButton *sample = [UIButton buttonWithType:UIButtonTypeSystem];
+    [sample setTitle:NSLocalizedString(@"Sample Center", nil) forState:UIControlStateNormal];
+    sample.accessibilityIdentifier = @"sampleCenter";
+    [sample addTarget:self action:@selector(sampleCenter) forControlEvents:UIControlEventTouchUpInside];
+    self.saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.saveButton.configuration = UIButtonConfiguration.filledButtonConfiguration;
+    [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
+    self.saveButton.accessibilityIdentifier = @"saveColor";
+    self.saveButton.enabled = NO;
+    [self.saveButton addTarget:self action:@selector(saveColor) forControlEvents:UIControlEventTouchUpInside];
+    [sample.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    [self.saveButton.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    UIStackView *actions = [[UIStackView alloc] initWithArrangedSubviews:@[sample, self.saveButton]];
+    actions.distribution = UIStackViewDistributionFillEqually;
+    actions.spacing = 12;
+    UIStackView *panel = [[UIStackView alloc] initWithArrangedSubviews:@[readout, actions]];
+    panel.axis = UILayoutConstraintAxisVertical;
+    panel.spacing = 8;
+    panel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:panel];
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.colorDetectView.topAnchor constraintEqualToAnchor:safe.topAnchor],
+        [self.colorDetectView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [self.colorDetectView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [self.colorDetectView.bottomAnchor constraintEqualToAnchor:panel.topAnchor constant:-8],
+        [panel.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [panel.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [panel.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8]
+    ]];
 }
-
-- (void)setupBackgroud
-{
-    //设置背景颜色
-    self.view.backgroundColor = [UIColor colorWithRed:239.0/255 green:239.0/255 blue:237.0/255 alpha:1.0];
+- (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView { return self.colorDetectView.imageView; }
+- (void)scrollViewDidZoom:(UIScrollView *)scrollView { [self.colorDetectView setNeedsLayout]; }
+- (void)sampleCenter {
+    // Sample the visible center, including the user's pan/zoom position.
+    CGPoint point = [self.colorDetectView convertPoint:CGPointMake(CGRectGetMidX(self.colorDetectView.bounds), CGRectGetMidY(self.colorDetectView.bounds)) toView:self.colorDetectView.imageView];
+    CGPoint normalized;
+    if (TCNormalizedPoint(point, self.colorDetectView.imageView.bounds, &normalized)) [self handelColor:TCSampleImage(self.image, normalized)];
 }
-
-#pragma mark -Action
-- (IBAction)saveColor:(UIButton *)sender
-{
-    self.saveButton.selected = YES;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        
-        NSUserDefaults * userDefaults = [NSUserDefaults standardUserDefaults];
-        NSArray * colorArray = [userDefaults arrayForKey:@"colorArray"];
-        
-        if (colorArray == nil)
-        {
-            NSArray * newColorArray = @[self.hexRGB.text];
-            [userDefaults setObject:newColorArray forKey:@"colorArray"];
-        }
-        else
-        {
-            NSMutableArray *newColorArray = [colorArray mutableCopy];
-            [newColorArray addObject:self.hexRGB.text];
-            [userDefaults setObject:newColorArray forKey:@"colorArray"];
-        }
-        [userDefaults synchronize];
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            self.saveButton.selected = NO;
-        });
-        
-    });
+- (void)handelColor:(NSString *)hex {
+    if (!TCNormalizeHexColor(hex)) return;
+    self.selectedHex = hex;
+    self.colorLabel.text = [NSString stringWithFormat:@"%@\n%@", hex, TCRGBDescription(hex)];
+    self.swatch.backgroundColor = TCUIColorFromHex(hex);
+    self.saveButton.enabled = YES;
+    [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
 }
-
-#pragma mark -colorDetectView delegate
-
--(UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView
-{
-    return self.colorDetectView.imageView;
-}
-
-- (void)handelColor:(NSString *)hexColor
-{
-    [self setColorInformationWith:hexColor];
-}
-
-- (void)setColorInformationWith:(NSString*)hexColor
-{
-    //转换hex值
-    unsigned int red ,green,blue;
-    
-    NSScanner *scanner = [NSScanner scannerWithString:[hexColor substringWithRange:NSMakeRange(1, 2)]];
-    [scanner scanHexInt:&red];
-    
-    scanner = [NSScanner scannerWithString:[hexColor substringWithRange:NSMakeRange(3, 2)]];
-    [scanner scanHexInt:&green];
-    
-    scanner = [NSScanner scannerWithString:[hexColor substringWithRange:NSMakeRange(5, 2)]];
-    [scanner scanHexInt:&blue];
-    
-    
-    self.red.text = [NSString stringWithFormat:@"%d",red];
-    self.green.text = [NSString stringWithFormat:@"%d",green];
-    self.blue.text = [NSString stringWithFormat:@"%d",blue];
-    self.hexRGB.text = hexColor;
-    
-    self.saveButton.backgroundColor = [UIColor colorWithRed:red/255.0 green:green/255.0 blue:blue/255.0 alpha:1];
+- (void)saveColor {
+    TCColorStore *store = [[TCColorStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    if ([store addColor:self.selectedHex]) {
+        self.saveButton.enabled = NO;
+        [self.saveButton setTitle:NSLocalizedString(@"Saved", nil) forState:UIControlStateNormal];
+        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil));
+    }
 }
 @end

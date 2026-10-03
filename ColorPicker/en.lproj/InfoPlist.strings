@@ -1,2 +1,1 @@
-/* Localized versions of Info.plist keys */
-
+"NSCameraUsageDescription" = "TouchColor uses the camera to sample colors from live scenes and photos you take.";

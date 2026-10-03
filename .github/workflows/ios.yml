@@ -1,0 +1,41 @@
+name: iOS 27 compatibility
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compatibility:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Record exact stable toolchain and simulators
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          xcodebuild -version > /tmp/touchcolor-xcode.txt
+          grep 'Xcode 27.0' /tmp/touchcolor-xcode.txt
+          xcodebuild -showsdks > /tmp/touchcolor-sdks.txt
+          grep 'iphoneos27.0' /tmp/touchcolor-sdks.txt
+      - name: Validate checked-in project and metadata
+        run: |
+          python3 scripts/generate_project.py
+          git diff --exit-code -- TouchColor.xcodeproj
+          plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
+          xcodebuild -list -project TouchColor.xcodeproj
+      - name: Build unsigned Release for physical iOS devices
+        run: |
+          set -o pipefail
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Run unit and UI tests on iPhone and iPad
+        run: bash scripts/test_simulators.sh

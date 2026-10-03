@@ -1,0 +1,81 @@
+#import <XCTest/XCTest.h>
+@interface TouchColorUITests : XCTestCase
+@property (nonatomic, strong) XCUIApplication *app;
+@end
+@implementation TouchColorUITests
+- (void)setUp {
+    [super setUp];
+    self.continueAfterFailure=NO;
+    self.app=[XCUIApplication new];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
+    [self.app launch];
+}
+- (void)testLaunchAndPhotoPickerCancelRepeatedly {
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
+    for (NSUInteger i=0;i<2;i++) {
+        [self.app.buttons[@"choosePhoto"] tap];
+        XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
+        XCTAssertTrue([cancel waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);
+        [cancel tap];
+        XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    }
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
+}
+- (void)testSampleSaveRelaunchDeleteAndBackground {
+    [self.app.buttons[@"Sample Fixture"] tap];
+    XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
+    XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
+    [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
+    [self.app.buttons[@"saveColor"] tap];
+    XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
+    [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
+    [self.app activate];
+    XCTAssertTrue(self.app.buttons[@"sampleCenter"].exists);
+    [self.app terminate];
+    self.app.launchArguments=@[@"-AppleLanguages",@"(en)"];
+    [self.app launch];
+    XCUIElement *table=self.app.tables[@"colorHistory"];
+    XCTAssertTrue([table.cells.firstMatch waitForExistenceWithTimeout:5]);
+    XCTAssertEqual(table.cells.count,1);
+    XCTAssertTrue([table.cells.firstMatch.label containsString:@"#ff0000"]);
+    [table.cells.firstMatch swipeLeft];
+    [self.app.buttons[@"Delete"] tap];
+    XCTAssertEqual(table.cells.count,0);
+}
+- (void)testNoCameraAndLiveLifecycleDoNotEnableInvalidSave {
+    [self.app.buttons[@"takePhoto"] tap];
+    XCTAssertTrue([self.app.alerts.firstMatch waitForExistenceWithTimeout:5]);
+    [self.app.alerts.buttons[@"OK"] tap];
+    [self.app.buttons[@"liveColor"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"cameraStatus"] waitForExistenceWithTimeout:5]);
+    XCTAssertTrue([self.app.staticTexts[@"cameraStatus"].label containsString:@"not available"]);
+    XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
+    [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
+    [self.app activate];
+    XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
+    [self.app.navigationBars.buttons.firstMatch tap];
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+}
+- (void)testAdaptiveLandscapePhotoSampling {
+    [self.app.buttons[@"Sample Fixture"] tap];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
+    XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
+    XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
+    [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue(self.app.buttons[@"saveColor"].hittable);
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
+}
+- (void)testSystemPhotoSelectionAndSampling {
+    // CI seeds an opaque red PNG into this simulator's Photos library.
+    [self.app.buttons[@"choosePhoto"] tap];
+    XCUIElement *cell=self.app.collectionViews.cells.firstMatch;
+    XCTAssertTrue([cell waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
+    [cell tap];
+    XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
+    [self.app.buttons[@"sampleCenter"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
+}
+@end
