@@ -5,7 +5,7 @@ This is an implemented **native macOS** vertical slice under verification, not a
 ## Source preservation
 
 - Isolated implementation began at repaired iOS commit `0d4c13ef4f43f5c3be2f7a25c5599f0107975480`.
-- Synchronized the narrow iOS layout/permission-test change `47a65e22eae6517e35d5e1017973e07d159da876`. The iOS owner is still validating its latest test harness; final integration evidence remains pending.
+- Synchronized the narrow iOS layout/permission-test change `47a65e22eae6517e35d5e1017973e07d159da876`. The subsequent test-only `b2609476e85ab385ce1feb2dafd9ac6e6873a987` patch is synchronized; the iOS owner is still validating its latest test harness, so final integration evidence remains pending.
 - Original `com.mango.touchColor` iOS identity, iOS 15 minimum, Objective-C interfaces, camera/capture-generation behavior and all existing iOS tests remain intact.
 - `Packages/ColorCore` is repository-local. Foundation-only `ColorDomain`, CoreGraphics/ImageIO `ColorRaster`, and Foundation `ColorPaletteLegacy` have independent tests. The existing iOS implementations remain the reference until direct cross-language equivalence is verified.
 - No SwiftData migration, automatic cross-device sync, palette sorting/deduplication, or silent data truncation. `colorArray` and the once-only `colorArrayRecoveryBackup` retain their exact legacy meanings, in each app's local container.
@@ -22,8 +22,14 @@ The original 1024-pixel marketing icon is repackaged unchanged. Privacy is a nat
 
 ## Verification and explicit remaining gates
 
-Run `python3 scripts/generate_mac_project.py`, `swift test --package-path Packages/ColorCore`, then the native Mac shared scheme. The single coordinated public `xcode-27` job pins Xcode 27.0 (27A266a) and macOS 27.0 (26A428), builds Release arm64, separately attempts x86_64, checks Release for DEBUG seam leakage, runs app-hosted XCTest and native UI workflows, and retains at most 20 MB of evidence for three days. Exact passed/failed results will be recorded after CI executes. No local Swift/Xcode compiler is installed in the Linux executor.
+Run `python3 scripts/generate_mac_project.py`, `swift test --package-path Packages/ColorCore`, then the native Mac shared scheme. The single coordinated public `xcode-27` job pins Xcode 27.0 (27A266a) and macOS 27.0 (26A428), builds Release arm64, separately attempts x86_64, checks Release for DEBUG seam leakage, runs app-hosted XCTest and native UI workflows, and retains at most 20 MB of evidence for one day. Exact passed/failed results will be recorded after CI executes. No local Swift/Xcode compiler is installed in the Linux executor.
 
 Synthetic fixtures live only in test targets. Unit tests verify real asymmetric pixel output across all orientations, alpha, wide-gamut conversion, full source dimensions, output reopen, malformed palette backup, duplicate order and async import generations. UI tests use actual files/pasteboard/native Open and runtime pointer sampling, never a fixture-only application.
 
-Not completed: native camera adapter/hardware checks, Mac signing/sandbox/store resources, final iOS-owner synchronization and direct UIKit-vs-package equivalence, expanded import/export/window UX tests, iPad/Watch/TV/Vision platform slices. x86_64 compilation and runtime are separate gates; no Intel runtime claim is made. XCTest/OS security denials are reported, never worked around by modifying privacy databases. No Store record, identifier, capability, entitlement or signing resource was created or activated.
+Not completed: native camera adapter/hardware checks, Mac signing/sandbox/store resources, final iOS-owner passing evidence and direct UIKit-vs-package equivalence runtime verification, expanded import/export/window UX tests, iPad/Watch/TV/Vision platform slices. x86_64 compilation and runtime are separate gates; no Intel runtime claim is made. XCTest/OS security denials are reported, never worked around by modifying privacy databases. No Store record, identifier, capability, entitlement or signing resource was created or activated.
+
+### First actual evidence
+
+- `8761262`: all nine Swift-package tests passed on macOS 27.0; app compilation found the AppKit/QuickDraw `RGBColor` name collision, subsequently fixed with explicit module qualification.
+- `9f6f1fd`: all nine package tests passed; full native Mac Release builds succeeded for arm64 and x86_64, with `lipo` evidence and Release seam checks. App-hosted test build exposed a Debug architecture mismatch (app attempted x86_64 while package was active arm64), fixed by explicit active-architecture test settings. No app runtime pass is claimed for either of these commits.
+- Direct tests now compare portable hex/geometry/store output with the original Objective-C APIs and sample all eight orientations/scales against UIKit in the original iOS host. The platform CI also builds the unchanged iOS app at its original iOS 15 minimum.

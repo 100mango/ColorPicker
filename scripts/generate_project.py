@@ -33,7 +33,9 @@ resources=[ref('ColorPicker/Images.xcassets','folder.assetcatalog'),ref('ColorPi
 for filename in ['Localizable.strings','InfoPlist.strings']:
     children=[add('loc:'+lang+filename, 'PBXFileReference', lastKnownFileType='text.plist.strings', name=lang, path='ColorPicker/'+lang+'.lproj/'+filename, sourceTree='<group>') for lang in ['en','zh-Hans']]
     resources.append(add('variant:'+filename,'PBXVariantGroup',children=children,name=filename,sourceTree='<group>'))
-testrefs=[ref('ColorPickerTests/ColorPickerTests.m','sourcecode.c.objc')]
+testrefs=[ref('ColorPickerTests/ColorPickerTests.m','sourcecode.c.objc'),ref('ColorPickerTests/ColorCoreEquivalenceTests.swift','sourcecode.swift')]
+bridgeref=ref('ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h','sourcecode.c.h')
+package=add('ColorCorePackage','XCLocalSwiftPackageReference',relativePath='Packages/ColorCore')
 uirefs=[ref('TouchColorUITests/TouchColorUITests.m','sourcecode.c.objc')]
 products=[]
 projectid=uid('Project')
@@ -49,15 +51,22 @@ for name,kind,refs in [('TouchColor','application',apprefs[:len(sources)]),('Tou
     else: settings.update(GENERATE_INFOPLIST_FILE='YES', IPHONEOS_DEPLOYMENT_TARGET='17.0')
     if kind=='bundle.unit-test': settings.update(TEST_HOST='$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor', BUNDLE_LOADER='$(TEST_HOST)')
     if kind=='bundle.ui-testing': settings.update(TEST_TARGET_NAME='TouchColor')
+    modules=[]
+    if name=='TouchColorTests':
+        settings.update(SWIFT_VERSION='5.0',SWIFT_OBJC_BRIDGING_HEADER='ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h')
+        for module in ['ColorDomain','ColorRaster','ColorPaletteLegacy']:
+            dep=add(name+module,'XCSwiftPackageProductDependency',productName=module)
+            modules.append(dep)
+            objects[phases[1]]['files'].append(add(name+'link'+module,'PBXBuildFile',productRef=dep))
     dependencies=[]
     if not isapp:
         proxy=add(name+'proxy','PBXContainerItemProxy',containerPortal=projectid,proxyType=1,remoteGlobalIDString=appTarget,remoteInfo='TouchColor')
         dependencies=[add(name+'dependency','PBXTargetDependency',target=appTarget,targetProxy=proxy)]
-    targets.append(add(name,'PBXNativeTarget',buildConfigurationList=configlist(name,settings),buildPhases=phases,buildRules=[],dependencies=dependencies,name=name,productName=name,productReference=product,productType='com.apple.product-type.'+kind))
+    targets.append(add(name,'PBXNativeTarget',buildConfigurationList=configlist(name,settings),buildPhases=phases,buildRules=[],dependencies=dependencies,name=name,productName=name,productReference=product,productType='com.apple.product-type.'+kind,packageProductDependencies=modules))
 productgroup=add('Products','PBXGroup',children=products,name='Products',sourceTree='<group>')
-group=add('MainGroup','PBXGroup',children=apprefs+resources+testrefs+uirefs+[ref('ColorPicker/TouchColor-Info.plist','text.plist.xml'), productgroup],sourceTree='<group>')
+group=add('MainGroup','PBXGroup',children=apprefs+resources+testrefs+uirefs+[bridgeref,ref('ColorPicker/TouchColor-Info.plist','text.plist.xml'), productgroup],sourceTree='<group>')
 settings=dict(ALWAYS_SEARCH_USER_PATHS='NO',CLANG_ENABLE_MODULES='YES',CLANG_ENABLE_OBJC_ARC='YES',CLANG_WARN_BOOL_CONVERSION='YES',CLANG_WARN_CONSTANT_CONVERSION='YES',CLANG_WARN_ENUM_CONVERSION='YES',CLANG_WARN_INT_CONVERSION='YES',CLANG_WARN_OBJC_ROOT_CLASS='YES_ERROR',GCC_C_LANGUAGE_STANDARD='gnu17',GCC_WARN_ABOUT_RETURN_TYPE='YES_ERROR',GCC_WARN_UNINITIALIZED_AUTOS='YES',GCC_WARN_UNUSED_VARIABLE='YES',IPHONEOS_DEPLOYMENT_TARGET='15.0',SDKROOT='iphoneos',TARGETED_DEVICE_FAMILY='1',SUPPORTED_PLATFORMS='iphoneos iphonesimulator',SUPPORTS_MACCATALYST='NO',ENABLE_USER_SCRIPT_SANDBOXING='YES')
-add('Project','PBXProject',attributes=dict(LastUpgradeCheck='2700',TargetAttributes={targets[1]:dict(TestTargetID=appTarget),targets[2]:dict(TestTargetID=appTarget)}),buildConfigurationList=configlist('Project',settings),compatibilityVersion='Xcode 14.0',developmentRegion='en',hasScannedForEncodings=0,knownRegions=['en','zh-Hans','Base'],mainGroup=group,productRefGroup=productgroup,projectDirPath='',projectRoot='',targets=targets)
+add('Project','PBXProject',attributes=dict(LastUpgradeCheck='2700',TargetAttributes={targets[1]:dict(TestTargetID=appTarget),targets[2]:dict(TestTargetID=appTarget)}),buildConfigurationList=configlist('Project',settings),compatibilityVersion='Xcode 14.0',developmentRegion='en',hasScannedForEncodings=0,knownRegions=['en','zh-Hans','Base'],mainGroup=group,productRefGroup=productgroup,projectDirPath='',projectRoot='',targets=targets,packageReferences=[package])
 def serialize(value, level=0):
     indent='\t'*level
     if isinstance(value,dict): return '{\n'+''.join(indent+'\t'+json.dumps(str(k))+' = '+serialize(v,level+1)+';\n' for k,v in value.items())+indent+'}'

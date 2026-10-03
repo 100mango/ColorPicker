@@ -18,7 +18,9 @@ public enum RasterError: LocalizedError {
 
 /// Full-size orientation-normalized source, never a reduced display-preview sampling source.
 /// The original encoded bytes stay available for a lossless original-file export if needed.
-public struct ColorRaster {
+// CGImage and Data are immutable snapshots; every sample/encode allocates a private context.
+// No mutable bitmap pointer or ImageIO source escapes decode.
+public struct ColorRaster: @unchecked Sendable {
     public static let maximumEncodedBytes = 128 * 1024 * 1024
     public static let maximumPixels = 100_000_000
     public let image: CGImage

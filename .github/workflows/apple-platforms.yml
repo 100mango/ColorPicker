@@ -21,6 +21,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
       - name: Verify source and stable toolchain
+        id: toolchain
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
@@ -76,7 +77,7 @@ jobs:
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-unit.xcresult -parallel-testing-enabled NO \
-            -collect-test-diagnostics never -only-testing:TouchColorMacTests CODE_SIGNING_ALLOWED=NO test
+            -collect-test-diagnostics never -only-testing:TouchColorMacTests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
       - name: Native Mac UI runtime workflows
         id: ui
         if: ${{ !cancelled() && steps.units.outcome == 'success' }}
@@ -86,7 +87,22 @@ jobs:
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \
-            -only-testing:TouchColorMacUITests CODE_SIGNING_ALLOWED=NO test
+            -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+      - name: Build original iOS app and direct cross-language equivalence tests
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO build
+          test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ios-device/Build/Products/Release-iphoneos/TouchColor.app/Info.plist)" = 15.0
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator build-for-testing
+          bash scripts/test_simulators.sh iPhoneCompact prepare
+          bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
+      - name: Shut down iOS test simulator
+        if: always()
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh iPhoneCompact shutdown || true
       - name: Report bounded evidence and unchanged source
         if: always()
         run: |
@@ -97,6 +113,9 @@ jobs:
               xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
             fi
           done
+          if test -d build/iPhoneCompact-TouchColorTests.xcresult; then
+            xcrun xcresulttool get test-results summary --path build/iPhoneCompact-TouchColorTests.xcresult | tee build/evidence/ios-equivalence-summary.json || true
+          fi
           if test -d build/mac-ui.xcresult; then
             xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
           fi
@@ -118,6 +137,6 @@ jobs:
         with:
           name: touchcolor-native-mac-evidence
           path: build/evidence
-          retention-days: 3
+          retention-days: 1
           compression-level: 9
           if-no-files-found: ignore

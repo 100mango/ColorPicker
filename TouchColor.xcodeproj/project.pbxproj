@@ -165,6 +165,22 @@
 			"path" = "ColorPickerTests/ColorPickerTests.m";
 			"sourceTree" = "<group>";
 		};
+		"6BE5D32D6297541FF03CF7EE" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "ColorPickerTests/ColorCoreEquivalenceTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"074DB7B9AF13324F95B6DF7F" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.c.h";
+			"path" = "ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h";
+			"sourceTree" = "<group>";
+		};
+		"B8F9C6A7A0FE71C7A9511F30" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = "Packages/ColorCore";
+		};
 		"B1B87DF04909BEECFAD8F8AE" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.c.objc";
@@ -294,6 +310,7 @@
 			"productName" = "TouchColor";
 			"productReference" = "E2DA99D6C36EF7752754DE79";
 			"productType" = "com.apple.product-type.application";
+			"packageProductDependencies" = ();
 		};
 		"AF859344275CE0F435567143" = {
 			"isa" = "PBXFileReference";
@@ -306,16 +323,20 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "A8A66D709EE838446D40F356";
 		};
+		"473125730584998F58C0663F" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "6BE5D32D6297541FF03CF7EE";
+		};
 		"30E643D3BBECBF4E75895F95" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("1CB08A7A694E701476D1528B");
+			"files" = ("1CB08A7A694E701476D1528B", "473125730584998F58C0663F");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"AE60333604A964B08B0B6F14" = {
 			"isa" = "PBXFrameworksBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ();
+			"files" = ("5C81E34160D51D848A65B99E", "DDE38723AB3B166B985C681F", "FCA6CEDE4A7E1A18BF2DE383");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"F35AB2637920A3D7155FE512" = {
@@ -323,6 +344,30 @@
 			"buildActionMask" = 2147483647;
 			"files" = ();
 			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"1DE6486E99FE56DB0E4F1014" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorDomain";
+		};
+		"5C81E34160D51D848A65B99E" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "1DE6486E99FE56DB0E4F1014";
+		};
+		"73AA55AE3A369CDB127A265C" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorRaster";
+		};
+		"DDE38723AB3B166B985C681F" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "73AA55AE3A369CDB127A265C";
+		};
+		"9E51537863E87B9F1A4407AF" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"productName" = "ColorPaletteLegacy";
+		};
+		"FCA6CEDE4A7E1A18BF2DE383" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "9E51537863E87B9F1A4407AF";
 		};
 		"CD12C66F8CED2FBD40AC3BEC" = {
 			"isa" = "PBXContainerItemProxy";
@@ -349,6 +394,8 @@
 				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"SWIFT_VERSION" = "5.0";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h";
 			};
 		};
 		"4A048B35667CD305E6775222" = {
@@ -364,6 +411,8 @@
 				"IPHONEOS_DEPLOYMENT_TARGET" = "17.0";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"SWIFT_VERSION" = "5.0";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h";
 			};
 		};
 		"B85AF722D833C009A015DF50" = {
@@ -382,6 +431,7 @@
 			"productName" = "TouchColorTests";
 			"productReference" = "AF859344275CE0F435567143";
 			"productType" = "com.apple.product-type.bundle.unit-test";
+			"packageProductDependencies" = ("1DE6486E99FE56DB0E4F1014", "73AA55AE3A369CDB127A265C", "9E51537863E87B9F1A4407AF");
 		};
 		"6FDA5DA01202231DE6F91423" = {
 			"isa" = "PBXFileReference";
@@ -468,6 +518,7 @@
 			"productName" = "TouchColorUITests";
 			"productReference" = "6FDA5DA01202231DE6F91423";
 			"productType" = "com.apple.product-type.bundle.ui-testing";
+			"packageProductDependencies" = ();
 		};
 		"FE0A091FDBFB3E9C31B7A1BD" = {
 			"isa" = "PBXGroup";
@@ -483,7 +534,7 @@
 		};
 		"2EB2D8158FC6EF9EB19CB439" = {
 			"isa" = "PBXGroup";
-			"children" = ("5C9B4CB17DA651A66807148F", "374F683CB591D99EF86EE5FB", "D6B3A9BCCA54F277E4CDFE50", "CC6D6A2BDEB9F0D4CFA1CF29", "A0C442EE9134F716521A76B1", "97FF18FCAF3CAC843B5B4DD4", "55EEFB361AA97FB153A0B2F8", "5A9D047700301BF39C6890C5", "2BBE2D2EF0C5FA3175EA70E7", "02FAB1421C714C59D424B531", "1D473C91CABCAABC177E7C4D", "B8B75C81122F2C805129B891", "E8FE485D70B827F83FB079DA", "495876BEB683AC2CA8F32603", "A41C62DEDF82F04D69E68A38", "7B234AC5D5A0118490570686", "996A8D5B6D49BE9F408930A8", "C7BB7C9A324E76F4F7677EC4", "CCA43E4E972E113B9044F674", "B4F9001FEF5406956D64F3DB", "81C7B96EA3173C0C3B4C8FDC", "A8A66D709EE838446D40F356", "B1B87DF04909BEECFAD8F8AE", "749A6AB1E7384F29F0DFE33C", "FE0A091FDBFB3E9C31B7A1BD");
+			"children" = ("5C9B4CB17DA651A66807148F", "374F683CB591D99EF86EE5FB", "D6B3A9BCCA54F277E4CDFE50", "CC6D6A2BDEB9F0D4CFA1CF29", "A0C442EE9134F716521A76B1", "97FF18FCAF3CAC843B5B4DD4", "55EEFB361AA97FB153A0B2F8", "5A9D047700301BF39C6890C5", "2BBE2D2EF0C5FA3175EA70E7", "02FAB1421C714C59D424B531", "1D473C91CABCAABC177E7C4D", "B8B75C81122F2C805129B891", "E8FE485D70B827F83FB079DA", "495876BEB683AC2CA8F32603", "A41C62DEDF82F04D69E68A38", "7B234AC5D5A0118490570686", "996A8D5B6D49BE9F408930A8", "C7BB7C9A324E76F4F7677EC4", "CCA43E4E972E113B9044F674", "B4F9001FEF5406956D64F3DB", "81C7B96EA3173C0C3B4C8FDC", "A8A66D709EE838446D40F356", "6BE5D32D6297541FF03CF7EE", "B1B87DF04909BEECFAD8F8AE", "074DB7B9AF13324F95B6DF7F", "749A6AB1E7384F29F0DFE33C", "FE0A091FDBFB3E9C31B7A1BD");
 			"sourceTree" = "<group>";
 		};
 		"BFD315016DE16320F7E2120C" = {
@@ -571,6 +622,7 @@
 			"projectDirPath" = "";
 			"projectRoot" = "";
 			"targets" = ("6FF0BCA2D35564AB5BB057F8", "EE3B64DE770A998D1E013B66", "EF8D4CDBA41FBC0E8FEEE899");
+			"packageReferences" = ("B8F9C6A7A0FE71C7A9511F30");
 		};
 	};
 	"rootObject" = "F6F4DA8D93E88A08220E03B7";
