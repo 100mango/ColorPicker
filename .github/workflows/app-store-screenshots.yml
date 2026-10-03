@@ -28,7 +28,7 @@ jobs:
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
           test "$GITHUB_REF" = refs/heads/codex/app-store-screenshots
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git diff --exit-code "$APP_SOURCE_SHA" -- . ':!TouchColorUITests/TouchColorUITests.m' ':!.github/workflows/app-store-screenshots.yml'
+          git diff --exit-code "$APP_SOURCE_SHA" -- . ':!TouchColorUITests/TouchColorUITests.m' ':!.github/workflows/app-store-screenshots.yml' ':!TouchColor.xcodeproj/xcshareddata/xcschemes/TouchColorScreenshots.xcscheme'
           echo "Frozen app source: $APP_SOURCE_SHA"
           echo "Capture harness commit: $GITHUB_SHA"
           sw_vers
@@ -40,7 +40,7 @@ jobs:
       - name: Build unchanged Release app and screenshot test harness
         timeout-minutes: 8
         run: |
-          xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+          xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColorScreenshots -configuration Release \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/store \
             build-for-testing
       - name: Capture iPhone 6.9 and iPad 13 inch sequentially
@@ -72,9 +72,9 @@ jobs:
             xcrun simctl boot "$device" || true
             xcrun simctl bootstatus "$device" -b
             xcrun simctl spawn "$device" launchctl print system >/dev/null
-            xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -showdestinations >/dev/null
+            xcodebuild -project TouchColor.xcodeproj -scheme TouchColorScreenshots -showdestinations >/dev/null
             xcrun simctl addmedia "$device" /tmp/touchcolor-palette.png
-            xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+            xcodebuild -project TouchColor.xcodeproj -scheme TouchColorScreenshots -configuration Release \
               -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/store \
               -resultBundlePath "build/store-$device.xcresult" -parallel-testing-enabled NO \
               -collect-test-diagnostics never -test-timeouts-enabled YES \
@@ -85,7 +85,7 @@ jobs:
           done < /tmp/store-device-ids.txt
       - name: Verify app source remains identical after capture
         run: |
-          git diff --exit-code "$APP_SOURCE_SHA" -- . ':!TouchColorUITests/TouchColorUITests.m' ':!.github/workflows/app-store-screenshots.yml'
+          git diff --exit-code "$APP_SOURCE_SHA" -- . ':!TouchColorUITests/TouchColorUITests.m' ':!.github/workflows/app-store-screenshots.yml' ':!TouchColor.xcodeproj/xcshareddata/xcschemes/TouchColorScreenshots.xcscheme'
           git diff --exit-code HEAD --
       - name: Report capture test summaries
         if: always()
