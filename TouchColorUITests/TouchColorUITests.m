@@ -6,8 +6,10 @@
 @end
 @implementation TouchColorUITests
 - (void)emitScreenshot:(NSString *)name {
-    // At most two synthetic-fixture JPEGs in the entire serial iPhone+iPad job.
+    // Log at most two synthetic-fixture JPEGs, from the compact iPhone only.
     if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone) return;
+    CGSize displaySize=UIScreen.mainScreen.bounds.size;
+    if (MIN(displaySize.width,displaySize.height)>400) return;
     NSString *marker=[NSTemporaryDirectory() stringByAppendingPathComponent:[name stringByAppendingString:@".logged"]];
     if ([NSFileManager.defaultManager fileExistsAtPath:marker]) return;
     NSData *data=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);

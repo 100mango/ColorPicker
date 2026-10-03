@@ -59,10 +59,13 @@ jobs:
       - name: Record unsigned app framework inventory
         run: |
           python3 - <<'PYFRAMEWORKS'
-          import json
+          import json,plistlib
           from pathlib import Path
           app=Path('build/device/Build/Products/Release-iphoneos/TouchColor.app')
           assert (app/'TouchColor').is_file()
+          metadata=plistlib.loads((app/'Info.plist').read_bytes())
+          assert metadata['UIDeviceFamily']==[1], metadata['UIDeviceFamily']
+          print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'historical iPhone-only'}))
           directory=app/'Frameworks'
           entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
           print(json.dumps({'app':'TouchColor.app','embedded_framework_directory_entries':entries}))
@@ -75,40 +78,40 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
-      - name: Warm up iPhone simulator
-        id: warm-iphone
+      - name: Warm up compact iPhone simulator
+        id: warm-iphone-compact
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhone prepare
-      - name: iPhone unit tests
-        if: ${{ !cancelled() && steps.warm-iphone.outcome == 'success' }}
+        run: bash scripts/test_simulators.sh iPhoneCompact prepare
+      - name: Compact iPhone unit tests
+        if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
         timeout-minutes: 8
-        run: bash scripts/test_simulators.sh iPhone TouchColorTests
-      - name: iPhone UI tests and synthetic screenshots
-        if: ${{ !cancelled() && steps.warm-iphone.outcome == 'success' }}
+        run: bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
+      - name: Compact iPhone UI tests and synthetic screenshots
+        if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
         timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPhone TouchColorUITests
-      - name: Shut down iPhone simulator
+        run: bash scripts/test_simulators.sh iPhoneCompact TouchColorUITests
+      - name: Shut down compact iPhone simulator
         if: always()
         timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPhone shutdown
-      - name: Warm up iPad simulator
-        id: warm-ipad
+        run: bash scripts/test_simulators.sh iPhoneCompact shutdown
+      - name: Warm up large iPhone simulator
+        id: warm-iphone-large
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPad prepare
-      - name: iPad unit tests
-        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
+        run: bash scripts/test_simulators.sh iPhoneLarge prepare
+      - name: Large iPhone unit tests
+        if: ${{ !cancelled() && steps.warm-iphone-large.outcome == 'success' }}
         timeout-minutes: 8
-        run: bash scripts/test_simulators.sh iPad TouchColorTests
-      - name: iPad UI tests
-        if: ${{ !cancelled() && steps.warm-ipad.outcome == 'success' }}
+        run: bash scripts/test_simulators.sh iPhoneLarge TouchColorTests
+      - name: Large iPhone UI tests
+        if: ${{ !cancelled() && steps.warm-iphone-large.outcome == 'success' }}
         timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPad TouchColorUITests
-      - name: Shut down iPad simulator
+        run: bash scripts/test_simulators.sh iPhoneLarge TouchColorUITests
+      - name: Shut down large iPhone simulator
         if: always()
         timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPad shutdown
+        run: bash scripts/test_simulators.sh iPhoneLarge shutdown
       - name: Always report test summaries and simulator diagnostics
         if: always()
         run: |

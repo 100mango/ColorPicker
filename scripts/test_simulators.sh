@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
-family="${1:?Provide iPhone or iPad}"
+family="${1:?Provide iPhoneCompact or iPhoneLarge}"
 suite="${2:?Provide prepare, shutdown, TouchColorTests or TouchColorUITests}"
-case "$family" in iPhone|iPad) ;; *) exit 2;; esac
+case "$family" in iPhoneCompact|iPhoneLarge) ;; *) exit 2;; esac
 case "$suite" in prepare|shutdown|TouchColorTests|TouchColorUITests) ;; *) exit 2;; esac
 xcrun simctl list devices available -j > /tmp/touchcolor-devices.json
 device=$(python3 - "$family" <<'PY'
@@ -11,10 +11,10 @@ all_devices=json.load(open('/tmp/touchcolor-devices.json'))['devices']
 runtimes=[key for key in all_devices if key.endswith('.iOS-27-0')]
 if not runtimes: raise SystemExit('BLOCKED: stable iOS 27.0 simulator runtime is unavailable')
 family=sys.argv[1]
-candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and family in d['name']]
-if not candidates: raise SystemExit('BLOCKED: missing '+family+' simulator')
-preferred='17e' if family=='iPhone' else 'mini'
-selected=next((d for d in candidates if preferred in d['name']),candidates[0])
+name={'iPhoneCompact':'iPhone 17e','iPhoneLarge':'iPhone 18 Pro Max'}[family]
+candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name']==name]
+if not candidates: raise SystemExit('BLOCKED: missing required '+name+' simulator')
+selected=candidates[0]
 print(selected['udid'])
 print('Selected '+selected['name']+' '+selected['udid'],file=sys.stderr)
 PY
