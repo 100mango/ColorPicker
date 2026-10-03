@@ -1,7 +1,7 @@
-name: Native iPad and iPhone compatibility
+name: Combined UIKit import qualification
 on:
   push:
-    branches: [codex/native-ipad]
+    branches: [codex/uikit-integration]
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
+        family: [iPhoneCompact]
     runs-on: xcode-27
     timeout-minutes: 60
     env:
@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/native-ipad
+          test "$GITHUB_REF" = refs/heads/codex/uikit-integration
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -60,7 +60,11 @@ jobs:
           python3 scripts/generate_project.py
           git diff --exit-code -- TouchColor.xcodeproj
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
+          python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           xcodebuild -list -project TouchColor.xcodeproj
+      - name: Shared domain raster and legacy palette tests
+        timeout-minutes: 6
+        run: swift test --package-path Packages/ColorCore
       - name: Build unsigned Release for physical iOS devices
         run: |
           set -o pipefail

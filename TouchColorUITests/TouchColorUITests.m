@@ -1,5 +1,6 @@
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import "TCPaletteUIHelpers.h"
 #include <stdio.h>
 @interface TouchColorUITests : XCTestCase
 @property (nonatomic, strong) XCUIApplication *app;
@@ -33,6 +34,9 @@
     XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
     image.name=name;image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
 }
+- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
+- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
+- (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
 - (void)setUp {
     [super setUp];
     self.continueAfterFailure=NO;
@@ -203,6 +207,8 @@
     [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"palette.import.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"watch.inbox.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self.app.buttons[@"Sample Fixture"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
     [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
@@ -224,6 +230,8 @@
     [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"palette.import.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"watch.inbox.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     XCTAssertGreaterThan(table.frame.size.height,44);
     for (NSUInteger i=0;i<4 && !CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1));i++) {
         if (CGRectGetMinY(detail.frame) < CGRectGetMinY(table.frame)) [table swipeDown]; else [table swipeUp];

@@ -60,7 +60,7 @@ import ColorDomain
         for label in [cell.textLabel, cell.detailTextLabel] { label?.numberOfLines = 0; label?.adjustsFontForContentSizeCategory = true }
         cell.textLabel?.font = .preferredFont(forTextStyle: .body)
         cell.detailTextLabel?.font = .preferredFont(forTextStyle: .caption1)
-        cell.accessoryType = .disclosureIndicator; cell.accessibilityIdentifier = "watch.inbox.\(message.id.uuidString)"
+        cell.accessoryType = .disclosureIndicator; cell.accessibilityTraits.insert(.button); cell.accessibilityIdentifier = "watch.inbox.\(message.id.uuidString)"
         return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

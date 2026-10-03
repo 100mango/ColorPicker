@@ -1,5 +1,6 @@
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import "TCPaletteUIHelpers.h"
 #import <math.h>
 
 /// Official XCTest audits run as their own bounded CI stage on each supported simulator family.
@@ -27,7 +28,7 @@
 - (void)recordAuditScreenshot:(NSString *)screen failure:(BOOL)failure {
     NSString *name=nil;
     if (failure) {
-        NSDictionary *states=@{@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
+        NSDictionary *states=@{@"palette import review":@"import",@"watch inbox status":@"inbox",@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
         if (states[screen]) name=[@"touchcolor-audit-failure-" stringByAppendingString:states[screen]];
     } else {
         if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
@@ -102,6 +103,16 @@
         XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore window after accessibility audit: %@",self.app.debugDescription);
     }
     self.originalWindowSize=CGSizeZero;
+}
+- (void)testAccessibilityPaletteImportReview {
+    [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:self.app];
+    [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:self.app];
+    [self auditScreen:@"palette import review"];
+}
+- (void)testAccessibilityWatchInboxStatus {
+    [self openPaletteAction:@"watch.inbox.open" app:self.app];
+    XCTAssertTrue([self.app.cells[@"watch.inbox.status"] waitForExistenceWithTimeout:5]);
+    [self auditScreen:@"watch inbox status"];
 }
 - (void)testAccessibilitySampledPhoto {
     [self importAndSample];

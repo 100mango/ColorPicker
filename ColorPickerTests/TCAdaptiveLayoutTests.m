@@ -159,7 +159,7 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
                 UILabel *RGB=TCLayoutLabel([history cellForRowAtIndexPath:index],@"R 255   G 0   B 0");
                 [self assertViewReadable:RGB inScroll:history];
                 UIScrollView *actions=(UIScrollView *)TCLayoutView(main.view,@"sourceControls");
-                for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor"]) {
+                for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {
                     UIButton *button=(UIButton *)TCLayoutView(main.view,identifier);
                     XCTAssertGreaterThanOrEqual(button.bounds.size.height,44);
                     [self assertViewReadable:button.titleLabel inScroll:actions];

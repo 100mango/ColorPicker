@@ -21,7 +21,10 @@
 @interface ColorMainViewController : UIViewController
 @property (nonatomic, weak) id<TCColorWorkspaceDelegate> workspaceDelegate;
 - (void)choosePhoto;
+- (void)cancelPhotoImport;
 - (void)takePhoto;
 - (void)openLiveColor;
 - (void)openPrivacyPolicy;
+- (void)openPaletteImport;
+- (void)openWatchInbox;
 @end

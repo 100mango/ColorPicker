@@ -1,5 +1,6 @@
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import "TCPaletteUIHelpers.h"
 #import <math.h>
 
 @interface TouchColorIPadUITests : XCTestCase
@@ -28,6 +29,9 @@
     self.recordingIssue=NO;
     [super recordIssue:issue];
 }
+- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
+- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
+- (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
 - (void)setUp {
     [super setUp];self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
@@ -164,13 +168,13 @@
 - (void)testLargestTextNativePaletteAndCanvasControls {
     [self.app terminate];self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];[self.app launch];
     XCUIElement *sources=self.app.scrollViews[@"sourceControls"];
-    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor"]) {
+    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {
         XCUIElement *button=self.app.buttons[identifier];
         for (NSUInteger i=0;i<5 && (!button.hittable || !CGRectContainsRect(sources.frame,CGRectInset(button.frame,1,1)));i++) [sources swipeUp];
         XCTAssertTrue(button.hittable,@"%@",self.app.debugDescription);
         XCTAssertGreaterThanOrEqual(button.frame.size.height,44);
     }
-    [sources swipeDown];[sources swipeDown];
+    for (NSUInteger i=0;i<5 && !self.app.buttons[@"choosePhoto"].hittable;i++) [sources swipeDown];
     [self importFixture];
     XCUIElement *controls=self.app.scrollViews[@"photoControls"];
     XCUIElement *save=self.app.buttons[@"saveColor"];

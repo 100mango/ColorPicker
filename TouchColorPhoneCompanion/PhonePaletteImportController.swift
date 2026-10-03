@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 import ColorDomain
 import ColorPaletteLegacy
 
-/// Optional UIKit adapter, registered only by the iOS owner after its independent checkpoint.
+/// Explicit file/paste review: the saved palette changes only after Add Colors.
 @objc(TCPaletteImportController)
 @MainActor final class PhonePaletteImportController: UITableViewController, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
     private let defaults: UserDefaults
@@ -124,7 +124,7 @@ import ColorPaletteLegacy
             } else {
                 cell.textLabel?.text = NSLocalizedString(indexPath.row == 0 ? "Choose JSON File" : "Paste JSON", comment: "Palette import source")
                 cell.accessibilityIdentifier = indexPath.row == 0 ? "palette.import.file" : "palette.import.paste"
-                cell.accessoryType = .disclosureIndicator
+                cell.accessoryType = .disclosureIndicator; cell.accessibilityTraits.insert(.button)
             }
         } else if indexPath.section == 1 {
             cell.textLabel?.text = status; cell.selectionStyle = .none; cell.accessibilityIdentifier = "palette.import.status"

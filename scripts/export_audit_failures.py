@@ -76,6 +76,7 @@ count += export_named('AccessibilityAudits', [
     'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
     'touchcolor-audit-failure-live', 'touchcolor-audit-failure-policy',
     'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
+    'touchcolor-audit-failure-import', 'touchcolor-audit-failure-inbox',
 ], limit - count)
 if count < limit:
     count += export_named('TouchColorUITests', [functional_prefix + '2'], limit - count)
