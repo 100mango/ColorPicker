@@ -44,3 +44,24 @@ Not completed: native camera adapter/hardware checks, Mac signing/sandbox/store 
 - `8768723`: requested-size assertions exposed that the standalone hosted window had itself auto-expanded to1303px; the earlier containment-only pass was insufficient. The next repair bounds the detail/sidebar minimum widths and empty/status text line counts, then records the empty-window fitting size before importing. No fixed-layout pass is asserted until both the requested-size test and real native UI succeed.
 - `a2d0ce5`: strict requested-size layout now passes, with viewport415px in a960×588 host and357px in an800×530 host. Bounded column/text fitting resolves the oversized content minimum. UI setup stopped before any workflow because Xcode omitted the custom diagnostic plist key; the next test checks the real Debug product directory/dylib and runtime executable path instead. No UI-flow pass is inferred from the layout-only success.
 - `fdedcad`: 3/4 genuine Mac UI tests passed, with runtime bundle/executable path and hash pinned to the exact Debug product. File import, pointer/keyboard sampling, visible magnification, native window resize, copy, duplicate palette persistence after relaunch, Open cancellation and Simplified Chinese sampling all pass. The real JSON export/reopen also passed before a row-level accessibility identifier masked the per-row menu identifier. Actual English2×/resized and Chinese1× screenshots have been inspected: all controls are visible and sampled markers match the chosen pixels. The next narrow repair removes that identifier propagation before checking delete and PNG export/reopen.
+
+
+## First native Mac workflow checkpoint (2026-10-03)
+
+Commit `96d72b10580cd925d739c94784b3f7c8dcd71a78`, tree `9f37acdc3d5b2a310587200472590a494666811a`, [run 37118238248](https://github.com/100mango/ColorPicker/actions/runs/37118238248), job 111189104672: **all stages passed** on Xcode 27.0 (27A266a), macOS 27.0 (26A428).
+
+- 9 portable package tests, 15 native app-hosted tests, 4 actual native UI workflows
+- 17 unchanged iOS units + 5 direct UIKit parity tests on SE3/iOS 27
+- arm64 and x86_64 unsigned Release builds; arm64 runtime only
+- Native Open/paste, pointer/arrow sampling, visible 2× zoom and pan, actual edge resize, complete compact controls, ordered duplicate palette save/copy/delete/persistence, real JSON and full PNG export/reopen, cancel and Chinese workflow passed
+- Exact Debug app URL and running executable path checked. Hosted window regression asserts requested 960×588 and 800×530 content bounds, not only containment inside an accidentally oversized window
+- Original iOS source/UI tests remain identical to frozen `565b769bd0b013d3dc9142a0ec2ae98da995475e`; iPad integration is pending its separate tested checkpoint
+- Evidence artifact 11272312917: 240,094 bytes; SHA256 `63514148d0faeec73ca5d5f708e74ef6acff9cd2c68e60b715b804264dc2ff46`; one-day retention. Both actual English/Chinese images were visually inspected
+
+### Next camera slice (implementation awaiting its own build/runtime evidence)
+
+A native AVFoundation video-only adapter provides device choice, user-initiated permission/start/stop, live center RGB/hex, palette copy/save, and explicit full-video-frame freezing into the existing sampling/export canvas. Full frame means the delivered video resolution, **not** a camera still-photo sensor-resolution claim. A photo-output adapter remains future work.
+
+The capture session and conversion run on one bounded serial queue; old immutable capture epochs are checked both before frame work and at main-actor delivery. No audio input, recording or system-wide screen capture is added. Interruption, disconnect, background and dismissal clear stale sample actions and require an explicit restart. The capture device is configured for sRGB; padded BGRA sampling is tested against synthetic buffers. No-camera UI uses actual device discovery and does not request permission when there is no device. Physical camera accuracy, device-specific frame orientation and full still-photo output remain unverified.
+
+The same slice completes all ten macOS app-icon slots by resampling the unchanged original 1024 artwork, and names the executable/product TouchColor while preserving the internal TouchColorMac module/target and bundle identity. It must pass a visible native app-menu assertion, not only Info.plist inspection.

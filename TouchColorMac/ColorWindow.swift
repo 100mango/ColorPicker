@@ -7,6 +7,7 @@ struct ColorWindow: View {
     @StateObject private var session: ImageSession
     @State private var photo: PhotosPickerItem?
     @State private var showingPrivacy = false
+    @State private var showingCamera = false
     @State private var targeted = false
 
     @MainActor init(library: PaletteLibrary, session: ImageSession? = nil) {
@@ -69,6 +70,8 @@ struct ColorWindow: View {
                 .accessibilityIdentifier("image.paste")
             Button { MacImportExport.exportImage(session: session) } label: { Label("Export PNG", systemImage: "square.and.arrow.up") }
                 .disabled(session.raster == nil || session.exporting).accessibilityIdentifier("image.export")
+            Button { showingCamera = true } label: { Label("Camera", systemImage: "camera") }
+                .accessibilityIdentifier("camera.open")
             Button { showingPrivacy = true } label: { Label("Privacy", systemImage: "hand.raised") }
                 .accessibilityIdentifier("privacy.open")
         }
@@ -78,6 +81,11 @@ struct ColorWindow: View {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: { Text(session.errorMessage ?? "") }
         .sheet(isPresented: $showingPrivacy) { PrivacyView() }
+        .sheet(isPresented: $showingCamera) {
+            CameraSheet(library: library) { data in
+                session.load(data: data, name: NSLocalizedString("Camera video frame", comment: "Source name"), token: session.beginImport())
+            }
+        }
         .task(id: photo) { await importPhoto() }
         .onDisappear { session.cancelImport() }
     }

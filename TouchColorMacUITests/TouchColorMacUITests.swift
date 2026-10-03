@@ -4,6 +4,7 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 import CryptoKit
+import AVFoundation
 
 @MainActor final class TouchColorMacUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -23,11 +24,11 @@ import CryptoKit
         // Resolve the actual adjacent Debug product, never another registered build with this bundle ID.
         var products = Bundle(for: Self.self).bundleURL
         for _ in 0..<4 { products.deleteLastPathComponent() }
-        let applicationURL = products.appendingPathComponent("TouchColorMac.app")
+        let applicationURL = products.appendingPathComponent("TouchColor.app")
         let metadata = try XCTUnwrap(Bundle(url: applicationURL)?.infoDictionary)
         XCTAssertEqual(metadata["CFBundleIdentifier"] as? String, "com.mango.touchColor")
         XCTAssertEqual(products.lastPathComponent, "Debug")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: applicationURL.appendingPathComponent("Contents/MacOS/TouchColorMac.debug.dylib").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: applicationURL.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib").path))
         print("NATIVE_UI_EXACT_APP: \(applicationURL.path)")
         app = XCUIApplication(url: applicationURL)
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = suite
@@ -38,6 +39,10 @@ import CryptoKit
         XCTAssertEqual(actual.bundleURL?.resolvingSymlinksInPath(), applicationURL.resolvingSymlinksInPath())
         let executable = try XCTUnwrap(actual.executableURL)
         let digest = SHA256.hash(data: try Data(contentsOf: executable)).map { String(format: "%02x", $0) }.joined()
+        let debugDylib = applicationURL.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
+        let logicDigest = SHA256.hash(data: try Data(contentsOf: debugDylib)).map { String(format: "%02x", $0) }.joined()
+        print("NATIVE_UI_LOGIC_SHA256: \(logicDigest)")
+        XCTAssertTrue(app.menuBars.menuBarItems["TouchColor"].waitForExistence(timeout: 5), app.debugDescription)
         print("NATIVE_UI_RUNNING_APP path=\(actual.bundleURL?.path ?? "") executable=\(executable.path) sha256=\(digest)")
     }
     override func tearDownWithError() throws {
@@ -177,4 +182,30 @@ import CryptoKit
         app.buttons["sample.above"].click(); assertHex("#00ff00")
         app.buttons["sample.previous"].click(); assertHex("#ff0000")
     }
+    func testActualNoCameraRouteDismissesWithoutRequestingPermission() throws {
+        let types: [AVCaptureDevice.DeviceType]
+        if #available(macOS 14, *) { types = [.builtInWideAngleCamera, .external, .continuityCamera] }
+        else { types = [.builtInWideAngleCamera, .externalUnknown] }
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .unspecified).devices
+        try XCTSkipIf(!devices.isEmpty, "No-device route requires a runner without camera hardware; no physical capture is requested by this test.")
+        let permission = AVCaptureDevice.authorizationStatus(for: .video)
+        for _ in 0..<2 {
+            app.buttons["camera.open"].click()
+            let status = app.staticTexts["camera.status"]
+            XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue((status.value as? String ?? status.label).contains("No camera is available"))
+            XCTAssertFalse(app.buttons["camera.start"].isEnabled)
+            XCTAssertFalse(app.buttons["camera.freeze"].isEnabled)
+            XCTAssertFalse(app.buttons["camera.save"].isEnabled)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "Native Mac actual no-camera status"; shot.lifetime = .keepAlways; add(shot)
+            app.buttons["camera.close"].click()
+            XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 5))
+        }
+        XCTAssertEqual(AVCaptureDevice.authorizationStatus(for: .video), permission)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setData(try Data(contentsOf: fixture), forType: .png)
+        app.buttons["image.paste"].click(); assertHex("#ff00ff")
+    }
+
 }

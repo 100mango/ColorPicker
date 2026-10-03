@@ -3,7 +3,7 @@
   <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES">
     <BuildActionEntries>
       <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
-        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="99F4B5DE5084845CC40DD3E4" BuildableName="TouchColorMac.app" BlueprintName="TouchColorMac" ReferencedContainer="container:TouchColorMac.xcodeproj" />
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="99F4B5DE5084845CC40DD3E4" BuildableName="TouchColor.app" BlueprintName="TouchColorMac" ReferencedContainer="container:TouchColorMac.xcodeproj" />
       </BuildActionEntry>
     </BuildActionEntries>
   </BuildAction>
@@ -19,7 +19,7 @@
   </TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" debugServiceExtension="internal" allowLocationSimulation="NO">
     <BuildableProductRunnable runnableDebuggingMode="0">
-      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="99F4B5DE5084845CC40DD3E4" BuildableName="TouchColorMac.app" BlueprintName="TouchColorMac" ReferencedContainer="container:TouchColorMac.xcodeproj" />
+      <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="99F4B5DE5084845CC40DD3E4" BuildableName="TouchColor.app" BlueprintName="TouchColorMac" ReferencedContainer="container:TouchColorMac.xcodeproj" />
     </BuildableProductRunnable>
   </LaunchAction>
   <AnalyzeAction buildConfiguration="Debug" />

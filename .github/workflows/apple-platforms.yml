@@ -37,6 +37,7 @@ jobs:
           uname -m | grep -Fx arm64
           python3 scripts/generate_project.py
           python3 scripts/generate_mac_project.py
+          python3 scripts/verify_mac_icons.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Portable domain, raster and preservation tests
@@ -49,13 +50,15 @@ jobs:
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
-          APP=build/mac-arm64/Build/Products/Release/TouchColorMac.app
-          file "$APP/Contents/MacOS/TouchColorMac"
-          lipo -info "$APP/Contents/MacOS/TouchColorMac"
-          otool -L "$APP/Contents/MacOS/TouchColorMac"
-          otool -l "$APP/Contents/MacOS/TouchColorMac" | grep -A8 LC_BUILD_VERSION
+          APP=build/mac-arm64/Build/Products/Release/TouchColor.app
+          file "$APP/Contents/MacOS/TouchColor"
+          lipo -info "$APP/Contents/MacOS/TouchColor"
+          otool -L "$APP/Contents/MacOS/TouchColor"
+          otool -l "$APP/Contents/MacOS/TouchColor" | grep -A8 LC_BUILD_VERSION
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")" = com.mango.touchColor
-          strings "$APP/Contents/MacOS/TouchColorMac" > /tmp/touchcolor-mac-release-strings.txt
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$APP/Contents/Info.plist")" = TouchColor
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print NSCameraUsageDescription' "$APP/Contents/Info.plist")"
+          strings "$APP/Contents/MacOS/TouchColor" > /tmp/touchcolor-mac-release-strings.txt
           if grep -E -- '--ui-test-|TOUCHCOLOR_TEST_DEFAULTS|TouchColor-fixture-' /tmp/touchcolor-mac-release-strings.txt; then
             echo 'Test seam leaked into Release'; exit 1
           fi
@@ -68,7 +71,7 @@ jobs:
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-x86_64 \
             ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
-          lipo -info build/mac-x86_64/Build/Products/Release/TouchColorMac.app/Contents/MacOS/TouchColorMac
+          lipo -info build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/MacOS/TouchColor
           echo 'x86_64 build only; no Intel runtime execution claimed'
       - name: Native Mac app-hosted unit tests
         id: units

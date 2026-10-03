@@ -5,6 +5,24 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"8D03363F421C59C6284985CB" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorMac/CameraDriver.swift";
+			"sourceTree" = "<group>";
+		};
+		"6A3749388AE456DC6FFA3F26" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorMac/CameraModel.swift";
+			"sourceTree" = "<group>";
+		};
+		"E50C1A3DDC215FACD9D9799C" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorMac/CameraSheet.swift";
+			"sourceTree" = "<group>";
+		};
 		"37113B9FC27D5F5C9426E713" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -51,6 +69,12 @@
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "TouchColorMac/TouchColorMacApp.swift";
+			"sourceTree" = "<group>";
+		};
+		"6FACACC8228DBE1C8AB79CFB" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "TouchColorMacTests/CameraTests.swift";
 			"sourceTree" = "<group>";
 		};
 		"0A26B7FDDFF454B294EE7F63" = {
@@ -115,6 +139,26 @@
 			"name" = "Localizable.strings";
 			"sourceTree" = "<group>";
 		};
+		"762C9C4C1BE51F88D9D23614" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.strings";
+			"name" = "en";
+			"path" = "TouchColorMac/en.lproj/InfoPlist.strings";
+			"sourceTree" = "<group>";
+		};
+		"A0FE622345488F26ADB0D47A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.plist.strings";
+			"name" = "zh-Hans";
+			"path" = "TouchColorMac/zh-Hans.lproj/InfoPlist.strings";
+			"sourceTree" = "<group>";
+		};
+		"6BAF4834E8BFA6C5FCE88CDD" = {
+			"isa" = "PBXVariantGroup";
+			"children" = ("762C9C4C1BE51F88D9D23614", "A0FE622345488F26ADB0D47A");
+			"name" = "InfoPlist.strings";
+			"sourceTree" = "<group>";
+		};
 		"53FE6A5F756EF3A057CFAFFF" = {
 			"isa" = "XCLocalSwiftPackageReference";
 			"relativePath" = "Packages/ColorCore";
@@ -123,7 +167,7 @@
 			"isa" = "PBXFileReference";
 			"explicitFileType" = "wrapper.application";
 			"includeInIndex" = 0;
-			"path" = "TouchColorMac.app";
+			"path" = "TouchColor.app";
 			"sourceTree" = "BUILT_PRODUCTS_DIR";
 		};
 		"797DC57F1D4606C986E5851E" = {
@@ -155,6 +199,18 @@
 			"buildActionMask" = 2147483647;
 			"files" = ("A5947E5D51027588E55A2071", "10570622F57188766AA764A7", "CA374390E2640C1E6EEA3C25");
 			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"EE20C7B1A8C2CF03F37C9712" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "8D03363F421C59C6284985CB";
+		};
+		"6DEE0CAE371BC5FC091CBA6A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "6A3749388AE456DC6FFA3F26";
+		};
+		"A1B5546EB07B1B3003834A11" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E50C1A3DDC215FACD9D9799C";
 		};
 		"F54F8D584A2D6E0A839F531B" = {
 			"isa" = "PBXBuildFile";
@@ -191,7 +247,7 @@
 		"7FE42CEAD5C2F1967FD7EFCE" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("F54F8D584A2D6E0A839F531B", "682AE802AE36D878DD71B30A", "82EB867F3A11C407616C364E", "E1BC83126F22CC3942C2BBCD", "51D7ABC8332539C63D132FBD", "4961DFFEDAB7EED94881C25C", "9F510ACA6815923724D86A70", "07A4478F6F1390D43554216E");
+			"files" = ("EE20C7B1A8C2CF03F37C9712", "6DEE0CAE371BC5FC091CBA6A", "A1B5546EB07B1B3003834A11", "F54F8D584A2D6E0A839F531B", "682AE802AE36D878DD71B30A", "82EB867F3A11C407616C364E", "E1BC83126F22CC3942C2BBCD", "51D7ABC8332539C63D132FBD", "4961DFFEDAB7EED94881C25C", "9F510ACA6815923724D86A70", "07A4478F6F1390D43554216E");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"673D0CFB122BED78B777D81F" = {
@@ -206,17 +262,21 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "9DF3CC62A0DE8F7EA9001E36";
 		};
+		"EA8E06CD1C3CC95D9D21D959" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "6BAF4834E8BFA6C5FCE88CDD";
+		};
 		"518DF870FF2036FF02AD66D8" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("673D0CFB122BED78B777D81F", "9094CBD3B823B680E92586CB", "BD700C66B3DE9A826FD84AFE");
+			"files" = ("673D0CFB122BED78B777D81F", "9094CBD3B823B680E92586CB", "BD700C66B3DE9A826FD84AFE", "EA8E06CD1C3CC95D9D21D959");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"CB4799D2EEDBF4C0DCC57E06" = {
 			"isa" = "XCBuildConfiguration";
 			"name" = "Debug";
 			"buildSettings" = {
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_NAME" = "TouchColor";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor";
 				"GENERATE_INFOPLIST_FILE" = "YES";
 				"MACOSX_DEPLOYMENT_TARGET" = "13.0";
@@ -229,9 +289,11 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
+				"PRODUCT_MODULE_NAME" = "TouchColorMac";
 				"INFOPLIST_KEY_CFBundleName" = "TouchColor";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "TouchColor";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.graphics-design";
+				"INFOPLIST_KEY_NSCameraUsageDescription" = "TouchColor uses the camera to sample colors from live scenes and frames you choose to freeze.";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
 				"MARKETING_VERSION" = "2.0";
 				"CURRENT_PROJECT_VERSION" = "20001";
@@ -246,7 +308,7 @@
 			"isa" = "XCBuildConfiguration";
 			"name" = "Release";
 			"buildSettings" = {
-				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PRODUCT_NAME" = "TouchColor";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "com.mango.touchColor";
 				"GENERATE_INFOPLIST_FILE" = "YES";
 				"MACOSX_DEPLOYMENT_TARGET" = "13.0";
@@ -259,9 +321,11 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
+				"PRODUCT_MODULE_NAME" = "TouchColorMac";
 				"INFOPLIST_KEY_CFBundleName" = "TouchColor";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "TouchColor";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.graphics-design";
+				"INFOPLIST_KEY_NSCameraUsageDescription" = "TouchColor uses the camera to sample colors from live scenes and frames you choose to freeze.";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
 				"MARKETING_VERSION" = "2.0";
 				"CURRENT_PROJECT_VERSION" = "20001";
@@ -327,6 +391,10 @@
 			"files" = ("82EB163C773EAC4504C4FBD2", "18F0F042AAFB8F8A49ADE72C", "FE9880B8B5C0586668471824");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
+		"20E766D1CFBDD81BC21E166B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "6FACACC8228DBE1C8AB79CFB";
+		};
 		"23A9025B206CE512BDDF629E" = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = "0A26B7FDDFF454B294EE7F63";
@@ -346,7 +414,7 @@
 		"95911FBFCA8914689C2D71D5" = {
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
-			"files" = ("23A9025B206CE512BDDF629E", "BE2B68F191840F1F30D238E5", "22FF1D22D4E766FBABCA317F", "5B4CB863943843D1DC3CF554");
+			"files" = ("20E766D1CFBDD81BC21E166B", "23A9025B206CE512BDDF629E", "BE2B68F191840F1F30D238E5", "22FF1D22D4E766FBABCA317F", "5B4CB863943843D1DC3CF554");
 			"runOnlyForDeploymentPostprocessing" = 0;
 		};
 		"37A8F5A5AAD34E784D51C5C1" = {
@@ -384,7 +452,7 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
-				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColorMac.app/Contents/MacOS/TouchColorMac";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/Contents/MacOS/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
 				"ONLY_ACTIVE_ARCH" = "YES";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
@@ -410,7 +478,7 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
-				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColorMac.app/Contents/MacOS/TouchColorMac";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/Contents/MacOS/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
 				"ONLY_ACTIVE_ARCH" = "NO";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
@@ -554,7 +622,7 @@
 		};
 		"BFB8893FEF0C2245EDD4FEE5" = {
 			"isa" = "PBXGroup";
-			"children" = ("37113B9FC27D5F5C9426E713", "454F0332F32341B7535B853D", "48983412042209BBD6CE56E6", "DC32908A226FBB20729700E1", "8B81DA5766450F40B1EFA7E3", "2489FCDB0189CEDCEA1CB9A6", "8E5E9D3D613D2331DEA12860", "56DA19FAADFA4867A1A5B1A7", "0A26B7FDDFF454B294EE7F63", "89C4B1089CB0A684DB571585", "2B3988948DAD562410AA5CA0", "7D4ACC8566644B5005D0047C", "EFCD18B50AE96CD1CEC29B9A", "322A4E76516DE55061026C3F", "D03BCCA9C0FD6B696837C76D", "9DF3CC62A0DE8F7EA9001E36", "A3D1F8D4C0B28AF93F357EC0");
+			"children" = ("8D03363F421C59C6284985CB", "6A3749388AE456DC6FFA3F26", "E50C1A3DDC215FACD9D9799C", "37113B9FC27D5F5C9426E713", "454F0332F32341B7535B853D", "48983412042209BBD6CE56E6", "DC32908A226FBB20729700E1", "8B81DA5766450F40B1EFA7E3", "2489FCDB0189CEDCEA1CB9A6", "8E5E9D3D613D2331DEA12860", "56DA19FAADFA4867A1A5B1A7", "6FACACC8228DBE1C8AB79CFB", "0A26B7FDDFF454B294EE7F63", "89C4B1089CB0A684DB571585", "2B3988948DAD562410AA5CA0", "7D4ACC8566644B5005D0047C", "EFCD18B50AE96CD1CEC29B9A", "322A4E76516DE55061026C3F", "D03BCCA9C0FD6B696837C76D", "9DF3CC62A0DE8F7EA9001E36", "6BAF4834E8BFA6C5FCE88CDD", "A3D1F8D4C0B28AF93F357EC0");
 			"sourceTree" = "<group>";
 		};
 		"4F663E5307D6A1638B4FE9A7" = {

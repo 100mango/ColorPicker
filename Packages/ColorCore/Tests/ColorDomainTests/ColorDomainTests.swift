@@ -37,3 +37,13 @@ final class ColorDomainTests: XCTestCase {
         generation.advance(); XCTAssertFalse(generation.accepts(second))
     }
 }
+
+final class CaptureEpochTests: XCTestCase {
+    func testStopAndRestartRejectOldCaptureAndQueuedDeliveries() {
+        let gate = CaptureEpoch()
+        let first = gate.begin(); XCTAssertTrue(gate.accepts(first))
+        gate.invalidate(); XCTAssertFalse(gate.accepts(first))
+        let second = gate.begin(); XCTAssertTrue(gate.accepts(second)); XCTAssertFalse(gate.accepts(first))
+        gate.invalidate(); gate.invalidate(); XCTAssertFalse(gate.accepts(second))
+    }
+}
