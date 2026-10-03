@@ -21,7 +21,7 @@ def sources(directory):
     result=[ref(str(p.relative_to(ROOT)),'sourcecode.swift') for p in sorted((ROOT/directory).rglob('*.swift'))]
     allrefs.extend(result); return result
 apprefs=sources('TouchColorVision')
-for shared in ['TouchColorMac/ImageSession.swift','TouchColorMac/PrivacyView.swift']:
+for shared in ['TouchColorMac/ImageSession.swift','TouchColorMac/PrivacyView.swift','TouchColorMac/NativePhotoFile.swift']:
     sharedref=ref(shared,'sourcecode.swift'); apprefs.append(sharedref); allrefs.append(sharedref)
 unitrefs=sources('TouchColorVisionTests')+sources('Packages/ColorCore/Tests')
 uirefs=sources('TouchColorVisionUITests')

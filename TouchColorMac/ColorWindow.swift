@@ -33,7 +33,7 @@ struct ColorWindow: View {
                     .frame(minHeight: 160, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 18) {
-                        Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary)
+                        Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary).accessibilityHidden(true)
                         Text("Choose an image to sample colors").font(.title2).lineLimit(2)
                         Text("Open a file, choose a photo, drop an image here, or paste an image.")
                             .foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(3)
@@ -61,6 +61,8 @@ struct ColorWindow: View {
             .onDrop(of: [.fileURL, .image], isTargeted: $targeted) { MacImportExport.drop($0, session: session, library: library) }
         }
         .navigationSplitViewStyle(.balanced)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("TouchColor workspace")
         .toolbar {
             Button { MacImportExport.open(session: session, library: library) } label: { Label("Open", systemImage: "folder") }
                 .accessibilityIdentifier("image.open")
@@ -95,9 +97,9 @@ struct ColorWindow: View {
         defer { if self.photo == photo { self.photo = nil } }
         let token = session.beginImport()
         do {
-            guard let data = try await photo.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadUnknown) }
-            guard !Task.isCancelled, session.isCurrent(token) else { return }
-            session.load(data: data, name: NSLocalizedString("Selected photo", comment: "Imported photo name"), token: token)
+            guard let file = try await photo.loadTransferable(type: NativePhotoFile.self) else { throw CocoaError(.fileReadUnknown) }
+            guard !Task.isCancelled, session.isCurrent(token) else { try? FileManager.default.removeItem(at: file.url); return }
+            session.loadOwnedFile(file.url, name: NSLocalizedString("Selected photo", comment: "Imported photo name"), token: token)
         } catch { if !Task.isCancelled { session.report(error, token: token) } }
     }
 }

@@ -25,3 +25,5 @@
 "Choose JSON File" = "选择 JSON 文件";
 "Paste JSON" = "粘贴 JSON";
 "The palette must contain only #rrggbb colors. Nothing was imported." = "调色板只能包含 #rrggbb 格式的颜色，未导入任何数据。";
+
+"Watch transfer is unavailable on this device. You can import a palette using Files or Paste." = "此设备不支持 Apple Watch 传输。您可以通过文件或粘贴导入调色板。";

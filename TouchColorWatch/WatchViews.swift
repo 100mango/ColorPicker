@@ -45,6 +45,7 @@ struct WatchColorEditor: View {
     @ObservedObject var transfer: WatchTransfer
     @State private var channel = 0
     @State private var confirmSend = false
+    @FocusState private var crownFocused: Bool
     private var component: Binding<Double> {
         Binding(get: { channel == 0 ? palette.red : channel == 1 ? palette.green : palette.blue },
                 set: { value in if channel == 0 { palette.red = value } else if channel == 1 { palette.green = value } else { palette.blue = value } })
@@ -55,9 +56,20 @@ struct WatchColorEditor: View {
                 WatchSwatch(color: palette.selected)
                 Picker("Component", selection: $channel) { Text("R").tag(0); Text("G").tag(1); Text("B").tag(2) }.pickerStyle(.navigationLink)
                 HStack {
-                    Button("−") { component.wrappedValue = max(0, component.wrappedValue - 1) }.accessibilityIdentifier("watch.component.down")
-                    Text("\(Int(component.wrappedValue.rounded()))").monospacedDigit().frame(maxWidth: .infinity)
-                    Button("+") { component.wrappedValue = min(255, component.wrappedValue + 1) }.accessibilityIdentifier("watch.component.up")
+                    Button("−") { component.wrappedValue = max(0, component.wrappedValue - 1); crownFocused = true }.accessibilityIdentifier("watch.component.down")
+                    Text("\(Int(component.wrappedValue.rounded()))").monospacedDigit()
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .focusable(true).focused($crownFocused)
+                        .digitalCrownRotation(component, from: 0, through: 255, by: 1, sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
+                        .onTapGesture { crownFocused = true }
+                        .accessibilityLabel("Component")
+                        .accessibilityValue("\(Int(component.wrappedValue.rounded()))")
+                        .accessibilityIdentifier("watch.component.value")
+                        .accessibilityAdjustableAction { direction in
+                            if direction == .increment { component.wrappedValue = min(255, component.wrappedValue + 1) }
+                            else if direction == .decrement { component.wrappedValue = max(0, component.wrappedValue - 1) }
+                        }
+                    Button("+") { component.wrappedValue = min(255, component.wrappedValue + 1); crownFocused = true }.accessibilityIdentifier("watch.component.up")
                 }
                 Text("Turn the Digital Crown to adjust the selected RGB component.").font(.caption2)
                 Button("Save Color") { palette.save() }.accessibilityIdentifier("watch.save")
@@ -65,8 +77,8 @@ struct WatchColorEditor: View {
                 Text(transfer.status).font(.caption2).accessibilityIdentifier("watch.transfer.status")
             }.padding(.horizontal, 8)
         }
-        .focusable(true)
-        .digitalCrownRotation(component, from: 0, through: 255, by: 1, sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
+        .onAppear { crownFocused = true }
+        .onChange(of: channel) { _ in crownFocused = true }
         .navigationTitle("Create Color")
         .confirmationDialog("Send this color to iPhone for review?", isPresented: $confirmSend) {
             Button("Send") { transfer.request([palette.selected]) }.accessibilityIdentifier("watch.send.confirm")

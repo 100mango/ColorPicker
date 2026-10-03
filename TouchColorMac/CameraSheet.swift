@@ -57,6 +57,9 @@ private struct CameraPreview: NSViewRepresentable {
             preview = AVCaptureVideoPreviewLayer(session: session)
             super.init(frame: .zero)
             wantsLayer = true; preview.videoGravity = .resizeAspect
+            setAccessibilityElement(true)
+            setAccessibilityRole(.image)
+            setAccessibilityLabel(NSLocalizedString("Live camera preview, sampling the center pixel", comment: "Camera accessibility"))
             layer?.addSublayer(preview)
         }
         func setSession(_ session: AVCaptureSession) {

@@ -21,7 +21,8 @@ final class TVWorkflowTests: XCTestCase {
     private func select(_ element: XCUIElement, in application: XCUIApplication? = nil) {
         let root = application ?? app!
         XCTAssertTrue(element.waitForExistence(timeout: 15), app.debugDescription)
-        for _ in 0..<24 {
+        var attempted: [String: Set<String>] = [:]
+        for _ in 0..<60 {
             if element.hasFocus { remote.press(.select); return }
             let button = root.buttons.matching(NSPredicate(format: "hasFocus == true")).firstMatch
             let focused = button.exists ? button : root.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
@@ -32,11 +33,24 @@ final class TVWorkflowTests: XCTestCase {
                 if focused.label == element.label && abs(target.midX-current.midX) < 1 && abs(target.midY-current.midY) < 1 && abs(target.width-current.width) < 1 && abs(target.height-current.height) < 1 {
                     remote.press(.select); return
                 }
-                // Move between rows first. A centered permission choice above two
-                // bottom buttons cannot be reached by repeated horizontal events.
-                if target.minY >= current.maxY { remote.press(.down) }
-                else if target.maxY <= current.minY { remote.press(.up) }
-                else { remote.press(target.midX >= current.midX ? .right : .left) }
+                let state = focused.identifier.isEmpty ? focused.label : focused.identifier
+                let vertical: String = target.midY >= current.midY ? "down" : "up"
+                let horizontal: String = target.midX >= current.midX ? "right" : "left"
+                let preferred = target.minY >= current.maxY || target.maxY <= current.minY ? [vertical,horizontal] : [horizontal,vertical]
+                let directions = preferred + [horizontal == "right" ? "left" : "right", vertical == "down" ? "up" : "down"]
+                // The TV focus engine follows focus beams, not straight-line distance.
+                // If the preferred direction does not reach a new item, explore another
+                // real remote direction from that state instead of repeating a dead end.
+                let tried = attempted[state, default: []]
+                let direction = directions.first(where: { !tried.contains($0) }) ?? directions[0]
+                if tried.count == 4 { attempted[state] = [] }
+                attempted[state, default: []].insert(direction)
+                switch direction {
+                case "up": remote.press(.up)
+                case "down": remote.press(.down)
+                case "left": remote.press(.left)
+                default: remote.press(.right)
+                }
             } else { remote.press(.down) }
         }
         XCTFail("Remote could not focus \(element.identifier) [\(element.label)]: \(root.debugDescription)")

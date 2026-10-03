@@ -38,6 +38,7 @@ assert not any('temporary-exception' in name for name in p), p
 print('Minimal sandbox entitlements verified. No distribution identity or network/cloud/app-group entitlement.')
 PY
 
+set +e
 xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox -configuration Debug \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-sandbox \
   -resultBundlePath build/mac-sandbox.xcresult -parallel-testing-enabled NO \
@@ -45,6 +46,8 @@ xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox 
   -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= TOUCHCOLOR_ENABLE_SANDBOX=YES \
   TOUCHCOLOR_SANDBOX_ENTITLEMENTS=TouchColorMac/TouchColorMac.entitlements test-without-building
+runtime_test_status=$?
+set -e
 
 # Runtime XCTest must not silently replace the app's verified signature or permissions.
 codesign --verify --deep --strict --verbose=2 "$app"
@@ -68,3 +71,5 @@ assert (file.stat().st_mode&0o777)==0o600 and (file.parent.stat().st_mode&0o777)
 print('Post-runtime same-user host control confirms unselected file was not changed')
 file.unlink();file.parent.rmdir()
 PYBOUNDARY
+
+exit "$runtime_test_status"

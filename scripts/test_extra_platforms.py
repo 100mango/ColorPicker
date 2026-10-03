@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One native platform per invocation on the existing standard runner; bounded real builds/tests."""
-import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib
+import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,time
 from pathlib import Path
 from capture_simulator_checkpoint import capture as capture_checkpoint
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
@@ -10,15 +10,15 @@ runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[ki
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'captures':[],'platform':kind,'sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'stages':[]}
 def run(command,timeout,required=True):
+    started=time.monotonic();started_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
-    captures=[]
     p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     def output():
         for line in p.stdout:
             print(line,end='',flush=True)
             checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
-            if checkpoint and kind=='vision' and device and len(report['captures'])<6:
+            if checkpoint and kind=='vision' and device and len(report['captures'])<16:
                 try:
                     result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
@@ -34,10 +34,19 @@ def run(command,timeout,required=True):
     reader.join(timeout=5)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics})
+    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3)})
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
+def resources(label):
+    sample={'label':label,'time':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    for name,command in [('memory',['sysctl','hw.memsize','vm.swapusage']),('vm',['vm_stat'])]:
+        try:
+            result=subprocess.run(command,capture_output=True,text=True,timeout=10)
+            sample[name]={'exit':result.returncode,'text':(result.stdout+result.stderr)[-5000:]}
+        except Exception as error:sample[name]={'error':str(error)}
+    report.setdefault('resources',[]).append(sample)
+    print('NATIVE_RESOURCE_STATE',json.dumps(sample),flush=True)
 device=None
 photo_seed_failed=False
 try:
@@ -77,8 +86,13 @@ try:
     if not candidates:raise RuntimeError('No installed available '+runtime_suffix+' device')
     runtime,device=next((v for v in candidates if '46mm' in v[1]['name']),candidates[0])
     report.update(runtime=runtime,device=device)
+    resources('before boot')
     run(['xcrun','simctl','boot',device['udid']],180,required=False)
     run(['xcrun','simctl','bootstatus',device['udid'],'-b'],420)
+    if kind=='vision':
+        # Provide the actual Simulator display surface before spatial screenshot tests.
+        simulator=Path(os.environ['DEVELOPER_DIR'])/'Applications/Simulator.app'
+        run(['open','-a',str(simulator),'--args','-CurrentDeviceUDID',device['udid']],30,required=False)
     if kind in ('vision','tv'):
         w,h=300,200
         palette=[bytes(v) for v in [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255)]]
@@ -92,6 +106,7 @@ try:
         # Preserve the failed prerequisite, but still execute unrelated real input, storage and UI paths.
         case={'vision':'VisionWorkflowTests/testRealPhotosImport','tv':'TVWorkflowTests/testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence'}[kind]
         skip=['-skip-testing:'+name+'UITests/'+case]
+    resources('before tests')
     # Keep build logs quiet, but retain runtime test/checkpoint output for precise failures.
     test_common=[value for value in common if value!='-quiet']
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
@@ -101,10 +116,8 @@ try:
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
         run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)
-        report['ui_scope']='Focused real paste/sample/save/relaunch and system Photos import; export/cancel/Chinese/audits remain pending full matrix'
-        ui_cases=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPastePrecisionZoomPaletteAndRelaunch']
-        if not photo_seed_failed:ui_cases.append('-only-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPhotosImport')
-        run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+ui_cases,660)
+        report['ui_scope']='Full native UI suite: Files/Photos cancellation, Photos import, paste/sample/save/relaunch, PNG export/reopen, Chinese UI and strict accessibility audits'
+        run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult','-only-testing:TouchColorVisionUITests']+skip,1200)
     else:
         run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
     report['tests']='passed'
@@ -113,6 +126,7 @@ try:
 except Exception as error:
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
+    resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
     if result_bundle.exists():
         try:

@@ -232,6 +232,10 @@ import AVFoundation
             print("MAC_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
             try app.performAccessibilityAudit(for: .all) { issue in
                 print("MAC_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                let details = "State: \(state)\nIssue: \(issue.compactDescription)\nElement: \(issue.element?.debugDescription ?? "none")\nHierarchy: \(self.app.debugDescription)"
+                let attachment = XCTAttachment(string: String(details.prefix(64_000)))
+                attachment.name = "Native Mac accessibility issue"
+                attachment.lifetime = .keepAlways; self.add(attachment)
                 return false
             }
             print("MAC_ACCESSIBILITY_AUDIT_PASS: \(state)")

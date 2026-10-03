@@ -130,8 +130,16 @@ struct TVColorEditor: View {
                 Button("B −") { blue = max(0, blue - 1) }
                 Button("B +") { blue = min(255, blue + 1) }
             }
-            Button("Save Color") { library.append([color]) }.accessibilityIdentifier("tv.editor.save")
-            Button("Done") { dismiss() }.accessibilityIdentifier("tv.editor.close")
+            HStack {
+                Spacer()
+                Button("Save Color") { library.append([color]) }.accessibilityIdentifier("tv.editor.save")
+                Spacer()
+            }.focusSection()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }.accessibilityIdentifier("tv.editor.close")
+                Spacer()
+            }.focusSection()
         }.padding(40).onExitCommand { dismiss() }
     }
 }

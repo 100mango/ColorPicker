@@ -3,6 +3,8 @@
 import json,os,re,stat,sys
 from pathlib import Path
 root=Path(sys.argv[1] if len(sys.argv)>1 else 'build/evidence')
+maximum_total=int(sys.argv[2]) if len(sys.argv)>2 else 8_000_000
+assert 0<maximum_total<=8_000_000, 'Invalid evidence limit'
 assert root.is_dir() and not root.is_symlink(), 'Missing or symlink evidence root'
 allowed_root={'architecture.txt','accessibility-api.json','mac-sandbox-entitlements.json','vision-ui-summary.json','mac-unit-summary.json','mac-ui-summary.json','mac-sandbox-summary.json','ios-equivalence-summary.json'}
 allowed_root.update(f'{p}-{suffix}.json' for p in ('vision','watch','tv') for suffix in ('summary','runtime'))
@@ -20,7 +22,7 @@ for folder,dirs,files in os.walk(root,followlinks=False):
         else: assert name=='manifest.json' or re.fullmatch(r'[0-9A-Fa-f-]{36}\.(png|jpg|jpeg)',name), f'Unexpected attachment: {path}'
         assert info.st_size<=5_000_000, f'Oversize evidence file: {path}'
         total+=info.st_size;count+=1
-        assert total<=8_000_000, 'Evidence exceeds total byte budget'
+        assert total<=maximum_total, 'Evidence exceeds total byte budget'
         if name=='manifest.json':
             for group in json.loads(path.read_text()):
                 for item in group.get('attachments',[]):

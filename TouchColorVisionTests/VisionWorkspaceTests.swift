@@ -99,7 +99,7 @@ import ColorPaletteLegacy
         defer { try? FileManager.default.removeItem(at: source) }
         for bytes in (1...8).map({ RasterFixture.data(orientation: $0) }) + [RasterFixture.alphaData()] {
             try bytes.write(to: source)
-            let copy = try VisionPhotoFile.copyBounded(source)
+            let copy = try NativePhotoFile.copyBounded(source)
             defer { try? FileManager.default.removeItem(at: copy) }
             XCTAssertEqual(try Data(contentsOf: copy), bytes)
             let original = try ColorRaster.decode(bytes), copied = try ColorRaster.read(url: copy)
@@ -109,10 +109,10 @@ import ColorPaletteLegacy
                 XCTAssertEqual(original.sample(at: point), copied.sample(at: point))
             }
         }
-        XCTAssertThrowsError(try VisionPhotoFile.copyBounded(source, cancelled: { true }))
+        XCTAssertThrowsError(try NativePhotoFile.copyBounded(source, cancelled: { true }))
         let file = try FileHandle(forWritingTo: source)
         try file.truncate(atOffset: UInt64(ColorRaster.maximumEncodedBytes + 1)); try file.close()
-        XCTAssertThrowsError(try VisionPhotoFile.copyBounded(source)) { error in
+        XCTAssertThrowsError(try NativePhotoFile.copyBounded(source)) { error in
             guard case RasterError.tooLarge = error else { return XCTFail("Unexpected error: \(error)") }
         }
         let session = ImageSession(); try await load(session)

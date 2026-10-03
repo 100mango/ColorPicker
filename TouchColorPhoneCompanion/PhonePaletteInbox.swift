@@ -15,8 +15,13 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
     private var connectivity: WCSession?
     private(set) var status: String?
     init(defaults: UserDefaults, domain: String) { inbox = PaletteInbox(defaults: defaults, domain: domain); super.init() }
+    @objc var isSupported: Bool { WCSession.isSupported() }
     @objc func activate() {
-        guard WCSession.isSupported() else { return }
+        guard isSupported else {
+            status = NSLocalizedString("Watch transfer is unavailable on this device. You can import a palette using Files or Paste.", comment: "Unsupported companion")
+            NotificationCenter.default.post(name: .touchColorWatchInboxChanged, object: self)
+            return
+        }
         let session = WCSession.default; connectivity = session; session.delegate = self; session.activate()
     }
     func pending() throws -> [PaletteTransfer] { try inbox.pending() }

@@ -81,5 +81,7 @@ final class MinimumSizeView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.contentMinSize = NSSize(width: 740, height: 520)
+        window?.contentView?.setAccessibilityLabel(NSLocalizedString("TouchColor workspace", comment: "Window accessibility"))
+        window?.contentView?.setAccessibilityIdentifier("workspace.content")
     }
 }

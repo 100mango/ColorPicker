@@ -15,6 +15,11 @@ final class VisionWorkflowTests: XCTestCase {
         app.terminate()
     }
     private func capture(_ name: String) {
+        // A failed visual checkpoint remains an XCTest failure, while later functional
+        // assertions still execute so a simulator capture problem cannot hide app defects.
+        let previousFailureBehavior = continueAfterFailure
+        continueAfterFailure = true
+        defer { continueAfterFailure = previousFailureBehavior }
         // The spatial XCTest screenshot API can crop or stall. Hold this real UI state
         // while the CI host uses documented simctl screenshot, with a bounded acknowledgement.
         let id = UUID().uuidString

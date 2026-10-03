@@ -9,9 +9,25 @@ concurrency:
   group: touchcolor-platforms-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  native-mac:
+  native-platform:
+    name: ${{ matrix.platform }} on a fresh standard VM
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - platform: mac
+            minutes: 40
+          - platform: vision
+            minutes: 40
+          - platform: watch
+            minutes: 25
+          - platform: tv
+            minutes: 25
+          - platform: ios
+            minutes: 20
     runs-on: xcode-27
-    timeout-minutes: 85
+    timeout-minutes: ${{ matrix.minutes }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -45,13 +61,15 @@ jobs:
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Probe native XCTest accessibility audit availability
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.platform == 'mac' && steps.toolchain.outcome == 'success' }}
         timeout-minutes: 7
         run: python3 scripts/probe_accessibility_audits.py
       - name: Portable domain, raster and preservation tests
+        if: ${{ matrix.platform == 'mac' }}
         timeout-minutes: 8
         run: swift test --package-path Packages/ColorCore --scratch-path build/package
       - name: Build native arm64 Release app and inspect identity
+        if: ${{ matrix.platform == 'mac' }}
         timeout-minutes: 8
         run: |
           set -euo pipefail
@@ -71,6 +89,7 @@ jobs:
             echo 'Test seam leaked into Release'; exit 1
           fi
       - name: Build x86_64 slice only if accepted by the real SDK
+        if: ${{ matrix.platform == 'mac' }}
         id: intel
         continue-on-error: true
         timeout-minutes: 7
@@ -82,6 +101,7 @@ jobs:
           lipo -info build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/MacOS/TouchColor
           echo 'x86_64 build only; no Intel runtime execution claimed'
       - name: Native Mac app-hosted unit tests
+        if: ${{ matrix.platform == 'mac' }}
         id: units
         timeout-minutes: 8
         run: |
@@ -91,7 +111,7 @@ jobs:
             -collect-test-diagnostics never -only-testing:TouchColorMacTests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
       - name: Native Mac UI runtime workflows
         id: ui
-        if: ${{ !cancelled() && steps.units.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
         timeout-minutes: 10
         run: |
           python3 scripts/prepare_sandbox_probe.py build/mac-tests/probe-info.json
@@ -102,27 +122,27 @@ jobs:
             -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
       - name: Native visionOS executable and real simulator workflows
         id: vision
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 26
+        if: ${{ !cancelled() && matrix.platform == 'vision' && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 35
         run: python3 scripts/test_extra_platforms.py vision
       - name: Native watchOS executable and real simulator workflows
         id: watch
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.platform == 'watch' && steps.toolchain.outcome == 'success' }}
         timeout-minutes: 22
         run: python3 scripts/test_extra_platforms.py watch
       - name: Native tvOS executable and real remote workflows
         id: tv
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.platform == 'tv' && steps.toolchain.outcome == 'success' }}
         timeout-minutes: 22
         run: python3 scripts/test_extra_platforms.py tv
       - name: Minimal ad-hoc sandbox native Mac UI workflows
         id: sandbox
-        if: ${{ !cancelled() && steps.units.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
         timeout-minutes: 12
         run: bash scripts/test_mac_sandbox.sh
       - name: Build original iOS app and direct cross-language equivalence tests
         id: ios
-        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.ui.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.platform == 'ios' && steps.toolchain.outcome == 'success' }}
         timeout-minutes: 10
         run: |
           xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
@@ -133,7 +153,7 @@ jobs:
           bash scripts/test_simulators.sh iPhoneCompact prepare
           bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
       - name: Shut down iOS test simulator
-        if: ${{ always() && steps.ios.outcome != 'skipped' }}
+        if: ${{ always() && matrix.platform == 'ios' && steps.ios.outcome != 'skipped' }}
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh iPhoneCompact shutdown || true
       - name: Report bounded evidence and unchanged source
@@ -158,6 +178,9 @@ jobs:
           fi
           if test -f build/mac-sandbox-entitlements.plist; then
             python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-entitlements.json
+          fi
+          if test -f build/mac-sandbox-post-entitlements.plist; then
+            python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-post-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-post-entitlements.json
           fi
           if test -d build/vision-runtime/screenshots; then
             cp -R build/vision-runtime/screenshots build/evidence/vision-checkpoints
@@ -187,17 +210,18 @@ jobs:
               for p in manifest.parent.iterdir():
                   if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()
               manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
-          for p in sorted(root.rglob('*')):
+          for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
               if p.is_file():
                   size=p.stat().st_size
-                  if size>5_000_000 or total+size>8_000_000: p.unlink()
+                  if size>5_000_000 or total+size>4_000_000: p.unlink()
                   else: total+=size
           for manifest in root.glob('*/manifest.json'):
               groups=json.loads(manifest.read_text())
               for group in groups:
                   group['attachments']=[a for a in group['attachments'] if (manifest.parent/a['exportedFileName']).exists()]
               manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
-          print('Bounded evidence bytes:',total)
+          total=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          print('Final bounded evidence bytes:',total)
           PY
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -205,12 +229,12 @@ jobs:
         id: evidence_guard
         if: always()
         timeout-minutes: 1
-        run: python3 scripts/validate_evidence.py build/evidence
+        run: python3 scripts/validate_evidence.py build/evidence 4000000
       - name: Retain small test evidence for review
         if: ${{ always() && steps.evidence_guard.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: touchcolor-native-mac-evidence
+          name: touchcolor-native-evidence-${{ matrix.platform }}
           path: build/evidence
           retention-days: 1
           compression-level: 9

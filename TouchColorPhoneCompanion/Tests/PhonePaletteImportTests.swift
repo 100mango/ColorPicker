@@ -6,6 +6,16 @@ import ColorPaletteLegacy
 
 /// Prepared for the integrated phone test target; not yet registered or executed.
 @MainActor final class PhonePaletteImportTests: XCTestCase {
+    func testUnsupportedCompanionExplainsIndependentPaletteImport() throws {
+        let suite = "TouchColor.inbox-unavailable.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let inbox = PhonePaletteInbox(defaults: defaults, domain: suite)
+        guard !inbox.isSupported else { throw XCTSkip("Requires a device without WatchConnectivity support, such as iPad") }
+        inbox.activate()
+        XCTAssertEqual(inbox.status, NSLocalizedString("Watch transfer is unavailable on this device. You can import a palette using Files or Paste.", comment: "Unsupported companion"))
+        XCTAssertTrue(try inbox.pending().isEmpty)
+        XCTAssertNil(defaults.object(forKey: "colorArray"))
+    }
     func testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead() throws {
         let suite = "TouchColor.palette-review.\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

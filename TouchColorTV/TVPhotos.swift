@@ -111,12 +111,12 @@ struct TVPhotoBrowser: View {
                         Button { library.load(asset, into: session); dismiss() } label: { TVPhotoThumb(asset: asset) }
                             .accessibilityLabel(Text("Photo \(index + 1)")).accessibilityIdentifier("tv.photo.\(index)")
                     }
-                }
+                }.focusSection()
                 HStack {
                     if library.hasPrevious { Button("Previous Photos") { library.previous() } }
                     if library.hasMore { Button("More Photos") { library.more() } }
                 }
-            }
+            }.focusSection()
             Button("Retry") { library.open() }
         }.padding(40).frame(width: 1200, height: 760).onAppear { library.open() }.onExitCommand { dismiss() }
     }

@@ -42,6 +42,7 @@ import ColorRaster
         defer { window.orderOut(nil); window.contentView = nil; previous?.makeKeyAndOrderFront(nil) }
         try await Task.sleep(nanoseconds: 200_000_000)
         host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.accessibilityLabel(), NSLocalizedString("TouchColor workspace", comment: "Window accessibility"))
         print("MAC_WINDOW_INITIAL window=\(window.frame) minimum=\(window.contentMinSize) host=\(host.frame) fitting=\(host.fittingSize)")
         session.load(data: RasterFixture.data(), name: "layout.tiff", token: session.beginImport())
         try await waitForImport(session)
@@ -110,6 +111,22 @@ import ColorRaster
         try await waitForImport(session)
         XCTAssertNotNil(session.errorMessage); XCTAssertEqual(session.sourceName, "new.tiff")
     }
+    func testUnsupportedPasteInvalidatesOlderImportAndKeepsCompleteImage() async throws {
+        let suite = "TouchColor.paste-generation.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let session = ImageSession(), library = PaletteLibrary(defaults: defaults)
+        session.load(data: RasterFixture.data(), name: "kept.tiff", token: session.beginImport())
+        try await waitForImport(session)
+        let stale = session.beginImport()
+        NSPasteboard.general.clearContents()
+        MacImportExport.paste(session: session, library: library)
+        let failure = session.errorMessage
+        session.load(data: RasterFixture.data(orientation: 3), name: "late.tiff", token: stale)
+        XCTAssertEqual(session.sourceName, "kept.tiff")
+        XCTAssertEqual(session.selectedColor?.hex, "#ff00ff")
+        XCTAssertEqual(session.errorMessage, failure); XCTAssertNotNil(failure)
+        XCTAssertFalse(session.busy)
+    }
     func testPNGExportSnapshotSurvivesNewImportAndReopensActualPixels() async throws {
         let session = ImageSession()
         session.load(data: RasterFixture.data(), name: "original.tiff", token: session.beginImport())
@@ -162,6 +179,30 @@ import ColorRaster
         let blue = try XCTUnwrap(RasterPixelSampler.sample(image: displayed, at: NormalizedPoint(x: 0.625, y: 0.25)!))
         XCTAssertEqual(white.hex, "#ffffff")
         XCTAssertEqual(Double(blue.red), 127, accuracy: 1); XCTAssertEqual(Double(blue.green), 127, accuracy: 1); XCTAssertEqual(blue.blue, 255)
+    }
+
+    func testBoundedFileProviderDropPreservesOrientationAndRejectsOversize() async throws {
+        let suite = "TouchColor.mac-provider.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = PaletteLibrary(defaults: defaults), session = ImageSession()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("provider-source-\(UUID()).tiff")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let data = RasterFixture.data(orientation: 6)
+        try data.write(to: url)
+        let provider = NSItemProvider()
+        provider.registerFileRepresentation(forTypeIdentifier: "public.tiff", fileOptions: [], visibility: .all) { completion in
+            completion(url, false, nil); return nil
+        }
+        XCTAssertTrue(MacImportExport.drop([provider], session: session, library: library))
+        try await waitForImport(session)
+        XCTAssertEqual(session.raster?.sourceData, data)
+        XCTAssertEqual(session.raster?.width, 2); XCTAssertEqual(session.raster?.height, 3)
+        let prior = session.selectedColor
+        let source = try FileHandle(forWritingTo: url)
+        try source.truncate(atOffset: UInt64(ColorRaster.maximumEncodedBytes + 1)); try source.close()
+        XCTAssertTrue(MacImportExport.drop([provider], session: session, library: library))
+        try await waitForImport(session)
+        XCTAssertNotNil(session.errorMessage); XCTAssertEqual(session.selectedColor, prior)
     }
 
 }

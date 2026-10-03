@@ -82,7 +82,11 @@ final class WatchWorkflowTests: XCTestCase {
         app.buttons["watch.editor"].tap()
         for _ in 0..<5 where !app.buttons["watch.send"].isHittable { app.swipeUp() }
         app.buttons["watch.send"].tap()
-        let confirm = app.buttons["watch.send.confirm"]
+        // watchOS's native confirmation presenter may expose the action title without
+        // forwarding the SwiftUI button identifier. Scope it to this exact review title.
+        let title = app.staticTexts["Send this color to iPhone for review?"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), app.debugDescription)
+        let confirm = app.buttons["Send"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
         XCTAssertTrue(app.staticTexts["watch.transfer.status"].exists)
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
