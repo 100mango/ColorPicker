@@ -1,4 +1,4 @@
-name: Focused native iPad observation and audit evidence
+name: Native iPad and iPhone compatibility
 on:
   push:
     branches: [codex/native-ipad]
@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        family: [iPadMini]
+        family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27
     timeout-minutes: 60
     env:
