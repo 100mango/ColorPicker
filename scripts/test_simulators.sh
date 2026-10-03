@@ -46,6 +46,7 @@ if [[ "$suite" == prepare ]]; then
   xcrun simctl install "$device" build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app
   echo "[$(date -u +%FT%TZ)] Launching the app for readiness"
   xcrun simctl launch --terminate-running-process "$device" com.mango.touchColor
+  echo "[$(date -u +%FT%TZ)] App launch returned successfully; stopping the readiness process"
   xcrun simctl terminate "$device" com.mango.touchColor
   echo "[$(date -u +%FT%TZ)] App launch completed; collecting optional bounded inventories"
   python3 - "$device" <<'PYDIAGNOSTICS'

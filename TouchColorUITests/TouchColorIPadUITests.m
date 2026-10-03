@@ -5,8 +5,28 @@
 @interface TouchColorIPadUITests : XCTestCase
 @property (nonatomic, strong) XCUIApplication *app;
 @property (nonatomic) CGSize originalWindowSize;
+@property (nonatomic) BOOL recordingIssue;
 @end
 @implementation TouchColorIPadUITests
+- (void)recordIssue:(XCTIssue *)issue {
+    if (self.recordingIssue) { [super recordIssue:issue]; return; }
+    self.recordingIssue=YES;
+    // Preserve real failure evidence before continueAfterFailure aborts the case.
+    NSLog(@"IPAD_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,self.app.debugDescription);
+    static NSMutableSet<NSString *> *recordedCases;
+    static dispatch_once_t once;dispatch_once(&once,^{ recordedCases=[NSMutableSet new]; });
+    if (self.app.state==XCUIApplicationStateRunningForeground && recordedCases.count<2 && ![recordedCases containsObject:self.name]) {
+        [recordedCases addObject:self.name];
+        NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+        if (bytes.length && bytes.length<=500*1024u) {
+            XCTAttachment *attachment=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
+            attachment.name=[NSString stringWithFormat:@"touchcolor-ipad-functional-failure-%lu",(unsigned long)recordedCases.count];
+            attachment.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:attachment];
+        }
+    }
+    self.recordingIssue=NO;
+    [super recordIssue:issue];
+}
 - (void)setUp {
     [super setUp];self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
@@ -39,46 +59,39 @@
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
 }
 - (void)cancelPicker {
+    XCUIElement *popover=self.app.popovers.firstMatch;
+    XCUIElement *photosBar=self.app.navigationBars[@"Photos"];
     XCUIElement *content=self.app.scrollViews[@"photosView_content_scroll_view"];
     XCUIElement *cancel=self.app.navigationBars[@"Photos"].buttons[@"Cancel"].firstMatch;
     XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        // During PHPicker's remote-view transition an unresolved Cancel can exist with
-        // an invalid activation frame. Wait for real Photos content before querying actions.
+        // A cold Photos service can expose its sidebar/popover before its image grid.
+        // Regular-width cancellation needs the actual popover, not a loaded photo library.
+        if (popover.exists && photosBar.exists && !CGRectIsEmpty(popover.frame)) return YES;
+        // A compact remote sheet must have valid content before its Cancel activation frame is queried.
         return content.exists && content.frame.size.width>0 && content.frame.size.height>0;
     }] object:self.app];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:15],XCTWaiterResultCompleted,@"System picker must be ready: %@",self.app.debugDescription);
-    // A compact adapted sheet has a real Cancel action even though its content leaves
-    // the underlying navigation strip visible. Prefer that action over a supposed outside tap.
-    CGRect cancelFrame=cancel.exists ? cancel.frame : CGRectZero;
-    BOOL visibleCancel=!CGRectIsEmpty(cancelFrame) && !CGRectIsNull(cancelFrame) &&
-        CGRectContainsRect(self.app.windows.firstMatch.frame,cancelFrame);
-    if (visibleCancel) {
-        [cancel tap];
-    } else {
-        CGRect window=self.app.windows.firstMatch.frame;
-        CGRect picker=content.exists ? content.frame : CGRectZero;
+    CGRect window=self.app.windows.firstMatch.frame;
+    CGRect picker=popover.exists ? popover.frame : CGRectZero;
+    BOOL dismissedPopover=NO;
+    if (!CGRectIsEmpty(picker)) {
         NSArray<NSValue *> *outside=@[[NSValue valueWithCGPoint:CGPointMake(CGRectGetMaxX(window)-20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMinX(window)+20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMaxY(window)-20)],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMinY(window)+20)]];
-        BOOL dismissedPopover=NO;
-        if (!CGRectIsEmpty(picker)) {
-            for (NSValue *value in outside) {
-                CGPoint point=value.CGPointValue;
-                if (!CGRectContainsPoint(picker,point)) {
-                    // Regular-width PHPicker intentionally has no Cancel button. Its Close controls
-                    // belong to an informational banner. UIKit dismisses this popover on an outside tap.
-                    XCUICoordinate *origin=[self.app.windows.firstMatch coordinateWithNormalizedOffset:CGVectorMake(0,0)];
-                    [[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)] tap];
-                    dismissedPopover=YES;
-                    break;
-                }
+        for (NSValue *value in outside) {
+            CGPoint point=value.CGPointValue;
+            if (!CGRectContainsPoint(picker,point)) {
+                XCUICoordinate *origin=[self.app.windows.firstMatch coordinateWithNormalizedOffset:CGVectorMake(0,0)];
+                [[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)] tap];
+                dismissedPopover=YES;break;
             }
         }
-        if (!dismissedPopover) {
-            XCTAssertTrue(visibleCancel,@"Compact sheet Cancel must remain usable: %@",self.app.debugDescription);
-            [cancel tap];
-        }
+    }
+    if (!dismissedPopover) {
+        CGRect cancelFrame=cancel.exists ? cancel.frame : CGRectZero;
+        XCTAssertTrue(!CGRectIsEmpty(cancelFrame) && !CGRectIsNull(cancelFrame) && CGRectContainsRect(window,cancelFrame),@"Adapted sheet Cancel must remain usable: %@",self.app.debugDescription);
+        [cancel tap];
     }
     XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-        return !content.exists && !cancel.exists;
+        return !popover.exists && !content.exists && !cancel.exists;
     }] object:self.app];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[closed] timeout:5],XCTWaiterResultCompleted,@"The system picker must actually dismiss: %@",self.app.debugDescription);
 }
@@ -96,11 +109,15 @@
         XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
         image.name=@"touchcolor-ipad-native-canvas";image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
     }
-    [history.cells.firstMatch tap];
-    XCTAssertTrue([self.app.alerts.firstMatch waitForExistenceWithTimeout:5]);
-    [self.app.alerts.buttons[@"Close"] tap];
-    XCTNSPredicateExpectation *previewClosed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:self.app.alerts.firstMatch];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[previewClosed] timeout:5],XCTWaiterResultCompleted);
+    for (NSUInteger attempt=0;attempt<3;attempt++) {
+        [history.cells.firstMatch tap];
+        XCTAssertTrue([self.app.alerts.firstMatch waitForExistenceWithTimeout:5]);
+        XCUIElement *close=self.app.alerts.buttons[@"Close"];
+        NSLog(@"PREVIEW_CLOSE attempt=%lu alert=%@ close=%@ hittable=%d",(unsigned long)attempt,NSStringFromCGRect(self.app.alerts.firstMatch.frame),NSStringFromCGRect(close.frame),close.hittable);
+        [close tap];
+        XCTNSPredicateExpectation *previewClosed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:self.app.alerts.firstMatch];
+        XCTAssertEqual([XCTWaiter waitForExpectations:@[previewClosed] timeout:5],XCTWaiterResultCompleted,@"Preview must dismiss on every open/close cycle");
+    }
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     [self choosePhoto];
     [self cancelPicker];
@@ -229,6 +246,8 @@
         }
         self.originalWindowSize=CGSizeZero;
     }
+    [self.app terminate];
+    XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:10],@"Each independent case must finish with its app process stopped");
     [super tearDown];
 }
 @end
