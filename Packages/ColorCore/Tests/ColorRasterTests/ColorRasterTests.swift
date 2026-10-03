@@ -32,6 +32,19 @@ enum RasterFixture {
 }
 
 final class ColorRasterTests: XCTestCase {
+    func testDimensionBearingTruncatedPNGIsRejectedBySourceAndPreviewDecoders() throws {
+        let complete = try ColorRaster.decode(RasterFixture.data()).pngData()
+        let truncated = Data(complete.dropLast(12)) // Entire terminal PNG IEND chunk.
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(truncated as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertEqual((properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue, 3)
+        XCTAssertEqual((properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue, 2)
+        print("TRUNCATED_PNG_IMAGEIO_STATUS: source=\(CGImageSourceGetStatus(source).rawValue) image=\(CGImageSourceGetStatusAtIndex(source, 0).rawValue)")
+        XCTAssertEqual(try ColorRaster.decode(complete).sourceData, complete)
+        XCTAssertEqual(try PreviewRaster.decode(complete).width, 3)
+        XCTAssertThrowsError(try ColorRaster.decode(truncated))
+        XCTAssertThrowsError(try PreviewRaster.decode(truncated))
+    }
     func testAllEightOrientationsMatchFrozenUIKitOracleAndExportReopen() throws {
         // Frozen actual UIKit tests: up, upMirrored, down, downMirrored,
         // leftMirrored, right, rightMirrored, left, translated to EXIF 1...8.

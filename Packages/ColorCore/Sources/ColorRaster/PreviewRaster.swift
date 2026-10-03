@@ -27,7 +27,8 @@ public struct PreviewRaster: @unchecked Sendable {
     }
     private static func decode(_ source: CGImageSource, cancelled: () -> Bool) throws -> Self {
         if cancelled() { throw RasterError.cancelled }
-        guard let p = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        guard CGImageSourceGetStatus(source) == .statusComplete,
+              let p = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let w = (p[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
               let h = (p[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue, w > 0, h > 0 else { throw RasterError.unreadable }
         guard w <= maximumSourcePixels / h else { throw RasterError.tooLarge }
@@ -37,6 +38,8 @@ public struct PreviewRaster: @unchecked Sendable {
             kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maximumDimension,
             kCGImageSourceShouldCacheImmediately: true]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              CGImageSourceGetStatus(source) == .statusComplete,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
               image.width <= maximumDimension, image.height <= maximumDimension else { throw RasterError.unreadable }
         if cancelled() { throw RasterError.cancelled }
         return Self(image: image, originalWidth: orientation >= 5 ? h : w, originalHeight: orientation >= 5 ? w : h)
