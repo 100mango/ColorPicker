@@ -26,7 +26,8 @@ import CryptoKit
         let applicationURL = products.appendingPathComponent("TouchColorMac.app")
         let metadata = try XCTUnwrap(Bundle(url: applicationURL)?.infoDictionary)
         XCTAssertEqual(metadata["CFBundleIdentifier"] as? String, "com.mango.touchColor")
-        XCTAssertEqual(metadata["TouchColorConfiguration"] as? String, "Debug")
+        XCTAssertEqual(products.lastPathComponent, "Debug")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: applicationURL.appendingPathComponent("Contents/MacOS/TouchColorMac.debug.dylib").path))
         print("NATIVE_UI_EXACT_APP: \(applicationURL.path)")
         app = XCUIApplication(url: applicationURL)
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = suite
@@ -40,12 +41,15 @@ import CryptoKit
         print("NATIVE_UI_RUNNING_APP path=\(actual.bundleURL?.path ?? "") executable=\(executable.path) sha256=\(digest)")
     }
     override func tearDownWithError() throws {
-        if testRun?.hasSucceeded == false {
-            let failure = XCTAttachment(screenshot: app.screenshot())
-            failure.name = "Native Mac UI failure state"; failure.lifetime = .keepAlways; add(failure)
-            print("NATIVE_UI_FAILURE_AX: \(app.debugDescription)")
+        if let app {
+            if testRun?.hasSucceeded == false && app.state != .notRunning {
+                let failure = XCTAttachment(screenshot: app.screenshot())
+                failure.name = "Native Mac UI failure state"; failure.lifetime = .keepAlways; add(failure)
+                print("NATIVE_UI_FAILURE_AX: \(app.debugDescription)")
+            }
+            app.terminate()
         }
-        app.terminate(); try? FileManager.default.removeItem(at: fixture)
+        if let fixture { try? FileManager.default.removeItem(at: fixture) }
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
     }
     private func openFile(_ url: URL) {
@@ -146,6 +150,7 @@ import CryptoKit
         app.launch()
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
+        XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
         app.buttons["sample.save"].click()
         XCTAssertTrue(app.staticTexts["调色板"].exists)
@@ -160,6 +165,7 @@ import CryptoKit
     func testPasteImageAndOpenCancelRetainSource() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
+        XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
         app.buttons["image.open"].click()
         app.dialogs["open-panel"].buttons["CancelButton"].click()

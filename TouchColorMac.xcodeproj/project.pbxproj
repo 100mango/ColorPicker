@@ -229,7 +229,6 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
-				"INFOPLIST_KEY_TouchColorConfiguration" = "$(CONFIGURATION)";
 				"INFOPLIST_KEY_CFBundleName" = "TouchColor";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "TouchColor";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.graphics-design";
@@ -260,7 +259,6 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
-				"INFOPLIST_KEY_TouchColorConfiguration" = "$(CONFIGURATION)";
 				"INFOPLIST_KEY_CFBundleName" = "TouchColor";
 				"INFOPLIST_KEY_CFBundleDisplayName" = "TouchColor";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.graphics-design";
