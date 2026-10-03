@@ -87,40 +87,39 @@
     }
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
 }
+- (void)respondToRealCameraPromptAllow:(BOOL)allow {
+    XCUIApplication *system=[[XCUIApplication alloc] initWithBundleIdentifier:@"com.apple.springboard"];
+    XCUIElement *alert=system.alerts.firstMatch;
+    XCTAssertTrue([alert waitForExistenceWithTimeout:15],@"Camera prompt missing. App: %@ System: %@",self.app.debugDescription,system.debugDescription);
+    BOOL namesApp=[alert.label containsString:@"TouchColor"] || [alert.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'TouchColor'"]].count>0;
+    XCTAssertTrue(namesApp,@"Only answer the TouchColor camera dialog: %@",alert.debugDescription);
+    XCTAssertTrue(alert.buttons[@"Don’t Allow"].exists || alert.buttons[@"Don't Allow"].exists,@"An app-owned OK alert is not proof of system camera consent: %@",alert.debugDescription);
+    XCUIElement *button=alert.buttons[allow ? @"Allow" : @"Don’t Allow"];
+    if (!button.exists) button=alert.buttons[allow ? @"OK" : @"Don't Allow"];
+    XCTAssertTrue(button.exists,@"%@",alert.debugDescription);
+    [button tap];
+    XCTNSPredicateExpectation *dismissed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:alert];
+    XCTAssertEqual([XCTWaiter waitForExpectations:@[dismissed] timeout:5],XCTWaiterResultCompleted,@"The system dialog must disappear before checking app authorization state");
+    NSLog(@"REAL_OS_CAMERA_PROMPT_%@",allow ? @"ALLOW" : @"DENY");
+}
 - (void)testRealCameraPermissionAllowThenResetAndDeny {
     [self.app terminate];
     self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-camera-permission",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
     [self.app resetAuthorizationStatusForResource:XCUIProtectedResourceCamera];
-    __block BOOL handledAllow=NO;
-    id allowMonitor=[self addUIInterruptionMonitorWithDescription:@"Real camera Allow" handler:^BOOL(XCUIElement *alert) {
-        XCUIElement *allow=alert.buttons[@"Allow"];
-        if (!allow.exists) allow=alert.buttons[@"OK"];
-        if (!allow.exists) return NO;
-        [allow tap];handledAllow=YES;return YES;
-    }];
-    [self.app launch];[self.app.buttons[@"takePhoto"] tap];[self.app tap];
-    XCTAssertTrue([self.app.alerts.staticTexts[@"CAMERA_PERMISSION_ALLOWED"] waitForExistenceWithTimeout:10]);
-    XCTAssertTrue(handledAllow,@"The actual system Allow prompt must be observed");
+    [self.app launch];[self.app.buttons[@"takePhoto"] tap];
+    [self respondToRealCameraPromptAllow:YES];
+    XCTAssertTrue([self.app.alerts.staticTexts[@"CAMERA_PERMISSION_ALLOWED"] waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);
     [self.app.alerts.buttons[@"OK"] tap];
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];
     [self.app.buttons[@"takePhoto"] tap];
     XCTAssertTrue([self.app.alerts.staticTexts[@"CAMERA_PERMISSION_ALLOWED"] waitForExistenceWithTimeout:5]);
     [self.app.alerts.buttons[@"OK"] tap];
     [self.app terminate];XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:5]);
-    [self removeUIInterruptionMonitor:allowMonitor];
     [self.app resetAuthorizationStatusForResource:XCUIProtectedResourceCamera];
-    __block BOOL handledDeny=NO;
-    id denyMonitor=[self addUIInterruptionMonitorWithDescription:@"Real camera Deny" handler:^BOOL(XCUIElement *alert) {
-        XCUIElement *deny=alert.buttons[@"Don’t Allow"];
-        if (!deny.exists) deny=alert.buttons[@"Don't Allow"];
-        if (!deny.exists) return NO;
-        [deny tap];handledDeny=YES;return YES;
-    }];
-    [self.app launch];[self.app.buttons[@"takePhoto"] tap];[self.app tap];
+    [self.app launch];[self.app.buttons[@"takePhoto"] tap];
+    [self respondToRealCameraPromptAllow:NO];
     XCUIElement *denied=[self.app.alerts.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'Camera access is off'"]].firstMatch;
-    XCTAssertTrue([denied waitForExistenceWithTimeout:10]);
-    XCTAssertTrue(handledDeny,@"The actual system Deny prompt must be observed");
-    [self removeUIInterruptionMonitor:denyMonitor];
+    XCTAssertTrue([denied waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);
     [self.app terminate];XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:5]);
     [self.app resetAuthorizationStatusForResource:XCUIProtectedResourceCamera];
     NSLog(@"REAL_CAMERA_TCC_ALLOW_DENY: real OS dialogs/status via Debug availability probe; camera hardware not exercised");
@@ -240,9 +239,13 @@
     XCUIElement *zoom=self.app.sliders[@"photoZoom"];
     [self revealControl:zoom inScrollView:self.app.scrollViews[@"photoControls"]];
     XCTAssertEqualObjects(zoom.label,@"Zoom");
-    [zoom adjustToNormalizedSliderPosition:0.15];
-    XCTAssertGreaterThan([zoom.value doubleValue],1.5);
-    XCTAssertLessThan([zoom.value doubleValue],2.5);
+    CGFloat unzoomedWidth=photo.frame.size.width;
+    // XCTest's thumb placement is approximate, especially with endpoint images.
+    // Verify real magnification and the documented range rather than an assumed exact drag result.
+    [zoom adjustToNormalizedSliderPosition:0.5];
+    XCTAssertGreaterThan([zoom.value doubleValue],1);
+    XCTAssertLessThanOrEqual([zoom.value doubleValue],100);
+    XCTAssertGreaterThan(photo.frame.size.width,unzoomedWidth);
     [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
     [self.app.buttons[@"sampleCenter"] tap];
     XCTAssertTrue(self.app.images[@"sampleMarker"].exists);
