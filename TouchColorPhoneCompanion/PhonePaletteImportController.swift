@@ -113,6 +113,7 @@ import ColorPaletteLegacy
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         for label in [cell.textLabel, cell.detailTextLabel] { label?.numberOfLines = 0; label?.adjustsFontForContentSizeCategory = true }
         cell.textLabel?.font = .preferredFont(forTextStyle: .body); cell.detailTextLabel?.font = .preferredFont(forTextStyle: .caption1)
+        cell.detailTextLabel?.textColor = .label // Exact RGB values are primary information, independent of any swatch.
         if indexPath.section == 0 {
             if indexPath.row == 1, #available(iOS 16.0, *) {
                 let control = UIPasteControl(configuration: .init()); control.target = self

@@ -32,6 +32,8 @@
 - (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
 - (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
 - (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
+- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
+- (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
 - (void)setUp {
     [super setUp];self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
@@ -165,16 +167,39 @@
     XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
     XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
 }
+- (void)testCancelPhotoLoadingRetainsTheCurrentCanvasAndPalette {
+    [self.app terminate];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-delay-photo-import"];
+    [self.app launch];[self importFixture];
+    [self.app.buttons[@"saveColor"] tap];
+    XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
+    NSString *selected=self.app.staticTexts[@"sampledColor"].label;
+    [self choosePhoto];
+    XCUIElement *photo=[self.app.images matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"]].firstMatch;
+    XCTAssertTrue([photo waitForExistenceWithTimeout:15]);[photo tap];
+    XCUIElement *cancel=self.app.buttons[@"photo.import.cancel"].firstMatch;
+    XCTAssertTrue([cancel waitForExistenceWithTimeout:5]);XCTAssertTrue(cancel.hittable);[cancel tap];
+    [self assertPresentationDisappears:cancel];
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,1u);
+    XCTestExpectation *late=[self expectationWithDescription:@"The delayed provider-start boundary has elapsed"];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,9*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [late fulfill]; });
+    [self waitForExpectations:@[late] timeout:10];
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].firstMatch.exists);
+    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,1u);
+}
 - (void)testLargestTextNativePaletteAndCanvasControls {
     [self.app terminate];self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];[self.app launch];
     XCUIElement *sources=self.app.scrollViews[@"sourceControls"];
     for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {
         XCUIElement *button=self.app.buttons[identifier];
-        for (NSUInteger i=0;i<5 && (!button.hittable || !CGRectContainsRect(sources.frame,CGRectInset(button.frame,1,1)));i++) [sources swipeUp];
+        for (NSUInteger i=0;i<5 && (!button.hittable || !CGRectContainsRect(sources.frame,CGRectInset(button.frame,1,1)));i++) [self scrollTowardElement:button inScroll:sources];
         XCTAssertTrue(button.hittable,@"%@",self.app.debugDescription);
         XCTAssertGreaterThanOrEqual(button.frame.size.height,44);
     }
-    for (NSUInteger i=0;i<5 && !self.app.buttons[@"choosePhoto"].hittable;i++) [sources swipeDown];
+    for (NSUInteger i=0;i<5 && !self.app.buttons[@"choosePhoto"].hittable;i++) [self scrollTowardElement:self.app.buttons[@"choosePhoto"] inScroll:sources];
     [self importFixture];
     XCUIElement *controls=self.app.scrollViews[@"photoControls"];
     XCUIElement *save=self.app.buttons[@"saveColor"];

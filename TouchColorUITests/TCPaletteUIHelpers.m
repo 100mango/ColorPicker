@@ -2,6 +2,17 @@
 #import <UIKit/UIKit.h>
 
 @implementation XCTestCase (TCPaletteUIHelpers)
+- (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll {
+    CGRect viewport=scroll.frame,target=element.frame;
+    CGFloat distance=CGRectGetMidY(target)-CGRectGetMidY(viewport);
+    CGFloat limit=CGRectGetHeight(viewport)*0.35;
+    distance=MAX(-limit,MIN(limit,distance));
+    XCUICoordinate *start=[scroll coordinateWithNormalizedOffset:CGVectorMake(0.5,0.5)];
+    XCUICoordinate *end=[start coordinateWithOffset:CGVectorMake(0,-distance)];
+    // Full-speed flicks overshoot this short viewport and oscillate between its
+    // ends. A measured held drag uses the same real scrolling without inertia.
+    [start pressForDuration:0.05 thenDragToCoordinate:end withVelocity:100 thenHoldForDuration:0.15];
+}
 - (XCUIElement *)paletteElement:(NSString *)identifier app:(XCUIApplication *)app {
     return [[app descendantsMatchingType:XCUIElementTypeAny] matchingIdentifier:identifier].firstMatch;
 }
@@ -9,7 +20,7 @@
     XCUIElement *action=app.buttons[identifier], *scroll=app.scrollViews[@"sourceControls"];
     XCTAssertTrue([action waitForExistenceWithTimeout:5]);
     for (NSUInteger attempt=0;attempt<5 && !action.hittable;attempt++) {
-        if (CGRectGetMinY(action.frame)<CGRectGetMinY(scroll.frame)) [scroll swipeDown]; else [scroll swipeUp];
+        [self scrollTowardElement:action inScroll:scroll];
     }
     XCTAssertTrue(action.hittable,@"%@",app.debugDescription);[action tap];
 }
@@ -32,10 +43,14 @@
     XCUIElement *table=app.tables[@"palette.import.review"];
     for (NSUInteger index=0;index<colors.count;index++) {
         XCUIElement *row=[self paletteElement:[NSString stringWithFormat:@"palette.import.color.%lu",(unsigned long)index] app:app];
-        for (NSUInteger attempt=0;attempt<5 && !row.hittable;attempt++) [table swipeUp];
         XCTAssertTrue([row waitForExistenceWithTimeout:5],@"%@",app.debugDescription);
-        XCTAssertTrue([row.label containsString:colors[index]]);
-        XCTAssertTrue([row.label containsString:@"R "] && [row.label containsString:@"G "] && [row.label containsString:@"B "],@"Numeric channels must be independently readable: %@",row.label);
+        for (NSUInteger attempt=0;attempt<5 && !row.hittable;attempt++) [self scrollTowardElement:row inScroll:table];
+        unsigned int value=0;XCTAssertTrue([[NSScanner scannerWithString:[colors[index] substringFromIndex:1]] scanHexInt:&value]);
+        NSString *RGB=[NSString stringWithFormat:@"R %u   G %u   B %u",(value>>16)&255,(value>>8)&255,value&255];
+        // UITableView exposes these as two actual StaticText children, not a
+        // synthesized label on the Cell. Assert both exact rendered values.
+        XCTAssertTrue(row.staticTexts[colors[index]].exists,@"%@",row.debugDescription);
+        XCTAssertTrue(row.staticTexts[RGB].exists,@"Numeric channels must be independently readable: %@",row.debugDescription);
     }
 }
 - (void)verifyHistory:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {
@@ -69,7 +84,7 @@
     NSArray *messages=@[@"must contain only",@"no larger than 1 MB"];
     for (NSUInteger index=0;index<payloads.count;index++) {
         [self pastePalette:payloads[index] app:app];
-        XCUIElement *status=[self paletteElement:@"palette.import.status" app:app];
+        XCUIElement *status=[self paletteElement:@"palette.import.status" app:app].staticTexts.firstMatch;
         XCTNSPredicateExpectation *error=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS %@",messages[index]] object:status];
         XCTAssertEqual([XCTWaiter waitForExpectations:@[error] timeout:10],XCTWaiterResultCompleted,@"%@",app.debugDescription);
         XCTAssertFalse(app.buttons[@"palette.import.accept"].enabled);
@@ -84,12 +99,77 @@
     XCTAssertTrue([cancel waitForExistenceWithTimeout:10],@"%@",app.debugDescription);[cancel tap];
     [self waitForPalettePresentationToClose:cancel];
     XCUIElement *close=app.buttons[@"palette.import.close"];
-    XCTAssertTrue(close.hittable);XCTAssertTrue([[self paletteElement:@"palette.import.status" app:app].label containsString:@"cancelled"]);
+    XCTAssertTrue(close.hittable);XCTAssertTrue([[self paletteElement:@"palette.import.status" app:app].staticTexts.firstMatch.label containsString:@"cancelled"]);
     [close tap];[self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
     [self openPaletteAction:@"watch.inbox.open" app:app];
     XCUIElement *status=[self paletteElement:@"watch.inbox.status" app:app];
-    XCTAssertTrue([status waitForExistenceWithTimeout:5]);XCTAssertGreaterThan(status.label.length,0u);
+    XCTAssertTrue([status waitForExistenceWithTimeout:5]);XCTAssertGreaterThan(status.staticTexts.firstMatch.label.length,0u);
     close=app.buttons[@"watch.inbox.close"];XCTAssertTrue(close.hittable);[close tap];
     [self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
+}
+- (void)selectSyntheticPaletteFile:(XCUIApplication *)app {
+    [self openPaletteAction:@"palette.import.open" app:app];
+    XCUIElement *source=[self paletteElement:@"palette.import.file" app:app];
+    XCTAssertTrue([source waitForExistenceWithTimeout:5]);[source tap];
+    XCUIElement *file=[app.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'TouchColor-Ordered-Colors'"]].firstMatch;
+    if (![file waitForExistenceWithTimeout:3]) {
+        NSString *location=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad ? @"On My iPad" : @"On My iPhone";
+        XCUIElement *local=app.staticTexts[location].firstMatch;
+        if (!local.exists) {
+            XCUIElement *browse=app.buttons[@"Browse"].firstMatch;
+            XCTAssertTrue([browse waitForExistenceWithTimeout:5],@"%@",app.debugDescription);[browse tap];
+        }
+        XCTAssertTrue([local waitForExistenceWithTimeout:5],@"%@",app.debugDescription);[local tap];
+        XCUIElement *folder=app.staticTexts[@"Palette Fixtures"].firstMatch;
+        XCTAssertTrue([folder waitForExistenceWithTimeout:10],@"%@",app.debugDescription);[folder tap];
+    }
+    XCTAssertTrue([file waitForExistenceWithTimeout:10],@"%@",app.debugDescription);
+    XCTAssertTrue(file.hittable);[file tap];
+    [self verifyPaletteRows:@[@"#445566",@"#445566",@"#aabbcc"] app:app];
+}
+- (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app {
+    [self pastePalette:@"[\"#112233\"]" app:app];
+    [self verifyPaletteRows:@[@"#112233"] app:app];[self acceptPalette:app];
+    [self selectSyntheticPaletteFile:app];
+    XCUIElement *close=app.buttons[@"palette.import.close"];[close tap];[self waitForPalettePresentationToClose:close];
+    [self verifyHistory:@[@"#112233"] app:app];
+    [self selectSyntheticPaletteFile:app];[self acceptPalette:app];
+    NSArray *expected=@[@"#112233",@"#445566",@"#445566",@"#aabbcc"];
+    [self verifyHistory:expected app:app];
+    [app terminate];app.launchArguments=@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];[app launch];
+    [self verifyHistory:expected app:app];
+}
+- (void)exerciseLargestTextPaletteReviewAndInbox:(XCUIApplication *)app {
+    [app terminate];
+    app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;[app launch];
+    [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app];
+    [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];
+    XCUIElement *table=app.tables[@"palette.import.review"];
+    for (NSString *text in @[@"#aabbcc",@"R 170   G 187   B 204"]) {
+        XCUIElement *label=table.staticTexts[text].firstMatch;
+        XCTAssertTrue([label waitForExistenceWithTimeout:5]);
+        for (NSUInteger attempt=0;attempt<5 && !CGRectContainsRect(table.frame,CGRectInset(label.frame,1,1));attempt++) {
+            [self scrollTowardElement:label inScroll:table];
+        }
+        XCTAssertTrue(CGRectContainsRect(table.frame,CGRectInset(label.frame,1,1)),@"Full numeric text must remain readable: %@",app.debugDescription);
+    }
+    XCUIElement *close=app.buttons[@"palette.import.close"];
+    XCTAssertTrue(close.hittable);XCTAssertTrue(app.buttons[@"palette.import.accept"].hittable);
+    [close tap];[self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
+    [self openPaletteAction:@"watch.inbox.open" app:app];
+    XCUIElement *status=[self paletteElement:@"watch.inbox.status" app:app];
+    XCTAssertTrue([status waitForExistenceWithTimeout:5]);
+    table=app.tables[@"watch.inbox"];
+    XCUIElement *label=status.staticTexts.firstMatch;
+    XCTAssertTrue(label.exists);XCTAssertGreaterThan(label.label.length,0u);
+    // Long explanations may exceed this short viewport; their beginning and end
+    // must both be scroll-reachable without shrinking the user's text size.
+    for (NSUInteger attempt=0;attempt<5 && CGRectGetMinY(label.frame)<CGRectGetMinY(table.frame)-1;attempt++) [table swipeDown];
+    XCTAssertGreaterThanOrEqual(CGRectGetMinY(label.frame),CGRectGetMinY(table.frame)-1);
+    for (NSUInteger attempt=0;attempt<5 && CGRectGetMaxY(label.frame)>CGRectGetMaxY(table.frame)+1;attempt++) [table swipeUp];
+    XCTAssertLessThanOrEqual(CGRectGetMaxY(label.frame),CGRectGetMaxY(table.frame)+1);
+    close=app.buttons[@"watch.inbox.close"];XCTAssertTrue(close.hittable);[close tap];
+    [self waitForPalettePresentationToClose:close];
 }
 @end

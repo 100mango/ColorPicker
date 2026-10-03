@@ -59,6 +59,8 @@ jobs:
         run: |
           python3 scripts/generate_project.py
           git diff --exit-code -- TouchColor.xcodeproj
+          python3 scripts/generate_palette_fixture_project.py
+          git diff --exit-code -- TestFixtures
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           xcodebuild -list -project TouchColor.xcodeproj
@@ -85,6 +87,10 @@ jobs:
           assert (app/'TouchColor').is_file()
           metadata=plistlib.loads((app/'Info.plist').read_bytes())
           assert metadata['UIDeviceFamily']==[1,2], metadata['UIDeviceFamily']
+          assert not metadata.get('UIFileSharingEnabled')
+          assert not metadata.get('LSSupportsOpeningDocumentsInPlace')
+          assert not list(app.rglob('*PaletteFixtures*')), 'Fixture host must not be in Release packaging'
+          assert 'PaletteFixtures' not in Path('TouchColor.xcodeproj/project.pbxproj').read_text()
           print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'native iPhone and iPad'}))
           directory=app/'Frameworks'
           entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
@@ -102,9 +108,16 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
+      - name: Build independent simulator-only palette fixture host
+        id: build-fixture
+        timeout-minutes: 4
+        run: |
+          xcodebuild -project TestFixtures/PaletteFixtures.xcodeproj -scheme PaletteFixtures -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/palette-fixtures \
+            CODE_SIGNING_ALLOWED=NO build
       - name: Warm up required simulator
         id: warm-device
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' && steps.build-fixture.outcome == 'success' }}
         timeout-minutes: 10
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" prepare
       - name: Unit and constrained-window layout tests

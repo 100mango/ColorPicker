@@ -48,6 +48,20 @@ if [[ "$suite" == prepare ]]; then
   xcrun simctl launch --terminate-running-process "$device" com.mango.touchColor
   echo "[$(date -u +%FT%TZ)] App launch returned successfully; stopping the readiness process"
   xcrun simctl terminate "$device" com.mango.touchColor
+  echo "[$(date -u +%FT%TZ)] Installing the separate synthetic Files fixture host"
+  xcrun simctl install "$device" build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app
+  xcrun simctl launch --terminate-running-process "$device" com.mango.touchColor.tests.paletteFixtures
+  fixture_container=$(xcrun simctl get_app_container "$device" com.mango.touchColor.tests.paletteFixtures data)
+  python3 - "$fixture_container" <<'PYFIXTURE'
+import json,pathlib,sys,time
+path=pathlib.Path(sys.argv[1])/'Documents/TouchColor-Ordered-Colors.json'
+deadline=time.monotonic()+10
+while not path.is_file() and time.monotonic()<deadline: time.sleep(0.1)
+assert json.loads(path.read_text())==['#445566','#445566','#AABBCC']
+assert len(list(path.parent.iterdir()))==1, 'Only the deterministic JSON fixture may be exposed'
+print('Synthetic Files fixture is ready')
+PYFIXTURE
+  xcrun simctl terminate "$device" com.mango.touchColor.tests.paletteFixtures
   echo "[$(date -u +%FT%TZ)] App launch completed; collecting optional bounded inventories"
   python3 - "$device" <<'PYDIAGNOSTICS'
 import datetime,subprocess,sys

@@ -18,6 +18,7 @@
 @property (nonatomic, strong) UILabel *permissionStatus;
 @property (nonatomic) NSUInteger permissionActivations;
 @property (nonatomic) NSUInteger sourceAttempts;
+@property (nonatomic) NSUInteger photoImportAttempts;
 #endif
 @end
 @implementation ColorMainViewController
@@ -329,19 +330,32 @@
     self.photoImportTask = nil;
     [self beginPhotoLoading];
     __weak typeof(self) weakSelf = self;
-    self.photoImportTask = [TCPhotoImportTask loadProvider:provider completion:^(UIImage *image, NSError *error) {
+    void (^startImport)(void) = ^{
         typeof(self) self = weakSelf;
         if (!self || generation != self.selectionGeneration) return;
-        self.photoImportTask = nil;
-        [self endPhotoLoading];
-        if (error) {
-            // Keep the current canvas and keep live capture paused until the native alert closes.
-            [self showMessage:error.localizedDescription];
-        } else {
-            if (image) [self showImage:image];
-            [self sourceFlowActive:NO];
-        }
-    }];
+        self.photoImportTask = [TCPhotoImportTask loadProvider:provider completion:^(UIImage *image, NSError *error) {
+            typeof(self) self = weakSelf;
+            if (!self || generation != self.selectionGeneration) return;
+            self.photoImportTask = nil;
+            [self endPhotoLoading];
+            if (error) {
+                // Keep the current canvas and keep live capture paused until the native alert closes.
+                [self showMessage:error.localizedDescription];
+            } else {
+                if (image) [self showImage:image];
+                [self sourceFlowActive:NO];
+            }
+        }];
+    };
+#if DEBUG
+    // Exercise the real loading Cancel control before a provider request starts.
+    // The actual file selection and decoding paths remain the production paths.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-delay-photo-import"] && ++self.photoImportAttempts == 2) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,8*NSEC_PER_SEC),dispatch_get_main_queue(),startImport);
+        return;
+    }
+#endif
+    startImport();
 }
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
     NSUInteger dismissalGeneration = ++self.selectionGeneration;

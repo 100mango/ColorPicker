@@ -37,6 +37,8 @@
 - (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
 - (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
 - (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
+- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
+- (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
 - (void)setUp {
     [super setUp];
     self.continueAfterFailure=NO;
@@ -47,9 +49,10 @@
 }
 - (void)revealControl:(XCUIElement *)element inScrollView:(XCUIElement *)scroll {
     for (NSUInteger attempt=0;attempt<5 && (!element.hittable || !CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)));attempt++) {
-        if (CGRectGetMinY(element.frame)<CGRectGetMinY(scroll.frame)) [scroll swipeDown]; else [scroll swipeUp];
+        [self scrollTowardElement:element inScroll:scroll];
     }
     XCTAssertTrue(element.hittable,@"%@",self.app.debugDescription);
+    XCTAssertTrue(CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)),@"The entire control must remain inside its scroll viewport");
 }
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     for (NSUInteger attempt=0; attempt<2; attempt++) {

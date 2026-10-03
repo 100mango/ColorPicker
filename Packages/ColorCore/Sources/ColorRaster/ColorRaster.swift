@@ -46,6 +46,7 @@ public struct ColorRaster: @unchecked Sendable {
         guard data.count <= maximumEncodedBytes else { throw RasterError.tooLarge }
         if cancelled() { throw RasterError.cancelled }
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetStatus(source) == .statusComplete,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
               let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
@@ -61,7 +62,9 @@ public struct ColorRaster: @unchecked Sendable {
             kCGImageSourceThumbnailMaxPixelSize: max(width, height),
             kCGImageSourceShouldCacheImmediately: true
         ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { throw RasterError.unreadable }
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              CGImageSourceGetStatus(source) == .statusComplete,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { throw RasterError.unreadable }
         if cancelled() { throw RasterError.cancelled }
         let rotated = orientation >= 5
         guard image.width == (rotated ? height : width), image.height == (rotated ? width : height) else { throw RasterError.unreadable }
