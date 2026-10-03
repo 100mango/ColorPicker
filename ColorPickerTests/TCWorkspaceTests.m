@@ -41,10 +41,10 @@
     [palette.workspaceDelegate palette:palette showCanvas:canvas];
     XCTAssertEqual(secondary.topViewController,canvas);
     XCTAssertEqual(primary.topViewController,palette);
-    XCTAssertEqualObjects(palette.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.canvas");
+    if (workspace.collapsed || workspace.displayMode!=UISplitViewControllerDisplayModeOneBesideSecondary) XCTAssertEqualObjects(palette.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.canvas");
     [canvas loadViewIfNeeded];
     XCTAssertEqual(((ColorDetectView *)[canvas valueForKey:@"colorDetectView"]).imageView.image,image,@"No downsampling or replacement of the imported image");
-    XCTAssertEqualObjects(canvas.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.palette");
+    if (workspace.collapsed || workspace.displayMode!=UISplitViewControllerDisplayModeOneBesideSecondary) XCTAssertEqualObjects(canvas.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.palette");
     XCTAssertEqualObjects(canvas.navigationItem.rightBarButtonItem.accessibilityIdentifier,@"workspace.sources");
     XCTAssertGreaterThanOrEqual(workspace.keyCommands.count,4);
 }
@@ -56,6 +56,7 @@
     [live displaySample:@"#ff0000" generation:generation];
     XCTAssertTrue([[live valueForKey:@"saveButton"] isEnabled]);
     live.sourceFlowActive=YES;
+    XCTAssertEqualObjects([[live valueForKey:@"statusLabel"] text],NSLocalizedString(@"Camera paused",nil));
     XCTAssertNil(gate.selectedHex);
     [live displaySample:@"#00ff00" generation:generation];
     XCTAssertNil(gate.selectedHex);

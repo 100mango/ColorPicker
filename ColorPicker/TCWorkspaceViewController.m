@@ -58,10 +58,7 @@
     return self.hasCanvas ? UISplitViewControllerColumnSecondary : UISplitViewControllerColumnPrimary;
 }
 - (void)configureCanvasNavigation:(UIViewController *)canvas {
-    UIBarButtonItem *palette = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"sidebar.left"] style:UIBarButtonItemStylePlain target:self action:@selector(showPalette)];
-    palette.accessibilityLabel = NSLocalizedString(@"Saved Colors", nil);
-    palette.accessibilityIdentifier = @"workspace.palette";
-    canvas.navigationItem.leftBarButtonItem = palette;
+    [self updatePaletteNavigationForCanvas:canvas];
     __weak typeof(self) weakSelf = self;
     UIAction *photo = [UIAction actionWithTitle:NSLocalizedString(@"Choose Photo", nil) image:[UIImage systemImageNamed:@"photo"] identifier:nil handler:^(UIAction *action) { [weakSelf.palette choosePhoto]; }];
     UIAction *camera = [UIAction actionWithTitle:NSLocalizedString(@"Take Photo", nil) image:[UIImage systemImageNamed:@"camera"] identifier:nil handler:^(UIAction *action) { [weakSelf.palette takePhoto]; }];
@@ -72,6 +69,28 @@
     sources.accessibilityIdentifier = @"workspace.sources";
     canvas.navigationItem.rightBarButtonItem = sources;
 }
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [self updatePaletteNavigationForCanvas:self.canvasNavigation.topViewController];
+}
+- (void)updatePaletteNavigationForCanvas:(UIViewController *)canvas {
+    BOOL separateNavigation = self.collapsed || self.displayMode != UISplitViewControllerDisplayModeOneBesideSecondary;
+    BOOL hasPaletteButton = [canvas.navigationItem.leftBarButtonItem.accessibilityIdentifier isEqualToString:@"workspace.palette"];
+    if (separateNavigation && !hasPaletteButton) {
+        UIBarButtonItem *palette = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"sidebar.left"] style:UIBarButtonItemStylePlain target:self action:@selector(showPalette)];
+        palette.accessibilityLabel = NSLocalizedString(@"Saved Colors", nil);
+        palette.accessibilityIdentifier = @"workspace.palette";
+        canvas.navigationItem.leftBarButtonItem = palette;
+    } else if (!separateNavigation && hasPaletteButton) canvas.navigationItem.leftBarButtonItem = nil;
+    if (!self.hasCanvas) return;
+    BOOL hasReturnButton = [self.palette.navigationItem.leftBarButtonItem.accessibilityIdentifier isEqualToString:@"workspace.canvas"];
+    if (separateNavigation && !hasReturnButton) {
+        UIBarButtonItem *returnToCanvas = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"rectangle"] style:UIBarButtonItemStylePlain target:self action:@selector(showCurrentCanvas)];
+        returnToCanvas.accessibilityLabel = NSLocalizedString(@"Color Canvas", nil);
+        returnToCanvas.accessibilityIdentifier = @"workspace.canvas";
+        self.palette.navigationItem.leftBarButtonItem = returnToCanvas;
+    } else if (!separateNavigation && hasReturnButton) self.palette.navigationItem.leftBarButtonItem = nil;
+}
 - (void)showPalette { [self showColumn:UISplitViewControllerColumnPrimary]; }
 - (void)showCurrentCanvas { if (self.hasCanvas) [self showColumn:UISplitViewControllerColumnSecondary]; }
 - (UIViewController *)sourcePresenterForPalette:(ColorMainViewController *)palette { return self; }
@@ -79,10 +98,7 @@
 - (void)palette:(ColorMainViewController *)palette showCanvas:(UIViewController *)canvas {
     [self configureCanvasNavigation:canvas];
     self.hasCanvas = YES;
-    UIBarButtonItem *returnToCanvas = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"rectangle"] style:UIBarButtonItemStylePlain target:self action:@selector(showCurrentCanvas)];
-    returnToCanvas.accessibilityLabel = NSLocalizedString(@"Color Canvas", nil);
-    returnToCanvas.accessibilityIdentifier = @"workspace.canvas";
-    self.palette.navigationItem.leftBarButtonItem = returnToCanvas;
+    [self updatePaletteNavigationForCanvas:canvas];
     [self.canvasNavigation setViewControllers:@[canvas] animated:NO];
     [self showColumn:UISplitViewControllerColumnSecondary];
 }

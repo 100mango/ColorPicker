@@ -34,7 +34,7 @@ for filename in ['Localizable.strings','InfoPlist.strings']:
     children=[add('loc:'+lang+filename, 'PBXFileReference', lastKnownFileType='text.plist.strings', name=lang, path='ColorPicker/'+lang+'.lproj/'+filename, sourceTree='<group>') for lang in ['en','zh-Hans']]
     resources.append(add('variant:'+filename,'PBXVariantGroup',children=children,name=filename,sourceTree='<group>'))
 testrefs=[ref('ColorPickerTests/'+name,'sourcecode.c.objc') for name in ['ColorPickerTests.m','TCAdaptiveLayoutTests.m','TCWorkspaceTests.m']]
-uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m']]
+uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m','TouchColorAccessibilityUITests.m']]
 products=[]
 projectid=uid('Project')
 appTarget=uid('TouchColor')

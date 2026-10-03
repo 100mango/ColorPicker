@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
-family="${1:?Provide iPhoneCompact, iPhoneLarge or iPadLarge}"
-suite="${2:?Provide prepare, shutdown, TouchColorTests or TouchColorUITests}"
-case "$family" in iPhoneCompact|iPhoneLarge|iPadLarge) ;; *) exit 2;; esac
-case "$suite" in prepare|shutdown|TouchColorTests|TouchColorUITests) ;; *) exit 2;; esac
+family="${1:?Provide iPhoneCompact, iPhoneLarge, iPadLarge or iPadMini}"
+suite="${2:?Provide prepare, seed, shutdown, TouchColorTests, TouchColorUITests or AccessibilityAudits}"
+case "$family" in iPhoneCompact|iPhoneLarge|iPadLarge|iPadMini) ;; *) exit 2;; esac
+case "$suite" in prepare|seed|shutdown|TouchColorTests|TouchColorUITests|AccessibilityAudits) ;; *) exit 2;; esac
 xcrun simctl list devices available -j > /tmp/touchcolor-devices.json
 device=$(python3 - "$family" "$suite" <<'PY'
 import json,sys,subprocess
@@ -21,6 +21,9 @@ if family=='iPhoneCompact':
         udid=subprocess.check_output(['xcrun','simctl','create',name,device_type['identifier'],runtimes[0]],text=True).strip()
         candidates=[{'udid':udid,'name':name}]
         print('Created '+str(device_type)+' runtime '+runtimes[0],file=sys.stderr)
+elif family=='iPadMini':
+    name='iPad mini (A17 Pro)'
+    candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name']==name]
 elif family=='iPadLarge':
     candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name'].startswith('iPad Pro 13-inch')]
     if not candidates: raise SystemExit('BLOCKED: required native 13-inch iPad simulator is unavailable')
@@ -46,7 +49,7 @@ if [[ "$suite" == shutdown ]]; then
   xcrun simctl shutdown "$device" || true
   exit 0
 fi
-if [[ "$suite" == TouchColorUITests ]]; then
+if [[ "$suite" == seed || "$suite" == TouchColorUITests || "$suite" == AccessibilityAudits ]] && [[ ! -f "build/$family-fixture-seeded" ]]; then
   python3 - <<'PYPNG'
 import struct,zlib
 w,h=300,200
@@ -57,11 +60,14 @@ png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+ch
 open('/tmp/touchcolor-asymmetric.png','wb').write(png)
 PYPNG
   xcrun simctl addmedia "$device" /tmp/touchcolor-asymmetric.png
+  touch "build/$family-fixture-seeded"
 fi
+if [[ "$suite" == seed ]]; then exit 0; fi
 selection="$suite"
 if [[ "$suite" == TouchColorUITests ]]; then
-  if [[ "$family" == iPadLarge ]]; then selection="TouchColorUITests/TouchColorIPadUITests"; else selection="TouchColorUITests/TouchColorUITests"; fi
+  if [[ "$family" == iPadLarge || "$family" == iPadMini ]]; then selection="TouchColorUITests/TouchColorIPadUITests"; else selection="TouchColorUITests/TouchColorUITests"; fi
 fi
+if [[ "$suite" == AccessibilityAudits ]]; then selection="TouchColorUITests/TouchColorAccessibilityUITests"; fi
 xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/simulator \
   -resultBundlePath "build/$family-$suite.xcresult" -parallel-testing-enabled NO \

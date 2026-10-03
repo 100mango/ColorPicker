@@ -96,6 +96,9 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 - (void)assertViewReadable:(UIView *)view inScroll:(UIScrollView *)scroll {
     XCTAssertNotNil(view);XCTAssertNotNil(scroll);
     if (!view || !scroll) return;
+    // Sampling changes the label's intrinsic height; resolve the parent stack and content guide
+    // before computing the rectangle to scroll, rather than scrolling to the previous layout.
+    [scroll.superview layoutIfNeeded];[scroll layoutIfNeeded];
     CGRect target=[view convertRect:view.bounds toView:scroll];
     [scroll scrollRectToVisible:target animated:NO];
     [scroll layoutIfNeeded];
@@ -212,7 +215,7 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             [self assertViewReadable:TCLayoutView(canvas.view,@"sampleCenter") inScroll:controls];
             [self assertViewReadable:TCLayoutView(canvas.view,@"saveColor") inScroll:controls];
             if (value.CGSizeValue.width>=1000) XCTAssertEqual(workspace.displayMode,UISplitViewControllerDisplayModeOneBesideSecondary);
-            if (workspace.displayMode==UISplitViewControllerDisplayModeOneBesideSecondary) {
+            if (!workspace.collapsed && workspace.displayMode==UISplitViewControllerDisplayModeOneBesideSecondary) {
                 // Modern UISplitViewController extends the secondary background beneath the sidebar.
                 // Compare usable content, matching the actual table/image non-overlap UI assertion.
                 CGRect paletteFrame=[palette.view convertRect:palette.view.safeAreaLayoutGuide.layoutFrame toView:workspace.view];

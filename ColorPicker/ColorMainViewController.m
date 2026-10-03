@@ -210,7 +210,7 @@
 }
 - (void)selectSource:(UIButton *)button {
 #if DEBUG
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-reset"]) {
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-source-diagnostics"]) {
         UIViewController *presented=[self sourcePresenter].presentedViewController;
         button.accessibilityValue=[NSString stringWithFormat:@"attempt=%lu presented=%@ dismissing=%d loading=%d",(unsigned long)++self.sourceAttempts,presented ? NSStringFromClass(presented.class) : @"none",presented.isBeingDismissed,self.loading.isAnimating];
     }

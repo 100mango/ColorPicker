@@ -39,7 +39,7 @@
     self.statusLabel.numberOfLines = 0;
     self.statusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     self.statusLabel.adjustsFontForContentSizeCategory = YES;
-    self.statusLabel.text = NSLocalizedString(@"Waiting for camera", nil);
+    self.statusLabel.text = self.sourceFlowActive ? NSLocalizedString(@"Camera paused", nil) : NSLocalizedString(@"Waiting for camera", nil);
     self.statusLabel.accessibilityIdentifier = @"cameraStatus";
     self.saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.saveButton.configuration = UIButtonConfiguration.filledButtonConfiguration;
@@ -102,10 +102,12 @@
 - (void)setSourceFlowActive:(BOOL)sourceFlowActive {
     _sourceFlowActive = sourceFlowActive;
     if (!self.isViewLoaded) return;
-    if (sourceFlowActive) [self pauseCapture]; else [self resumeCapture];
+    if (sourceFlowActive) { [self pauseCapture]; self.statusLabel.text = NSLocalizedString(@"Camera paused", nil); }
+    else [self resumeCapture];
 }
 - (void)resumeCapture {
-    if (self.sourceFlowActive || !self.visible || !self.view.window || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive || self.interrupted) return;
+    if (self.sourceFlowActive || !self.visible || !self.view.window || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive) return;
+    if (self.interrupted) { self.statusLabel.text = NSLocalizedString(@"Camera interrupted. Waiting to resume.", nil); return; }
     [self.captureGate invalidate];
     self.saveButton.enabled = NO;
     AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionBack] ?: [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
