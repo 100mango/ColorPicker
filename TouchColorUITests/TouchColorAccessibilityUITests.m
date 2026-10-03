@@ -15,6 +15,25 @@
     XCUIDevice.sharedDevice.orientation=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad ? UIDeviceOrientationLandscapeLeft : UIDeviceOrientationPortrait;
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
+    [self assertEmptyHistoryDoesNotOverlapHeader];
+}
+- (void)assertEmptyHistoryDoesNotOverlapHeader {
+    XCUIElement *message=self.app.staticTexts[@"history.empty"];
+    // The primary column may intentionally be hidden in a compact detail window.
+    if (!message.exists) return;
+    XCUIElement *header=self.app.tables[@"colorHistory"].staticTexts[@"Saved Colors"].firstMatch;
+    if (header.exists) XCTAssertFalse(CGRectIntersectsRect(header.frame,message.frame),@"Empty-state paragraph overlaps section header: %@ / %@",NSStringFromCGRect(message.frame),NSStringFromCGRect(header.frame));
+}
+- (void)recordAuditScreenshot:(NSString *)screen {
+    NSString *name=nil;
+    if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
+    if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
+    if (!name) return;
+    NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+    XCTAssertLessThanOrEqual(bytes.length,500*1024u);
+    XCTAttachment *attachment=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
+    attachment.name=name;attachment.lifetime=XCTAttachmentLifetimeKeepAlways;
+    [self addAttachment:attachment];
 }
 - (void)auditScreen:(NSString *)screen {
     NSLog(@"ACCESSIBILITY_CHECKPOINT screen=%@ window=%@ deviceOrientation=%ld runnerPreferredContentSizeCategory=%@",screen,NSStringFromCGRect(self.app.windows.firstMatch.frame),(long)XCUIDevice.sharedDevice.orientation,UIApplication.sharedApplication.preferredContentSizeCategory);
@@ -26,19 +45,11 @@
             recordedFailure=YES;
             NSLog(@"ACCESSIBILITY_FAILURE_GEOMETRY screen=%@ window=%@ runnerPreferredContentSizeCategory=%@",screen,NSStringFromCGRect(self.app.windows.firstMatch.frame),UIApplication.sharedApplication.preferredContentSizeCategory);
             NSLog(@"ACCESSIBILITY_FAILURE_HIERARCHY_BEGIN screen=%@\n%@\nACCESSIBILITY_FAILURE_HIERARCHY_END",screen,self.app.debugDescription);
-            NSString *name=nil;
-            if ([screen isEqualToString:@"live camera unavailable"]) name=@"touchcolor-mini-audit-live-failure";
-            if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-failure";
-            if (name) {
-                NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
-                XCTAssertLessThanOrEqual(bytes.length,500*1024u);
-                XCTAttachment *attachment=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
-                attachment.name=name;attachment.lifetime=XCTAttachmentLifetimeKeepAlways;
-                [self addAttachment:attachment];
-            }
+            [self recordAuditScreenshot:screen];
         }
         return NO; // No category-wide or element-wide suppression; every reported issue remains actionable.
     } error:&error];
+    if (!recordedFailure) [self recordAuditScreenshot:screen];
     NSLog(@"ACCESSIBILITY_RESULT screen=%@ passed=%d error=%@",screen,passed,error);
     XCTAssertTrue(passed,@"%@ accessibility audit: %@",screen,error);
 }
@@ -55,6 +66,7 @@
     [self.app.buttons[@"sampleCenter"] tap];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"R 255   G 0   B 255"]);
+    [self assertEmptyHistoryDoesNotOverlapHeader];
 }
 - (void)testAccessibilityEmptyPalette {
     [self auditScreen:@"empty palette"];
@@ -69,8 +81,10 @@
     XCTAssertEqual([XCTWaiter waitForExpectations:@[resized] timeout:8],XCTWaiterResultCompleted);
     XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
     NSLog(@"ACCESSIBILITY_COMPACT_WINDOW %@",NSStringFromCGRect(window.frame));
+    [self assertEmptyHistoryDoesNotOverlapHeader];
     [self auditScreen:@"empty palette in actual compact iPad window"];
     [self restoreFullWindow];
+    [self assertEmptyHistoryDoesNotOverlapHeader];
 }
 - (void)restoreFullWindow {
     XCUIElement *window=self.app.windows.firstMatch;
@@ -99,6 +113,7 @@
     [self.app.buttons[@"liveColor"] tap];
     XCTAssertTrue([self.app.staticTexts[@"cameraStatus"] waitForExistenceWithTimeout:5]);
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
+    [self assertEmptyHistoryDoesNotOverlapHeader];
     [self auditScreen:@"live camera unavailable"];
 }
 - (void)testAccessibilityOfflinePolicyError {

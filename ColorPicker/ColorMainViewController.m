@@ -314,7 +314,11 @@
     [picker dismissViewControllerAnimated:YES completion:^{ [self sourceFlowActive:NO]; [self showImage:image]; }];
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.colors.count; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return NSLocalizedString(@"Saved Colors", nil); }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    // UITableView draws its background behind section headers. The empty-state
+    // paragraph already describes the palette and must not share that header area.
+    return self.colors.count ? NSLocalizedString(@"Saved Colors", nil) : nil;
+}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"color"];
     if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"color"];

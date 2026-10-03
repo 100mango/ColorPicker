@@ -121,6 +121,14 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
                 UILabel *empty=(UILabel *)TCLayoutView(main.view,@"history.empty");
                 [emptyScroll layoutIfNeeded];
                 XCTAssertNotNil(emptyScroll);XCTAssertNotNil(empty);
+                UITableView *emptyHistory=(UITableView *)TCLayoutView(main.view,@"colorHistory");
+                [emptyHistory layoutIfNeeded];
+                UITableViewHeaderFooterView *emptyHeader=[emptyHistory headerViewForSection:0];
+                if (emptyHeader && !emptyHeader.hidden) {
+                    CGRect header=[emptyHeader convertRect:emptyHeader.bounds toView:main.view];
+                    CGRect message=[empty convertRect:empty.bounds toView:main.view];
+                    XCTAssertFalse(CGRectIntersectsRect(header,message),@"Empty palette header %@ overlaps explanation %@",NSStringFromCGRect(header),NSStringFromCGRect(message));
+                }
                 XCTAssertGreaterThanOrEqual(emptyScroll.contentSize.height,empty.bounds.size.height);
                 // A long empty-state paragraph can span screens; both its beginning and end must scroll into view.
                 CGRect paragraph=[empty convertRect:empty.bounds toView:emptyScroll];

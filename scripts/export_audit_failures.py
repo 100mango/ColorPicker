@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export at most two synthetic audit failure screenshots after XCTest has finished."""
+"""Export at most two synthetic audit audit screenshots after XCTest has finished."""
 import base64
 import json
 import pathlib
@@ -12,7 +12,7 @@ def records(value):
     elif isinstance(value,list):
         for child in value: yield from records(child)
 
-for device,name in [('iPadMini','touchcolor-mini-audit-live-failure'),('iPadMini','touchcolor-mini-audit-photo-failure')]:
+for device,name in [('iPadMini','touchcolor-mini-audit-photo-state'),('iPadMini','touchcolor-mini-audit-saved-state')]:
     result=pathlib.Path('build',device+'-AccessibilityAudits.xcresult')
     if not (result/'Info.plist').is_file(): continue
     destination=pathlib.Path('build','test-screenshots',device)
@@ -22,7 +22,7 @@ for device,name in [('iPadMini','touchcolor-mini-audit-live-failure'),('iPadMini
     manifest=json.loads((destination/'manifest.json').read_text())
     matches=[item for item in records(manifest) if name in ' '.join(v for v in item.values() if isinstance(v,str))]
     if not matches:
-        print(f'No failure attachment: {name}')
+        print(f'No audit state attachment: {name}')
         continue
     assert len(matches)==1, f'Expected one {name}, found {len(matches)}'
     path=(destination/matches[0]['exportedFileName']).resolve()

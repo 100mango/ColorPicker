@@ -1,4 +1,4 @@
-name: Focused native iPad mini accessibility diagnosis
+name: Validate native iPad mini accessibility repair
 on:
   push:
     branches: [codex/native-ipad]
@@ -95,14 +95,18 @@ jobs:
         id: warm-ipad-mini
         timeout-minutes: 10
         run: bash scripts/test_simulators.sh iPadMini prepare
+      - name: iPad mini unit and constrained-window regression tests
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPadMini TouchColorTests
       - name: Seed iPadMini synthetic photo
         id: seed-ipad-mini
         timeout-minutes: 5
         run: bash scripts/test_simulators.sh iPadMini seed
       - name: iPad mini official XCTest accessibility audits
+        if: ${{ !cancelled() && steps.seed-ipad-mini.outcome == 'success' }}
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh iPadMini AccessibilityAudits
-      - name: Export bounded mini audit failure evidence
+      - name: Export bounded mini audit state evidence
         if: always()
         timeout-minutes: 3
         run: python3 scripts/export_audit_failures.py
@@ -117,7 +121,7 @@ jobs:
           find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
           find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true
       - name: Verify tested source stayed unchanged
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail

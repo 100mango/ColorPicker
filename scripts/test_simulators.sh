@@ -39,10 +39,28 @@ PY
 )
 # Cold CoreSimulator startup has a separate budget; unit and UI suites share the warm device.
 if [[ "$suite" == prepare ]]; then
+  echo "[$(date -u +%FT%TZ)] Booting $family $device"
   xcrun simctl boot "$device" || true
   xcrun simctl bootstatus "$device" -b
-  xcrun simctl spawn "$device" launchctl print system >/dev/null
-  xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -showdestinations
+  echo "[$(date -u +%FT%TZ)] Boot completed; installing the exact test app"
+  xcrun simctl install "$device" build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app
+  echo "[$(date -u +%FT%TZ)] Launching the app for readiness"
+  xcrun simctl launch --terminate-running-process "$device" com.mango.touchColor
+  xcrun simctl terminate "$device" com.mango.touchColor
+  echo "[$(date -u +%FT%TZ)] App launch completed; collecting optional bounded inventories"
+  python3 - "$device" <<'PYDIAGNOSTICS'
+import datetime,subprocess,sys
+commands=[(['xcrun','simctl','spawn',sys.argv[1],'launchctl','print','system'],20,subprocess.DEVNULL),
+          (['xcodebuild','-project','TouchColor.xcodeproj','-scheme','TouchColor','-showdestinations'],30,None)]
+for command,seconds,output in commands:
+    print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'Optional diagnostic:', ' '.join(command), flush=True)
+    try:
+        result=subprocess.run(command,timeout=seconds,stdout=output,check=False)
+        print('Optional diagnostic exit:',result.returncode,flush=True)
+    except subprocess.TimeoutExpired:
+        print(f'Optional diagnostic exceeded {seconds}s; continuing to the actual XCTest gates',flush=True)
+PYDIAGNOSTICS
+  echo "[$(date -u +%FT%TZ)] Simulator preparation complete"
   exit 0
 fi
 if [[ "$suite" == shutdown ]]; then
