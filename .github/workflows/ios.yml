@@ -74,7 +74,7 @@ jobs:
           PYFRAMEWORKS
           otool -L build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor
           strings build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor > /tmp/touchcolor-release-strings.txt
-          if grep -E -- '--ui-test-(reset|image|asymmetric|dark|policy-offline)' /tmp/touchcolor-release-strings.txt; then
+          if grep -E -- '--ui-test-' /tmp/touchcolor-release-strings.txt; then
             echo 'Test-only seams leaked into Release'; exit 1
           fi
       - name: Build simulator test products
@@ -95,7 +95,9 @@ jobs:
         run: bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
       - name: Compact iPhone UI tests and synthetic screenshots
         if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
-        timeout-minutes: 12
+        # New SE3 UI-runner initialization took almost 7 minutes before cases began.
+        # Preserve each test's 180/240-second limit while allowing startup plus the expanded suite.
+        timeout-minutes: 16
         run: bash scripts/test_simulators.sh iPhoneCompact TouchColorUITests
       - name: Shut down compact iPhone simulator
         if: always()

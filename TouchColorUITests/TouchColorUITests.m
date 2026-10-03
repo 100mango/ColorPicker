@@ -87,6 +87,44 @@
     }
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
 }
+- (void)testRealCameraPermissionAllowThenResetAndDeny {
+    [self.app terminate];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-camera-permission",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    [self.app resetAuthorizationStatusForResource:XCUIProtectedResourceCamera];
+    __block BOOL handledAllow=NO;
+    id allowMonitor=[self addUIInterruptionMonitorWithDescription:@"Real camera Allow" handler:^BOOL(XCUIElement *alert) {
+        XCUIElement *allow=alert.buttons[@"Allow"];
+        if (!allow.exists) allow=alert.buttons[@"OK"];
+        if (!allow.exists) return NO;
+        [allow tap];handledAllow=YES;return YES;
+    }];
+    [self.app launch];[self.app.buttons[@"takePhoto"] tap];[self.app tap];
+    XCTAssertTrue([self.app.alerts.staticTexts[@"CAMERA_PERMISSION_ALLOWED"] waitForExistenceWithTimeout:10]);
+    XCTAssertTrue(handledAllow,@"The actual system Allow prompt must be observed");
+    [self.app.alerts.buttons[@"OK"] tap];
+    [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];
+    [self.app.buttons[@"takePhoto"] tap];
+    XCTAssertTrue([self.app.alerts.staticTexts[@"CAMERA_PERMISSION_ALLOWED"] waitForExistenceWithTimeout:5]);
+    [self.app.alerts.buttons[@"OK"] tap];
+    [self.app terminate];XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:5]);
+    [self removeUIInterruptionMonitor:allowMonitor];
+    [self.app resetAuthorizationStatusForResource:XCUIProtectedResourceCamera];
+    __block BOOL handledDeny=NO;
+    id denyMonitor=[self addUIInterruptionMonitorWithDescription:@"Real camera Deny" handler:^BOOL(XCUIElement *alert) {
+        XCUIElement *deny=alert.buttons[@"Don’t Allow"];
+        if (!deny.exists) deny=alert.buttons[@"Don't Allow"];
+        if (!deny.exists) return NO;
+        [deny tap];handledDeny=YES;return YES;
+    }];
+    [self.app launch];[self.app.buttons[@"takePhoto"] tap];[self.app tap];
+    XCUIElement *denied=[self.app.alerts.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'Camera access is off'"]].firstMatch;
+    XCTAssertTrue([denied waitForExistenceWithTimeout:10]);
+    XCTAssertTrue(handledDeny,@"The actual system Deny prompt must be observed");
+    [self removeUIInterruptionMonitor:denyMonitor];
+    [self.app terminate];XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:5]);
+    [self.app resetAuthorizationStatusForResource:XCUIProtectedResourceCamera];
+    NSLog(@"REAL_CAMERA_TCC_ALLOW_DENY: real OS dialogs/status via Debug availability probe; camera hardware not exercised");
+}
 - (void)testSampleSaveRelaunchDeleteAndBackground {
     [self.app.buttons[@"Sample Fixture"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
@@ -142,8 +180,9 @@
     self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
-    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
-    XCTAssertTrue(self.app.buttons[@"liveColor"].hittable);
+    [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self.app.buttons[@"Sample Fixture"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
     [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
@@ -162,9 +201,9 @@
     XCTAssertTrue(CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1)),@"RGB detail must be fully readable after scrolling");
     [self emitScreenshot:@"touchcolor-history-large-text"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
-    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
-    XCTAssertTrue(self.app.buttons[@"takePhoto"].hittable);
-    XCTAssertTrue(self.app.buttons[@"liveColor"].hittable);
+    [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     XCTAssertGreaterThan(table.frame.size.height,44);
     for (NSUInteger i=0;i<4 && !CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1));i++) {
         if (CGRectGetMinY(detail.frame) < CGRectGetMinY(table.frame)) [table swipeDown]; else [table swipeUp];
@@ -217,8 +256,11 @@
 }
 - (void)testLargestTextOfflinePolicyCanScrollRetryAndCloseInLandscape {
     [self.app terminate];
-    self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-policy-offline",@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];
-    [self.app launch];[self.app.buttons[@"privacyPolicy"] tap];
+    // This route uses production navigation: no unrelated Debug fixture button crowds the SE navigation bar.
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-policy-offline",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    [self.app launch];
+    XCTAssertTrue([self.app.buttons[@"privacyPolicy"] waitForExistenceWithTimeout:5]);
+    [self.app.buttons[@"privacyPolicy"] tap];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
     XCUIElement *retry=self.app.buttons[@"privacy.retry"];
     XCTAssertTrue([retry waitForExistenceWithTimeout:5]);

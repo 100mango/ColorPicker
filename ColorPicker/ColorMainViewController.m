@@ -48,19 +48,32 @@
         [button addTarget:self action:@selector(selectSource:) forControlEvents:UIControlEventTouchUpInside];
         [buttons addArrangedSubview:button];
     }
-    [self.view addSubview:buttons];
+    UIScrollView *sourceControls = [UIScrollView new];
+    sourceControls.accessibilityIdentifier = @"sourceControls";
+    sourceControls.translatesAutoresizingMaskIntoConstraints = NO;
+    [sourceControls addSubview:buttons];
+    [self.view addSubview:sourceControls];
+    NSLayoutConstraint *naturalHeight = [sourceControls.heightAnchor constraintEqualToAnchor:buttons.heightAnchor constant:8];
+    naturalHeight.priority = UILayoutPriorityDefaultHigh;
+    naturalHeight.active = YES;
     self.loading = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.loading.hidesWhenStopped = YES;
     [self showPrivacyButton];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [buttons.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
-        [buttons.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
-        [buttons.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8],
+        [sourceControls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
+        [sourceControls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [sourceControls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
+        [sourceControls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.5],
+        [buttons.leadingAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.leadingAnchor constant:16],
+        [buttons.trailingAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.trailingAnchor constant:-16],
+        [buttons.topAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.topAnchor],
+        [buttons.bottomAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.bottomAnchor constant:-8],
+        [buttons.widthAnchor constraintEqualToAnchor:sourceControls.frameLayoutGuide.widthAnchor constant:-32],
         [self.tableView.topAnchor constraintEqualToAnchor:safe.topAnchor],
         [self.tableView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
         [self.tableView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [self.tableView.bottomAnchor constraintEqualToAnchor:buttons.topAnchor constant:-8]
+        [self.tableView.bottomAnchor constraintEqualToAnchor:sourceControls.topAnchor constant:-8]
     ]];
 #if DEBUG
     // Deterministic test fixture: never compiled into Release/App Store builds.
@@ -142,6 +155,11 @@
 }
 - (void)takePhoto {
     BOOL available = [UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera];
+#if DEBUG
+    // Simulator-only test route uses the real TCC API/dialog, then stops before camera presentation.
+    BOOL permissionProbe = [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-camera-permission"];
+    if (permissionProbe) available = YES;
+#endif
     TCCameraAccess access = TCCameraAccessForStatus([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo], available);
     if (access == TCCameraAccessUnavailable) {
         [self showMessage:NSLocalizedString(@"A camera is not available on this device. You can still choose a photo.", nil)];
@@ -153,6 +171,9 @@
             dispatch_async(dispatch_get_main_queue(), ^{ if (weakSelf.view.window && !weakSelf.presentedViewController) [weakSelf takePhoto]; });
         }];
     } else {
+#if DEBUG
+        if (permissionProbe) { [self showMessage:@"CAMERA_PERMISSION_ALLOWED"]; return; }
+#endif
         UIImagePickerController *picker = [UIImagePickerController new];
         picker.sourceType = UIImagePickerControllerSourceTypeCamera;
         picker.delegate = self;

@@ -53,6 +53,8 @@
     self.zoomSlider = [UISlider new];
     self.zoomSlider.minimumValue = 0;
     self.zoomSlider.maximumValue = 2; // Logarithmic 1–100×, matching the original zoom range.
+    self.zoomSlider.minimumValueImage = [UIImage systemImageNamed:@"minus.magnifyingglass"];
+    self.zoomSlider.maximumValueImage = [UIImage systemImageNamed:@"plus.magnifyingglass"];
     self.zoomSlider.accessibilityLabel = NSLocalizedString(@"Zoom", nil);
     self.zoomSlider.accessibilityIdentifier = @"photoZoom";
     self.zoomSlider.accessibilityValue = @"1.0×";
