@@ -28,9 +28,61 @@
     [super setUp];
     self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
-    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    if ([self.name containsString:@"testCaptureAppStoreImages"]) {
+        self.app.launchArguments=@[@"-AppleLanguages",@"(zh-Hans)",@"-AppleLocale",@"zh_CN",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryL"];
+    } else {
+        self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    }
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     [self.app launch];
+}
+- (void)emitAppStoreImage:(NSString *)state {
+    UIImage *image=XCUIScreen.mainScreen.screenshot.image;
+    BOOL phone=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone;
+    size_t width=CGImageGetWidth(image.CGImage), height=CGImageGetHeight(image.CGImage);
+    XCTAssertEqual(width,phone ? 1320 : 2064);
+    XCTAssertEqual(height,phone ? 2868 : 2752);
+    NSData *data=UIImageJPEGRepresentation(image,0.80);
+    XCTAssertGreaterThan(data.length,0);
+    XCTAssertLessThanOrEqual(data.length,1024*1024);
+    NSString *name=[NSString stringWithFormat:@"touchcolor-%@-%@-zh-Hans",phone ? @"iphone69" : @"ipad13",state];
+    printf("STORE_SCREENSHOT_METADATA:%s width=%zu height=%zu bytes=%lu format=RGB-JPEG appSource=8d9220d326f2f6c5a5d0b3bc0e990cd500af45dd\n",name.UTF8String,width,height,(unsigned long)data.length);
+    NSString *encoded=[data base64EncodedStringWithOptions:0];
+    printf("STORE_SCREENSHOT_BEGIN:%s\n",name.UTF8String);
+    for (NSUInteger offset=0;offset<encoded.length;offset+=4096) {
+        printf("%s\n",[[encoded substringWithRange:NSMakeRange(offset,MIN(4096,encoded.length-offset))] UTF8String]);
+    }
+    printf("STORE_SCREENSHOT_END:%s\n",name.UTF8String);
+    fflush(stdout);
+}
+- (void)testCaptureAppStoreImages {
+    // Release configuration, normal text, no in-app fixture controls or seeded history.
+    XCTAssertFalse(self.app.buttons[@"Sample Fixture"].exists);
+    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
+    [self.app.buttons[@"choosePhoto"] tap];
+    XCUIElement *photo=[self.app.images matchingIdentifier:@"PXGGridLayout-Info"].firstMatch;
+    XCTAssertTrue([photo waitForExistenceWithTimeout:20],@"%@",self.app.debugDescription);
+    [photo tap];
+    XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:20]);
+    XCUIElement *image=self.app.images[@"sampleImage"];
+    XCTAssertTrue(image.exists);
+    NSArray *points=@[@0.5,@0.17,@0.83];
+    NSArray *expected=@[@"#3da9b4",@"#ee6a5d",@"#f8c75b"];
+    for (NSUInteger i=0;i<points.count;i++) {
+        [[image coordinateWithNormalizedOffset:CGVectorMake([points[i] doubleValue],0.5)] tap];
+        XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:expected[i]]);
+        if (i==0) [self emitAppStoreImage:@"photo-sampling"];
+        XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
+        [self.app.buttons[@"saveColor"] tap];
+        XCTAssertFalse(self.app.buttons[@"saveColor"].enabled);
+    }
+    [self.app.navigationBars.buttons.firstMatch tap];
+    XCUIElement *table=self.app.tables[@"colorHistory"];
+    XCTAssertTrue([table.cells.firstMatch waitForExistenceWithTimeout:10]);
+    XCTAssertEqual(table.cells.count,3);
+    XCTAssertTrue([table.cells.firstMatch.label containsString:@"#3da9b4"]);
+    XCTAssertFalse(self.app.buttons[@"Sample Fixture"].exists);
+    [self emitAppStoreImage:@"saved-colors"];
 }
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     XCUIElement *privacy=self.app.buttons[@"privacyPolicy"];

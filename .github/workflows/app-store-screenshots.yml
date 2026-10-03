@@ -1,0 +1,93 @@
+name: TouchColor App Store screenshots
+on:
+  push:
+    branches: [codex/app-store-screenshots]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-store-screenshots
+  cancel-in-progress: true
+jobs:
+  capture:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      APP_SOURCE_SHA: 8d9220d326f2f6c5a5d0b3bc0e990cd500af45dd
+    steps:
+      - name: Check out capture-only branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify unchanged frozen app and stable toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/app-store-screenshots
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code "$APP_SOURCE_SHA" -- . ':!TouchColorUITests/TouchColorUITests.m' ':!.github/workflows/app-store-screenshots.yml'
+          echo "Frozen app source: $APP_SOURCE_SHA"
+          echo "Capture harness commit: $GITHUB_SHA"
+          sw_vers
+          xcodebuild -version > /tmp/store-xcode.txt
+          cat /tmp/store-xcode.txt
+          grep -F '27A266a' /tmp/store-xcode.txt
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+      - name: Build unchanged Release app and screenshot test harness
+        timeout-minutes: 8
+        run: |
+          xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/store \
+            build-for-testing
+      - name: Capture iPhone 6.9 and iPad 13 inch sequentially
+        timeout-minutes: 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > /tmp/store-devices.json
+          python3 - <<'PY' > /tmp/store-device-ids.txt
+          import json
+          devices=json.load(open('/tmp/store-devices.json'))['devices']['com.apple.CoreSimulator.SimRuntime.iOS-27-0']
+          for name in ['iPhone 18 Pro Max','iPad Pro 13-inch (M5)']:
+              chosen=next((d for d in devices if d['name']==name and d.get('isAvailable')),None)
+              if not chosen: raise SystemExit('Required screenshot device unavailable: '+name)
+              print(chosen['udid'])
+              print('Screenshot device: '+name+' '+chosen['udid'],file=__import__('sys').stderr)
+          PY
+          python3 - <<'PY'
+          import struct,zlib
+          w,h=900,1200
+          colors=[bytes((238,106,93)),bytes((61,169,180)),bytes((248,199,91))]
+          row=b'\0'+b''.join(c*(w//3) for c in colors)
+          chunk=lambda name,data:struct.pack('>I',len(data))+name+data+struct.pack('>I',zlib.crc32(name+data)&0xffffffff)
+          png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(row*h))+chunk(b'IEND',b'')
+          open('/tmp/touchcolor-palette.png','wb').write(png)
+          PY
+          while IFS= read -r device; do
+            trap 'xcrun simctl shutdown "$device" || true' EXIT
+            xcrun simctl boot "$device" || true
+            xcrun simctl bootstatus "$device" -b
+            xcrun simctl spawn "$device" launchctl print system >/dev/null
+            xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -showdestinations >/dev/null
+            xcrun simctl addmedia "$device" /tmp/touchcolor-palette.png
+            xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+              -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/store \
+              -resultBundlePath "build/store-$device.xcresult" -parallel-testing-enabled NO \
+              -collect-test-diagnostics never -test-timeouts-enabled YES \
+              -default-test-execution-time-allowance 240 -maximum-test-execution-time-allowance 300 \
+              -only-testing:TouchColorUITests/TouchColorUITests/testCaptureAppStoreImages test-without-building
+            xcrun simctl shutdown "$device"
+            trap - EXIT
+          done < /tmp/store-device-ids.txt
+      - name: Verify app source remains identical after capture
+        run: |
+          git diff --exit-code "$APP_SOURCE_SHA" -- . ':!TouchColorUITests/TouchColorUITests.m' ':!.github/workflows/app-store-screenshots.yml'
+          git diff --exit-code HEAD --
+      - name: Report capture test summaries
+        if: always()
+        run: |
+          find build -maxdepth 1 -name 'store-*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
