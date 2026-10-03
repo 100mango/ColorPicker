@@ -34,7 +34,7 @@ import ColorRaster
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let session = ImageSession()
-        let host = NSHostingView(rootView: ColorWindow(library: PaletteLibrary(defaults: defaults), session: session))
+        let host = NSHostingView(rootView: ColorWindow(library: PaletteLibrary(defaults: defaults), session: session).frame(minWidth: 740, maxWidth: .infinity, minHeight: 520, maxHeight: .infinity))
         let previous = NSApp.keyWindow
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 588), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.contentView = host
@@ -42,7 +42,7 @@ import ColorRaster
         defer { window.orderOut(nil); window.contentView = nil; previous?.makeKeyAndOrderFront(nil) }
         session.load(data: RasterFixture.data(), name: "layout.tiff", token: session.beginImport())
         try await waitForImport(session)
-        for size in [NSSize(width: 960, height: 588), NSSize(width: 800, height: 500)] {
+        for size in [NSSize(width: 960, height: 588), NSSize(width: 800, height: 530)] {
             window.setContentSize(size)
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(nanoseconds: 100_000_000)

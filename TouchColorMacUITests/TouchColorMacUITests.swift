@@ -19,7 +19,16 @@ import UniformTypeIdentifiers
         let destination = CGImageDestinationCreateWithURL(fixture as CFURL, UTType.png.identifier as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, image, nil)
         XCTAssertTrue(CGImageDestinationFinalize(destination))
-        app = XCUIApplication(); app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = suite
+        // Resolve the actual adjacent Debug product, never another registered build with this bundle ID.
+        var products = Bundle(for: Self.self).bundleURL
+        for _ in 0..<4 { products.deleteLastPathComponent() }
+        let applicationURL = products.appendingPathComponent("TouchColorMac.app")
+        let metadata = try XCTUnwrap(Bundle(url: applicationURL)?.infoDictionary)
+        XCTAssertEqual(metadata["CFBundleIdentifier"] as? String, "com.mango.touchColor")
+        XCTAssertEqual(metadata["TouchColorConfiguration"] as? String, "Debug")
+        print("NATIVE_UI_EXACT_APP: \(applicationURL.path)")
+        app = XCUIApplication(url: applicationURL)
+        app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = suite
         app.launchArguments = ["--ui-test-reset"]; app.launch()
     }
     override func tearDownWithError() throws {

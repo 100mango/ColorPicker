@@ -15,7 +15,7 @@ import SwiftUI
     var body: some Scene {
         WindowGroup("TouchColor") {
             ColorWindow(library: library)
-                .frame(minWidth: 740, minHeight: 520)
+                .frame(minWidth: 740, maxWidth: .infinity, minHeight: 520, maxHeight: .infinity)
         }
         .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }
