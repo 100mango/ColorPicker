@@ -68,7 +68,7 @@ final class TCPhotoImportTask: NSObject, @unchecked Sendable {
             do {
                 let snapshot = try self.copyProviderFile(url)
                 guard self.takeOwnership(of: snapshot) else { return }
-                Self.decodeQueue.async { [self] in decodeOwnedFile() }
+                Self.decodeQueue.async { [self] in self.decodeOwnedFile() }
             } catch {
                 self.finish(image: nil, error: Self.failure(error))
             }

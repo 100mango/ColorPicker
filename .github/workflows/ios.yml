@@ -125,7 +125,7 @@ jobs:
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
       - name: Shut down simulator
-        if: always()
+        if: ${{ always() && steps.warm-device.outcome != 'skipped' }}
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
       - name: Export bounded device evidence
