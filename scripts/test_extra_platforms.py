@@ -95,11 +95,13 @@ try:
     assert info['CFBundleShortVersionString']=='2.0' and info['CFBundleVersion']=='20001'
     assert info['CFBundleExecutable']=='TouchColor'
     privacy=bundle/'PrivacyInfo.xcprivacy';assert privacy.is_file(), 'Release privacy manifest missing'
-    plistlib.loads(privacy.read_bytes())
+    privacy_value=plistlib.loads(privacy.read_bytes())
+    check_output([sys.executable,'scripts/verify_privacy_manifest.py',str(privacy),'container' if kind=='tv' else 'selected'],timeout=30)
     report['release_resource_files']=[p.name for p in bundle.iterdir() if p.is_file()]
     assert (bundle/'Assets.car').is_file(), 'Release compiled icon assets missing'
     report['release_bundle']={key:info.get(key) for key in ['CFBundleIdentifier','CFBundleName','CFBundleDisplayName','CFBundleExecutable','CFBundleShortVersionString','CFBundleVersion','MinimumOSVersion','CFBundleSupportedPlatforms','CFBundleIcons','CFBundleIconName']}
     report['release_bundle'].update(privacy_manifest=True,compiled_assets=True,unsigned=True)
+    report['release_bundle']['required_api_reasons']=privacy_value['NSPrivacyAccessedAPITypes']
     print('RELEASE_BUNDLE',json.dumps(report['release_bundle']),flush=True)
     run(['file',str(binary)],30)
     linked_libraries=check_output(['otool','-L',str(binary)],text=True,timeout=30).splitlines()[1:]

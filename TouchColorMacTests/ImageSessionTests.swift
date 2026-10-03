@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import ColorDomain
 import ColorRaster
+import ColorPaletteLegacy
 @testable import TouchColorMac
 
 @MainActor final class ImageSessionTests: XCTestCase {
@@ -37,6 +38,34 @@ import ColorRaster
     private func waitForImport(_ session: ImageSession) async throws {
         for _ in 0..<100 where session.busy { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertFalse(session.busy)
+    }
+    func testBoundedPaletteImportRejectsCancellationAndOversizeWithoutLosingSourceOrHistory() async throws {
+        let suite = "TouchColor.palette-file.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let original = ["#FF0000", "invalid", "#FF0000"]
+        defaults.set(original, forKey: "colorArray")
+        let library = PaletteLibrary(defaults: defaults), session = ImageSession()
+        session.load(data: RasterFixture.data(), name: "retained.tiff", token: session.beginImport())
+        try await waitForImport(session)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("palette-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("[\"#00ff00\",\"#00ff00\"]".utf8).write(to: file)
+        session.loadPalette(file, token: session.beginImport(), library: library)
+        session.cancelImport() // Completion cannot apply while this main-actor turn is active.
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(library.colors.map(\.hex), ["#ff0000", "#ff0000"])
+        XCTAssertNil(defaults.object(forKey: "colorArrayRecoveryBackup"))
+        session.loadPalette(file, token: session.beginImport(), library: library)
+        try await waitForImport(session)
+        XCTAssertEqual(library.colors.map(\.hex), ["#ff0000", "#ff0000", "#00ff00", "#00ff00"])
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArrayRecoveryBackup"), original)
+        let writer = try FileHandle(forWritingTo: file)
+        try writer.truncate(atOffset: UInt64(PaletteFile.maximumFileBytes + 1)); try writer.close()
+        session.loadPalette(file, token: session.beginImport(), library: library)
+        try await waitForImport(session)
+        XCTAssertNotNil(session.errorMessage)
+        XCTAssertEqual(library.colors.map(\.hex), ["#ff0000", "#ff0000", "#00ff00", "#00ff00"])
+        XCTAssertEqual(session.sourceName, "retained.tiff"); XCTAssertEqual(session.selectedColor?.hex, "#ff00ff")
     }
     func testRealDataImportNumericSelectionAndWindowIsolation() async throws {
         let first = ImageSession(); let second = ImageSession()

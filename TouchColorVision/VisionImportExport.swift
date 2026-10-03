@@ -18,21 +18,7 @@ struct ColorExportDocument: FileDocument {
     static func file(_ url: URL, session: ImageSession, library: PaletteLibrary) {
         let token = session.beginImport()
         if url.pathExtension.lowercased() == "json" {
-            // Scoped access must remain alive for the complete asynchronous read.
-            Task.detached(priority: .userInitiated) {
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                let result = Result { () throws -> Data in
-                    guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw PaletteFileError.invalid }
-                    return try Data(contentsOf: url)
-                }
-                await MainActor.run {
-                    switch result {
-                    case .success(let data): session.finishPaletteImport(data, token: token, library: library)
-                    case .failure(let error): session.report(error, token: token)
-                    }
-                }
-            }
+            session.loadPalette(url, token: token, library: library)
         } else { session.load(url: url, token: token) }
     }
     static func providers(_ providers: [NSItemProvider], session: ImageSession) -> Bool {

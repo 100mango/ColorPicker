@@ -32,16 +32,9 @@ public struct PaletteSelection: Equatable {
         return try coordinated.get()
     }
     private static func readCoordinated(_ url: URL, cancelled: () -> Bool) throws -> PaletteSelection {
-        guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= maximumBytes else { throw PaletteSelectionError.tooLarge }
-        let file = try FileHandle(forReadingFrom: url); defer { try? file.close() }
-        var data = Data()
-        while true {
-            if cancelled() { throw PaletteSelectionError.cancelled }
-            guard let chunk = try file.read(upToCount: 16 * 1024), !chunk.isEmpty else { break }
-            guard data.count <= maximumBytes - chunk.count else { throw PaletteSelectionError.tooLarge }
-            data.append(chunk)
-        }
-        if cancelled() { throw PaletteSelectionError.cancelled }
-        return try PaletteSelection(data: data)
+        do { return try PaletteSelection(data: BoundedFileReader.read(url, maximumBytes: maximumBytes, cancelled: cancelled)) }
+        catch BoundedFileReadError.tooLarge { throw PaletteSelectionError.tooLarge }
+        catch BoundedFileReadError.cancelled { throw PaletteSelectionError.cancelled }
+        catch BoundedFileReadError.changedDuringRead { throw PaletteFileError.invalid }
     }
 }

@@ -52,6 +52,23 @@ public enum PaletteFileError: LocalizedError {
 }
 
 public enum PaletteFile {
+    public static let maximumFileBytes = 16 * 1024 * 1024
+    public static func read(_ url: URL, cancelled: @escaping () -> Bool = { false }) throws -> [RGBColor] {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        var result: Result<[RGBColor], Error>?
+        var coordinationError: NSError?
+        NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordinationError) { readable in
+            result = Result {
+                do { return try decode(BoundedFileReader.read(readable, maximumBytes: maximumFileBytes, cancelled: cancelled)) }
+                catch BoundedFileReadError.cancelled { throw PaletteSelectionError.cancelled }
+                catch is BoundedFileReadError { throw PaletteFileError.invalid }
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw PaletteFileError.invalid }
+        return try result.get()
+    }
     public static func encode(_ colors: [RGBColor]) throws -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
         return try encoder.encode(colors.map(\.hex))

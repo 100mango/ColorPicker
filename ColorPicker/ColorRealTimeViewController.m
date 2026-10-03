@@ -16,6 +16,7 @@
 @property (atomic) BOOL wantsCapture;
 @property (nonatomic) BOOL visible;
 @property (nonatomic) CFTimeInterval lastSampleTime;
+@property (nonatomic, strong) AVCaptureDeviceRotationCoordinator *rotationCoordinator API_AVAILABLE(ios(17.0));
 @end
 @implementation ColorRealTimeViewController
 - (void)viewDidLoad {
@@ -38,10 +39,11 @@
     self.statusLabel.numberOfLines = 0;
     self.statusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     self.statusLabel.adjustsFontForContentSizeCategory = YES;
-    self.statusLabel.text = NSLocalizedString(@"Waiting for camera", nil);
+    self.statusLabel.text = self.sourceFlowActive ? NSLocalizedString(@"Camera paused", nil) : NSLocalizedString(@"Waiting for camera", nil);
     self.statusLabel.accessibilityIdentifier = @"cameraStatus";
     self.saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.saveButton.configuration = UIButtonConfiguration.filledButtonConfiguration;
+    self.saveButton.pointerInteractionEnabled = YES;
     [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
     self.saveButton.enabled = NO;
     self.saveButton.accessibilityIdentifier = @"saveLiveColor";
@@ -51,13 +53,24 @@
     panel.axis = UILayoutConstraintAxisVertical;
     panel.spacing = 8;
     panel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:panel];
+    UIScrollView *controls = [UIScrollView new];
+    controls.translatesAutoresizingMaskIntoConstraints = NO;
+    controls.accessibilityIdentifier = @"liveControls";
+    self.cameraView.accessibilityIdentifier = @"liveViewport";
+    [self.view addSubview:controls];
+    [controls addSubview:panel];
+    NSLayoutConstraint *naturalHeight = [controls.heightAnchor constraintEqualToAnchor:panel.heightAnchor constant:16];
+    naturalHeight.priority = UILayoutPriorityDefaultLow;
+    naturalHeight.active = YES;
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [self.cameraView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor], [self.cameraView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [self.cameraView.topAnchor constraintEqualToAnchor:safe.topAnchor], [self.cameraView.bottomAnchor constraintEqualToAnchor:panel.topAnchor constant:-8],
-        [panel.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16], [panel.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
-        [panel.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-8],
+        [self.cameraView.topAnchor constraintEqualToAnchor:safe.topAnchor], [self.cameraView.bottomAnchor constraintEqualToAnchor:controls.topAnchor constant:-8],
+        [controls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor], [controls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
+        [controls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor], [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.6],
+        [panel.leadingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.leadingAnchor constant:16], [panel.trailingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.trailingAnchor constant:-16],
+        [panel.topAnchor constraintEqualToAnchor:controls.contentLayoutGuide.topAnchor constant:8], [panel.bottomAnchor constraintEqualToAnchor:controls.contentLayoutGuide.bottomAnchor constant:-8],
+        [panel.widthAnchor constraintEqualToAnchor:controls.frameLayoutGuide.widthAnchor constant:-32],
         [self.reticle.centerXAnchor constraintEqualToAnchor:self.cameraView.centerXAnchor], [self.reticle.centerYAnchor constraintEqualToAnchor:self.cameraView.centerYAnchor],
         [self.reticle.widthAnchor constraintEqualToConstant:44], [self.reticle.heightAnchor constraintEqualToConstant:44]
     ]];
@@ -71,6 +84,7 @@
 - (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; self.visible = YES; [self resumeCapture]; }
 - (void)viewWillDisappear:(BOOL)animated { [super viewWillDisappear:animated]; self.visible = NO; [self pauseCapture]; }
 - (void)dealloc {
+    if (@available(iOS 17.0, *)) [_rotationCoordinator removeObserver:self forKeyPath:@"videoRotationAngleForHorizonLevelPreview" context:NULL];
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [_captureGate invalidate];
     AVCaptureSession *session = _session;
@@ -85,8 +99,15 @@
     self.saveButton.enabled = NO;
     dispatch_async(self.sessionQueue, ^{ [self.session stopRunning]; });
 }
+- (void)setSourceFlowActive:(BOOL)sourceFlowActive {
+    _sourceFlowActive = sourceFlowActive;
+    if (!self.isViewLoaded) return;
+    if (sourceFlowActive) { [self pauseCapture]; self.statusLabel.text = NSLocalizedString(@"Camera paused", nil); }
+    else [self resumeCapture];
+}
 - (void)resumeCapture {
-    if (!self.visible || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive || self.interrupted) return;
+    if (self.sourceFlowActive || !self.visible || !self.view.window || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive) return;
+    if (self.interrupted) { self.statusLabel.text = NSLocalizedString(@"Camera interrupted. Waiting to resume.", nil); return; }
     [self.captureGate invalidate];
     self.saveButton.enabled = NO;
     AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionBack] ?: [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
@@ -145,6 +166,10 @@
                 self.preview = [AVCaptureVideoPreviewLayer layerWithSession:session];
                 self.preview.videoGravity = AVLayerVideoGravityResizeAspectFill;
                 [self.cameraView.layer insertSublayer:self.preview atIndex:0];
+                if (@available(iOS 17.0, *)) {
+                    self.rotationCoordinator = [[AVCaptureDeviceRotationCoordinator alloc] initWithDevice:device previewLayer:self.preview];
+                    [self.rotationCoordinator addObserver:self forKeyPath:@"videoRotationAngleForHorizonLevelPreview" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew context:NULL];
+                }
                 [self.view setNeedsLayout];
             });
         }
@@ -158,15 +183,23 @@
     AVCaptureConnection *connection = self.preview.connection;
     UIInterfaceOrientation orientation = self.view.window.windowScene.interfaceOrientation;
     if (@available(iOS 17.0, *)) {
-        CGFloat angle = 90;
-        if (orientation == UIInterfaceOrientationLandscapeLeft) angle = 0;
-        if (orientation == UIInterfaceOrientationLandscapeRight) angle = 180;
-        if (orientation == UIInterfaceOrientationPortraitUpsideDown) angle = 270;
-        if ([connection isVideoRotationAngleSupported:angle]) connection.videoRotationAngle = angle;
-    } else if (connection.isVideoOrientationSupported) {
+        CGFloat angle = self.rotationCoordinator.videoRotationAngleForHorizonLevelPreview;
+        if (self.rotationCoordinator && [connection isVideoRotationAngleSupported:angle]) connection.videoRotationAngle = angle;
+    } else if (connection.isVideoOrientationSupported && orientation != UIInterfaceOrientationUnknown) {
         connection.videoOrientation = (AVCaptureVideoOrientation)orientation;
     }
     [CATransaction commit];
+}
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey,id> *)change context:(void *)context {
+    if (@available(iOS 17.0, *)) {
+        if (object == self.rotationCoordinator && [keyPath isEqualToString:@"videoRotationAngleForHorizonLevelPreview"]) {
+            // AVFoundation delivers rotation observations on main; preview geometry stays on main too.
+            CGFloat angle = self.rotationCoordinator.videoRotationAngleForHorizonLevelPreview;
+            if ([self.preview.connection isVideoRotationAngleSupported:angle]) self.preview.connection.videoRotationAngle = angle;
+            return;
+        }
+    }
+    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
 }
 - (void)showCaptureFailure {
     self.wantsCapture = NO;
@@ -215,7 +248,7 @@
     dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf displaySample:hex generation:generation]; });
 }
 - (void)displaySample:(NSString *)hex generation:(NSUInteger)generation {
-    if (!self.wantsCapture || self.interrupted || !self.visible || ![self.captureGate acceptHex:hex generation:generation]) return;
+    if (self.sourceFlowActive || !self.wantsCapture || self.interrupted || !self.visible || ![self.captureGate acceptHex:hex generation:generation]) return;
     self.statusLabel.text = [NSString stringWithFormat:@"%@  •  %@", hex, TCRGBDescription(hex)];
     self.saveButton.enabled = YES;
 }

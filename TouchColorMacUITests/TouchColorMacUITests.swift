@@ -120,7 +120,14 @@ import AVFoundation
     private func makePhotosFixture(at url: URL) throws {
         let colors: [[UInt8]] = [[255,0,0,255], [0,255,0,255], [0,0,255,255],
                                  [255,255,0,255], [255,0,255,255], [0,255,255,255]]
-        let bytes = (0..<200).flatMap { y in (0..<300).flatMap { x in colors[(y / 100) * 3 + x / 100] } }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(300 * 200 * 4)
+        for y in 0..<200 {
+            for x in 0..<300 {
+                let index = (y / 100) * 3 + x / 100
+                bytes.append(contentsOf: colors[index])
+            }
+        }
         let image = try XCTUnwrap(CGImage(width: 300, height: 200, bitsPerComponent: 8, bitsPerPixel: 32,
             bytesPerRow: 1200, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),

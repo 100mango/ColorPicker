@@ -30,7 +30,7 @@ uirefs=sources('TouchColorMacUITests')
 # unit suite and is also compiled into the UI harness. It never ships in the app.
 unitrefs.append(ref('TouchColorMacUITests/SixColorThumbnail.swift','sourcecode.swift'))
 resource=ref('TouchColorMac/Assets.xcassets','folder.assetcatalog')
-privacy=ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')
+privacy=ref('TouchColorMac/PrivacyInfo.xcprivacy','text.xml')
 localizations=[add('loc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorMac/'+lang+'.lproj/Localizable.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]
 strings=add('strings','PBXVariantGroup',children=localizations,name='Localizable.strings',sourceTree='<group>')
 infoLocalizations=[add('infoLoc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorMac/'+lang+'.lproj/InfoPlist.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]

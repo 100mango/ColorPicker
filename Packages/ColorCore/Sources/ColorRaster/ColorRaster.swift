@@ -14,6 +14,14 @@ public enum RasterError: LocalizedError {
         case .exportFailed: return NSLocalizedString("The image could not be exported. The original was not changed.", comment: "Image operation error")
         }
     }
+    public static func fileReadError(_ error: Error) -> Error {
+        guard let bounded = error as? BoundedFileReadError else { return error }
+        switch bounded {
+        case .tooLarge: return RasterError.tooLarge
+        case .cancelled: return RasterError.cancelled
+        case .changedDuringRead: return RasterError.unreadable
+        }
+    }
 }
 
 /// Full-size orientation-normalized source, never a reduced display-preview sampling source.
@@ -30,10 +38,8 @@ public struct ColorRaster: @unchecked Sendable {
     public var height: Int { image.height }
 
     public static func read(url: URL, cancelled: () -> Bool = { false }) throws -> ColorRaster {
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= maximumEncodedBytes else { throw RasterError.tooLarge }
-        if cancelled() { throw RasterError.cancelled }
-        return try decode(Data(contentsOf: url, options: .mappedIfSafe), cancelled: cancelled)
+        do { return try decode(BoundedFileReader.read(url, maximumBytes: maximumEncodedBytes, cancelled: cancelled), cancelled: cancelled) }
+        catch { throw RasterError.fileReadError(error) }
     }
 
     public static func decode(_ data: Data, cancelled: () -> Bool = { false }) throws -> ColorRaster {

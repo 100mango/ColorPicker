@@ -20,13 +20,7 @@ import ColorRaster
     static func importURL(_ url: URL, session: ImageSession, library: PaletteLibrary, token: UInt64? = nil) {
         let current = token ?? session.beginImport()
         if url.pathExtension.lowercased() == "json" {
-            let granted = url.startAccessingSecurityScopedResource()
-            defer { if granted { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                guard size <= 16 * 1024 * 1024 else { throw PaletteFileError.invalid }
-                session.finishPaletteImport(try Data(contentsOf: url), token: current, library: library)
-            } catch { session.report(error, token: current) }
+            session.loadPalette(url, token: current, library: library)
         } else { session.load(url: url, token: current) }
     }
     static func paste(session: ImageSession, library: PaletteLibrary) {

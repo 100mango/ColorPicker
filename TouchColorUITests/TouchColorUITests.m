@@ -3,28 +3,35 @@
 #include <stdio.h>
 @interface TouchColorUITests : XCTestCase
 @property (nonatomic, strong) XCUIApplication *app;
+@property (nonatomic) BOOL recordingIssue;
 @end
 @implementation TouchColorUITests
-- (void)emitScreenshot:(NSString *)name {
-    // Log at most two synthetic-fixture JPEGs, from the compact iPhone only.
-    if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone) return;
-    CGSize displaySize=UIScreen.mainScreen.bounds.size;
-    if (MIN(displaySize.width,displaySize.height)>400) return;
-    NSString *marker=[NSTemporaryDirectory() stringByAppendingPathComponent:[name stringByAppendingString:@".logged"]];
-    if ([NSFileManager.defaultManager fileExistsAtPath:marker]) return;
-    NSData *data=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
-    XCTAssertGreaterThan(data.length,0);
-    XCTAssertLessThanOrEqual(data.length,500*1024);
-    if (data.length > 500*1024) return;
-    [@"logged" writeToFile:marker atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    NSString *encoded=[data base64EncodedStringWithOptions:0];
-    printf("SCREENSHOT_BEGIN:%s\n",name.UTF8String);
-    for (NSUInteger offset=0;offset<encoded.length;offset+=4096) {
-        NSString *chunk=[encoded substringWithRange:NSMakeRange(offset,MIN(4096,encoded.length-offset))];
-        printf("%s\n",chunk.UTF8String);
+- (void)recordIssue:(XCTIssue *)issue {
+    if (self.recordingIssue) { [super recordIssue:issue]; return; }
+    self.recordingIssue=YES;
+    // Preserve real failure evidence before continueAfterFailure aborts the case.
+    static NSMutableSet<NSString *> *recordedCases;
+    static dispatch_once_t once;dispatch_once(&once,^{ recordedCases=[NSMutableSet new]; });
+    if (recordedCases.count<1 && ![recordedCases containsObject:self.name]) {
+        [recordedCases addObject:self.name];
+        NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+        if (bytes.length && bytes.length<=500*1024u) {
+            XCTAttachment *attachment=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
+            attachment.name=[NSString stringWithFormat:@"touchcolor-phone-functional-failure-%lu",(unsigned long)recordedCases.count];
+            attachment.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:attachment];
+        }
     }
-    printf("SCREENSHOT_END:%s\n",name.UTF8String);
-    fflush(stdout);
+    // Capture pixels before the potentially slow remote hierarchy query.
+    NSLog(@"PHONE_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,self.app.debugDescription);
+    self.recordingIssue=NO;
+    [super recordIssue:issue];
+}
+- (void)emitScreenshot:(NSString *)name {
+    if (![name isEqualToString:@"touchcolor-history-large-text"] || UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone || MIN(UIScreen.mainScreen.bounds.size.width,UIScreen.mainScreen.bounds.size.height)>400) return;
+    NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
+    XCTAssertLessThanOrEqual(bytes.length,500*1024);
+    XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
+    image.name=name;image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
 }
 - (void)setUp {
     [super setUp];
@@ -83,9 +90,20 @@
         XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
         XCTAssertTrue([cancel waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);
         [cancel tap];
+        [self assertPresentationDisappears:cancel];
         XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+        XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable,@"Photo cancellation must restore the usable source action");
     }
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
+}
+- (void)assertPresentationDisappears:(XCUIElement *)presentation {
+    BOOL disappeared;
+    if (@available(iOS 18.0, *)) disappeared=[presentation waitForNonExistenceWithTimeout:5];
+    else {
+        XCTNSPredicateExpectation *closed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:presentation];
+        disappeared=[XCTWaiter waitForExpectations:@[closed] timeout:5]==XCTWaiterResultCompleted;
+    }
+    XCTAssertTrue(disappeared,@"The observed system presentation must disappear within five seconds");
 }
 - (void)respondToRealCameraPromptAllow:(BOOL)allow {
     XCUIApplication *system=[[XCUIApplication alloc] initWithBundleIdentifier:@"com.apple.springboard"];
@@ -98,8 +116,7 @@
     if (!button.exists) button=alert.buttons[allow ? @"OK" : @"Don't Allow"];
     XCTAssertTrue(button.exists,@"%@",alert.debugDescription);
     [button tap];
-    XCTNSPredicateExpectation *dismissed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == false"] object:alert];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[dismissed] timeout:5],XCTWaiterResultCompleted,@"The system dialog must disappear before checking app authorization state");
+    [self assertPresentationDisappears:alert];
     NSLog(@"REAL_OS_CAMERA_PROMPT_%@",allow ? @"ALLOW" : @"DENY");
 }
 - (void)testRealCameraPermissionAllowThenResetAndDeny {

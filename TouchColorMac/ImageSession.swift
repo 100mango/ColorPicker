@@ -52,7 +52,14 @@ import ColorPaletteLegacy
         enqueue(name: url.lastPathComponent, token: token) { cancelled in
             let granted = url.startAccessingSecurityScopedResource()
             defer { if granted { url.stopAccessingSecurityScopedResource() } }
-            return try ColorRaster.read(url: url, cancelled: cancelled)
+            var result: Result<ColorRaster, Error>?
+            var error: NSError?
+            NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &error) { readable in
+                result = Result { try ColorRaster.read(url: readable, cancelled: cancelled) }
+            }
+            if let error { throw error }
+            guard let result else { throw RasterError.unreadable }
+            return try result.get()
         }
     }
     func cancellationCheck(for token: UInt64) -> () -> Bool {
@@ -108,6 +115,25 @@ import ColorPaletteLegacy
             library.append(colors); busy = false
             notice = String(format: NSLocalizedString("Imported %ld colors. Existing colors and duplicates were kept.", comment: "Import status"), colors.count)
         } catch { report(error, token: token) }
+    }
+    func loadPalette(_ url: URL, token: UInt64, library: PaletteLibrary) {
+        guard isCurrent(token) else { return }
+        let operation = BlockOperation()
+        operation.addExecutionBlock { [weak self, weak operation] in
+            guard let operation, !operation.isCancelled else { return }
+            let result = Result { try PaletteFile.read(url, cancelled: { operation.isCancelled }) }
+            guard !operation.isCancelled else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.isCurrent(token) else { return }
+                switch result {
+                case .success(let colors):
+                    library.append(colors); self.busy = false
+                    self.notice = String(format: NSLocalizedString("Imported %ld colors. Existing colors and duplicates were kept.", comment: "Import status"), colors.count)
+                case .failure(let error): self.report(error, token: token)
+                }
+            }
+        }
+        work.addOperation(operation)
     }
     func exportPNG(to url: URL) {
         guard let raster, !exporting else { return }

@@ -10,10 +10,8 @@ struct WatchPhotoFile: Transferable {
     let url: URL
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(importedContentType: .image) { received in
-            let size = try received.file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size <= PreviewRaster.maximumEncodedBytes else { throw CocoaError(.fileReadTooLarge) }
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-watch-import-\(UUID())")
-            try FileManager.default.copyItem(at: received.file, to: url)
+            let url = try BoundedFileReader.copyToTemporaryFile(received.file, maximumBytes: PreviewRaster.maximumEncodedBytes,
+                                                               cancelled: { Task.isCancelled })
             return WatchPhotoFile(url: url)
         }
     }

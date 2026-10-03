@@ -17,10 +17,8 @@ public struct PreviewRaster: @unchecked Sendable {
     public var height: Int { image.height }
     public var isReduced: Bool { width != originalWidth || height != originalHeight }
     public static func read(url: URL, cancelled: () -> Bool = { false }) throws -> Self {
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= maximumEncodedBytes else { throw RasterError.tooLarge }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw RasterError.unreadable }
-        return try decode(source, cancelled: cancelled)
+        do { return try decode(BoundedFileReader.read(url, maximumBytes: maximumEncodedBytes, cancelled: cancelled), cancelled: cancelled) }
+        catch { throw RasterError.fileReadError(error) }
     }
     public static func decode(_ data: Data, cancelled: () -> Bool = { false }) throws -> Self {
         guard data.count <= maximumEncodedBytes else { throw RasterError.tooLarge }

@@ -24,7 +24,7 @@ apprefs=sources('TouchColorWatch')
 unitrefs=sources('TouchColorWatchTests')+sources('Packages/ColorCore/Tests')
 uirefs=sources('TouchColorWatchUITests')
 resource=ref('TouchColorWatch/Assets.xcassets','folder.assetcatalog')
-privacy=ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')
+privacy=ref('TouchColorWatch/PrivacyInfo.xcprivacy','text.xml')
 localizations=[add('loc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorWatch/'+lang+'.lproj/Localizable.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]
 strings=add('strings','PBXVariantGroup',children=localizations,name='Localizable.strings',sourceTree='<group>')
 infoLocalizations=[add('infoLoc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorWatch/'+lang+'.lproj/InfoPlist.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]

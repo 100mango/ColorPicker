@@ -1,7 +1,7 @@
-name: iOS 27 compatibility
+name: Native iPad and iPhone compatibility
 on:
   push:
-    branches: [codex/ios-modernization]
+    branches: [codex/native-ipad]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,9 +10,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   compatibility:
+    name: ${{ matrix.family }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27
     timeout-minutes: 60
     env:
+      TC_TEST_FAMILY: ${{ matrix.family }}
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
       - name: Check out source
@@ -27,7 +34,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/ios-modernization
+          test "$GITHUB_REF" = refs/heads/codex/native-ipad
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -58,6 +65,13 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+      - name: Analyze production Objective-C source
+        timeout-minutes: 5
+        run: |
+          set -o pipefail
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO CLANG_ANALYZER_OUTPUT=plist analyze
       - name: Record unsigned app framework inventory
         run: |
           python3 - <<'PYFRAMEWORKS'
@@ -66,8 +80,8 @@ jobs:
           app=Path('build/device/Build/Products/Release-iphoneos/TouchColor.app')
           assert (app/'TouchColor').is_file()
           metadata=plistlib.loads((app/'Info.plist').read_bytes())
-          assert metadata['UIDeviceFamily']==[1], metadata['UIDeviceFamily']
-          print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'historical iPhone-only'}))
+          assert metadata['UIDeviceFamily']==[1,2], metadata['UIDeviceFamily']
+          print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'native iPhone and iPad'}))
           directory=app/'Frameworks'
           entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
           print(json.dumps({'app':'TouchColor.app','embedded_framework_directory_entries':entries}))
@@ -84,50 +98,45 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
-      - name: Warm up compact iPhone simulator
-        id: warm-iphone-compact
+      - name: Warm up required simulator
+        id: warm-device
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhoneCompact prepare
-      - name: Compact iPhone unit tests
-        if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
-        timeout-minutes: 8
-        run: bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
-      - name: Compact iPhone UI tests and synthetic screenshots
-        if: ${{ !cancelled() && steps.warm-iphone-compact.outcome == 'success' }}
-        # New SE3 UI-runner initialization took almost 7 minutes before cases began.
-        # Preserve each test's 180/240-second limit while allowing startup plus the expanded suite.
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" prepare
+      - name: Unit and constrained-window layout tests
+        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorTests
+      - name: Seed synthetic photo
+        id: seed-device
+        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" seed
+      - name: Functional UI tests
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 16
-        run: bash scripts/test_simulators.sh iPhoneCompact TouchColorUITests
-      - name: Shut down compact iPhone simulator
-        if: always()
-        timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPhoneCompact shutdown
-      - name: Warm up large iPhone simulator
-        id: warm-iphone-large
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
-        timeout-minutes: 10
-        run: bash scripts/test_simulators.sh iPhoneLarge prepare
-      - name: Large iPhone unit tests
-        if: ${{ !cancelled() && steps.warm-iphone-large.outcome == 'success' }}
-        timeout-minutes: 8
-        run: bash scripts/test_simulators.sh iPhoneLarge TouchColorTests
-      - name: Large iPhone UI tests
-        if: ${{ !cancelled() && steps.warm-iphone-large.outcome == 'success' }}
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
+      - name: Official XCTest accessibility audits
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 12
-        run: bash scripts/test_simulators.sh iPhoneLarge TouchColorUITests
-      - name: Shut down large iPhone simulator
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
+      - name: Shut down simulator
         if: always()
         timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPhoneLarge shutdown
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
+      - name: Export bounded device evidence
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/export_audit_failures.py
       - name: Always report test summaries and simulator diagnostics
         if: always()
         run: |
+          vm_stat
           xcrun simctl list devices
           find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
           find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true
       - name: Verify tested source stayed unchanged
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: always()
         shell: bash
         run: |
           set -euo pipefail

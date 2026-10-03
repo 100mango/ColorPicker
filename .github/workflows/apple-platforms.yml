@@ -107,6 +107,7 @@ jobs:
             -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings -json > build/mac-release-settings.json
           python3 scripts/verify_mac_release_settings.py build/mac-release-settings.json
           APP=build/mac-arm64/Build/Products/Release/TouchColor.app
+          python3 scripts/verify_privacy_manifest.py "$APP/Contents/Resources/PrivacyInfo.xcprivacy" selected
           file "$APP/Contents/MacOS/TouchColor"
           lipo -info "$APP/Contents/MacOS/TouchColor"
           otool -L "$APP/Contents/MacOS/TouchColor"
@@ -128,6 +129,7 @@ jobs:
           xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-x86_64 \
             ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify_privacy_manifest.py build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/Resources/PrivacyInfo.xcprivacy selected
           lipo -info build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/MacOS/TouchColor
           echo 'x86_64 build only; no Intel runtime execution claimed'
       - name: Native Mac app-hosted unit tests

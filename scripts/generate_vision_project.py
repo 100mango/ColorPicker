@@ -26,7 +26,7 @@ for shared in ['TouchColorMac/ImageSession.swift','TouchColorMac/PrivacyView.swi
 unitrefs=sources('TouchColorVisionTests')+sources('Packages/ColorCore/Tests')
 uirefs=sources('TouchColorVisionUITests')
 resource=ref('TouchColorVision/Assets.xcassets','folder.assetcatalog')
-privacy=ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')
+privacy=ref('TouchColorVision/PrivacyInfo.xcprivacy','text.xml')
 localizations=[add('loc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorVision/'+lang+'.lproj/Localizable.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]
 strings=add('strings','PBXVariantGroup',children=localizations,name='Localizable.strings',sourceTree='<group>')
 infoLocalizations=[add('infoLoc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorVision/'+lang+'.lproj/InfoPlist.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]
