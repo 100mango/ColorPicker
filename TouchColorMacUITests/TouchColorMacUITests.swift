@@ -36,9 +36,10 @@ import UniformTypeIdentifiers
         app.typeKey("g", modifierFlags: [.command, .shift])
         let field = app.textFields["PathTextField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
+        field.typeKey("a", modifierFlags: [.command])
         field.typeText(url.path)
         app.typeKey(.return, modifierFlags: [])
-        let open = app.buttons["Open"].firstMatch
+        let open = app.dialogs["open-panel"].buttons["OKButton"]
         XCTAssertTrue(open.waitForExistence(timeout: 5), app.debugDescription)
         open.click()
     }
@@ -78,12 +79,17 @@ import UniformTypeIdentifiers
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
     }
     private func saveFile(_ url: URL) {
+        print("NATIVE_SAVE_PANEL_AX: \(app.debugDescription)")
+        // NSSavePanel initially focuses/selects its Save As name. Choose the directory separately.
+        app.typeKey("a", modifierFlags: [.command])
+        app.typeText(url.lastPathComponent)
         app.typeKey("g", modifierFlags: [.command, .shift])
         let field = app.textFields["PathTextField"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), app.debugDescription)
-        field.typeText(url.path)
+        field.typeKey("a", modifierFlags: [.command])
+        field.typeText(url.deletingLastPathComponent().path)
         app.typeKey(.return, modifierFlags: [])
-        let save = app.buttons["Save"].firstMatch
+        let save = app.dialogs.buttons["OKButton"].firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 5), app.debugDescription)
         save.click()
     }
@@ -120,6 +126,8 @@ import UniformTypeIdentifiers
         app.buttons["sample.save"].click()
         XCTAssertTrue(app.staticTexts["调色板"].exists)
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(app.buttons["sample.above"].frame), app.debugDescription)
+        XCTAssertTrue(app.buttons["sample.above"].isHittable, app.debugDescription)
         app.buttons["sample.above"].click(); assertHex("#00ff00")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "Native Mac Simplified Chinese sampling and palette"
@@ -130,8 +138,12 @@ import UniformTypeIdentifiers
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
         app.buttons["image.open"].click()
-        app.typeKey(.escape, modifierFlags: [])
+        app.dialogs["open-panel"].buttons["CancelButton"].click()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.dialogs["open-panel"])
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed, app.debugDescription)
         assertHex("#ff00ff")
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(app.buttons["sample.above"].frame), app.debugDescription)
+        XCTAssertTrue(app.buttons["sample.above"].isHittable, app.debugDescription)
         app.buttons["sample.above"].click(); assertHex("#00ff00")
         app.buttons["sample.previous"].click(); assertHex("#ff0000")
     }

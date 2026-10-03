@@ -13,7 +13,16 @@ struct ImageCanvas: NSViewRepresentable {
         scroll.documentView = canvas
         scroll.session = session
         scroll.setAccessibilityIdentifier("image.scroll")
+        scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+        scroll.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         return scroll
+    }
+    // AppKit's document fitting size must not feed back into SwiftUI's minimum window height.
+    // The viewport consumes the proposed space; the full source remains in the scroll document.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: ColorScrollView, context: Context) -> CGSize? {
+        let width = proposal.width.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 500
+        let height = proposal.height.flatMap { $0.isFinite ? max(0, $0) : nil } ?? 300
+        return CGSize(width: width, height: height)
     }
     func updateNSView(_ scroll: ColorScrollView, context: Context) {
         guard let canvas = scroll.documentView as? PixelCanvas else { return }
