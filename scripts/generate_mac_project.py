@@ -13,6 +13,9 @@ def configs(name,settings):
     result=[]
     for config in ('Debug','Release'):
         values=dict(settings)
+        if name=='TouchColorMac':
+            values.update(TOUCHCOLOR_ENABLE_SANDBOX='YES' if config=='Release' else 'NO',
+                          TOUCHCOLOR_SANDBOX_ENTITLEMENTS='TouchColorMac/TouchColorMac.entitlements' if config=='Release' else '')
         values.update(ONLY_ACTIVE_ARCH='YES' if config=='Debug' else 'NO',SWIFT_OPTIMIZATION_LEVEL='-Onone' if config=='Debug' else '-O',SWIFT_ACTIVE_COMPILATION_CONDITIONS='DEBUG' if config=='Debug' else '',ENABLE_TESTABILITY='YES' if config=='Debug' else 'NO',DEBUG_INFORMATION_FORMAT='dwarf' if config=='Debug' else 'dwarf-with-dsym')
         result.append(add(name+config,'XCBuildConfiguration',name=config,buildSettings=values))
     return add(name+'configs','XCConfigurationList',buildConfigurations=result,defaultConfigurationIsVisible=0,defaultConfigurationName='Release')

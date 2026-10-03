@@ -31,7 +31,7 @@ final class VisionWorkflowTests: XCTestCase {
         catch { XCTFail("Could not request simulator checkpoint: \(error)"); return }
         print("TOUCHCOLOR_CAPTURE_REQUEST \(id)"); fflush(stdout)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: acknowledgement.path) }, object: nil)
-        guard XCTWaiter.wait(for: [ready], timeout: 25) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
+        guard XCTWaiter.wait(for: [ready], timeout: 55) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
         let result = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         XCTAssertEqual(result?["success"] as? Bool, true, "Simulator checkpoint failed: \(String(describing: result))")
     }
@@ -44,12 +44,13 @@ final class VisionWorkflowTests: XCTestCase {
     private func photo() {
         XCTAssertTrue(app.buttons["image.photos"].waitForExistence(timeout: 20), app.debugDescription)
         app.buttons["image.photos"].tap()
-        let image = app.images.matching(NSPredicate(format: "identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'")).firstMatch
-        if image.waitForExistence(timeout: 6) { image.tap() }
-        else {
-            let item = app.collectionViews.cells.firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 15), app.debugDescription); item.tap()
-        }
+        let picker = app.navigationBars["Photos"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
+        let scroll = app.scrollViews["photosView_content_scroll_view"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 30), app.debugDescription)
+        let image = scroll.images["PXGGridLayout-Info"].firstMatch
+        XCTAssertTrue(image.waitForExistence(timeout: 45), app.debugDescription)
+        image.tap()
         hex("#ff00ff")
     }
     private func paste() {
@@ -83,14 +84,41 @@ final class VisionWorkflowTests: XCTestCase {
     }
     func testNativeExportSaveAndReopenActualPNG() {
         paste(); app.buttons["image.export"].tap()
-        let save = app.buttons["Save"].firstMatch
-        XCTAssertTrue(save.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.navigationBars["DOCSidebarView"].waitForExistence(timeout: 45), app.debugDescription)
+        let save = app.buttons["DOCPicker.actionButton"]
+        XCTAssertTrue(save.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(save.label, "Save")
+        XCTAssertTrue(app.textFields["DOCPicker.filenameTextField"].exists)
         print("VISION_EXPORT_PANEL_AX: \(app.debugDescription)")
         save.tap()
         XCTAssertTrue(app.buttons["export.reopen"].waitForExistence(timeout: 12), app.debugDescription)
         app.buttons["export.reopen"].tap(); hex("#ff00ff")
         app.buttons["sample.above"].tap(); hex("#00ff00")
         capture("Native Vision actual exported PNG reopened")
+    }
+    func testNativePaletteExportReopensActualChangedSelectionAndDuplicates() {
+        paste(); app.buttons["sample.save"].tap(); app.buttons["sample.save"].tap()
+        app.buttons["sample.above"].tap(); hex("#00ff00"); app.buttons["sample.save"].tap()
+        app.buttons["palette.export"].tap()
+        XCTAssertTrue(app.navigationBars["DOCSidebarView"].waitForExistence(timeout: 45), app.debugDescription)
+        let save = app.buttons["DOCPicker.actionButton"]
+        XCTAssertTrue(save.waitForExistence(timeout: 15)); XCTAssertEqual(save.label, "Save"); save.tap()
+        XCTAssertTrue(app.buttons["export.reopen"].waitForExistence(timeout: 15), app.debugDescription)
+        app.buttons["export.reopen"].tap()
+        let count = app.staticTexts["palette.count"]
+        let appended = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == '6' OR value == '6'"), object: count)
+        XCTAssertEqual(XCTWaiter.wait(for: [appended], timeout: 15), .completed, app.debugDescription)
+        // Read back every appended entry through its distinct production Copy action.
+        var reopened: [String] = []
+        for index in 3..<6 {
+            let actions = app.buttons["palette.actions.\(index)"]
+            XCTAssertTrue(actions.waitForExistence(timeout: 10), app.debugDescription); actions.tap()
+            let copy = app.descendants(matching: .any).matching(identifier: "palette.copy.\(index)").firstMatch
+            XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription); copy.tap()
+            reopened.append(UIPasteboard.general.string ?? "")
+        }
+        XCTAssertEqual(reopened, ["#ff00ff", "#ff00ff", "#00ff00"])
+        capture("Native Vision changed-color JSON export reopened with duplicates")
     }
     func testChinesePasteAndPrecisionControls() {
         paste(); app.buttons["sample.above"].tap(); hex("#00ff00")
@@ -102,8 +130,12 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 20))
         for key in ["image.open", "image.photos"] {
             app.buttons[key].tap()
-            let cancel = app.buttons["Cancel"].firstMatch
+            let bar = app.navigationBars[key == "image.open" ? "DOCSidebarView" : "Photos"]
+            XCTAssertTrue(bar.waitForExistence(timeout: 45), app.debugDescription)
+            let cancel = bar.buttons["Cancel"]
             XCTAssertTrue(cancel.waitForExistence(timeout: 10), app.debugDescription); cancel.tap()
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: bar)
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 20), .completed, app.debugDescription)
             XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 5))
         }
         XCTAssertEqual(app.staticTexts["palette.count"].label, "0")

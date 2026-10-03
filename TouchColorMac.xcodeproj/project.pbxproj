@@ -344,8 +344,8 @@
 				"ENABLE_HARDENED_RUNTIME" = "NO";
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/../Frameworks", "@loader_path/../Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
-				"TOUCHCOLOR_ENABLE_SANDBOX" = "NO";
-				"TOUCHCOLOR_SANDBOX_ENTITLEMENTS" = "";
+				"TOUCHCOLOR_ENABLE_SANDBOX" = "YES";
+				"TOUCHCOLOR_SANDBOX_ENTITLEMENTS" = "TouchColorMac/TouchColorMac.entitlements";
 				"CODE_SIGN_ENTITLEMENTS" = "$(TOUCHCOLOR_SANDBOX_ENTITLEMENTS)";
 				"PRODUCT_MODULE_NAME" = "TouchColorMac";
 				"INFOPLIST_KEY_CFBundleName" = "TouchColor";

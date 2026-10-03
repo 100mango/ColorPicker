@@ -58,6 +58,7 @@ jobs:
           python3 scripts/generate_tv_project.py
           python3 scripts/verify_mac_icons.py
           python3 scripts/verify_native_localizations.py
+          python3 scripts/test_evidence_guard.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Probe native XCTest accessibility audit availability
@@ -76,6 +77,9 @@ jobs:
           xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+            -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings -json > build/mac-release-settings.json
+          python3 scripts/verify_mac_release_settings.py build/mac-release-settings.json
           APP=build/mac-arm64/Build/Products/Release/TouchColor.app
           file "$APP/Contents/MacOS/TouchColor"
           lipo -info "$APP/Contents/MacOS/TouchColor"
@@ -105,7 +109,7 @@ jobs:
         id: units
         timeout-minutes: 8
         run: |
-          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-unit.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -only-testing:TouchColorMacTests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
@@ -115,7 +119,7 @@ jobs:
         timeout-minutes: 10
         run: |
           python3 scripts/prepare_sandbox_probe.py build/mac-tests/probe-info.json
-          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \

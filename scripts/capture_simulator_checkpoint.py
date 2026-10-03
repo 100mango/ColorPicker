@@ -3,9 +3,17 @@
 import json,subprocess,uuid
 from pathlib import Path
 
+_containers = {}
+
 def capture(device,runner_identifier,request_id,output):
     assert str(uuid.UUID(request_id)).upper()==request_id
-    container=Path(subprocess.check_output(['xcrun','simctl','get_app_container',device,runner_identifier,'data'],text=True,timeout=10).strip())
+    key=(device,runner_identifier)
+    container=_containers.get(key)
+    # Reuse only a previously discovered runner container holding this exact new UUID.
+    # A changed/reinstalled runner requires a new supported simctl lookup.
+    if container is None or not (container/'tmp'/('TouchColor-capture-'+request_id+'.json')).is_file():
+        container=Path(subprocess.check_output(['xcrun','simctl','get_app_container',device,runner_identifier,'data'],text=True,timeout=30).strip())
+        _containers[key]=container
     request=container/'tmp'/('TouchColor-capture-'+request_id+'.json')
     ack=container/'tmp'/('TouchColor-capture-'+request_id+'.ack')
     outcome={'id':request_id,'success':False}

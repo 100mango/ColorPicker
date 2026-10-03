@@ -22,7 +22,9 @@ def run(command,timeout,required=True):
                 try:
                     result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
-                except Exception as error:report['captures'].append({'success':False,'error':str(error)})
+                except Exception as error:
+                    failure={'success':False,'error':str(error)}
+                    report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
     reader=threading.Thread(target=output,daemon=True);reader.start()
     try:code=p.wait(timeout=timeout)
@@ -90,9 +92,22 @@ try:
     run(['xcrun','simctl','boot',device['udid']],180,required=False)
     run(['xcrun','simctl','bootstatus',device['udid'],'-b'],420)
     if kind=='vision':
-        # Provide the actual Simulator display surface before spatial screenshot tests.
-        simulator=Path(os.environ['DEVELOPER_DIR'])/'Applications/Simulator.app'
-        run(['open','-a',str(simulator),'--args','-CurrentDeviceUDID',device['udid']],30,required=False)
+        # This runner may ship SDKs/CoreSimulator without the graphical Simulator app.
+        # Discover an actual Apple bundle first; absence never gates app XCTest execution.
+        developer=Path(os.environ['DEVELOPER_DIR'])
+        candidates=[developer/'Applications/Simulator.app',developer.parent/'Applications/Simulator.app',Path('/Applications/Simulator.app')]
+        candidates+=list(Path('/Applications').glob('*.app/Contents/Developer/Applications/Simulator.app'))[:12]
+        discovered=[];checked=[]
+        for candidate in dict.fromkeys(candidates):
+            info=candidate/'Contents/Info.plist';checked.append({'path':str(candidate),'exists':candidate.is_dir()})
+            if info.is_file():
+                try:
+                    if plistlib.loads(info.read_bytes()).get('CFBundleIdentifier')=='com.apple.iphonesimulator': discovered.append(candidate)
+                except (ValueError, OSError, plistlib.InvalidFileException): pass
+        report['simulator_window_discovery']={'checked':checked,'matching_bundles':[str(p) for p in discovered]}
+        print('SIMULATOR_WINDOW_DISCOVERY',json.dumps(report['simulator_window_discovery']),flush=True)
+        if discovered: run(['open','-a',str(discovered[0]),'--args','-CurrentDeviceUDID',device['udid']],30,required=False)
+        else: report['simulator_window']='No graphical Simulator bundle found in bounded standard locations; supported headless runtime tests continue'
     if kind in ('vision','tv'):
         w,h=300,200
         palette=[bytes(v) for v in [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255)]]

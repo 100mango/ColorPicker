@@ -79,26 +79,36 @@ final class WatchWorkflowTests: XCTestCase {
     }
 
     func testExplicitOfflineTransferRequestSurvivesRelaunchUntilUserCancels() {
-        app.buttons["watch.editor"].tap()
-        for _ in 0..<5 where !app.buttons["watch.send"].isHittable { app.swipeUp() }
-        app.buttons["watch.send"].tap()
-        // watchOS's native confirmation presenter may expose the action title without
-        // forwarding the SwiftUI button identifier. Scope it to this exact review title.
-        let title = app.staticTexts["Send this color to iPhone for review?"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5), app.debugDescription)
-        let confirm = app.buttons["Send"].firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
-        XCTAssertTrue(app.staticTexts["watch.transfer.status"].exists)
-        app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
-        for _ in 0..<5 where !app.buttons["watch.transfer.open"].isHittable { app.swipeUp() }
-        app.buttons["watch.transfer.open"].tap()
-        let count = app.staticTexts["watch.transfer.count"]
-        XCTAssertTrue(count.waitForExistence(timeout: 5)); XCTAssertEqual(count.label, "1 selected colors")
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch explicit pending transfer after relaunch"; shot.lifetime = .keepAlways; add(shot)
-        for _ in 0..<5 where !app.buttons["watch.transfer.cancel"].isHittable { app.swipeUp() }
-        app.buttons["watch.transfer.cancel"].tap()
-        XCTAssertFalse(app.staticTexts["watch.transfer.count"].exists)
-        XCTAssertTrue(app.staticTexts["watch.transfer.status"].label.contains("Transfer cancelled"))
+        // Deliberately queue two different non-default values and inspect each actual
+        // persisted payload through the production transfer review after relaunch.
+        for (decrements, expected) in [(1, "#fe0000"), (2, "#fd0000")] {
+            for _ in 0..<4 where !app.buttons["watch.editor"].isHittable { app.swipeDown() }
+            app.buttons["watch.editor"].tap()
+            for _ in 0..<decrements { app.buttons["watch.component.down"].tap() }
+            XCTAssertEqual(app.staticTexts["watch.hex"].label, expected)
+            for _ in 0..<5 where !app.buttons["watch.send"].isHittable { app.swipeUp() }
+            app.buttons["watch.send"].tap()
+            let title = app.staticTexts["Send this color to iPhone for review?"]
+            XCTAssertTrue(title.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == %@", expected)).firstMatch.exists)
+            let confirm = app.buttons["Send"].firstMatch
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5), app.debugDescription); confirm.tap()
+            app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
+            for _ in 0..<5 where !app.buttons["watch.transfer.open"].isHittable { app.swipeUp() }
+            app.buttons["watch.transfer.open"].tap()
+            let count = app.staticTexts["watch.transfer.count"]
+            XCTAssertTrue(count.waitForExistence(timeout: 5)); XCTAssertEqual(count.label, "1 selected colors")
+            let queued = app.staticTexts["watch.transfer.color.0"]
+            XCTAssertEqual(queued.label, expected)
+            for _ in 0..<3 where !queued.isHittable { app.swipeUp() }
+            XCTAssertTrue(queued.isHittable, app.debugDescription)
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch actual queued payload after relaunch " + expected; shot.lifetime = .keepAlways; add(shot)
+            for _ in 0..<5 where !app.buttons["watch.transfer.cancel"].isHittable { app.swipeUp() }
+            app.buttons["watch.transfer.cancel"].tap()
+            XCTAssertFalse(app.staticTexts["watch.transfer.count"].exists)
+            XCTAssertTrue(app.staticTexts["watch.transfer.status"].label.contains("Transfer cancelled"))
+            app.terminate(); app.launch() // Reload default editor values before the second selection.
+        }
     }
 
     func testRealDigitalCrownChangesRGBComponent() {
@@ -111,6 +121,33 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed, app.debugDescription)
         XCTAssertTrue(hex.label.hasSuffix("0000"), "The Crown should modify only the selected red channel")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch real Digital Crown RGB adjustment"; shot.lifetime = .keepAlways; add(shot)
+    }
+
+    func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() {
+        func reach(_ button: XCUIElement) {
+            for _ in 0..<6 where !button.isHittable { app.swipeUp() }
+            XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()
+        }
+        func back() { app.buttons["BackButton"].tap() }
+        app.buttons["watch.editor"].tap(); app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
+        reach(app.buttons["watch.save"]); app.buttons["watch.save"].tap(); back()
+        reach(app.buttons["watch.color.1"])
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
+        reach(app.buttons["watch.edit.copy"])
+        app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fd0000")
+        reach(app.buttons["watch.save"]); back(); back()
+        for _ in 0..<4 { app.swipeDown() }
+        reach(app.buttons["watch.color.0"]); reach(app.buttons["watch.delete.0"])
+        app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
+        XCTAssertTrue(app.staticTexts["watch.count"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["watch.count"].label, "2")
+        for _ in 0..<6 where !app.buttons["watch.color.1"].exists { app.swipeUp() }
+        XCTAssertTrue(app.buttons["watch.color.0"].label.contains("#fe0000"), app.debugDescription)
+        XCTAssertTrue(app.buttons["watch.color.1"].label.contains("#fd0000"), app.debugDescription)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Native Watch edit copy and delete preserve palette order"; image.lifetime = .keepAlways; add(image)
     }
 
 }

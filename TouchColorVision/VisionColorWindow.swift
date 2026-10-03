@@ -29,7 +29,7 @@ struct VisionColorWindow: View {
                         }
                         Spacer()
                         Menu {
-                            Button("Copy") { library.copy(color) }
+                            Button("Copy") { library.copy(color) }.accessibilityIdentifier("palette.copy.\(index)")
                             Button("Delete", role: .destructive) { library.remove(at: index) }
                                 .accessibilityIdentifier("palette.delete.\(index)")
                         } label: { Image(systemName: "ellipsis.circle") }

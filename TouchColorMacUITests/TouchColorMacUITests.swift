@@ -139,8 +139,9 @@ import AVFoundation
         app.buttons["sample.save"].click(); app.buttons["sample.save"].click()
         let paletteURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-palette-\(UUID()).json")
         let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-image-\(UUID()).png")
+        let changedPaletteURL = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-changed-palette-\(UUID()).json")
         defer {
-            for url in [paletteURL, imageURL] where FileManager.default.fileExists(atPath: url.path) {
+            for url in [paletteURL, imageURL, changedPaletteURL] where FileManager.default.fileExists(atPath: url.path) {
                 try? FileManager.default.removeItem(at: url)
             }
         }
@@ -167,6 +168,15 @@ import AVFoundation
         openFile(imageURL); assertHex("#ff00ff")
         let canvas = app.images["image.canvas"]
         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).click(); assertHex("#ff0000")
+        app.buttons["sample.center"].click(); app.buttons["sample.above"].click(); assertHex("#00ff00")
+        app.buttons["sample.save"].click()
+        app.buttons["palette.export"].click(); saveFile(changedPaletteURL)
+        let changedReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard let size = try? changedPaletteURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
+            return size > 0
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [changedReady], timeout: 8), .completed)
+        XCTAssertEqual(try JSONDecoder().decode([String].self, from: Data(contentsOf: changedPaletteURL)), ["#ff00ff", "#ff00ff", "#ff00ff", "#00ff00"])
     }
     func testSimplifiedChineseNativeSamplingFlowAndScreenshot() {
         app.terminate()
@@ -232,6 +242,8 @@ import AVFoundation
             print("MAC_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
             try app.performAccessibilityAudit(for: .all) { issue in
                 print("MAC_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                print("MAC_ACCESSIBILITY_ISSUE_ELEMENT: \(String((issue.element?.debugDescription ?? "none").prefix(12_000)))")
+                fflush(stdout)
                 let details = "State: \(state)\nIssue: \(issue.compactDescription)\nElement: \(issue.element?.debugDescription ?? "none")\nHierarchy: \(self.app.debugDescription)"
                 let attachment = XCTAttachment(string: String(details.prefix(64_000)))
                 attachment.name = "Native Mac accessibility issue"

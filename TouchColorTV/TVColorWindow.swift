@@ -8,10 +8,8 @@ struct TVColorWindow: View {
     @StateObject private var photoLibrary = TVPhotoLibrary()
     @State private var photos = false
     @State private var privacy = false
-    @State private var export = false
+    @State private var exportSelection: TVExportSelection?
     @State private var manual = false
-    @State private var selectedIndex: Int?
-    @State private var selected = ColorDomain.RGBColor(red: 255, green: 0, blue: 0)
     var body: some View {
         NavigationStack {
             HStack(spacing: 32) {
@@ -20,7 +18,7 @@ struct TVColorWindow: View {
                     Text("\(library.colors.count)").accessibilityIdentifier("tv.palette.count")
                     List {
                         ForEach(Array(library.colors.enumerated()), id: \.offset) { index, color in
-                            Button { selected = color; selectedIndex = index; export = true } label: { Text(color.hex).monospaced() }
+                            Button { exportSelection = TVExportSelection(color: color, index: index) } label: { Text(color.hex).monospaced() }
                                 .accessibilityIdentifier("tv.palette.\(index)")
                         }
                     }
@@ -38,7 +36,7 @@ struct TVColorWindow: View {
                                 Text(color.hex).font(.title2.monospaced()).accessibilityIdentifier("tv.sample.hex")
                                 Text(color.rgbDescription).monospacedDigit()
                                 Button("Save Color") { library.append([color]) }.accessibilityIdentifier("tv.sample.save")
-                                Button("Show Palette Code") { selected = color; selectedIndex = nil; export = true }.accessibilityIdentifier("tv.sample.export")
+                                Button("Show Palette Code") { exportSelection = TVExportSelection(color: color, index: nil) }.accessibilityIdentifier("tv.sample.export")
                             }
                         }
                         HStack {
@@ -64,7 +62,9 @@ struct TVColorWindow: View {
         }
         .sheet(isPresented: $photos) { TVPhotoBrowser(library: photoLibrary, session: session) }
         .sheet(isPresented: $privacy) { PrivacyView() }
-        .sheet(isPresented: $export) { TVExportView(color: selected, index: selectedIndex, library: library) }
+        .sheet(item: $exportSelection) { selection in
+            TVExportView(color: selection.color, index: selection.index, library: library)
+        }
         .sheet(isPresented: $manual) { TVColorEditor(library: library) }
         .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil || library.error != nil }, set: { if !$0 { session.errorMessage = nil; library.error = nil } })) {
             Button("OK", role: .cancel) { session.errorMessage = nil; library.error = nil }
@@ -92,6 +92,11 @@ struct TVSamplingCanvas: View {
         }.accessibilityLabel("Image canvas. Use the pixel controls to move the center marker.").accessibilityIdentifier("tv.canvas")
     }
 }
+private struct TVExportSelection: Identifiable {
+    let id = UUID()
+    let color: ColorDomain.RGBColor
+    let index: Int?
+}
 struct TVExportView: View {
     @Environment(\.dismiss) private var dismiss
     let color: ColorDomain.RGBColor
@@ -104,7 +109,7 @@ struct TVExportView: View {
                 Image(decorative: code, scale: 1).resizable().interpolation(.none).frame(width: 400, height: 400).background(.white)
                     .accessibilityLabel("QR code containing the selected palette as JSON").accessibilityIdentifier("tv.export.code")
             } else { Text("The selected color code could not be created.") }
-            Text(color.hex).font(.title.monospaced())
+            Text(color.hex).font(.title.monospaced()).accessibilityIdentifier("tv.export.hex")
             Text("Scan with your phone to copy the selected color.")
             if let index { Button("Delete", role: .destructive) { library.remove(at: index); dismiss() }.accessibilityIdentifier("tv.palette.delete") }
             Button("Done") { dismiss() }.accessibilityIdentifier("tv.export.close")

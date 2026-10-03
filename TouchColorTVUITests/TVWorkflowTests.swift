@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import CoreImage
 
 final class TVWorkflowTests: XCTestCase {
     private var app: XCUIApplication!
@@ -61,7 +62,17 @@ final class TVWorkflowTests: XCTestCase {
         let match = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: element)
         XCTAssertEqual(XCTWaiter.wait(for: [match], timeout: 10), .completed, app.debugDescription)
     }
-    func testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence() {
+    private func assertDisplayedPaletteCode(_ expected: String) throws {
+        XCTAssertEqual(app.staticTexts["tv.export.hex"].label, expected)
+        // Decode the actual displayed QR pixels, including scaling and the sheet surface.
+        let rendered = try XCTUnwrap(app.screenshot().image.cgImage)
+        let detector = try XCTUnwrap(CIDetector(ofType: CIDetectorTypeQRCode, context: CIContext(), options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]))
+        let payloads = detector.features(in: CIImage(cgImage: rendered)).compactMap { ($0 as? CIQRCodeFeature)?.messageString }
+        XCTAssertEqual(payloads.count, 1)
+        let payload = try XCTUnwrap(payloads.first)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String], [expected])
+    }
+    func testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence() throws {
         select(app.buttons["tv.photos"])
         let system = XCUIApplication(bundleIdentifier: "com.apple.PineBoard")
         let allow = system.buttons["Allow All Photos"].firstMatch
@@ -79,11 +90,19 @@ final class TVWorkflowTests: XCTestCase {
         capture("Native TV real photo sampled with remote and visible zoom")
         select(app.buttons["tv.sample.export"])
         XCTAssertTrue(app.otherElements["tv.export.code"].exists || app.images["tv.export.code"].exists, app.debugDescription)
-        capture("Native TV selected color JSON palette code")
+        try assertDisplayedPaletteCode("#00ff00")
+        capture("Native TV selected color JSON palette code decoded from actual UI pixels")
         remote.press(.menu)
         XCTAssertTrue(app.buttons["tv.photos"].waitForExistence(timeout: 5))
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
         XCTAssertTrue(app.staticTexts["tv.palette.count"].waitForExistence(timeout: 10)); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "2")
+        select(app.buttons["tv.palette.0"])
+        try assertDisplayedPaletteCode("#ff00ff")
+        select(app.buttons["tv.palette.delete"])
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.staticTexts["tv.palette.count"].waitForExistence(timeout: 10)); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
+        XCTAssertTrue(app.buttons["tv.palette.0"].label.contains("#ff00ff"))
     }
     func testChineseRemoteColorEditor() {
         let editor = app.buttons["tv.editor"]

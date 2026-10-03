@@ -6,6 +6,17 @@ import ColorRaster
 @testable import TouchColorMac
 
 @MainActor final class ImageSessionTests: XCTestCase {
+    private func printHostedAppKitAccessibility(_ root: NSView, state: String) {
+        var remaining = 60
+        func visit(_ view: NSView, depth: Int) {
+            guard depth <= 7, remaining > 0 else { return }; remaining -= 1
+            let label = String((view.accessibilityLabel() ?? "").prefix(80))
+            let role = view.accessibilityRole()?.rawValue ?? "none"
+            print("MAC_HOSTED_APPKIT_AX \(state) depth=\(depth) class=\(type(of: view)) role=\(role) element=\(view.isAccessibilityElement()) label=\(label) frame=\(view.frame)")
+            for child in view.subviews { visit(child, depth: depth + 1) }
+        }
+        visit(root, depth: 0)
+    }
     private func waitForImport(_ session: ImageSession) async throws {
         for _ in 0..<100 where session.busy { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertFalse(session.busy)
@@ -43,6 +54,7 @@ import ColorRaster
         try await Task.sleep(nanoseconds: 200_000_000)
         host.layoutSubtreeIfNeeded()
         XCTAssertEqual(host.accessibilityLabel(), NSLocalizedString("TouchColor workspace", comment: "Window accessibility"))
+        printHostedAppKitAccessibility(host, state: "empty same-wrapper hosted window")
         print("MAC_WINDOW_INITIAL window=\(window.frame) minimum=\(window.contentMinSize) host=\(host.frame) fitting=\(host.fittingSize)")
         session.load(data: RasterFixture.data(), name: "layout.tiff", token: session.beginImport())
         try await waitForImport(session)
@@ -56,6 +68,7 @@ import ColorRaster
                 for child in view.subviews { if let found = find(child) { return found } }
                 return nil
             }
+            printHostedAppKitAccessibility(host, state: "imported same-wrapper hosted window")
             let scroll = try XCTUnwrap(find(host))
             let viewport = scroll.convert(scroll.bounds, to: host)
             print("MAC_WINDOW_LAYOUT requested=\(size) window=\(window.frame) layout=\(window.contentLayoutRect) host=\(host.frame) bounds=\(host.bounds) viewport=\(viewport)")

@@ -39,7 +39,7 @@ print('Minimal sandbox entitlements verified. No distribution identity or networ
 PY
 
 set +e
-xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox -configuration Debug \
+xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox -configuration Debug \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-sandbox \
   -resultBundlePath build/mac-sandbox.xcresult -parallel-testing-enabled NO \
   -collect-test-diagnostics never -maximum-test-execution-time-allowance 150 \

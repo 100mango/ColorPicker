@@ -124,6 +124,50 @@ final class PaletteInboxTests: XCTestCase {
         XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, original as NSDictionary)
     }
 
+    func testCounterpartChangeKeepsLocalAcceptanceButRequiresCurrentRetryForReceipt() throws {
+        let suite = "TouchColor.inbox-counterpart.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["#123456", "#123456"], forKey: "colorArray")
+        let inbox = PaletteInbox(defaults: defaults, domain: suite), routes = PaletteReceiptRoutes()
+        let request = try PaletteTransfer(colors: [RGBColor(hex: "#abcdef")!, RGBColor(hex: "#abcdef")!])
+        let bytes = try request.encoded(), oldEpoch = routes.activate()
+        XCTAssertNil(try inbox.receive(bytes)); XCTAssertTrue(routes.admit(request.id, epoch: oldEpoch))
+        routes.invalidate() // didBecomeInactive revokes authority synchronously.
+        let newEpoch = routes.activate()
+        let receipt = try inbox.accept(request.id) // Explicit local review remains valid.
+        var transmitted = 0
+        XCTAssertFalse(routes.deliver(request.id) { transmitted += 1 })
+        XCTAssertFalse(routes.admit(request.id, epoch: oldEpoch)) // Old queued callback.
+        XCTAssertEqual(transmitted, 0)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), ["#123456", "#123456", "#abcdef", "#abcdef"])
+        XCTAssertEqual(try inbox.receive(bytes), receipt) // Actual same-UUID retry admission.
+        XCTAssertTrue(routes.admit(request.id, epoch: newEpoch))
+        XCTAssertTrue(routes.deliver(request.id) { transmitted += 1 })
+        XCTAssertFalse(routes.deliver(request.id) { transmitted += 1 })
+        XCTAssertEqual(transmitted, 1)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray")?.count, 4)
+        let afterRelaunch = PaletteReceiptRoutes(); let reopenedEpoch = afterRelaunch.activate()
+        XCTAssertFalse(afterRelaunch.deliver(request.id) { transmitted += 1 })
+        XCTAssertEqual(try PaletteInbox(defaults: defaults, domain: suite).receive(bytes), receipt)
+        XCTAssertTrue(afterRelaunch.admit(request.id, epoch: reopenedEpoch))
+        XCTAssertTrue(afterRelaunch.deliver(request.id) { transmitted += 1 })
+        XCTAssertEqual(transmitted, 2); XCTAssertEqual(defaults.stringArray(forKey: "colorArray")?.count, 4)
+    }
+    func testInactiveOrFullReceiptRoutesNeverEvictOtherPendingDeliveryAuthority() {
+        let routes = PaletteReceiptRoutes(maximumRoutes: 2), first = UUID(), second = UUID(), third = UUID()
+        XCTAssertNil(routes.currentEpoch())
+        let epoch = routes.activate()
+        XCTAssertTrue(routes.admit(first, epoch: epoch)); XCTAssertTrue(routes.admit(second, epoch: epoch))
+        XCTAssertFalse(routes.admit(third, epoch: epoch))
+        var sent: [UUID] = []
+        XCTAssertTrue(routes.deliver(first) { sent.append(first) })
+        XCTAssertTrue(routes.admit(third, epoch: epoch))
+        routes.invalidate()
+        XCTAssertFalse(routes.deliver(second) { sent.append(second) })
+        XCTAssertFalse(routes.deliver(third) { sent.append(third) })
+        XCTAssertEqual(sent, [first]); XCTAssertFalse(routes.isCurrent(epoch))
+    }
+
 }
 
 final class PaletteSelectionTests: XCTestCase {

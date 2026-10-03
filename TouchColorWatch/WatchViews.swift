@@ -44,7 +44,7 @@ struct WatchColorEditor: View {
     @ObservedObject var palette: WatchPalette
     @ObservedObject var transfer: WatchTransfer
     @State private var channel = 0
-    @State private var confirmSend = false
+    @State private var sendSelection: RGBColor?
     @FocusState private var crownFocused: Bool
     private var component: Binding<Double> {
         Binding(get: { channel == 0 ? palette.red : channel == 1 ? palette.green : palette.blue },
@@ -73,17 +73,19 @@ struct WatchColorEditor: View {
                 }
                 Text("Turn the Digital Crown to adjust the selected RGB component.").font(.caption2)
                 Button("Save Color") { palette.save() }.accessibilityIdentifier("watch.save")
-                Button("Send to iPhone") { confirmSend = true }.accessibilityIdentifier("watch.send")
+                Button("Send to iPhone") { sendSelection = palette.selected }.accessibilityIdentifier("watch.send")
                 Text(transfer.status).font(.caption2).accessibilityIdentifier("watch.transfer.status")
             }.padding(.horizontal, 8)
         }
         .onAppear { crownFocused = true }
         .onChange(of: channel) { _ in crownFocused = true }
         .navigationTitle("Create Color")
-        .confirmationDialog("Send this color to iPhone for review?", isPresented: $confirmSend) {
-            Button("Send") { transfer.request([palette.selected]) }.accessibilityIdentifier("watch.send.confirm")
+        .confirmationDialog("Send this color to iPhone for review?",
+            isPresented: Binding(get: { sendSelection != nil }, set: { if !$0 { sendSelection = nil } }),
+            presenting: sendSelection) { color in
+            Button("Send") { transfer.request([color]) }.accessibilityIdentifier("watch.send.confirm")
             Button("Cancel", role: .cancel) {}
-        }
+        } message: { color in Text(color.hex) }
     }
 }
 struct WatchTransferView: View {
@@ -94,6 +96,9 @@ struct WatchTransferView: View {
                 Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
                 if let pending = transfer.pending {
                     Text("\(pending.colors.count) selected colors").font(.caption).accessibilityIdentifier("watch.transfer.count")
+                    ForEach(Array(pending.colors.enumerated()), id: \.offset) { index, color in
+                        Text(color.hex).font(.caption.monospaced()).accessibilityIdentifier("watch.transfer.color.\(index)")
+                    }
                     Button("Retry") { transfer.retry() }.disabled(transfer.sending).accessibilityIdentifier("watch.transfer.retry")
                     Button("Cancel Transfer", role: .destructive) { transfer.cancel() }.accessibilityIdentifier("watch.transfer.cancel")
                 }
@@ -174,7 +179,7 @@ private struct WatchSavedColor: View {
                 WatchSwatch(color: color)
                 NavigationLink("Edit a Copy") {
                     WatchColorEditor(palette: palette, transfer: transfer).onAppear { palette.select(color) }
-                }
+                }.accessibilityIdentifier("watch.edit.copy")
                 Button("Delete", role: .destructive) { palette.remove(at: index); dismiss() }.accessibilityIdentifier("watch.delete.\(index)")
             }
         }
