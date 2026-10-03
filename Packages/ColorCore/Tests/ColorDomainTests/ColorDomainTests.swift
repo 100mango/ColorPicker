@@ -25,6 +25,8 @@ final class ColorDomainTests: XCTestCase {
         for invalid in [Double.nan, .infinity, -.infinity, -0.1, 1.01] { XCTAssertNil(NormalizedPoint(x: invalid, y: 0)) }
         let edge = NormalizedPoint(x: 1, y: 1)!.pixel(width: 3, height: 2)!
         XCTAssertEqual(edge.x, 2); XCTAssertEqual(edge.y, 1)
+        let extreme = NormalizedPoint(x: 1, y: 1)!.pixel(width: Int.max, height: Int.max)!
+        XCTAssertEqual(extreme.x, Int.max - 1); XCTAssertEqual(extreme.y, Int.max - 1)
         XCTAssertEqual(ColorZoom.clamped(0), 1); XCTAssertEqual(ColorZoom.clamped(101), 100)
         XCTAssertEqual(ColorZoom.clamped(.nan), 1); XCTAssertEqual(ColorZoom.clamped(50), 50)
     }

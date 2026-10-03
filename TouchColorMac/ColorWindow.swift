@@ -4,10 +4,15 @@ import ColorDomain
 
 struct ColorWindow: View {
     @ObservedObject var library: PaletteLibrary
-    @StateObject private var session = ImageSession()
+    @StateObject private var session: ImageSession
     @State private var photo: PhotosPickerItem?
     @State private var showingPrivacy = false
     @State private var targeted = false
+
+    @MainActor init(library: PaletteLibrary, session: ImageSession? = nil) {
+        self.library = library
+        _session = StateObject(wrappedValue: session ?? ImageSession())
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -16,12 +21,15 @@ struct ColorWindow: View {
         } detail: {
             VStack(spacing: 0) {
                 if session.raster != nil {
-                    ImageCanvas(session: session)
-                        .frame(minHeight: 160, maxHeight: .infinity)
-                        .layoutPriority(-1)
-                        .overlay(alignment: .topLeading) {
-                            Text(session.sourceName).padding(8).background(.regularMaterial).padding(8).allowsHitTesting(false)
-                        }
+                    GeometryReader { viewport in
+                        ImageCanvas(session: session)
+                            .frame(width: viewport.size.width, height: viewport.size.height)
+                            .clipped()
+                            .overlay(alignment: .topLeading) {
+                                Text(session.sourceName).padding(8).background(.regularMaterial).padding(8).allowsHitTesting(false)
+                            }
+                    }
+                    .frame(minHeight: 160, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 18) {
                         Image(systemName: "eyedropper.halffull").font(.system(size: 50)).foregroundStyle(.secondary)

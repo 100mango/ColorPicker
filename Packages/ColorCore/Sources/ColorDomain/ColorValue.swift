@@ -55,8 +55,10 @@ public struct NormalizedPoint: Equatable, Sendable {
     /// Direct sampling accepts the outer edge and clamps it to the final pixel, as iOS does.
     public func pixel(width: Int, height: Int) -> (x: Int, y: Int)? {
         guard width > 0, height > 0 else { return nil }
-        return (min(Int(floor(x * Double(width))), width - 1),
-                min(Int(floor(y * Double(height))), height - 1))
+        // Check the inclusive far edge before Double→Int conversion: Double(Int.max)
+        // rounds upward, so converting x == 1 directly would overflow on arbitrary domain input.
+        return (x == 1 ? width - 1 : min(Int(floor(x * Double(width))), width - 1),
+                y == 1 ? height - 1 : min(Int(floor(y * Double(height))), height - 1))
     }
 }
 
