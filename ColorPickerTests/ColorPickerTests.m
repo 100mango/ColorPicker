@@ -1,5 +1,6 @@
 #import <XCTest/XCTest.h>
 #import "TCColorUtilities.h"
+#import "TCPrivacyViewController.h"
 
 @interface ColorPickerTests : XCTestCase
 @property (nonatomic, copy) NSString *suite;
@@ -138,5 +139,17 @@
     XCTAssertEqual(TCCameraAccessForStatus(AVAuthorizationStatusDenied,YES),TCCameraAccessBlocked);
     XCTAssertEqual(TCCameraAccessForStatus(AVAuthorizationStatusRestricted,YES),TCCameraAccessBlocked);
     for (NSNumber *status in @[@(AVAuthorizationStatusNotDetermined),@(AVAuthorizationStatusAuthorized),@(AVAuthorizationStatusDenied),@(AVAuthorizationStatusRestricted)]) XCTAssertEqual(TCCameraAccessForStatus(status.integerValue,NO),TCCameraAccessUnavailable);
+}
+- (void)testPrivacyNavigationIsRestrictedToApprovedDocument {
+    for (NSString *value in @[@"https://100mango.github.io/app-privacy/", @"https://100mango.github.io:443/app-privacy/#touchcolor"]) XCTAssertTrue(TCPrivacyAllowsDocumentURL([NSURL URLWithString:value]));
+    for (NSString *value in @[@"http://100mango.github.io/app-privacy/", @"https://example.com/app-privacy/", @"https://100mango.github.io/other/", @"https://100mango.github.io/app-privacy/?tracking=1", @"https://user@100mango.github.io/app-privacy/", @"https://100mango.github.io:8443/app-privacy/", @"file:///app-privacy/", @"javascript:alert(1)"]) XCTAssertFalse(TCPrivacyAllowsDocumentURL([NSURL URLWithString:value]), @"%@", value);
+    XCTAssertFalse(TCPrivacyAllowsDocumentURL(nil));
+}
+- (void)testPrivacyMailRequiresExplicitApprovedContactTap {
+    NSURL *contact=[NSURL URLWithString:@"mailto:100mango@gmail.com"];
+    XCTAssertTrue(TCPrivacyAllowsContactURL(contact,YES));
+    XCTAssertFalse(TCPrivacyAllowsContactURL(contact,NO));
+    for (NSString *value in @[@"mailto:other@example.com", @"mailto:100mango@gmail.com?body=private", @"mailto:100mango@gmail.com#fragment", @"https://100mango.github.io/app-privacy/"]) XCTAssertFalse(TCPrivacyAllowsContactURL([NSURL URLWithString:value],YES));
+    XCTAssertFalse(TCPrivacyAllowsContactURL(nil,YES));
 }
 @end

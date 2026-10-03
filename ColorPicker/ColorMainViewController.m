@@ -3,7 +3,7 @@
 #import "ColorRealTimeViewController.h"
 #import "TCColorUtilities.h"
 #import <PhotosUI/PhotosUI.h>
-#import <SafariServices/SafariServices.h>
+#import "TCPrivacyViewController.h"
 
 @interface ColorMainViewController () <UITableViewDelegate, UITableViewDataSource, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
@@ -115,10 +115,10 @@
     self.navigationItem.rightBarButtonItem = privacy;
 }
 - (void)openPrivacyPolicy {
-    NSURL *url = [NSURL URLWithString:@"https://100mango.github.io/app-privacy/"];
-    SFSafariViewController *browser = [[SFSafariViewController alloc] initWithURL:url];
-    browser.dismissButtonStyle = SFSafariViewControllerDismissButtonStyleDone;
-    [self presentViewController:browser animated:YES completion:nil];
+    if (self.presentedViewController) return;
+    UINavigationController *policy = [[UINavigationController alloc] initWithRootViewController:[TCPrivacyViewController new]];
+    policy.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self presentViewController:policy animated:YES completion:nil];
 }
 - (void)showMessage:(NSString *)message {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"TouchColor", nil) message:message preferredStyle:UIAlertControllerStyleAlert];

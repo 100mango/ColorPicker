@@ -26,7 +26,7 @@ def configlist(name, settings):
         configs.append(add(name+configuration,'XCBuildConfiguration',name=configuration,buildSettings=values))
     return add(name+'configs','XCConfigurationList', buildConfigurations=configs, defaultConfigurationIsVisible=0,defaultConfigurationName='Release')
 
-sources=['main.m','ColorAppDelegate.m','ColorSceneDelegate.m','ColorMainViewController.m','ColorViewController.m','ColorRealTimeViewController.m','ColorDetectView.m','TCColorUtilities.m']
+sources=['main.m','ColorAppDelegate.m','ColorSceneDelegate.m','ColorMainViewController.m','ColorViewController.m','ColorRealTimeViewController.m','ColorDetectView.m','TCColorUtilities.m','TCPrivacyViewController.m']
 headers=[p.replace('.m','.h') for p in sources if p!='main.m']
 apprefs=[ref('ColorPicker/'+p,filetype(p)) for p in sources+headers]
 resources=[ref('ColorPicker/Images.xcassets','folder.assetcatalog'),ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')]

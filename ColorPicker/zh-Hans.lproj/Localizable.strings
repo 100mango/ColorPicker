@@ -23,3 +23,7 @@
 "Camera interrupted. Waiting to resume." = "相机已中断，正在等待恢复。";
 
 "Privacy Policy" = "隐私政策";
+
+"Close" = "关闭";
+"Retry" = "重试";
+"The privacy policy could not load. Check your connection and try again." = "无法载入隐私政策。请检查网络连接后重试。";

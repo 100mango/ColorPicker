@@ -35,14 +35,38 @@
     [self.app launch];
 }
 - (void)testPrivacyPolicyEntryOpensAndCloses {
-    XCUIElement *privacy=self.app.buttons[@"privacyPolicy"];
-    XCTAssertTrue([privacy waitForExistenceWithTimeout:5]);
-    XCTAssertTrue(privacy.hittable);
-    [privacy tap];
-    XCUIElement *done=self.app.buttons[@"Done"].firstMatch;
-    XCTAssertTrue([done waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
-    [done tap];
+    for (NSUInteger attempt=0; attempt<2; attempt++) {
+        XCUIElement *privacy=self.app.buttons[@"privacyPolicy"];
+        XCTAssertTrue([privacy waitForExistenceWithTimeout:5]);
+        XCTAssertTrue(privacy.hittable);
+        [privacy tap];
+        XCUIElement *close=self.app.buttons[@"privacy.close"];
+        XCTAssertTrue([close waitForExistenceWithTimeout:5],@"%@",self.app.debugDescription);
+        XCTAssertTrue(close.hittable);
+        if (attempt==0) {
+            [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
+            [self.app activate];
+            XCTAssertTrue(close.hittable);
+        }
+        [close tap];
+        XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+        XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    }
+}
+- (void)testPrivacyOfflineRetryAndClose {
+    [self.app terminate];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-policy-offline"];
+    [self.app launch];
+    [self.app.buttons[@"privacyPolicy"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"privacy.error"] waitForExistenceWithTimeout:5]);
+    XCUIElement *retry=self.app.buttons[@"privacy.retry"];
+    XCTAssertTrue(retry.hittable);
+    [retry tap];
+    XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
+    XCTAssertTrue(self.app.webViews[@"privacy.content"].exists);
+    [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
 }
 - (void)testLaunchAndPhotoPickerCancelRepeatedly {
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
