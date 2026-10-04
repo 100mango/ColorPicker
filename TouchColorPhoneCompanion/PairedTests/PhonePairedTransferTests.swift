@@ -7,6 +7,7 @@ import Darwin
 @MainActor final class PhonePairedTransferTests: XCTestCase {
     private var failClosedInterruption: NSObjectProtocol?
     private let app = XCUIApplication()
+    private let readiness = PairedReadinessObserver(role: "phone")
     override func setUpWithError() throws {
         try super.setUpWithError()
         // Keep intended dialog actions explicit. Never fall through to XCTest's
@@ -23,6 +24,7 @@ import Darwin
             failClosedInterruption = nil
         }
         if (testRun?.failureCount ?? 0) > 0 {
+            readiness.observe(app.cells["watch.inbox.status"], phase: "failure")
             if let data=XCUIScreen.main.screenshot().image.jpegData(compressionQuality:0.55), data.count<=500*1024 {
                 let image=XCTAttachment(data:data,uniformTypeIdentifier:"public.jpeg")
                 image.name="touchcolor-paired-phone-failure";image.lifetime = .keepAlways;add(image)
@@ -111,9 +113,14 @@ import Darwin
         open("watch.inbox.open")
         XCTAssertTrue(app.tables["watch.inbox"].waitForExistence(timeout: 5))
         _ = try healthyInbox(receipts: 0)
+        readiness.observe(app.cells["watch.inbox.status"], phase: "bootstrap")
         print("TOUCHCOLOR_PAIRED_PHONE_READY"); fflush(stdout)
         let incoming = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH 'watch.inbox.'")).containing(.staticText, identifier:"#fe0000").firstMatch
-        XCTAssertTrue(incoming.waitForExistence(timeout: 120), app.debugDescription)
+        let arrived = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.readiness.observe(self.app.cells["watch.inbox.status"], phase: "wait-receipt")
+            return incoming.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [arrived], timeout: 120), .completed, app.debugDescription)
         XCTAssertTrue(incoming.staticTexts["1 selected colors"].exists)
         let requestIdentifier = incoming.identifier
         let requestID = try XCTUnwrap(UUID(uuidString: String(requestIdentifier.dropFirst("watch.inbox.".count))))
@@ -140,6 +147,7 @@ import Darwin
         if #available(iOS 18.0, *) { XCTAssertTrue(retained.waitForNonExistence(timeout: 5)) }
         else { XCTAssertFalse(retained.exists) }
         XCTAssertTrue(app.cells["watch.inbox.status"].exists)
+        readiness.observe(app.cells["watch.inbox.status"], phase: "receipt")
         let receipt = try pairedObservation(app.cells["watch.inbox.status"])
         for key in ["requestID", "requestProtocol", "version", "fingerprint", "receiveChannel"] { XCTAssertEqual(receipt[key], received[key]) }
         inboxClose.tap(); assertClosed(inboxClose)
@@ -152,6 +160,7 @@ import Darwin
         XCTAssertTrue(app.cells["watch.inbox.status"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.cells[requestIdentifier].exists)
         let restored = try healthyInbox(receipts: 1)
+        readiness.observe(app.cells["watch.inbox.status"], phase: "relaunch")
         XCTAssertEqual(restored["phase"], "ready-empty")
         XCTAssertEqual(restored["activated"], "true")
         XCTAssertEqual(restored["pendingCount"], "0")

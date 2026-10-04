@@ -111,7 +111,16 @@ struct WatchColorEditor: View {
                 }
                 Text("Turn the Digital Crown to adjust the selected RGB component.").font(.caption2)
                 Button("Save Color") { palette.save() }.accessibilityIdentifier("watch.save")
+#if DEBUG
+                if ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" {
+                    Button("Send to iPhone") { sendSelection = palette.selected }.accessibilityIdentifier("watch.send")
+                        .accessibilityValue(transfer.pairedReadinessValue)
+                } else {
+                    Button("Send to iPhone") { sendSelection = palette.selected }.accessibilityIdentifier("watch.send")
+                }
+#else
                 Button("Send to iPhone") { sendSelection = palette.selected }.accessibilityIdentifier("watch.send")
+#endif
                 Text(transfer.status).font(.caption2).accessibilityIdentifier("watch.transfer.status")
             }.padding(.horizontal, 8)
         }

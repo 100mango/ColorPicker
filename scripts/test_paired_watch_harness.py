@@ -2,6 +2,11 @@
 import json
 import hashlib
 import copy
+import collections
+import io
+import queue
+import threading
+import time
 import os
 from pathlib import Path
 import plistlib
@@ -19,8 +24,19 @@ class PairedHarnessTests(unittest.TestCase):
         harness.report.clear()
         harness.report.update(result='passed', stages=[], receipt_barrier='acknowledged')
 
+    def observation(self, role='watch', phase='pre-send'):
+        value = {'schema':'1','role':role,'source':'public-WCSession','event':'activation-completed',
+                 'sequence':'2','supported':'true','sessionPresent':'true','activationState':'2',
+                 'activationCallbackState':'2','activationErrorDomain':'','activationErrorCode':'',
+                 'reachable':'true','selectedTransport':'none','runID':'synthetic-run','phase':phase}
+        value.update({'companionInstalled':'true'} if role == 'watch' else {'paired':'true','watchInstalled':'true'})
+        return value
+
     def process(self, role):
-        return SimpleNamespace(markers=['TOUCHCOLOR_PAIRED_'+role.upper()+'_RELAUNCH_VERIFIED'], cleanup_confirmed=True)
+        start = self.observation(role, 'bootstrap' if role == 'phone' else 'pre-send')
+        receipt = {**start, 'phase':'receipt','event':'sendMessage','selectedTransport':'sendMessage'}
+        return SimpleNamespace(markers=['TOUCHCOLOR_PAIRED_'+role.upper()+'_RELAUNCH_VERIFIED'], cleanup_confirmed=True,
+                               readiness=[start, receipt], readiness_errors=0, readiness_overflow=False)
 
     def test_job_budget_expiry_retains_not_started_paired_command(self):
         from job_budget import BudgetExhausted
@@ -142,6 +158,111 @@ class PairedHarnessTests(unittest.TestCase):
             with self.assertRaises(RuntimeError,msg=key):harness.verify_result_summary(changed,'owned','watch')
         changed=copy.deepcopy(value);changed['devicesAndConfigurations'][0]['device']['deviceId']='clone'
         with self.assertRaises(RuntimeError):harness.verify_result_summary(changed,'owned','watch')
+
+    def test_readiness_exact_schema_correlation_and_inactive_unknowns(self):
+        for role in ('phone', 'watch'):
+            value = self.observation(role)
+            self.assertEqual(harness.decode_readiness(json.dumps(value), role, 'synthetic-run'), value)
+            absent = {**value, 'event':'initialized', 'sessionPresent':'false','activationState':'absent','activationCallbackState':'','reachable':'unknown'}
+            for key in ('companionInstalled', 'paired', 'watchInstalled'):
+                if key in absent: absent[key] = 'unknown'
+            self.assertEqual(harness.decode_readiness(json.dumps(absent), role, 'synthetic-run'), absent)
+            for key,bad in [('schema','2'),('role','different'),('runID','other'),('source','mock'),
+                            ('supported','yes'),('activationState','3'),('phase','invented'),('event','invented'),
+                            ('sequence','1000001'),('activationErrorDomain','x'*129),('selectedTransport','injected')]:
+                with self.assertRaises(RuntimeError,msg=key):
+                    harness.decode_readiness(json.dumps({**value,key:bad}), role, 'synthetic-run')
+            with self.assertRaises(RuntimeError): harness.decode_readiness(json.dumps({**value,'extra':'data'}),role,'synthetic-run')
+            with self.assertRaises(RuntimeError): harness.decode_readiness(json.dumps({**absent,'reachable':'false'}),role,'synthetic-run')
+        with self.assertRaises(RuntimeError): harness.decode_readiness(' '*2049,'watch','synthetic-run')
+        with self.assertRaises(RuntimeError): harness.decode_readiness('[]','watch','synthetic-run')
+        with self.assertRaises(ValueError): harness.decode_readiness('not JSON','watch','synthetic-run')
+
+    def test_readiness_distinguishes_absence_activation_install_reachability_and_error(self):
+        ready = self.observation()
+        self.assertTrue(harness.watch_foreground_ready(ready))
+        self.assertEqual(harness.decode_readiness(json.dumps({**ready,'event':'initialized'}),'watch','synthetic-run')['event'],'initialized')
+        for key,bad in [('sessionPresent','false'),('supported','false'),('activationState','0'),
+                        ('activationCallbackState',''),('companionInstalled','false'),('reachable','false'),
+                        ('activationErrorDomain','WCErrorDomain'),('activationErrorCode','7004')]:
+            self.assertFalse(harness.watch_foreground_ready({**ready,key:bad}),key)
+        failed_activation = {**ready,'activationState':'0','activationCallbackState':'0',
+                             'companionInstalled':'unknown','reachable':'unknown',
+                             'activationErrorDomain':'WCErrorDomain','activationErrorCode':'7004'}
+        actual = harness.decode_readiness(json.dumps(failed_activation),'watch','synthetic-run')
+        self.assertEqual(actual['activationErrorCode'],'7004')
+        self.assertFalse(harness.watch_foreground_ready(actual))
+
+    def test_readiness_alone_never_substitutes_for_receipts_foreground_or_success(self):
+        for change in ('no receipt','background','no gate','invalid','overflow'):
+            phone,watch = self.process('phone'),self.process('watch')
+            if change == 'no receipt': watch.readiness = watch.readiness[:1]
+            elif change == 'background': watch.readiness[-1]['selectedTransport'] = 'transferUserInfo'
+            elif change == 'no gate': watch.readiness = watch.readiness[1:]
+            elif change == 'invalid': watch.readiness_errors = 1
+            elif change == 'overflow': watch.readiness_overflow = True
+            with self.assertRaises(RuntimeError,msg=change): harness.validate_readiness_evidence(phone,watch)
+        with self.assertRaises(RuntimeError): harness.validate_outcome(self.process('phone'),self.process('watch'),0,65)
+        harness.report['receipt_barrier'] = None
+        with self.assertRaises(RuntimeError): harness.validate_outcome(self.process('phone'),self.process('watch'),0,0)
+
+    def test_reader_bounds_observations_retains_last_and_reports_invalid(self):
+        process = object.__new__(harness.RunningTests)
+        process.label = 'watch'; process.run_id = 'synthetic-run'
+        process.readiness = []; process.readiness_errors = 0; process.readiness_overflow = False
+        process.tail = collections.deque(maxlen=1000); process.lock = threading.Lock()
+        process.markers = []; process.ready = threading.Event(); process.barriers = queue.Queue()
+        lines = [harness.READINESS_PREFIX + json.dumps({**self.observation(),'sequence':str(i+1)}) + '\n' for i in range(70)]
+        lines += [harness.READINESS_PREFIX + '{}\n', harness.READINESS_PREFIX + 'bad JSON\n']
+        process.process = SimpleNamespace(stdout=io.StringIO(''.join(lines)),wait=lambda timeout:65)
+        with patch('builtins.print'): process.read()
+        self.assertEqual(len(process.readiness),64)
+        self.assertEqual(process.readiness[0]['sequence'],'1')
+        self.assertEqual(process.readiness[-1]['sequence'],'70')
+        self.assertEqual(process.readiness_errors,2); self.assertTrue(process.readiness_overflow)
+        process.readiness_overflow = False
+        marker = harness.READINESS_OVERFLOW_PREFIX + json.dumps({'role':'watch','runID':'synthetic-run'}) + '\n'
+        process.process.stdout = io.StringIO(marker)
+        with patch('builtins.print'): process.read()
+        self.assertTrue(process.readiness_overflow)
+        process.process.stdout = io.StringIO(marker.replace('synthetic-run','other-run'))
+        with patch('builtins.print'): process.read()
+        self.assertEqual(process.readiness_errors,3)
+        process.process.stdout = io.StringIO(marker.replace('"watch"','"phone"'))
+        with patch('builtins.print'): process.read()
+        self.assertEqual(process.readiness_errors,4)
+        process.process.stdout = io.StringIO(marker*200)
+        with patch('builtins.print'): process.read()
+        self.assertEqual(process.readiness_errors,4)
+        self.assertEqual(len(process.readiness),64)
+        self.assertEqual(process.markers,[])
+        process.cleanup_confirmed = True; process.started = time.monotonic(); process.wall_started = time.time()
+        process.reader = SimpleNamespace(join=lambda timeout:None)
+        with tempfile.TemporaryDirectory() as directory, patch.object(harness,'OUT',Path(directory)):
+            self.assertEqual(process.finish(1),65)
+        self.assertEqual(harness.report['watch']['readiness'],process.readiness)
+        self.assertEqual(harness.report['watch']['readiness_errors'],4)
+        self.assertTrue(harness.report['watch']['readiness_overflow'])
+        self.assertLess(len(json.dumps(process.readiness).encode()),64*2048)
+
+    def test_swift_gate_stays_before_send_and_inside_original_observation_budget(self):
+        root = Path(__file__).resolve().parents[1]
+        watch = (root/'TouchColorPhoneCompanion/PairedTests/WatchPairedTransferTests.swift').read_text()
+        self.assertIn('let transportDeadline = ProcessInfo.processInfo.systemUptime + 60',watch)
+        self.assertIn('timeout: 20',watch)
+        self.assertLess(watch.index('guard readinessResult == .completed else { return }'),watch.index('send.tap()'))
+        self.assertIn('timeout: min(20, remaining)',watch)
+        phone = (root/'TouchColorPhoneCompanion/PairedTests/PhonePairedTransferTests.swift').read_text()
+        self.assertIn('timeout: 120',phone)
+        self.assertLess(phone.index('healthyInbox(receipts: 0)'),phone.index('TOUCHCOLOR_PAIRED_PHONE_READY'))
+        harness_source = (root/'scripts/test_paired_watch.py').read_text()
+        self.assertIn("'-maximum-test-execution-time-allowance','240'",harness_source)
+        self.assertIn('run_id, timeout=150',harness_source)
+        common = (root/'TouchColorPhoneCompanion/PairedTests/PairedReceiptBarrier.swift').read_text()
+        self.assertIn('var value = observation.filter { receiptKeys.contains($0.key) }',common)
+        self.assertNotIn('"connection"',common.split('let receiptKeys = Set(',1)[1].split(')',1)[0])
+        for key in ('requestID','requestProtocol','receiptProtocol','version','fingerprint','outcome','receiveChannel'):
+            self.assertIn('"'+key+'"',common.split('let receiptKeys = Set(',1)[1].split(')',1)[0])
 
     def test_optimized_python_keeps_failed_exit_and_cleanup_gates(self):
         code='''

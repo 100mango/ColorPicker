@@ -1,0 +1,228 @@
+# Temporary branch-scoped qualifier; remove before final common-head integration.
+name: Bounded paired readiness qualification
+on:
+  push:
+    branches: [codex/apple-platforms]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-paired-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  paired-qualification:
+    name: Exact-source paired phone and Watch qualification
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      TOUCHCOLOR_JOB_PLATFORM: paired
+      TOUCHCOLOR_JOB_MINUTES: 45
+      TOUCHCOLOR_JOB_LANE: paired-diagnostic
+      TOUCHCOLOR_WATCH_PROFILE: largest
+      TOUCHCOLOR_VISION_CASE: ''
+      TOUCHCOLOR_EVIDENCE_LIMIT: 1000000
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Start exact native job clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              stream.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
+      - name: Check out exact source
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Initialize exact row budget
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py initialize
+      - name: Verify source and stable toolchain
+        id: toolchain
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/apple-platforms
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sw_vers
+          sw_vers -buildVersion | grep -Fx 26A428
+          xcodebuild -version | tee /tmp/touchcolor-platform-xcode.txt
+          grep -Fx 'Xcode 27.0' /tmp/touchcolor-platform-xcode.txt
+          grep -Fx 'Build version 27A266a' /tmp/touchcolor-platform-xcode.txt
+          xcodebuild -showsdks
+          uname -m | grep -Fx arm64
+          python3 scripts/generate_project.py
+          python3 scripts/generate_mac_project.py
+          python3 scripts/generate_vision_project.py
+          python3 scripts/generate_watch_project.py
+          python3 scripts/generate_tv_project.py
+          python3 scripts/verify_mac_icons.py
+          python3 scripts/verify_native_localizations.py
+          git diff --exit-code HEAD --
+      - name: Fail closed on all portable prerequisites including alias roots
+        id: regressions
+        timeout-minutes: 3
+        working-directory: scripts
+        run: |
+          set -euo pipefail
+          fixture_root="$RUNNER_TEMP/touchcolor-paired-fixtures"
+          mkdir -p "$fixture_root/physical"
+          ln -s physical "$fixture_root/alias"
+          TMPDIR="$fixture_root/alias" GITHUB_ENV="$fixture_root/normal-env" GITHUB_OUTPUT="$fixture_root/normal-output" python3 -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_retain_mac_evidence test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step test_watch_failure_continuation test_paired_qualification_workflow
+          TMPDIR="$fixture_root/alias" GITHUB_ENV="$fixture_root/optimized-env" GITHUB_OUTPUT="$fixture_root/optimized-output" python3 -O -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_retain_mac_evidence test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step test_watch_failure_continuation test_paired_qualification_workflow
+          TMPDIR="$fixture_root/alias" GITHUB_ENV="$fixture_root/evidence-env" GITHUB_OUTPUT="$fixture_root/evidence-output" python3 test_evidence_guard.py
+      - name: Real paired foreground Watch and phone review workflows
+        if: ${{ !cancelled() && steps.toolchain.outcome == 'success' && steps.regressions.outcome == 'success' }}
+        timeout-minutes: 45
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Real paired foreground Watch and phone review workflows' --seconds 2520 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_paired_watch.py
+          TC_BUDGET_BODY
+      - name: Report bounded evidence and unchanged source
+        if: always()
+        timeout-minutes: 4
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Report bounded evidence and unchanged source' --seconds 180 --phase evidence <<'TC_BUDGET_BODY'
+          mkdir -p build/evidence
+          python3 scripts/vision_offline_result.py qualify
+          if test -f build/paired-runtime/runtime.json; then cp build/paired-runtime/runtime.json build/evidence/paired-runtime.json; fi
+          for role in phone watch; do
+            if test -d "build/paired-$role.xcresult"; then
+              if test -f "build/paired-runtime/$role-summary.json"; then
+                cp "build/paired-runtime/$role-summary.json" "build/evidence/paired-$role-summary.json"
+              fi
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/paired-$role.xcresult" --output-path "build/evidence/paired-$role-screenshots" || true
+            fi
+          done
+          if test -f build/accessibility-api/results.json; then cp build/accessibility-api/results.json build/evidence/accessibility-api.json; fi
+          echo 'arm64 owned paired Simulator qualification; no Intel or physical-device claim' | tee build/evidence/architecture.txt
+          for name in unit ui sandbox modal-probe; do
+            if test -d "build/mac-$name.xcresult"; then
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
+            fi
+          done
+          if test -d build/iPhoneCompact-TouchColorTests.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/iPhoneCompact-TouchColorTests.xcresult | tee build/evidence/ios-equivalence-summary.json || true
+          fi
+          if test -d build/mac-ui.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
+          fi
+          if test -d build/mac-sandbox.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-sandbox.xcresult --output-path build/evidence/sandbox-screenshots || true
+          fi
+          if test -d build/mac-modal-probe.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-modal-probe.xcresult --output-path build/evidence/modal-probe-screenshots || true
+          fi
+          if test -f build/mac-sandbox-entitlements.plist; then
+            python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-entitlements.json
+          fi
+          if test -f build/mac-sandbox-post-entitlements.plist; then
+            python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-post-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-post-entitlements.json
+          fi
+          if test -d build/vision-runtime/screenshots; then
+            cp -R build/vision-runtime/screenshots build/evidence/vision-checkpoints
+          fi
+          if test -d build/vision-ui.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/vision-ui.xcresult | tee build/evidence/vision-ui-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/vision-ui.xcresult --output-path build/evidence/vision-ui-screenshots || true
+          fi
+          if test -d build/watch-ui.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
+          fi
+          if test -d build/watch-public-trait.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/watch-public-trait.xcresult | tee build/evidence/watch-public-trait-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/watch-public-trait.xcresult --output-path build/evidence/watch-public-trait-screenshots || true
+          fi
+          for platform in vision watch; do
+            if test -d "build/$platform-largest-text.xcresult"; then
+              if test "$platform" = vision && { test "${TOUCHCOLOR_VISION_CASE:-}" = chinese || test "${TOUCHCOLOR_VISION_CASE:-}" = canvas-audit; }; then
+                python3 scripts/vision_offline_result.py copy-summary
+              else
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
+              fi
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-largest-text.xcresult" --output-path "build/evidence/$platform-largest-text-screenshots" || true
+            fi
+          done
+          for platform in vision watch tv; do
+            if test -d "build/$platform-tests.xcresult"; then
+              if test "$platform" = vision; then
+                python3 scripts/vision_offline_result.py copy-hosted-summary
+              else
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
+              fi
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
+            fi
+            if test -f "build/$platform-runtime/runtime.json"; then
+              cp "build/$platform-runtime/runtime.json" "build/evidence/$platform-runtime.json"
+            fi
+          done
+          python3 scripts/vision_photos_evidence.py build/evidence
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
+          for manifest in root.glob('*/manifest.json'):
+              groups=json.loads(manifest.read_text()); keep=set()
+              for group in groups:
+                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith(('Native Mac','Native Vision','Native Watch','Native TV','touchcolor-paired-phone'))]
+                  keep.update(a['exportedFileName'] for a in group['attachments'])
+              for p in manifest.parent.iterdir():
+                  if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()
+              manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
+              for group in groups:
+                  for item in group['attachments']:
+                      diagnostic=manifest.parent/item['exportedFileName']
+                      if diagnostic.suffix=='.txt' and item.get('suggestedHumanReadableName','').startswith('Native Mac accessibility issue'):
+                          text=diagnostic.read_text().split('\nHierarchy:',1)[0]
+                          print('RETAINED_MAC_ACCESSIBILITY_DIAGNOSTIC',text[:12000],flush=True)
+          PY
+          python3 scripts/compress_vision_evidence.py build/evidence
+          python3 scripts/retain_mac_evidence.py build/evidence
+          python3 - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0) # Mac keeps its explicit priority/omission plan.
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
+          for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
+              if p.is_file():
+                  size=p.stat().st_size
+                  if size>5_000_000 or total+size>limit: p.unlink()
+                  else: total+=size
+          for manifest in root.glob('*/manifest.json'):
+              groups=json.loads(manifest.read_text())
+              for group in groups:
+                  group['attachments']=[a for a in group['attachments'] if (manifest.parent/a['exportedFileName']).exists()]
+              manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
+          total=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          print('Final bounded evidence bytes:',total)
+          PY
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          TC_BUDGET_BODY
+      - name: Validate final evidence byte and path limits
+        id: evidence_guard
+        if: always()
+        timeout-minutes: 1
+        run: python3 scripts/validate_evidence.py build/evidence "$TOUCHCOLOR_EVIDENCE_LIMIT"
+      - name: Verify artifact upload reserve
+        id: upload_budget
+        if: ${{ always() && steps.evidence_guard.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py check-upload
+      - name: Retain small test evidence for review
+        if: ${{ always() && steps.evidence_guard.outcome == 'success' && steps.upload_budget.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-paired-diagnostic-evidence
+          path: build/evidence
+          retention-days: 1
+          compression-level: 9
+          if-no-files-found: ignore

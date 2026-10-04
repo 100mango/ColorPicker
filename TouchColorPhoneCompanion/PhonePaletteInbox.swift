@@ -19,6 +19,33 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
     // Read-only evidence of actual delegate ingress and explicit local acceptance.
     private var pairedRequests: [UUID: [String: String]] = [:]
     private var pairedReceipt: [String: String]?
+    private var pairedReadinessValue = ""
+    private var pairedActivationErrorDomain = ""
+    private var pairedActivationErrorCode = ""
+    private var pairedActivationCallbackState = ""
+    private var pairedSelectedTransport = "none"
+    private var pairedReadinessSequence = 0
+    private func recordPairedReadiness(_ event: String, transport: String? = nil) {
+        guard ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" else { return }
+        if let transport { pairedSelectedTransport = transport }
+        pairedReadinessSequence = min(pairedReadinessSequence + 1, 1_000_000)
+        let active = connectivity?.activationState == .activated
+        let value: [String: String] = [
+            "schema": "1", "role": "phone", "source": "public-WCSession", "event": event,
+            "sequence": String(pairedReadinessSequence), "supported": WCSession.isSupported() ? "true" : "false",
+            "sessionPresent": connectivity == nil ? "false" : "true",
+            "activationState": connectivity.map { String($0.activationState.rawValue) } ?? "absent",
+            "activationCallbackState": pairedActivationCallbackState,
+            "activationErrorDomain": pairedActivationErrorDomain, "activationErrorCode": pairedActivationErrorCode,
+            "paired": active ? (connectivity!.isPaired ? "true" : "false") : "unknown",
+            "watchInstalled": active ? (connectivity!.isWatchAppInstalled ? "true" : "false") : "unknown",
+            "reachable": active ? (connectivity!.isReachable ? "true" : "false") : "unknown",
+            "selectedTransport": pairedSelectedTransport
+        ]
+        pairedReadinessValue = (try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys))
+            .map { String(decoding: $0, as: UTF8.self) } ?? ""
+        NotificationCenter.default.post(name: .touchColorWatchInboxChanged, object: self)
+    }
     private let pairedDefaults: UserDefaults
     private let pairedDomain: String
     func pairedRequestValue(_ id: UUID) -> String? { pairedJSON(pairedRequests[id]) }
@@ -39,8 +66,9 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
         return pairedJSON(value)
     }
     private func pairedJSON(_ value: [String: String]?) -> String? {
-        guard ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1", let value,
-              let data = try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys) else { return nil }
+        guard ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1", var value else { return nil }
+        value["connection"] = pairedReadinessValue
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys) else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
 #endif
@@ -54,11 +82,17 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
     @objc var isSupported: Bool { WCSession.isSupported() }
     @objc func activate() {
         guard isSupported else {
+#if DEBUG
+            recordPairedReadiness("unsupported")
+#endif
             status = NSLocalizedString("Watch transfer is unavailable on this device. You can import a palette using Files or Paste.", comment: "Unsupported companion")
             NotificationCenter.default.post(name: .touchColorWatchInboxChanged, object: self)
             return
         }
         let session = WCSession.default; connectivity = session; session.delegate = self; session.activate()
+#if DEBUG
+        recordPairedReadiness("activate-called")
+#endif
     }
     func pending() throws -> [PaletteTransfer] { try inbox.pending() }
     @discardableResult private func receive(_ data: Data, epoch: UInt64, channel: String) -> Bool {
@@ -105,10 +139,16 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
             guard session.activationState == .activated, session.isWatchAppInstalled else { return }
             let message: [String: Any] = ["touchColorReceiptV1": data, "receiptID": receipt.requestID.uuidString]
             if session.isReachable {
+#if DEBUG
+                recordPairedReadiness("sendMessage", transport: "sendMessage")
+#endif
                 session.sendMessage(message, replyHandler: nil) { _ in
                     // The Watch retains its UUID and explicitly retries after a lost receipt.
                 }
             } else if !session.outstandingUserInfoTransfers.contains(where: { ($0.userInfo["receiptID"] as? String) == receipt.requestID.uuidString }) {
+#if DEBUG
+                recordPairedReadiness("transferUserInfo", transport: "transferUserInfo")
+#endif
                 session.transferUserInfo(message)
             }
         }
@@ -128,6 +168,14 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
         controller.present(navigation, animated: true) { navigation.presentationController?.delegate = content }
     }
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+#if DEBUG
+        Task { @MainActor in
+            self.pairedActivationCallbackState = String(activationState.rawValue)
+            self.pairedActivationErrorDomain = error.map { String(($0 as NSError).domain.prefix(128)) } ?? ""
+            self.pairedActivationErrorCode = error.map { String(($0 as NSError).code) } ?? ""
+            self.recordPairedReadiness("activation-completed")
+        }
+#endif
         guard activationState == .activated, session.activationState == .activated, error == nil else {
             invalidateDelivery(session)
             if let error { Task { @MainActor in
@@ -144,8 +192,26 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
             NotificationCenter.default.post(name: .touchColorWatchInboxChanged, object: self)
         }
     }
-    nonisolated func sessionDidBecomeInactive(_ session: WCSession) { invalidateDelivery(session) }
-    nonisolated func sessionDidDeactivate(_ session: WCSession) { invalidateDelivery(session); session.activate() }
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {
+        invalidateDelivery(session)
+#if DEBUG
+        Task { @MainActor in self.recordPairedReadiness("inactive") }
+#endif
+    }
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {
+        invalidateDelivery(session); session.activate()
+#if DEBUG
+        Task { @MainActor in self.recordPairedReadiness("deactivated") }
+#endif
+    }
+#if DEBUG
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        Task { @MainActor in self.recordPairedReadiness("watch-state-changed") }
+    }
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        Task { @MainActor in self.recordPairedReadiness("reachability-changed") }
+    }
+#endif
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
         guard let epoch = receiptRoutes.currentEpoch(), session.activationState == .activated,
               let data = message["touchColorPaletteV1"] as? Data, data.count <= PaletteTransfer.maximumBytes,

@@ -47,9 +47,38 @@ private enum WatchTransferStorageError: LocalizedError {
     @Published private(set) var lastReceipt: PaletteTransferReceipt?
 #if DEBUG
     private(set) var pairedReceiptChannel: String?
+    @Published private(set) var pairedReadinessValue = ""
+    private var pairedActivationErrorDomain = ""
+    private var pairedActivationErrorCode = ""
+    private var pairedActivationCallbackState = ""
+    private var pairedSelectedTransport = "none"
+    private var pairedReadinessSequence = 0
+    // Observations only: never activate, send, retry, or override a production guard.
+    private func recordPairedReadiness(_ event: String, transport: String? = nil) {
+        guard ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" else { return }
+        if let transport { pairedSelectedTransport = transport }
+        pairedReadinessSequence = min(pairedReadinessSequence + 1, 1_000_000)
+        let active = session?.activationState == .activated
+        let value: [String: String] = [
+            "schema": "1", "role": "watch", "source": "public-WCSession", "event": event,
+            "sequence": String(pairedReadinessSequence), "supported": WCSession.isSupported() ? "true" : "false",
+            "sessionPresent": session == nil ? "false" : "true",
+            "activationState": session.map { String($0.activationState.rawValue) } ?? "absent",
+            "activationCallbackState": pairedActivationCallbackState,
+            "activationErrorDomain": pairedActivationErrorDomain, "activationErrorCode": pairedActivationErrorCode,
+            // Most WCSession properties are undefined until successful activation.
+            "companionInstalled": active ? (session!.isCompanionAppInstalled ? "true" : "false") : "unknown",
+            "reachable": active ? (session!.isReachable ? "true" : "false") : "unknown",
+            "selectedTransport": pairedSelectedTransport
+        ]
+        pairedReadinessValue = (try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys))
+            .map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
     var pairedReceiptValue: String {
-        guard let receipt = lastReceipt else { return "" }
-        let value = ["requestID": receipt.requestID.uuidString, "requestProtocol": "touchColorPaletteV1", "receiptProtocol": "touchColorReceiptV1", "version": String(receipt.version), "fingerprint": receipt.fingerprint, "outcome": receipt.outcome.rawValue, "receiveChannel": pairedReceiptChannel ?? "persisted"]
+        var value = ["connection": pairedReadinessValue]
+        if let receipt = lastReceipt {
+            value.merge(["requestID": receipt.requestID.uuidString, "requestProtocol": "touchColorPaletteV1", "receiptProtocol": "touchColorReceiptV1", "version": String(receipt.version), "fingerprint": receipt.fingerprint, "outcome": receipt.outcome.rawValue, "receiveChannel": pairedReceiptChannel ?? "persisted"]) { _, new in new }
+        }
         return (try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys)).map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 #endif
@@ -100,6 +129,9 @@ private enum WatchTransferStorageError: LocalizedError {
             if pending == nil && cancellations.lastCancelledID != nil { status = cancelledStatus }
         } catch { storageNeedsRecovery = true; status = NSLocalizedString("The pending transfer could not be read. Its file was kept.", comment: "Watch transfer error") }
         if activate && WCSession.isSupported() { session = .default; session?.delegate = self; session?.activate() }
+#if DEBUG
+        recordPairedReadiness(session == nil ? "initialized" : "activate-called")
+#endif
     }
     func request(_ colors: [RGBColor]) {
         guard !storageNeedsRecovery else { status = NSLocalizedString("The pending transfer file needs recovery before another transfer.", comment: "Watch transfer error"); return }
@@ -113,6 +145,9 @@ private enum WatchTransferStorageError: LocalizedError {
         } catch { status = NSLocalizedString("The transfer could not be saved. Your palette is unchanged.", comment: "Watch transfer error") }
     }
     func retry() {
+#if DEBUG
+        recordPairedReadiness("retry")
+#endif
         guard !storageNeedsRecovery, let pending, !sending, !cancellations.requestIDs.contains(pending.id) else { return }
         guard let session, session.activationState == .activated, session.isCompanionAppInstalled else {
             status = NSLocalizedString("Waiting for TouchColor on the paired iPhone. Choose Retry when it is available.", comment: "Watch transfer status"); return
@@ -120,6 +155,9 @@ private enum WatchTransferStorageError: LocalizedError {
         if session.isReachable, let data = try? pending.encoded() {
             sending = true
             let id = pending.id
+#if DEBUG
+            recordPairedReadiness("sendMessage", transport: "sendMessage")
+#endif
             session.sendMessage(["touchColorPaletteV1": data, "requestID": id.uuidString], replyHandler: { [weak self] reply in
                 Task { @MainActor in
                     guard let self, self.isActiveRequest(id) else { return }
@@ -141,6 +179,9 @@ private enum WatchTransferStorageError: LocalizedError {
         if let existing = session.outstandingUserInfoTransfers.first(where: { ($0.userInfo["requestID"] as? String) == pending.id.uuidString }) {
             activeTransfer = existing
         } else if let data = try? pending.encoded() {
+#if DEBUG
+            recordPairedReadiness("transferUserInfo", transport: "transferUserInfo")
+#endif
             activeTransfer = session.transferUserInfo(["touchColorPaletteV1": data, "requestID": pending.id.uuidString])
         }
         status = NSLocalizedString("Queued for iPhone. This has not changed the phone palette.", comment: "Watch transfer status")
@@ -280,6 +321,12 @@ private enum WatchTransferStorageError: LocalizedError {
     }
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         Task { @MainActor in
+#if DEBUG
+            self.pairedActivationCallbackState = String(activationState.rawValue)
+            self.pairedActivationErrorDomain = error.map { String(($0 as NSError).domain.prefix(128)) } ?? ""
+            self.pairedActivationErrorCode = error.map { String(($0 as NSError).code) } ?? ""
+            self.recordPairedReadiness("activation-completed")
+#endif
             if let error { self.status = error.localizedDescription }
             if activationState == .activated, error == nil, !self.storageNeedsRecovery {
                 self.reconcileSavedOutcomes()
@@ -287,6 +334,14 @@ private enum WatchTransferStorageError: LocalizedError {
             // Activation does not silently send a retained request; Retry is explicit.
         }
     }
+#if DEBUG
+    nonisolated func sessionCompanionAppInstalledDidChange(_ session: WCSession) {
+        Task { @MainActor in self.recordPairedReadiness("companion-installed-changed") }
+    }
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        Task { @MainActor in self.recordPairedReadiness("reachability-changed") }
+    }
+#endif
     nonisolated func session(_ session: WCSession, didFinish userInfoTransfer: WCSessionUserInfoTransfer, error: Error?) {
         guard let data = userInfoTransfer.userInfo["touchColorPaletteV1"] as? Data,
               let request = try? PaletteTransfer.decode(data),

@@ -170,8 +170,67 @@ def bounded_failure_lines(text):
     return lines
 
 
+READINESS_PREFIX = 'TOUCHCOLOR_PAIRED_READINESS '
+READINESS_OVERFLOW_PREFIX = 'TOUCHCOLOR_PAIRED_READINESS_OVERFLOW '
+READINESS_LIMIT = 64
+
+
+def decode_readiness(text, role, run_id):
+    """Strict, bounded test-runner observation; never a transport/receipt substitute."""
+    require(len(text.encode('utf-8')) <= 2048, 'Oversize paired readiness observation')
+    value = json.loads(text)
+    common = {'schema','role','source','event','sequence','supported','sessionPresent',
+              'activationState','activationCallbackState','activationErrorDomain','activationErrorCode',
+              'reachable','selectedTransport','runID','phase'}
+    expected = common | ({'companionInstalled'} if role == 'watch' else {'paired','watchInstalled'})
+    require(isinstance(value, dict) and set(value) == expected, 'Invalid paired readiness fields')
+    require(all(isinstance(item, str) and len(item) <= 128 for item in value.values()), 'Invalid paired readiness value')
+    require(value['schema'] == '1' and value['role'] == role and value['runID'] == run_id
+            and value['source'] == 'public-WCSession', 'Uncorrelated paired readiness observation')
+    require(value['event'] in {'initialized','activate-called','unsupported','activation-completed','retry','sendMessage',
+            'transferUserInfo','companion-installed-changed','reachability-changed','watch-state-changed',
+            'inactive','deactivated'}, 'Unknown paired readiness event')
+    require(value['phase'] in {'bootstrap','pre-send','wait-receipt','receipt','relaunch','failure'}, 'Unknown paired readiness phase')
+    require(re.fullmatch(r'[0-9]{1,7}', value['sequence']) is not None
+            and 1 <= int(value['sequence']) <= 1_000_000, 'Invalid readiness sequence')
+    for key in ('supported','sessionPresent'):
+        require(value[key] in {'true','false'}, 'Invalid readiness Boolean')
+    for key in expected & {'reachable','companionInstalled','paired','watchInstalled'}:
+        require(value[key] in {'true','false','unknown'}, 'Invalid readiness session property')
+    require(value['activationState'] in {'absent','0','1','2'}
+            and value['activationCallbackState'] in {'','0','1','2'}, 'Invalid activation state')
+    require((value['sessionPresent'] == 'false') == (value['activationState'] == 'absent'), 'Inconsistent session presence')
+    if value['activationState'] != '2':
+        require(all(value[key] == 'unknown' for key in expected & {'reachable','companionInstalled','paired','watchInstalled'}),
+                'Inactive session properties must remain unknown')
+    require(value['activationErrorCode'] == '' or re.fullmatch(r'-?[0-9]{1,20}', value['activationErrorCode']) is not None,
+            'Invalid activation error code')
+    require(bool(value['activationErrorCode']) == bool(value['activationErrorDomain']), 'Incomplete activation error')
+    require(value['selectedTransport'] in {'none','sendMessage','transferUserInfo'}, 'Invalid selected transport')
+    require(len(json.dumps(value).encode('utf-8')) <= 2048, 'Oversize serialized readiness observation')
+    return value
+
+
+def watch_foreground_ready(value):
+    expected = {'role':'watch','supported':'true','sessionPresent':'true','activationState':'2',
+                'activationCallbackState':'2','activationErrorDomain':'','activationErrorCode':'',
+                'companionInstalled':'true','reachable':'true'}
+    return all(value.get(key) == wanted for key, wanted in expected.items())
+
+
+def validate_readiness_evidence(phone, watch):
+    for process in (phone, watch):
+        require(process.readiness_errors == 0 and not process.readiness_overflow, 'Paired readiness evidence incomplete')
+        require(any(value['phase'] == 'receipt' and value['selectedTransport'] == 'sendMessage'
+                    for value in process.readiness), 'Actual foreground transport selection missing')
+    require(any(value['phase'] == 'bootstrap' for value in phone.readiness), 'Phone bootstrap observation missing')
+    require(any(value['phase'] == 'pre-send' and watch_foreground_ready(value) for value in watch.readiness),
+            'Actual Watch pre-Send readiness observation missing')
+
+
 class RunningTests:
-    def __init__(self, label, command):
+    def __init__(self, label, command, run_id):
+        self.run_id = run_id; self.readiness = []; self.readiness_errors = 0; self.readiness_overflow = False
         self.label = label; self.ready = threading.Event(); self.markers = []; self.barriers = queue.Queue()
         self.tail = collections.deque(maxlen=1000); self.lock = threading.Lock()
         self.started = time.monotonic(); self.wall_started = time.time(); self.cleanup_confirmed = None
@@ -180,6 +239,26 @@ class RunningTests:
     def read(self):
         for line in self.process.stdout:
             with self.lock: self.tail.append(line[-4000:])
+            if READINESS_PREFIX in line:
+                try:
+                    value = decode_readiness(line.split(READINESS_PREFIX, 1)[1].strip(), self.label, self.run_id)
+                    with self.lock:
+                        if len(self.readiness) < READINESS_LIMIT: self.readiness.append(value)
+                        else:
+                            self.readiness_overflow = True
+                            self.readiness[-1] = value # Retain the last observation without unbounded growth.
+                except (ValueError, RuntimeError):
+                    with self.lock: self.readiness_errors = min(self.readiness_errors + 1, 1_000_000)
+                continue # Diagnostic records are not lifecycle or receipt markers.
+            if READINESS_OVERFLOW_PREFIX in line:
+                try:
+                    raw = line.split(READINESS_OVERFLOW_PREFIX, 1)[1].strip()
+                    require(len(raw.encode('utf-8')) <= 256, 'Oversize readiness overflow marker')
+                    require(json.loads(raw) == {'role':self.label,'runID':self.run_id}, 'Uncorrelated readiness overflow marker')
+                    with self.lock: self.readiness_overflow = True
+                except (ValueError, RuntimeError):
+                    with self.lock: self.readiness_errors = min(self.readiness_errors + 1, 1_000_000)
+                continue # Diagnostic records are not lifecycle or receipt markers.
             found = re.search(r'TOUCHCOLOR_PAIRED_[A-Z_]+(?: [0-9A-F-]{36})?', line)
             if found:
                 self.markers.append(found.group(0)); print(found.group(0), flush=True)
@@ -202,7 +281,7 @@ class RunningTests:
         # Keep the precise assertion even when readiness fails before both roles
         # start. Previously only 'Phone actual inbox readiness missing' survived.
         failures=bounded_failure_lines(tail)
-        report[self.label] = {'exit': code, 'markers': self.markers, 'cleanup_confirmed': self.cleanup_confirmed, 'monotonic_seconds': round(time.monotonic()-self.started, 3), 'wall_seconds': round(time.time()-self.wall_started, 3), 'failure_lines': failures}
+        report[self.label] = {'exit': code, 'markers': self.markers, 'cleanup_confirmed': self.cleanup_confirmed, 'monotonic_seconds': round(time.monotonic()-self.started, 3), 'wall_seconds': round(time.time()-self.wall_started, 3), 'failure_lines': failures, 'readiness': list(self.readiness), 'readiness_errors': self.readiness_errors, 'readiness_overflow': self.readiness_overflow}
         if failures: print('PAIRED_XCTEST_FAILURES',json.dumps({'role':self.label,'lines':failures}),flush=True)
         return code
 
@@ -213,6 +292,7 @@ def validate_outcome(phone, watch, phone_exit, watch_exit):
         require('TOUCHCOLOR_PAIRED_'+role.upper()+'_RELAUNCH_VERIFIED' in process.markers, role+' relaunch marker missing')
         require(process.cleanup_confirmed is True, role+' process-group cleanup unconfirmed')
     require(report.get('receipt_barrier') == 'acknowledged', 'Matching actual receipt barrier missing')
+    validate_readiness_evidence(phone, watch)
 
 
 def verify_result_summary(summary, device_id, role):
@@ -374,9 +454,9 @@ def main():
         budget=enabled_budget()
         if budget is not None:
             budget.admit('paired phone readiness, receipt barrier and both completions',450,minimum=450,cleanup=0)
-        processes['phone']=RunningTests('phone',command('phone','TouchColorUITests/PhonePairedTransferTests/testIncomingForegroundTransferReviewAcceptAndRelaunch'))
+        processes['phone']=RunningTests('phone',command('phone','TouchColorUITests/PhonePairedTransferTests/testIncomingForegroundTransferReviewAcceptAndRelaunch'),run_id)
         require(processes['phone'].ready.wait(timeout=120),'Phone actual inbox readiness missing')
-        processes['watch']=RunningTests('watch',command('watch','TouchColorWatchUITests/WatchPairedTransferTests/testForegroundSendAcceptReceiptAndBothLocalStatesAfterRelaunch'))
+        processes['watch']=RunningTests('watch',command('watch','TouchColorWatchUITests/WatchPairedTransferTests/testForegroundSendAcceptReceiptAndBothLocalStatesAfterRelaunch'),run_id)
         receipt_barrier(processes,selected,runner_ids,run_id)
         watch_exit=processes['watch'].finish(90); phone_exit=processes['phone'].finish(90)
         validate_outcome(processes['phone'],processes['watch'],phone_exit,watch_exit)

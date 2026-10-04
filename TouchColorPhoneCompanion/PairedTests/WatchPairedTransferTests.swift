@@ -6,6 +6,7 @@ import Foundation
 final class WatchPairedTransferTests: XCTestCase {
     private var failClosedInterruption: NSObjectProtocol?
     private var app: XCUIApplication!
+    private let readiness = PairedReadinessObserver(role: "watch")
     override func setUpWithError() throws {
         try super.setUpWithError()
         // Keep intended dialog actions explicit. Never fall through to XCTest's
@@ -32,6 +33,9 @@ final class WatchPairedTransferTests: XCTestCase {
         }
         guard let app else { return }
         if (testRun?.totalFailureCount ?? 0) > 0 {
+            if app.buttons["watch.send"].exists {
+                readiness.observe(app.buttons["watch.send"], phase: "failure", nested: false)
+            } else { readiness.observe(app.staticTexts["watch.transfer.status"], phase: "failure") }
             print("WATCH_PAIRED_FAILURE_AX: \(app.debugDescription)")
             let image = XCTAttachment(screenshot: app.screenshot())
             image.name = "Native Watch paired transfer failure"; image.lifetime = .keepAlways; add(image)
@@ -39,10 +43,12 @@ final class WatchPairedTransferTests: XCTestCase {
         app.terminate()
         try super.tearDownWithError()
     }
-    private func reach(_ button: XCUIElement) {
+    private func reveal(_ button: XCUIElement) {
         for _ in 0..<7 where !button.isHittable { app.swipeUp() }
         XCTAssertTrue(button.isHittable, app.debugDescription)
-        button.tap()
+    }
+    private func reach(_ button: XCUIElement) {
+        reveal(button); button.tap()
     }
     private func openStatus() {
         let back = app.buttons["BackButton"]
@@ -56,7 +62,18 @@ final class WatchPairedTransferTests: XCTestCase {
         app.buttons["watch.component.down"].tap()
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
         reach(app.buttons["watch.save"])
-        reach(app.buttons["watch.send"])
+        let send = app.buttons["watch.send"]
+        reveal(send)
+        // Readiness consumes the original 60-second transport observation budget;
+        // neither the 120-second phone wait nor 240-second XCTest allowance grows.
+        let transportDeadline = ProcessInfo.processInfo.systemUptime + 60
+        let foregroundReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            PairedReadinessObserver.watchIsForegroundReady(self.readiness.observe(send, phase: "pre-send", nested: false))
+        }, object: nil)
+        let readinessResult = XCTWaiter.wait(for: [foregroundReady], timeout: 20)
+        XCTAssertEqual(readinessResult, .completed, "Actual Watch WCSession foreground readiness missing: \(String(describing: readiness.latest))")
+        guard readinessResult == .completed else { return } // Never tap Send after a failed gate.
+        send.tap()
         XCTAssertTrue(app.staticTexts["Send this color to iPhone for review?"].waitForExistence(timeout: 5))
         app.buttons["Send"].firstMatch.tap()
         print("TOUCHCOLOR_PAIRED_WATCH_REQUESTED"); fflush(stdout)
@@ -66,16 +83,26 @@ final class WatchPairedTransferTests: XCTestCase {
         // Foreground reachability can settle after activation. Each retry is an actual
         // visible user action and preserves the production request's original UUID.
         for attempt in 0..<3 {
+            guard transportDeadline > ProcessInfo.processInfo.systemUptime else { break }
             if attempt > 0 {
                 let retry = app.buttons["watch.transfer.retry"]
                 if retry.exists && retry.isEnabled { reach(retry) }
             }
-            // Every Retry has a following observation; total receipt waits stay 60 seconds.
-            let accepted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Accepted on iPhone."), object: status)
-            if XCTWaiter.wait(for: [accepted], timeout: 20) == .completed { break }
+            readiness.observe(status, phase: "wait-receipt")
+            if status.label == "Accepted on iPhone." { break }
+            // Every Retry has a following observation using only the remaining
+            // original budget. A selected background transport is evidence, not a pass.
+            let remaining = transportDeadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { break }
+            let accepted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.readiness.observe(status, phase: "wait-receipt")
+                return status.label == "Accepted on iPhone."
+            }, object: nil)
+            if XCTWaiter.wait(for: [accepted], timeout: min(20, remaining)) == .completed { break }
         }
         XCTAssertEqual(status.label, "Accepted on iPhone.", app.debugDescription)
         XCTAssertFalse(app.staticTexts["watch.transfer.count"].exists)
+        readiness.observe(status, phase: "receipt")
         let receipt = try pairedObservation(status)
         let requestID = try XCTUnwrap(receipt["requestID"].flatMap(UUID.init(uuidString:)))
         print("TOUCHCOLOR_PAIRED_WATCH_ACCEPTED \(requestID.uuidString)"); fflush(stdout)
@@ -92,6 +119,7 @@ final class WatchPairedTransferTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
         openStatus()
         XCTAssertEqual(app.staticTexts["watch.transfer.status"].label, "Accepted on iPhone.")
+        readiness.observe(app.staticTexts["watch.transfer.status"], phase: "relaunch")
         let restored = try pairedObservation(app.staticTexts["watch.transfer.status"])
         for key in ["requestID", "fingerprint", "requestProtocol", "receiptProtocol", "version", "outcome"] { XCTAssertEqual(restored[key], receipt[key]) }
         XCTAssertEqual(restored["receiveChannel"], "persisted")
