@@ -1,25 +1,19 @@
 #!/usr/bin/env python3
 """One native platform per invocation on the existing standard runner; bounded real builds/tests."""
-import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,time
+import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,time,uuid
 from pathlib import Path
-from capture_simulator_checkpoint import capture as capture_checkpoint
+from capture_simulator_checkpoint import capture as capture_checkpoint, fail_cached_capture
 from watch_profiles import select_profile
-from bounded_process import run_captured, check_output
-from vision_suites import SUITES as VISION_SUITES
-from native_runtime_diagnostics import snapshot as runtime_snapshot, MAX_SNAPSHOTS
+from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device
+from bounded_process import run_captured, check_output, stop_group
+from vision_suites import CASES as VISION_CASES, needs_photo_seed
+from native_resources import snapshot as resource_snapshot
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'captures':[],'platform':kind,'sha':check_output(['git','rev-parse','HEAD'],text=True,timeout=10).strip(),'stages':[]}
-runtime_started=time.time()
-def diagnose(label):
-    if report.get('cleanup_unconfirmed') or len(report.get('runtime_diagnostics',[]))>=MAX_SNAPSHOTS: return
-    sample=runtime_snapshot(label,device['udid'] if device else None,runtime_started)
-    report.setdefault('runtime_diagnostics',[]).append(sample)
-    if sample.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
-    print('NATIVE_PROCESS_DIAGNOSTIC',json.dumps(sample),flush=True)
 def run(command,timeout,required=True):
     if report.get('cleanup_unconfirmed'):
         if required: raise RuntimeError('Prior process exit is unconfirmed; no new work on this VM')
@@ -36,15 +30,18 @@ def run(command,timeout,required=True):
     def output():
         for line in p.stdout:
             print(line,end='',flush=True)
-            if kind=='vision' and 'ui_scope' in report and (re.search(r"Test Case .*(?:started\.|failed \()",line) or 'kAXErrorServerNotFound' in line):
-                diagnose(line.strip()[:180])
             checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
-            if checkpoint and kind=='vision' and device and not report.get('cleanup_unconfirmed') and len(report['captures'])<16:
+            if checkpoint and kind=='vision' and device and len(report['captures'])<16:
                 try:
-                    result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
+                    if report.get('cleanup_unconfirmed'):
+                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started')
+                    else:
+                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
+                    if result.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
                 except Exception as error:
-                    failure={'success':False,'error':str(error)}
+                    failure=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error))
+                    if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
                     report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
     reader=threading.Thread(target=output,daemon=True);reader.start()
@@ -56,19 +53,13 @@ def run(command,timeout,required=True):
         report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
         (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
         print('NATIVE_COMMAND_DEADLINE_EXCEEDED',json.dumps(report['active_command']),flush=True)
-        for stop_signal in (signal.SIGTERM,signal.SIGKILL):
-            report['active_command']['phase']='sending '+stop_signal.name
-            (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-            print('NATIVE_COMMAND_CLEANUP',report['active_command']['phase'],p.pid,flush=True)
-            try:os.killpg(p.pid,stop_signal)
-            except ProcessLookupError:break
-            report['active_command']['phase']='bounded reap after '+stop_signal.name
-            (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-            try:p.wait(timeout=10);break
-            except subprocess.TimeoutExpired:continue
-        if p.poll() is None:
-            cleanup_error='Process exit was not confirmed after bounded TERM/KILL waits'
+        if not stop_group(p):
+            cleanup_error='Owned process-group exit was not confirmed after bounded TERM/KILL waits'
             report['cleanup_unconfirmed']=True
+        code=124
+    if not stop_group(p):
+        report['cleanup_unconfirmed']=True
+        cleanup_error='Owned descendants remain after command leader exit'
         code=124
     reader.join(timeout=5)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
@@ -79,18 +70,14 @@ def run(command,timeout,required=True):
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
 def resources(label):
-    sample={'label':label,'time':datetime.datetime.now(datetime.timezone.utc).isoformat()}
-    for name,command in [('memory',['sysctl','hw.memsize','vm.swapusage']),('vm',['vm_stat'])]:
-        try:
-            result=run_captured(command,text=True,timeout=10)
-            sample[name]={'exit':result.returncode,'text':(result.stdout+result.stderr)[-5000:]}
-        except Exception as error:
-            sample[name]={'error':str(error)}
-            if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False):
-                report['cleanup_unconfirmed']=True;break
+    if report.get('cleanup_unconfirmed'): return
+    sample=resource_snapshot(label)
     report.setdefault('resources',[]).append(sample)
+    if sample.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
     print('NATIVE_RESOURCE_STATE',json.dumps(sample),flush=True)
 device=None
+owned_watch_devices=[]
+owned_watch_pair=None
 photo_seed_failed=False
 try:
     common=['xcodebuild','-quiet','-project',project,'-scheme',name,'CODE_SIGNING_ALLOWED=NO']
@@ -124,7 +111,7 @@ try:
         if 'LC_BUILD_VERSION' in line: summary.extend(load_commands[index:index+8])
     report['binary_platform_minimum']=summary;print('\n'.join(summary),flush=True)
     text=check_output(['strings',str(binary)],text=True,timeout=30)
-    assert 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
+    assert 'TOUCHCOLOR_PAIRED_E2E' not in text and 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
     assert 'WATCH_EDITOR' not in text and 'com.mango.touchColor.WatchDiagnostics' not in text, 'Debug Watch lifecycle diagnostics leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
     if kind=='vision':
@@ -143,6 +130,34 @@ try:
         installed=next(value for value in runtimes if value['identifier']==runtime)
         report['watch_runtime_supported_device_types']=installed.get('supportedDeviceTypes',[])
         print('WATCH_RUNTIME_SUPPORTED_DEVICE_TYPES',json.dumps(report['watch_runtime_supported_device_types']),flush=True)
+        report['watch_template']=device.copy()
+        report['watch_phone_device_inventory']=device_inventory(devices)
+        original_pairs=json.loads(check_output(['xcrun','simctl','list','pairs','-j'],timeout=30))
+        assert isinstance(original_pairs.get('pairs'),dict) and len(original_pairs['pairs'])<=64, 'Unexpected initial pair inventory'
+        report['watch_pair_inventory_before']=original_pairs
+        print('WATCH_PAIR_PREREQUISITE_INVENTORY',json.dumps({'devices':report['watch_phone_device_inventory'],'pairs':original_pairs}),flush=True)
+        phone_runtime,phone=phone_template(devices)
+        # Default devices are templates only. All boot/pair/cleanup mutations use
+        # new UUIDs created by this invocation, also suitable for later transport E2E.
+        for role,template,target_runtime in [('phone',phone,phone_runtime),('watch',device,runtime)]:
+            created=check_output(['xcrun','simctl','create','TouchColor-owned-'+role+'-'+str(uuid.uuid4())[:8],template['deviceTypeIdentifier'],target_runtime],text=True,timeout=60).strip()
+            verify_new_device(created,devices,owned_watch_devices)
+            owned_watch_devices.append({'role':role,'udid':created,'runtime':target_runtime,'deviceTypeIdentifier':template['deviceTypeIdentifier']})
+            report['owned_watch_devices']=owned_watch_devices
+            print('WATCH_OWNED_DEVICE_CREATED',json.dumps(owned_watch_devices[-1]),flush=True)
+        phone_id,watch_id=[value['udid'] for value in owned_watch_devices]
+        paired=check_output(['xcrun','simctl','pair',watch_id,phone_id],text=True,timeout=60).strip()
+        uuid.UUID(paired)
+        actual_pairs=json.loads(check_output(['xcrun','simctl','list','pairs','-j'],timeout=30))
+        record=verify_pair(actual_pairs,paired,watch_id,phone_id,original_pairs['pairs'])
+        owned_watch_pair=paired
+        report['watch_owned_pair']={'id':paired,'record':record}
+        print('WATCH_OWNED_PAIR_VERIFIED',json.dumps(report['watch_owned_pair']),flush=True)
+        run(['xcrun','simctl','pair_activate',paired],60)
+        resources('before owned phone boot')
+        run(['xcrun','simctl','boot',phone_id],180)
+        run(['xcrun','simctl','bootstatus',phone_id,'-b'],420)
+        device={**device,'udid':watch_id,'name':device['name']+' (owned test pair)'}
     else: runtime,device=candidates[0]
     report.update(runtime=runtime,device=device)
     resources('before boot')
@@ -165,7 +180,7 @@ try:
         print('SIMULATOR_WINDOW_DISCOVERY',json.dumps(report['simulator_window_discovery']),flush=True)
         if discovered: run(['open','-a',str(discovered[0]),'--args','-CurrentDeviceUDID',device['udid']],30,required=False)
         else: report['simulator_window']='No graphical Simulator bundle found in bounded standard locations; supported headless runtime tests continue'
-    if kind in ('vision','tv'):
+    if needs_photo_seed(kind, os.environ.get('TOUCHCOLOR_VISION_CASE')):
         w,h=300,200
         palette=[bytes(v) for v in [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255)]]
         rows=b''.join(b'\0'+b''.join(palette[(y//100)*3+x//100] for x in range(w)) for y in range(h))
@@ -173,13 +188,14 @@ try:
         fixture=out/'asymmetric.png';fixture.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b''))
         photo_seed_failed = run(['xcrun','simctl','addmedia',device['udid'],str(fixture)],120,required=False) != 0
         report['photos_seed']='failed' if photo_seed_failed else 'passed'
+    else:
+        report['photos_seed']='not required by this exact case'
     skip=[]
     if photo_seed_failed:
         # Preserve the failed prerequisite, but still execute unrelated real input, storage and UI paths.
         case={'vision':'VisionWorkflowTests/testRealPhotosImport','tv':'TVWorkflowTests/testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence'}[kind]
         skip=['-skip-testing:'+name+'UITests/'+case]
     resources('before tests')
-    if kind=='vision': diagnose('before tests')
     # Keep build logs quiet, but retain runtime test/checkpoint output for precise failures.
     test_common=[value for value in common if value!='-quiet']
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
@@ -190,12 +206,18 @@ try:
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
         run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)
-        suite=os.environ.get('TOUCHCOLOR_VISION_SUITE','canvas')
-        assert suite in VISION_SUITES, 'Unknown Vision UI coverage group'
-        report['ui_scope']={'suite':suite,'cases':VISION_SUITES[suite]}
-        selected=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/'+method for method in VISION_SUITES[suite]]
+        case=os.environ['TOUCHCOLOR_VISION_CASE']
+        assert case in VISION_CASES, 'Unknown isolated Vision case'
+        method,budget=VISION_CASES[case]
+        assert int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])==budget, 'Vision evidence allocation differs from exact inventory'
+        report['ui_scope']={'case':case,'cases':[method],'evidence_bytes':budget,'fresh_vm':True}
+        selected=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/'+method]
         print('VISION_UI_EXACT_SCOPE',json.dumps(report['ui_scope']),flush=True)
-        run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip,1200)
+        resources('before isolated '+method)
+        try:
+            run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip,600)
+        finally:
+            resources('after isolated '+method)
     elif kind=='watch':
         # Preserve completed hosted evidence independently. The observed49mm cold
         # install/hosted startup consumed much of a shared840s command, so later UI
@@ -213,7 +235,7 @@ except Exception as error:
     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
-    if kind=='watch' and device and not report.get('cleanup_unconfirmed'):
+    if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed'):
         try:
             lifecycle=run_captured(['xcrun','simctl','spawn',device['udid'],'log','show','--last','20m','--style','compact',
                 '--predicate','subsystem == "com.mango.touchColor.WatchDiagnostics"'],text=True,timeout=15)
@@ -224,7 +246,6 @@ finally:
         except Exception as error:
             report['watch_editor_lifecycle']={'error':type(error).__name__}
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
-    if kind=='vision' and not report.get('cleanup_unconfirmed'): diagnose('after platform attempt')
     if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
     if result_bundle.exists() and not report.get('cleanup_unconfirmed'):
@@ -239,7 +260,13 @@ finally:
         except Exception as error:
             report['summary_error']=str(error)
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
-    if device and not report.get('cleanup_unconfirmed'):run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
+    if owned_watch_devices and not report.get('cleanup_unconfirmed'):
+        for owned in reversed(owned_watch_devices): run(['xcrun','simctl','shutdown',owned['udid']],60,required=False)
+        if owned_watch_pair and not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','unpair',owned_watch_pair],60,required=False)
+        for owned in reversed(owned_watch_devices):
+            if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
+    elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
+        run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
     if report.get('cleanup_unconfirmed'): report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
 if report['result']!='passed':raise SystemExit(1)

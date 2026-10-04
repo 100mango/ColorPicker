@@ -133,11 +133,8 @@ private struct SamplingControls: View {
             }
             HStack {
                 Button("−") { session.changeZoom(session.zoom / 2) }.accessibilityLabel("Zoom out").accessibilityIdentifier("sample.zoom.out")
-                Slider(value: Binding(get: { session.zoom }, set: { session.changeZoom($0) }), in: ColorZoom.range)
-                    // The native thumb and track form one adjustable control.
-                    // Combine their semantics instead of exposing an unnamed thumb.
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Image zoom").accessibilityIdentifier("sample.zoom")
+                NativeZoomSlider(value: Binding(get: { session.zoom }, set: { session.changeZoom($0) }))
+                    .frame(maxWidth: .infinity).frame(height: 24)
                 Button("+") { session.changeZoom(session.zoom * 2) }.accessibilityLabel("Zoom in").accessibilityIdentifier("sample.zoom.in")
                 Text(String(format: "%.1f×", session.zoom)).monospacedDigit().frame(width: 55).accessibilityIdentifier("sample.zoom.value")
                 Button("Center") { session.select(.center) }.accessibilityIdentifier("sample.center")

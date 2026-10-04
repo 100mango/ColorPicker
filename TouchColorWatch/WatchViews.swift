@@ -148,7 +148,17 @@ struct WatchTransferView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+#if DEBUG
+                if ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" {
+                    // Read-only correlation of the actual received receipt; no transport injection.
+                    Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
+                        .accessibilityValue(transfer.pairedReceiptValue)
+                } else {
+                    Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
+                }
+#else
                 Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
+#endif
                 if let pending = transfer.pending {
                     Text("\(pending.colors.count) selected colors").font(.caption).accessibilityIdentifier("watch.transfer.count")
                     ForEach(Array(pending.colors.enumerated()), id: \.offset) { index, color in

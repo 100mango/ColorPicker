@@ -80,6 +80,12 @@ struct NativeWindowMinimumSize: NSViewRepresentable {
 final class MinimumSizeView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        #if DEBUG
+        if NativeModalAuditProbe.enabled, let original = window {
+            DispatchQueue.main.async { NativeModalAuditProbe.shared.start(replacing: original) }
+            return
+        }
+        #endif
         window?.contentMinSize = NSSize(width: 740, height: 520)
         window?.contentView?.setAccessibilityLabel(NSLocalizedString("TouchColor workspace", comment: "Window accessibility"))
         window?.contentView?.setAccessibilityIdentifier("workspace.content")

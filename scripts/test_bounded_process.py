@@ -1,3 +1,4 @@
+import os
 import signal
 import select
 import subprocess
@@ -26,9 +27,21 @@ class BoundedProcessTests(unittest.TestCase):
         events = []
         with patch('bounded_process.os.killpg') as kill:
             self.assertFalse(stop_group(child, grace=0.1, checkpoint=events.append))
-        self.assertEqual(child.waits, [0.1, 0.1])
-        self.assertEqual([call.args[1] for call in kill.call_args_list], [signal.SIGTERM, signal.SIGKILL])
+        self.assertEqual(child.waits, [])
+        self.assertEqual([call.args[1] for call in kill.call_args_list if call.args[1]], [signal.SIGTERM, signal.SIGKILL])
         self.assertIn('exit unconfirmed', events[-1])
+
+    def test_exited_leader_does_not_hide_owned_orphan(self):
+        class ReapedLeader:
+            pid = 987654
+            def poll(self): return 0
+        # Descendant survives TERM after its leader has already exited.
+        with patch('bounded_process.group_exists', return_value=True), patch('bounded_process.os.killpg') as kill:
+            self.assertFalse(stop_group(ReapedLeader(), grace=0.025))
+            self.assertEqual([call.args[1] for call in kill.call_args_list], [signal.SIGTERM, signal.SIGKILL])
+        with patch('bounded_process.group_exists', side_effect=[True, False]), patch('bounded_process.os.killpg') as kill:
+            self.assertTrue(stop_group(ReapedLeader(), grace=0.025))
+            kill.assert_called_once_with(987654, signal.SIGTERM)
 
     def test_real_timeout_is_failed_and_child_exit_is_confirmed(self):
         start = time.monotonic()

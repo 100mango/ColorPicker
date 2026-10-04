@@ -1,8 +1,17 @@
 import XCTest
 
 final class WatchWorkflowTests: XCTestCase {
+    private var failClosedInterruption: NSObjectProtocol?
     private var app: XCUIApplication!
     override func setUpWithError() throws {
+        try super.setUpWithError()
+        // Keep intended dialog actions explicit. Never fall through to XCTest's
+        // default handler for an otherwise-unhandled system interruption.
+        failClosedInterruption = addUIInterruptionMonitor(withDescription: "Abort every unhandled system interruption") { _ in
+            // No UI query or XCTest failure recorder may throw before the abort.
+            print("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=watch")
+            fatalError("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=watch; unexpected interruption; no alert action taken")
+        }
         continueAfterFailure = false
         // The first cold Watch UI session can spend two minutes waiting for the
         // system app to become idle. Keep that startup bounded and distinct from
@@ -14,11 +23,16 @@ final class WatchWorkflowTests: XCTestCase {
         app.launch()
     }
     override func tearDownWithError() throws {
+        defer {
+            if let monitor = failClosedInterruption { removeUIInterruptionMonitor(monitor) }
+            failClosedInterruption = nil
+        }
         if (testRun?.totalFailureCount ?? 0) > 0 {
             let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch failure"; shot.lifetime = .keepAlways; add(shot)
             print("WATCH_FAILURE_AX: \(app.debugDescription)")
         }
         app.terminate()
+        try super.tearDownWithError()
     }
     func testNativeRGBEditSaveDuplicateAndOfflineRelaunch() {
         XCTAssertTrue(app.buttons["watch.editor"].waitForExistence(timeout: 15), app.debugDescription)
@@ -177,7 +191,16 @@ final class WatchWorkflowTests: XCTestCase {
                         .allElementsBoundByIndex.compactMap { Int($0.identifier.dropFirst("watch.color.".count)) }
                     if let first = indices.min() { above = targetIndex < first }
                 }
-                if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+                if identifier.hasPrefix("watch.color.") {
+                    // The real 40 mm trace alternated between the header and rows
+                    // 1/2 even at slow full-screen swipe velocity. A small Crown
+                    // turn scrolls the native home List without skipping row 0.
+                    // Never use this route inside the RGB editor, where the Crown
+                    // intentionally changes a color component instead of scrolling.
+                    XCTAssertFalse(app.buttons["BackButton"].exists, app.debugDescription)
+                    print("WATCH_LIST_CROWN: target=\(identifier) above=\(above)"); fflush(stdout)
+                    XCUIDevice.shared.rotateDigitalCrown(delta: above ? -0.1 : 0.1)
+                } else if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
             }
             XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()
         }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Export bounded per-device evidence within one source-defined run envelope."""
 import base64
+import hashlib
 import json
 import os
 import pathlib
@@ -60,6 +61,7 @@ def export_named(suite, names, limit):
         data = path.read_bytes()
         assert data.startswith(b'\xff\xd8') and len(data) <= MAX_IMAGE_BYTES
         encoded = base64.b64encode(data).decode('ascii')
+        print('SCREENSHOT_META:' + json.dumps({'name':family+'-'+name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()},sort_keys=True))
         print(f'SCREENSHOT_BEGIN:{family}-{name}')
         for offset in range(0, len(encoded), 4096):
             print('SCREENSHOT_CHUNK:' + encoded[offset:offset + 4096])
@@ -76,10 +78,19 @@ count += export_named('AccessibilityAudits', [
     'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
     'touchcolor-audit-failure-live', 'touchcolor-audit-failure-policy',
     'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
+    'touchcolor-audit-failure-import', 'touchcolor-audit-failure-inbox',
 ], limit - count)
 if count < limit:
     count += export_named('TouchColorUITests', [functional_prefix + '2'], limit - count)
 if family == 'iPadMini' and count < limit:
+    count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review', 'touchcolor-watch-inbox-status'], limit - count)
+if family == 'iPadMini' and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-mini-audit-photo-state', 'touchcolor-mini-audit-saved-state'], limit - count)
+if family == 'iPhoneCompact' and count < limit:
+    count += export_named('TouchColorUITests', ['touchcolor-largest-paste-control-landscape'], limit - count)
+if family in ('iPhoneCompact', 'iPadLarge') and count < limit:
+    count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review'], limit - count)
+if family == 'iPhoneLarge' and count < limit:
+    count += export_named('AccessibilityAudits', ['touchcolor-watch-inbox-status'], limit - count)
 assert count <= limit
 print('EVIDENCE_IMAGES:' + json.dumps({'family': family, 'count': count, 'allocation': limit}))

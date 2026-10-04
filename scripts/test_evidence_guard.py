@@ -10,12 +10,12 @@ from bounded_process import run_captured
 
 guard = Path(__file__).with_name('validate_evidence.py')
 checked = 0
-def check(prepare, expected, limit=4_000_000):
+def check(prepare, expected, limit=4_000_000, optimized=False):
     global checked
     with tempfile.TemporaryDirectory(prefix='touchcolor-evidence-guard-') as directory:
         root = Path(directory)/'evidence'; root.mkdir()
         prepare(root)
-        result = run_captured([sys.executable, str(guard), str(root), str(limit)], timeout=10, text=True)
+        result = run_captured([sys.executable]+(['-O'] if optimized else [])+[str(guard), str(root), str(limit)], timeout=10, text=True)
         assert (result.returncode == 0) == expected, (prepare.__name__, result.stdout, result.stderr)
         checked += 1
 def valid(root):
@@ -31,6 +31,12 @@ def watch_ui(root):
     name=str(uuid.uuid4()).upper()+'.png'
     (directory/name).write_bytes(b'synthetic image bytes')
     (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native Watch synthetic UI image'}]}]))
+def modal_probe(root):
+    (root/'mac-modal-probe-summary.json').write_text('{}')
+    directory=root/'modal-probe-screenshots'; directory.mkdir()
+    name=str(uuid.uuid4()).upper()+'.png'
+    (directory/name).write_bytes(b'synthetic image bytes')
+    (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native Mac standard AppKit sheet diagnostic'}]}]))
 def unknown(root): (root/'unapproved.txt').write_text('synthetic')
 def oversize(root): (root/'architecture.txt').write_bytes(b'x'*5_000_001)
 def aggregate(root):
@@ -56,7 +62,9 @@ def oversize_text(root):
     next((root/'screenshots').glob('*.txt')).write_bytes(b'x'*256_001)
 check(valid, True)
 check(watch_ui, True)
+check(modal_probe, True)
 check(lambda root: None, False)
 for prepare in [unknown, oversize, symlink, directory_link, hardlink, bad_manifest, unapproved_text, oversize_text, orphan_text]: check(prepare, False)
 check(aggregate, False, 5000)
+for prepare in [unknown, oversize, symlink, hardlink, bad_manifest]: check(prepare, False, optimized=True)
 print(f'{checked} synthetic evidence-boundary checks passed')

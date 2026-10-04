@@ -51,6 +51,9 @@ import ColorDomain
             cell.textLabel?.text = statusText; cell.textLabel?.numberOfLines = 0
             cell.textLabel?.font = .preferredFont(forTextStyle: .body); cell.textLabel?.adjustsFontForContentSizeCategory = true
             cell.selectionStyle = .none; cell.accessibilityIdentifier = "watch.inbox.status"
+#if DEBUG
+            cell.accessibilityValue = inbox.pairedStatusValue
+#endif
             return cell
         }
         let message = messages[indexPath.row]
@@ -60,7 +63,11 @@ import ColorDomain
         for label in [cell.textLabel, cell.detailTextLabel] { label?.numberOfLines = 0; label?.adjustsFontForContentSizeCategory = true }
         cell.textLabel?.font = .preferredFont(forTextStyle: .body)
         cell.detailTextLabel?.font = .preferredFont(forTextStyle: .caption1)
-        cell.accessoryType = .disclosureIndicator; cell.accessibilityIdentifier = "watch.inbox.\(message.id.uuidString)"
+        cell.detailTextLabel?.textColor = .label
+        cell.accessoryType = .disclosureIndicator; cell.accessibilityTraits.insert(.button); cell.accessibilityIdentifier = "watch.inbox.\(message.id.uuidString)"
+#if DEBUG
+        cell.accessibilityValue = inbox.pairedRequestValue(message.id)
+#endif
         return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

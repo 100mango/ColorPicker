@@ -60,6 +60,7 @@ class CaptureCheckpointTests(unittest.TestCase):
             error=subprocess.TimeoutExpired(command,options['timeout']);error.cleanup_confirmed=False;raise error
         result,count = self.run_capture(behavior)
         self.assertFalse(result['success']); self.assertEqual(count,1)
+        self.assertTrue(result['cleanup_unconfirmed'])
 
     def test_nonzero_permission_result_is_not_retried(self):
         result,count = self.run_capture(lambda command,**_: subprocess.CompletedProcess(command,13,stdout='',stderr='Synthetic access denied'))
@@ -104,6 +105,20 @@ class CaptureCheckpointTests(unittest.TestCase):
             checkpoint.publish_acknowledgement(self.ack, {'invalid': object()})
         self.assertEqual(json.loads(self.ack.read_text()), original)
         self.assertEqual(list(self.root.joinpath('tmp').glob('*.tmp')), [])
+
+    def test_unhealthy_host_acknowledges_failure_using_only_known_container(self):
+        checkpoint._containers[('synthetic-device', 'synthetic-runner')] = self.root
+        with patch.object(checkpoint, 'check_output') as lookup, patch.object(checkpoint, 'run_captured') as launch:
+            result = checkpoint.fail_cached_capture('synthetic-device', 'synthetic-runner', self.identifier, 'Diagnostic process exit unconfirmed')
+        self.assertFalse(result['success']); self.assertTrue(result['acknowledged'])
+        self.assertEqual(json.loads(self.ack.read_text()), result)
+        lookup.assert_not_called(); launch.assert_not_called()
+
+    def test_unhealthy_host_does_not_guess_a_replaced_runner_container(self):
+        with patch.object(checkpoint, 'check_output') as lookup, patch.object(checkpoint, 'run_captured') as launch:
+            result = checkpoint.fail_cached_capture('synthetic-device', 'synthetic-runner', self.identifier, 'Unconfirmed cleanup')
+        self.assertFalse(result['success']); self.assertFalse(result['acknowledged'])
+        self.assertFalse(self.ack.exists()); lookup.assert_not_called(); launch.assert_not_called()
 
 
 if __name__=='__main__': unittest.main()

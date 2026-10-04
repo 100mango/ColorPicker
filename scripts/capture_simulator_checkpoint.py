@@ -19,6 +19,24 @@ def publish_acknowledgement(destination, outcome):
     finally:
         temporary.unlink(missing_ok=True)
 
+def fail_cached_capture(device, runner_identifier, request_id, reason):
+    """Acknowledge failure without launching a command on an unhealthy VM.
+
+    Only a previously verified runner container can be used. If the runner was
+    replaced and its request is absent there, report that limitation explicitly.
+    """
+    assert str(uuid.UUID(request_id)).upper() == request_id
+    outcome = {'id': request_id, 'success': False, 'error': reason[:500], 'acknowledged': False}
+    container = _containers.get((device, runner_identifier))
+    if container is None: return outcome
+    request = container / 'tmp' / ('TouchColor-capture-' + request_id + '.json')
+    if not request.is_file() or request.stat().st_size > 1024: return outcome
+    description = json.loads(request.read_text())
+    if description.get('id') != request_id or not description.get('name', '').startswith('Native Vision'): return outcome
+    outcome['acknowledged'] = True
+    publish_acknowledgement(request.with_suffix('.ack'), outcome)
+    return outcome
+
 def capture(device,runner_identifier,request_id,output):
     assert str(uuid.UUID(request_id)).upper()==request_id
     key=(device,runner_identifier)
@@ -59,7 +77,10 @@ def capture(device,runner_identifier,request_id,output):
         groups=json.loads(manifest.read_text()) if manifest.exists() else []
         groups.append({'source':'simctl io screenshot at held XCTest checkpoint','attachments':[{'exportedFileName':destination.name,'suggestedHumanReadableName':description['name']}]})
         manifest.write_text(json.dumps(groups,indent=2)+'\n')
-    except Exception as error:outcome['error']=str(error)
+    except Exception as error:
+        outcome['error']=str(error)
+        if isinstance(error, subprocess.TimeoutExpired) and not getattr(error, 'cleanup_confirmed', False):
+            outcome['cleanup_unconfirmed']=True
     finally:
         publish_acknowledgement(ack, outcome)
     return outcome

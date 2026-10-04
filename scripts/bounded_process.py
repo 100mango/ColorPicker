@@ -5,47 +5,60 @@ import subprocess
 import time
 
 
+def group_exists(group_id):
+    """A reaped leader is not proof that its descendants exited."""
+    try:
+        os.killpg(group_id, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Unknown liveness is never successful cleanup.
+
+
 def stop_group(process, grace=10, checkpoint=None):
+    # Every caller creates the child with start_new_session=True. Its original
+    # PID is the owned PGID even when the session leader has already exited.
+    if process.pid == os.getpgrp():
+        raise ValueError('Refusing to signal the caller process group')
     start = time.monotonic()
     for stop_signal in (signal.SIGTERM, signal.SIGKILL):
-        if process.poll() is not None:
-            return True
+        process.poll()  # Reap the owned leader when possible.
+        if not group_exists(process.pid):
+            return process.poll() is not None
         if checkpoint:
             checkpoint('sending ' + stop_signal.name)
         try:
             os.killpg(process.pid, stop_signal)
         except ProcessLookupError:
             pass
-        if checkpoint:
-            checkpoint('bounded reap after ' + stop_signal.name)
-        try:
-            process.wait(timeout=grace)
-            return True
-        except subprocess.TimeoutExpired:
-            continue
-    confirmed = process.poll() is not None
+        deadline = time.monotonic() + grace
+        while time.monotonic() < deadline:
+            process.poll()
+            if not group_exists(process.pid):
+                return process.poll() is not None
+            time.sleep(min(0.025, max(0, deadline-time.monotonic())))
+    confirmed = process.poll() is not None and not group_exists(process.pid)
     if checkpoint:
         checkpoint('exit confirmed' if confirmed else 'exit unconfirmed after %.3fs' % (time.monotonic() - start))
     return confirmed
 
 
 def run_captured(command, timeout, *, text=True, stderr=subprocess.PIPE, checkpoint=None):
-    """Like subprocess.run(capture_output=True), with bounded post-kill reaping.
-
-    Python's convenience run/check_output wait without a second timeout while
-    reaping a killed child. This wrapper keeps that cleanup explicitly bounded.
-    A timeout is always a failed attempt, even if output was partly written.
-    """
+    """Bound command and whole owned-group cleanup, including orphan descendants."""
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr,
                                text=text, start_new_session=True)
     try:
         output, errors = process.communicate(timeout=timeout)
+        if not stop_group(process, checkpoint=checkpoint):
+            error = subprocess.TimeoutExpired(command, timeout)
+            error.cleanup_confirmed = False
+            raise error
     except subprocess.TimeoutExpired as error:
-        error.cleanup_confirmed = stop_group(process, checkpoint=checkpoint)
+        if not hasattr(error, 'cleanup_confirmed'):
+            error.cleanup_confirmed = stop_group(process, checkpoint=checkpoint)
         raise
     finally:
-        # communicate's selector no longer owns these read handles. Do not call
-        # communicate again just to drain descendants that may still hold a pipe.
         for pipe in (process.stdout, process.stderr):
             if pipe is not None:
                 pipe.close()

@@ -8,6 +8,213 @@ import ColorPaletteLegacy
 @testable import TouchColorWatch
 
 @MainActor final class WatchWorkspaceTests: XCTestCase {
+    func testReceiptWithoutPendingFileRecoversOnlyItsExactQueuedPayloadAfterRelaunch() throws {
+        final class Queued: WatchQueuedPaletteRequest {
+            let userInfo: [String: Any]
+            var cancellations = 0
+            init(_ userInfo: [String: Any]) { self.userInfo = userInfo }
+            func cancel() { cancellations += 1 }
+        }
+        let outcomes: [PaletteTransferReceipt.Outcome] = [.accepted, .rejected]
+        for outcome in outcomes {
+            for pendingMode in 0..<3 {
+                let hasNewPending = pendingMode != 0
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-receipt-queue-\(UUID())")
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let completed = try PaletteTransfer(colors: [RGBColor(hex: "#123456")!])
+                let receipt = PaletteTransferReceipt(requestID: completed.id, fingerprint: try PaletteFingerprint.of(completed), outcome: outcome)
+                let receiptBytes = try receipt.encoded()
+                let receiptFile = directory.appendingPathComponent("last-color-transfer-receipt.json")
+                try receiptBytes.write(to: receiptFile)
+                let matching = Queued(["requestID": completed.id.uuidString, "touchColorPaletteV1": try completed.encoded()])
+                let conflict = try PaletteTransfer(id: completed.id, colors: [RGBColor(hex: "#abcdef")!])
+                let conflicting = Queued(["requestID": completed.id.uuidString, "touchColorPaletteV1": try conflict.encoded()])
+                let malformed = Queued(["requestID": completed.id.uuidString, "touchColorPaletteV1": Data([1])])
+                let otherProtocol = Queued(["requestID": completed.id.uuidString, "unrelated": Data([1])])
+                let next = try PaletteTransfer(id: pendingMode == 2 ? completed.id : UUID(), colors: [RGBColor(hex: "#778899")!])
+                let nextBytes = try next.encoded()
+                let newer = Queued(["requestID": next.id.uuidString, "touchColorPaletteV1": nextBytes])
+                let pendingFile = directory.appendingPathComponent("pending-color-transfer.json")
+                if hasNewPending { try nextBytes.write(to: pendingFile) }
+                let model = WatchTransfer(directory: directory, activate: false,
+                    queuedRequests: { [matching, matching, conflicting, malformed, otherProtocol, newer] })
+                let status = model.status
+                XCTAssertEqual(model.lastReceipt, receipt)
+                XCTAssertEqual(model.pending, hasNewPending ? next : nil)
+                model.reconcileSavedOutcomes()
+                XCTAssertEqual(matching.cancellations, 1)
+                XCTAssertEqual(conflicting.cancellations, 0); XCTAssertEqual(malformed.cancellations, 0)
+                XCTAssertEqual(otherProtocol.cancellations, 0); XCTAssertEqual(newer.cancellations, 0)
+                XCTAssertEqual(model.status, status)
+                XCTAssertEqual(model.pending, hasNewPending ? next : nil)
+                // The cancelled queue may report completion after this recovery.
+                // A conflicting same-UUID payload must not change the new status.
+                model.completeQueuedRequest(completed, error: nil)
+                XCTAssertEqual(model.status, status)
+                XCTAssertEqual(model.pending, hasNewPending ? next : nil)
+                XCTAssertEqual(try Data(contentsOf: receiptFile), receiptBytes)
+                if hasNewPending { XCTAssertEqual(try Data(contentsOf: pendingFile), nextBytes) }
+                else { XCTAssertFalse(FileManager.default.fileExists(atPath: pendingFile.path)) }
+            }
+        }
+    }
+    func testCancelAfterRelaunchCancelsOnlyMatchingPersistedProtocolRequests() throws {
+        final class Queued: WatchQueuedPaletteRequest {
+            let userInfo: [String: Any]
+            var cancellations = 0
+            init(_ userInfo: [String: Any]) { self.userInfo = userInfo }
+            func cancel() { cancellations += 1 }
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-cancel-queue-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let original = WatchTransfer(directory: directory, activate: false)
+        original.request([RGBColor(hex: "#123456")!])
+        let request = try XCTUnwrap(original.pending)
+        let matching = Queued(["requestID": request.id.uuidString, "touchColorPaletteV1": try request.encoded()])
+        let other = Queued(["requestID": UUID().uuidString, "touchColorPaletteV1": try request.encoded()])
+        let otherProtocol = Queued(["requestID": request.id.uuidString, "unrelated": Data([1])])
+        let malformed = Queued(["requestID": request.id.uuidString, "touchColorPaletteV1": Data([1])])
+        let conflicting = Queued(["requestID": request.id.uuidString,
+            "touchColorPaletteV1": try PaletteTransfer(colors: [RGBColor(hex: "#abcdef")!]).encoded()])
+        let reopened = WatchTransfer(directory: directory, activate: false,
+            queuedRequests: { [matching, matching, other, otherProtocol, malformed, conflicting] })
+        XCTAssertEqual(reopened.pending, request)
+        reopened.cancel()
+        XCTAssertEqual(matching.cancellations, 1)
+        XCTAssertEqual(other.cancellations, 0); XCTAssertEqual(otherProtocol.cancellations, 0)
+        XCTAssertEqual(malformed.cancellations, 0); XCTAssertEqual(conflicting.cancellations, 0)
+        XCTAssertNil(reopened.pending)
+        XCTAssertNil(WatchTransfer(directory: directory, activate: false).pending)
+        reopened.cancel(); XCTAssertEqual(matching.cancellations, 1)
+        // Simulate a crash between the durable tombstone and payload removal.
+        try request.encoded().write(to: directory.appendingPathComponent("pending-color-transfer.json"), options: .atomic)
+        let queuedAfterRestart = Queued(matching.userInfo)
+        let recovered = WatchTransfer(directory: directory, activate: false,
+            queuedRequests: { [queuedAfterRestart, other, otherProtocol] })
+        XCTAssertNil(recovered.pending)
+        recovered.reconcileCancelledRequests()
+        XCTAssertEqual(queuedAfterRestart.cancellations, 1)
+        XCTAssertEqual(other.cancellations, 0); XCTAssertEqual(otherProtocol.cancellations, 0)
+        let late = PaletteTransferReceipt(requestID: request.id, fingerprint: try PaletteFingerprint.of(request), outcome: .accepted)
+        recovered.receiveReceipt(try late.encoded())
+        XCTAssertNil(recovered.pending); XCTAssertNil(recovered.lastReceipt)
+        recovered.request([RGBColor(hex: "#abcdef")!])
+        let next = try XCTUnwrap(recovered.pending)
+        recovered.receiveReceipt(try late.encoded()); XCTAssertEqual(recovered.pending, next)
+    }
+    func testCancelledStatusSurvivesOlderReceiptAndLaterAcceptanceStillWorks() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-cancel-receipt-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = WatchTransfer(directory: directory, activate: false)
+        model.request([RGBColor(hex: "#112233")!])
+        let first = try XCTUnwrap(model.pending)
+        let firstReceipt = PaletteTransferReceipt(requestID: first.id, fingerprint: try PaletteFingerprint.of(first), outcome: .accepted)
+        model.receiveReceipt(try firstReceipt.encoded())
+        model.request([RGBColor(hex: "#445566")!]); model.cancel()
+        let cancelled = WatchTransfer(directory: directory, activate: false)
+        XCTAssertNil(cancelled.pending); XCTAssertEqual(cancelled.lastReceipt, firstReceipt)
+        XCTAssertEqual(cancelled.status, NSLocalizedString("Transfer cancelled. If it already arrived, review it on iPhone.", comment: "Watch transfer status"))
+        cancelled.request([RGBColor(hex: "#778899")!])
+        let next = try XCTUnwrap(cancelled.pending)
+        let receipt = PaletteTransferReceipt(requestID: next.id, fingerprint: try PaletteFingerprint.of(next), outcome: .accepted)
+        cancelled.receiveReceipt(try receipt.encoded())
+        let accepted = WatchTransfer(directory: directory, activate: false)
+        XCTAssertNil(accepted.pending); XCTAssertEqual(accepted.lastReceipt, receipt)
+        XCTAssertEqual(accepted.status, NSLocalizedString("Accepted on iPhone.", comment: "Transfer receipt"))
+    }
+    func testMalformedCancellationJournalIsRetainedAndBlocksNewAdmission() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-cancel-corrupt-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("cancelled-color-transfers.json"), bytes = Data("incomplete cancellation journal".utf8)
+        try bytes.write(to: file)
+        let model = WatchTransfer(directory: directory, activate: false)
+        model.request([RGBColor(hex: "#123456")!])
+        XCTAssertNil(model.pending); XCTAssertEqual(try Data(contentsOf: file), bytes)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("pending-color-transfer.json").path))
+    }
+    func testFullCancellationHistoryNeverDropsRecordsOrThePendingRequest() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-cancel-full-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ids = (0..<4096).map { _ in UUID().uuidString }
+        let bytes = try JSONSerialization.data(withJSONObject: ["version": 1, "requestIDs": ids])
+        let journal = directory.appendingPathComponent("cancelled-color-transfers.json")
+        try bytes.write(to: journal)
+        // No activated queue snapshot: absence of a session must not authorize
+        // forgetting durable platform transfers from a previous process.
+        let model = WatchTransfer(directory: directory, activate: false)
+        model.request([RGBColor(hex: "#123456")!])
+        let pending = try XCTUnwrap(model.pending)
+        model.cancel()
+        XCTAssertEqual(model.pending, pending)
+        XCTAssertEqual(try Data(contentsOf: journal), bytes)
+        XCTAssertEqual(WatchTransfer(directory: directory, activate: false).pending, pending)
+        XCTAssertEqual(model.status, NSLocalizedString("The cancellation history is full. The pending transfer was kept.", comment: "Watch transfer error"))
+    }
+    func testFullCancellationHistoryRecoversOnlyAfterSettledQueueConfirmation() throws {
+        final class Queued: WatchQueuedPaletteRequest {
+            let userInfo: [String: Any]
+            var cancellations = 0
+            init(_ id: UUID) { userInfo = ["requestID": id.uuidString] }
+            func cancel() { cancellations += 1 }
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-cancel-settled-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ids = (0..<4096).map { _ in UUID() }
+        let journal = directory.appendingPathComponent("cancelled-color-transfers.json")
+        let bytes = try JSONSerialization.data(withJSONObject: ["version": 1, "requestIDs": ids.map(\.uuidString), "lastCancelledID": ids.last!.uuidString])
+        try bytes.write(to: journal)
+        let outstanding = ids.map(Queued.init)
+        var snapshot: [WatchQueuedPaletteRequest] = outstanding
+        let model = WatchTransfer(directory: directory, activate: false, queuedRequests: { snapshot })
+        model.request([RGBColor(hex: "#123456")!])
+        let pending = try XCTUnwrap(model.pending)
+        model.cancel()
+        XCTAssertEqual(model.pending, pending); XCTAssertEqual(try Data(contentsOf: journal), bytes)
+        XCTAssertTrue(outstanding.allSatisfy { $0.cancellations == 0 })
+        // Every other request is now confirmed absent from the platform queue.
+        // One unresolved entry and the last visible cancellation remain protected.
+        snapshot = [outstanding[0]]
+        model.cancel()
+        XCTAssertNil(model.pending)
+        let value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as? [String: Any])
+        XCTAssertEqual(value["requestIDs"] as? [String], [ids[0].uuidString, ids.last!.uuidString, pending.id.uuidString])
+        XCTAssertEqual(value["lastCancelledID"] as? String, pending.id.uuidString)
+        let reopened = WatchTransfer(directory: directory, activate: false, queuedRequests: { snapshot })
+        XCTAssertNil(reopened.pending)
+        XCTAssertEqual(reopened.status, NSLocalizedString("Transfer cancelled. If it already arrived, review it on iPhone.", comment: "Watch transfer status"))
+        let removed = try PaletteTransfer(id: ids[1], colors: [RGBColor(hex: "#abcdef")!])
+        let late = PaletteTransferReceipt(requestID: removed.id, fingerprint: try PaletteFingerprint.of(removed), outcome: .accepted)
+        reopened.receiveReceipt(try late.encoded())
+        XCTAssertNil(reopened.pending); XCTAssertNil(reopened.lastReceipt)
+        reopened.request([RGBColor(hex: "#778899")!])
+        let next = try XCTUnwrap(reopened.pending)
+        reopened.receiveReceipt(try late.encoded()); XCTAssertEqual(reopened.pending, next)
+        XCTAssertEqual(outstanding[0].cancellations, 0)
+    }
+    func testCompactionCannotDiscardAnUnreadableOrReplacedPendingFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("watch-cancel-unreadable-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = directory.appendingPathComponent("cancelled-color-transfers.json")
+        let bytes = try JSONSerialization.data(withJSONObject: ["version": 1, "requestIDs": (0..<4096).map { _ in UUID().uuidString }])
+        try bytes.write(to: journal)
+        let model = WatchTransfer(directory: directory, activate: false, queuedRequests: { [] })
+        model.request([RGBColor(hex: "#123456")!])
+        let pending = try XCTUnwrap(model.pending)
+        let pendingFile = directory.appendingPathComponent("pending-color-transfer.json")
+        let different = try PaletteTransfer(colors: [RGBColor(hex: "#abcdef")!]).encoded()
+        for replacement in [Data("truncated pending request".utf8), different] {
+            try replacement.write(to: pendingFile)
+            model.cancel()
+            XCTAssertEqual(model.pending, pending)
+            XCTAssertEqual(try Data(contentsOf: pendingFile), replacement)
+            XCTAssertEqual(try Data(contentsOf: journal), bytes)
+        }
+    }
     func testCrownComponentWritebacksIgnoreIdenticalNonfiniteAndUnselectedValues() {
         let suite = "TouchColor.watch-crown-writeback.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

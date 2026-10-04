@@ -1,8 +1,12 @@
+#include <stdlib.h>
+#include <stdio.h>
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import "TCPaletteUIHelpers.h"
 #import <math.h>
 
 @interface TouchColorIPadUITests : XCTestCase
+@property (nonatomic, strong) id<NSObject> failClosedInterruption;
 @property (nonatomic, strong) XCUIApplication *app;
 @property (nonatomic) CGSize originalWindowSize;
 @property (nonatomic) BOOL recordingIssue;
@@ -28,8 +32,20 @@
     self.recordingIssue=NO;
     [super recordIssue:issue];
 }
+- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
+- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
+- (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
+- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
+- (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
+- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)setUp {
-    [super setUp];self.continueAfterFailure=NO;
+    [super setUp];
+    // Install before launch; known dialog controls stay in their explicit tests.
+    self.failClosedInterruption=[self addUIInterruptionMonitorWithDescription:@"Abort every unhandled system interruption" handler:^BOOL(XCUIElement *unusedAlert) {
+        // No UI query or failure recorder can throw and reach XCTest's default handler.
+        fputs("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT class=TouchColorIPadUITests; no alert action taken\n",stderr);
+        abort();
+    }];self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
@@ -161,16 +177,39 @@
     XCTAssertTrue(self.app.buttons[@"sampleCenter"].hittable);
     XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
 }
+- (void)testCancelPhotoLoadingRetainsTheCurrentCanvasAndPalette {
+    [self.app terminate];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-delay-photo-import"];
+    [self.app launch];[self importFixture];
+    [self.app.buttons[@"saveColor"] tap];
+    XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
+    NSString *selected=self.app.staticTexts[@"sampledColor"].label;
+    [self choosePhoto];
+    XCUIElement *photo=[self.app.images matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"]].firstMatch;
+    XCTAssertTrue([photo waitForExistenceWithTimeout:15]);[photo tap];
+    XCUIElement *cancel=self.app.buttons[@"photo.import.cancel"].firstMatch;
+    XCTAssertTrue([cancel waitForExistenceWithTimeout:5]);XCTAssertTrue(cancel.hittable);[cancel tap];
+    [self assertPresentationDisappears:cancel];
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,1u);
+    XCTestExpectation *late=[self expectationWithDescription:@"The delayed provider-start boundary has elapsed"];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,9*NSEC_PER_SEC),dispatch_get_main_queue(),^{ [late fulfill]; });
+    [self waitForExpectations:@[late] timeout:10];
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].firstMatch.exists);
+    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,1u);
+}
 - (void)testLargestTextNativePaletteAndCanvasControls {
     [self.app terminate];self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];[self.app launch];
     XCUIElement *sources=self.app.scrollViews[@"sourceControls"];
-    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor"]) {
+    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {
         XCUIElement *button=self.app.buttons[identifier];
-        for (NSUInteger i=0;i<5 && (!button.hittable || !CGRectContainsRect(sources.frame,CGRectInset(button.frame,1,1)));i++) [sources swipeUp];
+        for (NSUInteger i=0;i<5 && (!button.hittable || !CGRectContainsRect(sources.frame,CGRectInset(button.frame,1,1)));i++) [self scrollTowardElement:button inScroll:sources];
         XCTAssertTrue(button.hittable,@"%@",self.app.debugDescription);
         XCTAssertGreaterThanOrEqual(button.frame.size.height,44);
     }
-    [sources swipeDown];[sources swipeDown];
+    for (NSUInteger i=0;i<5 && !self.app.buttons[@"choosePhoto"].hittable;i++) [self scrollTowardElement:self.app.buttons[@"choosePhoto"] inScroll:sources];
     [self importFixture];
     XCUIElement *controls=self.app.scrollViews[@"photoControls"];
     XCUIElement *save=self.app.buttons[@"saveColor"];
@@ -195,6 +234,52 @@
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
     [self importFixture];
     XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
+}
+- (void)testFullScreenPaletteReviewRetainsPhotoAndKeyboardState {
+    [self importFixture];
+    [self.app.images[@"sampleImage"] tap];
+    [self.app typeKey:@"+" modifierFlags:0];
+    NSString *selected=self.app.staticTexts[@"sampledColor"].label;
+    NSString *marker=self.app.images[@"sampleMarker"].value;
+    CGFloat imageWidth=self.app.images[@"sampleImage"].frame.size.width;
+    [self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app];
+    [self verifyPaletteRows:@[@"#112233",@"#112233"] app:self.app];
+    XCUIElement *close=self.app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0u,@"Cancel preserves the palette");
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    XCTAssertEqualObjects(self.app.images[@"sampleMarker"].value,marker);
+    XCTAssertEqualWithAccuracy(self.app.images[@"sampleImage"].frame.size.width,imageWidth,2);
+    [self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app];
+    [self verifyPaletteRows:@[@"#112233",@"#112233"] app:self.app];
+    [self tapReadyPaletteElement:self.app.buttons[@"palette.import.accept"] timeout:5];[self assertPresentationDisappears:close];
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,2u,@"Dismissal refreshes the retained palette controller");
+    for (NSUInteger index=0;index<2;index++) XCTAssertTrue([[self.app.tables[@"colorHistory"].cells elementBoundByIndex:index].label containsString:@"#112233"]);
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    [self openPaletteAction:@"watch.inbox.open" app:self.app];
+    close=self.app.buttons[@"watch.inbox.close"];XCTAssertTrue([close waitForExistenceWithTimeout:5]);[self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
+    XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
+    XCTAssertEqualObjects(self.app.images[@"sampleMarker"].value,marker);
+    [self.app typeKey:@"+" modifierFlags:0];
+    XCTAssertGreaterThan(self.app.images[@"sampleImage"].frame.size.width,imageWidth,@"Photo keyboard focus returns after full-screen dismissal");
+}
+- (void)testFullScreenPaletteFlowsResumeLiveUnavailableState {
+    [self.app.buttons[@"liveColor"] tap];
+    XCTAssertTrue([self.app.staticTexts[@"cameraStatus"] waitForExistenceWithTimeout:5]);
+    XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
+    NSArray *actions=@[@"palette.import.open",@"watch.inbox.open"];
+    NSArray *closers=@[@"palette.import.close",@"watch.inbox.close"];
+    for (NSUInteger index=0;index<actions.count;index++) {
+        [self openPaletteAction:actions[index] app:self.app];
+        XCUIElement *close=self.app.buttons[closers[index]];
+        XCTAssertTrue([close waitForExistenceWithTimeout:5]);
+        XCTAssertFalse(self.app.buttons[@"saveLiveColor"].hittable,@"Inactive live controls must not be actionable under the full-screen flow");
+        if (index==1) { [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];XCTAssertTrue(close.hittable); }
+        [self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
+        XCTNSPredicateExpectation *resumed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'not available'"] object:self.app.staticTexts[@"cameraStatus"]];
+        XCTAssertEqual([XCTWaiter waitForExpectations:@[resumed] timeout:5],XCTWaiterResultCompleted,@"Full-screen dismissal must release source suspension");
+        XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
+        XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0u);
+    }
 }
 - (void)testPrivacyCloseRetainsPhotoSelection {
     [self importFixture];
@@ -241,23 +326,28 @@
     }
 }
 - (void)tearDown {
-    // XCTest can end a failing case before its remaining actions. Recover the OS window
-    // independently so a failed modal assertion cannot change the next suite's geometry.
-    if (self.originalWindowSize.width>0) {
-        [self.app terminate];[self.app launch];
-        XCUIElement *window=self.app.windows.firstMatch;
-        if (fabs(window.frame.size.width-self.originalWindowSize.width)>4) {
-            [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
-            XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
-                CGSize size=window.frame.size;
-                return fabs(size.width-self.originalWindowSize.width)<4 && fabs(size.height-self.originalWindowSize.height)<4;
-            }] object:window];
-            XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore OS window after failed case: %@",self.app.debugDescription);
+    @try {
+        // XCTest can end a failing case before its remaining actions. Recover the OS window
+        // independently so a failed modal assertion cannot change the next suite's geometry.
+        if (self.originalWindowSize.width>0) {
+            [self.app terminate];[self.app launch];
+            XCUIElement *window=self.app.windows.firstMatch;
+            if (fabs(window.frame.size.width-self.originalWindowSize.width)>4) {
+                [[[window coordinateWithNormalizedOffset:CGVectorMake(0.5,0)] coordinateWithOffset:CGVectorMake(0,12)] doubleTap];
+                XCTNSPredicateExpectation *restored=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object,NSDictionary *bindings) {
+                    CGSize size=window.frame.size;
+                    return fabs(size.width-self.originalWindowSize.width)<4 && fabs(size.height-self.originalWindowSize.height)<4;
+                }] object:window];
+                XCTAssertEqual([XCTWaiter waitForExpectations:@[restored] timeout:8],XCTWaiterResultCompleted,@"Restore OS window after failed case: %@",self.app.debugDescription);
+            }
+            self.originalWindowSize=CGSizeZero;
         }
-        self.originalWindowSize=CGSizeZero;
+        [self.app terminate];
+        XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:10],@"Each independent case must finish with its app process stopped");
+        [super tearDown];
+    } @finally {
+        if (self.failClosedInterruption) [self removeUIInterruptionMonitor:self.failClosedInterruption];
+        self.failClosedInterruption=nil;
     }
-    [self.app terminate];
-    XCTAssertTrue([self.app waitForState:XCUIApplicationStateNotRunning timeout:10],@"Each independent case must finish with its app process stopped");
-    [super tearDown];
 }
 @end

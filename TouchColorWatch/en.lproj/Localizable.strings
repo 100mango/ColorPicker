@@ -1,1 +1,3 @@
 /* English source strings are the canonical fallbacks. */
+
+"The cancellation history is full. The pending transfer was kept." = "The cancellation history is full. The pending transfer was kept.";

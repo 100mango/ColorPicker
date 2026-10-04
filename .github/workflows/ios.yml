@@ -1,19 +1,19 @@
-name: Native iPad and iPhone compatibility
+name: Combined UIKit import qualification
 on:
   push:
-    branches: [codex/native-ipad]
+    branches: [codex/platform-integration]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: touchcolor-ios-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   compatibility:
     name: ${{ matrix.family }}
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27
@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/native-ipad
+          test "$GITHUB_REF" = refs/heads/codex/platform-integration
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -58,13 +58,22 @@ jobs:
       - name: Validate checked-in project and metadata
         run: |
           python3 scripts/generate_project.py
-          git diff --exit-code -- TouchColor.xcodeproj
+          python3 scripts/generate_watch_project.py
+          git diff --exit-code -- TouchColor.xcodeproj TouchColorWatch.xcodeproj
+          python3 scripts/generate_palette_fixture_project.py
+          git diff --exit-code -- TestFixtures
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
+          python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
+          python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           xcodebuild -list -project TouchColor.xcodeproj
+      - name: Shared domain raster and legacy palette tests
+        timeout-minutes: 6
+        run: swift test --package-path Packages/ColorCore
       - name: Build unsigned Release for physical iOS devices
         run: |
           set -o pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify_embedded_watch.py build/device/Build/Products/Release-iphoneos/TouchColor.app device
       - name: Analyze production Objective-C source
         timeout-minutes: 5
         run: |
@@ -81,6 +90,10 @@ jobs:
           assert (app/'TouchColor').is_file()
           metadata=plistlib.loads((app/'Info.plist').read_bytes())
           assert metadata['UIDeviceFamily']==[1,2], metadata['UIDeviceFamily']
+          assert not metadata.get('UIFileSharingEnabled')
+          assert not metadata.get('LSSupportsOpeningDocumentsInPlace')
+          assert not list(app.rglob('*PaletteFixtures*')), 'Fixture host must not be in Release packaging'
+          assert 'PaletteFixtures' not in Path('TouchColor.xcodeproj/project.pbxproj').read_text()
           print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'native iPhone and iPad'}))
           directory=app/'Frameworks'
           entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
@@ -98,9 +111,16 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
+      - name: Build independent simulator-only palette fixture host
+        id: build-fixture
+        timeout-minutes: 4
+        run: |
+          xcodebuild -project TestFixtures/PaletteFixtures.xcodeproj -scheme PaletteFixtures -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/palette-fixtures \
+            CODE_SIGNING_ALLOWED=NO build
       - name: Warm up required simulator
         id: warm-device
-        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' && steps.build-fixture.outcome == 'success' }}
         timeout-minutes: 10
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" prepare
       - name: Unit and constrained-window layout tests
@@ -121,7 +141,7 @@ jobs:
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
       - name: Shut down simulator
-        if: always()
+        if: ${{ always() && steps.warm-device.outcome != 'skipped' }}
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
       - name: Export bounded device evidence

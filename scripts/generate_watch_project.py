@@ -23,6 +23,10 @@ def sources(directory):
 apprefs=sources('TouchColorWatch')
 unitrefs=sources('TouchColorWatchTests')+sources('Packages/ColorCore/Tests')
 uirefs=sources('TouchColorWatchUITests')
+pairedref=ref('TouchColorPhoneCompanion/PairedTests/WatchPairedTransferTests.swift','sourcecode.swift')
+uirefs.append(pairedref);allrefs.append(pairedref)
+barrierref=ref('TouchColorPhoneCompanion/PairedTests/PairedReceiptBarrier.swift','sourcecode.swift')
+uirefs.append(barrierref);allrefs.append(barrierref)
 resource=ref('TouchColorWatch/Assets.xcassets','folder.assetcatalog')
 privacy=ref('TouchColorWatch/PrivacyInfo.xcprivacy','text.xml')
 localizations=[add('loc:'+lang,'PBXFileReference',lastKnownFileType='text.plist.strings',name=lang,path='TouchColorWatch/'+lang+'.lproj/Localizable.strings',sourceTree='<group>') for lang in ['en','zh-Hans']]
@@ -43,7 +47,7 @@ for name,kind,files in [('TouchColorWatch','application',apprefs),('TouchColorWa
     phases=[phase(name+'sources','PBXSourcesBuildPhase',files),framework,phase(name+'resources','PBXResourcesBuildPhase',[resource,privacy,strings,infoStrings] if app else [])]
     settings=dict(PRODUCT_NAME='$(TARGET_NAME)',PRODUCT_BUNDLE_IDENTIFIER='com.mango.touchColor.watchkitapp' if app else 'com.mango.touchColor.'+name,GENERATE_INFOPLIST_FILE='YES',WATCHOS_DEPLOYMENT_TARGET='9.0',SDKROOT='watchos',SUPPORTED_PLATFORMS='watchos watchsimulator',TARGETED_DEVICE_FAMILY='4',SUPPORTS_MACCATALYST='NO',SWIFT_VERSION='5.0',CODE_SIGN_STYLE='Automatic',CODE_SIGNING_ALLOWED='NO',ENABLE_APP_SANDBOX='NO',ENABLE_HARDENED_RUNTIME='NO',LD_RUNPATH_SEARCH_PATHS=['$(inherited)','@executable_path/Frameworks','@loader_path/Frameworks'],CLANG_ENABLE_MODULES='YES')
     if app:
-        settings.update(PRODUCT_NAME='TouchColor',PRODUCT_MODULE_NAME='TouchColorWatch',INFOPLIST_KEY_CFBundleName='TouchColor',INFOPLIST_KEY_CFBundleDisplayName='TouchColor',INFOPLIST_KEY_WKApplication='YES',INFOPLIST_KEY_WKCompanionAppBundleIdentifier='com.mango.touchColor',INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp='YES',ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',MARKETING_VERSION='2.0',CURRENT_PROJECT_VERSION='20001')
+        settings.update(PRODUCT_NAME='TouchColor',PRODUCT_MODULE_NAME='TouchColorWatch',INFOPLIST_KEY_CFBundleName='TouchColor',INFOPLIST_KEY_CFBundleDisplayName='TouchColor',INFOPLIST_KEY_WKApplication='YES',INFOPLIST_KEY_WKCompanionAppBundleIdentifier='com.mango.touchColor',INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp='YES',ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',MARKETING_VERSION='2.0',CURRENT_PROJECT_VERSION='20001',SKIP_INSTALL='YES')
     if kind=='bundle.unit-test': settings.update(TEST_HOST='$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor',BUNDLE_LOADER='$(TEST_HOST)')
     if kind=='bundle.ui-testing': settings.update(TEST_TARGET_NAME='TouchColorWatch')
     dependencies=[]

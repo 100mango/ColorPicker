@@ -15,7 +15,42 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
     private nonisolated let receiptRoutes = PaletteReceiptRoutes()
     private var connectivity: WCSession?
     private(set) var status: String?
-    init(defaults: UserDefaults, domain: String) { inbox = PaletteInbox(defaults: defaults, domain: domain); super.init() }
+#if DEBUG
+    // Read-only evidence of actual delegate ingress and explicit local acceptance.
+    private var pairedRequests: [UUID: [String: String]] = [:]
+    private var pairedReceipt: [String: String]?
+    private let pairedDefaults: UserDefaults
+    private let pairedDomain: String
+    func pairedRequestValue(_ id: UUID) -> String? { pairedJSON(pairedRequests[id]) }
+    var pairedStatusValue: String? {
+        if let pairedReceipt { return pairedJSON(pairedReceipt) }
+        let pending = try? inbox.pending()
+        let active = connectivity?.activationState == .activated && receiptRoutes.currentEpoch() != nil
+        let values = pairedDefaults.persistentDomain(forName: pairedDomain) ?? [:]
+        let raw = values[PaletteInbox.acceptedReceiptStorageIdentifier]
+        guard let accepted = raw == nil ? [:] : raw as? [String: String], accepted.count <= PaletteInbox.maximumReceipts,
+              accepted.allSatisfy({ UUID(uuidString: $0.key)?.uuidString == $0.key && $0.value.count == 64 && $0.value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) }) else {
+            return pairedJSON(["phase": "not-ready", "acceptedReceiptCount": "unreadable"])
+        }
+        var value = ["phase": active && status == nil && pending?.isEmpty == true ? "ready-empty" : "not-ready", "activated": active ? "true" : "false", "pendingCount": pending.map { String($0.count) } ?? "unreadable", "acceptedReceiptCount": String(accepted.count)]
+        if accepted.count == 1, let receipt = accepted.first {
+            value.merge(["requestID": receipt.key, "fingerprint": receipt.value, "requestProtocol": "touchColorPaletteV1", "receiptProtocol": "touchColorReceiptV1", "version": "1", "outcome": "accepted", "receiveChannel": "persisted"]) { _, new in new }
+        }
+        return pairedJSON(value)
+    }
+    private func pairedJSON(_ value: [String: String]?) -> String? {
+        guard ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1", let value,
+              let data = try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys) else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+#endif
+    init(defaults: UserDefaults, domain: String) {
+        inbox = PaletteInbox(defaults: defaults, domain: domain)
+#if DEBUG
+        pairedDefaults = defaults; pairedDomain = domain
+#endif
+        super.init()
+    }
     @objc var isSupported: Bool { WCSession.isSupported() }
     @objc func activate() {
         guard isSupported else {
@@ -26,7 +61,7 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
         let session = WCSession.default; connectivity = session; session.delegate = self; session.activate()
     }
     func pending() throws -> [PaletteTransfer] { try inbox.pending() }
-    @discardableResult private func receive(_ data: Data, epoch: UInt64) -> Bool {
+    @discardableResult private func receive(_ data: Data, epoch: UInt64, channel: String) -> Bool {
         guard receiptRoutes.isCurrent(epoch) else { return false }
         do {
             let request = try PaletteTransfer.decode(data)
@@ -34,6 +69,11 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
             // The actual delegate callback captured this epoch before crossing to MainActor.
             // A queued callback from a previous counterpart cannot grant a new delivery route.
             guard receiptRoutes.admit(request.id, epoch: epoch) else { return false }
+#if DEBUG
+            if ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" {
+                pairedRequests[request.id] = ["requestID": request.id.uuidString, "requestProtocol": "touchColorPaletteV1", "version": "1", "fingerprint": try PaletteFingerprint.of(request), "receiveChannel": channel]
+            }
+#endif
             if let receipt { acknowledge(receipt) }
             status = nil
         } catch {
@@ -44,6 +84,13 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
     }
     func accept(_ id: UUID) throws {
         let receipt = try inbox.accept(id)
+#if DEBUG
+        if var value = pairedRequests[id] {
+            value["receiptProtocol"] = "touchColorReceiptV1"; value["fingerprint"] = receipt.fingerprint
+            value["outcome"] = receipt.outcome.rawValue; value["version"] = String(receipt.version)
+            pairedReceipt = value
+        }
+#endif
         acknowledge(receipt)
         NotificationCenter.default.post(name: .touchColorWatchInboxChanged, object: self)
     }
@@ -77,7 +124,7 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
         let content = PhonePaletteInboxController(inbox: self)
         content.onDismiss = completion
         let navigation = UINavigationController(rootViewController: content)
-        navigation.modalPresentationStyle = .pageSheet
+        navigation.modalPresentationStyle = .fullScreen
         controller.present(navigation, animated: true) { navigation.presentationController?.delegate = content }
     }
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
@@ -106,7 +153,7 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
             replyHandler(["received": false]); return
         }
         Task { @MainActor in
-            let received = self.receive(data, epoch: epoch)
+            let received = self.receive(data, epoch: epoch, channel: "sendMessage")
             replyHandler(["received": received, "requestID": request.id.uuidString])
         }
     }
@@ -114,6 +161,6 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
         guard let epoch = receiptRoutes.currentEpoch(), session.activationState == .activated,
               let data = userInfo["touchColorPaletteV1"] as? Data, data.count <= PaletteTransfer.maximumBytes,
               let request = try? PaletteTransfer.decode(data), userInfo["requestID"] as? String == request.id.uuidString else { return }
-        Task { @MainActor in self.receive(data, epoch: epoch) }
+        Task { @MainActor in self.receive(data, epoch: epoch, channel: "transferUserInfo") }
     }
 }

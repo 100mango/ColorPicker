@@ -118,3 +118,5 @@
 "Delete" = "删除";
 "%lld selected colors" = "已选择 %lld 个颜色";
 "Preview zoom" = "预览缩放";
+
+"The cancellation history is full. The pending transfer was kept." = "取消记录已达到存储上限。待发送的传输已保留。";

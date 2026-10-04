@@ -7,12 +7,21 @@ import CryptoKit
 import AVFoundation
 
 @MainActor final class TouchColorMacUITests: XCTestCase {
+    private var failClosedInterruption: NSObjectProtocol?
     private var app: XCUIApplication!
     private var fixture: URL!
     private var suite = ""
     private var expectedUID: Int?
     private var expectsSandbox = false
     override func setUpWithError() throws {
+        try super.setUpWithError()
+        // Keep intended dialog actions explicit. Never fall through to XCTest's
+        // default handler for an otherwise-unhandled system interruption.
+        failClosedInterruption = addUIInterruptionMonitor(withDescription: "Abort every unhandled system interruption") { _ in
+            // No UI query or XCTest failure recorder may throw before the abort.
+            print("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=mac")
+            fatalError("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=mac; unexpected interruption; no alert action taken")
+        }
         continueAfterFailure = false
         suite = "TouchColor.mac-ui.\(UUID())"
         fixture = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-fixture-\(UUID()).png")
@@ -57,6 +66,10 @@ import AVFoundation
         print("NATIVE_UI_RUNNING_APP path=\(actual.bundleURL?.path ?? "") executable=\(executable.path) sha256=\(digest)")
     }
     override func tearDownWithError() throws {
+        defer {
+            if let monitor = failClosedInterruption { removeUIInterruptionMonitor(monitor) }
+            failClosedInterruption = nil
+        }
         if let app {
             if (testRun?.totalFailureCount ?? 0) > 0 && app.state != .notRunning {
                 let failure = XCTAttachment(screenshot: app.screenshot())
@@ -67,6 +80,7 @@ import AVFoundation
         }
         if let fixture { try? FileManager.default.removeItem(at: fixture) }
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+        try super.tearDownWithError()
     }
     private func openFile(_ url: URL) {
         app.buttons["image.open"].click()
@@ -377,6 +391,33 @@ import AVFoundation
             print("MAC_ACCESSIBILITY_AUDIT_PASS: \(state)")
         } else { throw XCTSkip("Native audit qualification targets the installed macOS 27 runtime") }
     }
+    private func launchStandardModalProbe() {
+        app.terminate()
+        app.launchEnvironment["TOUCHCOLOR_NATIVE_MODAL_PROBE"] = "1"
+        app.launch()
+        XCTAssertTrue(app.buttons["probe.standard.sheet"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["probe.standard.alert"].exists)
+    }
+    @MainActor func testDiagnosticStandardAppKitSheetAudit() throws {
+        launchStandardModalProbe()
+        app.buttons["probe.standard.sheet"].click()
+        XCTAssertTrue(app.buttons["probe.sheet.done"].waitForExistence(timeout: 5), app.debugDescription)
+        print("NATIVE_STANDARD_SHEET_AX: \(app.debugDescription)"); fflush(stdout)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Native Mac standard AppKit sheet diagnostic"; image.lifetime = .keepAlways; add(image)
+        try audit("diagnostic standard AppKit sheet")
+        app.buttons["probe.sheet.done"].click()
+    }
+    @MainActor func testDiagnosticStandardAppKitAlertAudit() throws {
+        launchStandardModalProbe()
+        app.buttons["probe.standard.alert"].click()
+        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 5), app.debugDescription)
+        print("NATIVE_STANDARD_ALERT_AX: \(app.debugDescription)"); fflush(stdout)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Native Mac standard AppKit alert diagnostic"; image.lifetime = .keepAlways; add(image)
+        try audit("diagnostic standard AppKit alert")
+        app.buttons["OK"].click()
+    }
     @MainActor func testOfficialAccessibilityEmptyAndPopulatedCanvas() throws {
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.groups["workspace.palette"].waitForExistence(timeout: 10), app.debugDescription)
@@ -386,17 +427,28 @@ import AVFoundation
         let zoom = app.sliders["sample.zoom"]
         XCTAssertTrue(zoom.exists); XCTAssertEqual(zoom.label, "Image zoom")
         XCTAssertFalse(zoom.isEnabled)
-        XCTAssertEqual(zoom.descendants(matching: .valueIndicator).matching(NSPredicate(format: "label == ''")).count, 0)
+        XCTAssertEqual(Double(zoom.value as? String ?? ""), 1)
+        XCTAssertEqual(zoom.descendants(matching: .valueIndicator)
+            .matching(NSPredicate(format: "label == '' AND (value == nil OR value == '')")).count, 0)
         try audit("empty workspace")
         openFile(fixture); assertHex("#ff00ff")
         app.buttons["sample.save"].click()
         try audit("full image and palette")
-        // Real pointer input must still operate the original slider after the
-        // accessibility composition change, with visible canvas magnification.
+        // The standard AppKit control must retain real pointer/keyboard input,
+        // an accessible numeric value and visible canvas magnification.
         let canvas = app.images["image.canvas"]
         let originalWidth = canvas.frame.width
         zoom.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
         XCTAssertGreaterThan(canvas.frame.width, originalWidth * 1.5)
+        let zoomBeforeKeyboard = try XCTUnwrap(Double(zoom.value as? String ?? ""))
+        app.typeKey("+", modifierFlags: .command)
+        let keyboardZoom = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (Double(zoom.value as? String ?? "") ?? 0) > zoomBeforeKeyboard
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [keyboardZoom], timeout: 5), .completed,
+                       "The native range value must follow the real Zoom In keyboard command")
+        let magnified = XCTAttachment(screenshot: app.screenshot())
+        magnified.name = "Native Mac native slider pointer and keyboard magnification"; magnified.lifetime = .keepAlways; add(magnified)
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
     }
     @MainActor func testOfficialAccessibilityCameraAndPrivacy() throws {

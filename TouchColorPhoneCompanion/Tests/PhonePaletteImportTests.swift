@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import ColorPaletteLegacy
 @testable import TouchColor
 
-/// Prepared for the integrated phone test target; not yet registered or executed.
+/// Integrated UIKit review lifecycle and unsupported-companion behavior.
 @MainActor final class PhonePaletteImportTests: XCTestCase {
     func testUnsupportedCompanionExplainsIndependentPaletteImport() throws {
         let suite = "TouchColor.inbox-unavailable.\(UUID())", defaults = UserDefaults(suiteName: suite)!

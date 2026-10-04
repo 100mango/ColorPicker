@@ -3,16 +3,30 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class VisionWorkflowTests: XCTestCase {
+    private var failClosedInterruption: NSObjectProtocol?
     private var app: XCUIApplication!
     override func setUpWithError() throws {
+        try super.setUpWithError()
+        // Keep intended dialog actions explicit. Never fall through to XCTest's
+        // default handler for an otherwise-unhandled system interruption.
+        failClosedInterruption = addUIInterruptionMonitor(withDescription: "Abort every unhandled system interruption") { _ in
+            // No UI query or XCTest failure recorder may throw before the abort.
+            print("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=vision")
+            fatalError("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=vision; unexpected interruption; no alert action taken")
+        }
         continueAfterFailure = false
         app = XCUIApplication(); app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.vision-ui.\(UUID())"
         let chinese = name.contains("Chinese")
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", chinese ? "(zh-Hans)" : "(en)", "-AppleLocale", chinese ? "zh_CN" : "en_US"]; app.launch()
     }
     override func tearDownWithError() throws {
+        defer {
+            if let monitor = failClosedInterruption { removeUIInterruptionMonitor(monitor) }
+            failClosedInterruption = nil
+        }
         if (testRun?.totalFailureCount ?? 0) > 0 { capture("Native Vision failure"); print("VISION_FAILURE_AX: \(app.debugDescription)") }
         app.terminate()
+        try super.tearDownWithError()
     }
     private func capture(_ name: String) {
         // A failed visual checkpoint remains an XCTest failure, while later functional

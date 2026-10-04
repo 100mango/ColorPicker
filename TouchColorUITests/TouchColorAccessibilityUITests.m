@@ -1,20 +1,33 @@
+#include <stdlib.h>
+#include <stdio.h>
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import "TCPaletteUIHelpers.h"
 #import <math.h>
 
 /// Official XCTest audits run as their own bounded CI stage on each supported simulator family.
 @interface TouchColorAccessibilityUITests : XCTestCase
+@property (nonatomic, strong) id<NSObject> failClosedInterruption;
 @property (nonatomic, strong) XCUIApplication *app;
 @property (nonatomic) CGSize originalWindowSize;
 @end
 @implementation TouchColorAccessibilityUITests
 - (void)setUp {
-    [super setUp]; self.continueAfterFailure=NO;
+    [super setUp];
+    // Install before launch; known dialog controls stay in their explicit tests.
+    self.failClosedInterruption=[self addUIInterruptionMonitorWithDescription:@"Abort every unhandled system interruption" handler:^BOOL(XCUIElement *unusedAlert) {
+        // No UI query or failure recorder can throw and reach XCTest's default handler.
+        fputs("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT class=TouchColorAccessibilityUITests; no alert action taken\n",stderr);
+        abort();
+    }];
+    self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
     XCUIDevice.sharedDevice.orientation=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad ? UIDeviceOrientationLandscapeLeft : UIDeviceOrientationPortrait;
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
+    NSString *sourceValue=[self.app.scrollViews[@"sourceControls"].value description];
+    XCTAssertFalse([sourceValue containsString:@"offsetY="],@"Official audits must use the production accessibility tree without diagnostic values");
     [self assertEmptyHistoryDoesNotOverlapHeader];
 }
 - (void)assertEmptyHistoryDoesNotOverlapHeader {
@@ -27,11 +40,13 @@
 - (void)recordAuditScreenshot:(NSString *)screen failure:(BOOL)failure {
     NSString *name=nil;
     if (failure) {
-        NSDictionary *states=@{@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
+        NSDictionary *states=@{@"palette import review":@"import",@"watch inbox status":@"inbox",@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
         if (states[screen]) name=[@"touchcolor-audit-failure-" stringByAppendingString:states[screen]];
     } else {
         if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
         if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
+        if ([screen isEqualToString:@"palette import review"]) name=@"touchcolor-palette-import-review";
+        if ([screen isEqualToString:@"watch inbox status"]) name=@"touchcolor-watch-inbox-status";
     }
     if (!name) return;
     NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
@@ -103,13 +118,23 @@
     }
     self.originalWindowSize=CGSizeZero;
 }
+- (void)testAccessibilityPaletteImportReview {
+    [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:self.app];
+    [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:self.app];
+    [self auditScreen:@"palette import review"];
+}
+- (void)testAccessibilityWatchInboxStatus {
+    [self openPaletteAction:@"watch.inbox.open" app:self.app];
+    XCTAssertTrue([self.app.cells[@"watch.inbox.status"] waitForExistenceWithTimeout:5]);
+    [self auditScreen:@"watch inbox status"];
+}
 - (void)testAccessibilitySampledPhoto {
     [self importAndSample];
     [self auditScreen:@"sampled photo with numeric RGB and hex"];
 }
 - (void)testAccessibilitySavedPalette {
     [self importAndSample];[self.app.buttons[@"saveColor"] tap];
-    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone) [self.app.navigationBars.buttons.firstMatch tap];
+    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone) [self returnToPaletteFrom:@"Photo Color" app:self.app];
     else if (self.app.buttons[@"workspace.palette"].exists) [self.app.buttons[@"workspace.palette"] tap];
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch.label containsString:@"R 255   G 0   B 255"]);
@@ -130,10 +155,15 @@
     [self auditScreen:@"offline policy error in dark appearance"];
 }
 - (void)tearDown {
-    if (self.originalWindowSize.width>0) {
-        [self.app terminate];[self.app launch];
-        [self restoreFullWindow];
+    @try {
+        if (self.originalWindowSize.width>0) {
+            [self.app terminate];[self.app launch];
+            [self restoreFullWindow];
+        }
+        [super tearDown];
+    } @finally {
+        if (self.failClosedInterruption) [self removeUIInterruptionMonitor:self.failClosedInterruption];
+        self.failClosedInterruption=nil;
     }
-    [super tearDown];
 }
 @end

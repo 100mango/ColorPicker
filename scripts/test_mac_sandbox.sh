@@ -7,7 +7,9 @@ xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox 
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-sandbox \
   -parallel-testing-enabled NO \
   -collect-test-diagnostics never -maximum-test-execution-time-allowance 150 \
-  -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
+  -only-testing:TouchColorMacUITests \
+  -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit \
+  -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= TOUCHCOLOR_ENABLE_SANDBOX=YES \
   TOUCHCOLOR_SANDBOX_ENTITLEMENTS=TouchColorMac/TouchColorMac.entitlements build-for-testing
 app=build/mac-sandbox/Build/Products/Debug/TouchColor.app
@@ -43,7 +45,9 @@ xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox -config
   -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-sandbox \
   -resultBundlePath build/mac-sandbox.xcresult -parallel-testing-enabled NO \
   -collect-test-diagnostics never -maximum-test-execution-time-allowance 150 \
-  -only-testing:TouchColorMacUITests ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
+  -only-testing:TouchColorMacUITests \
+  -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit \
+  -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= TOUCHCOLOR_ENABLE_SANDBOX=YES \
   TOUCHCOLOR_SANDBOX_ENTITLEMENTS=TouchColorMac/TouchColorMac.entitlements test-without-building
 runtime_test_status=$?

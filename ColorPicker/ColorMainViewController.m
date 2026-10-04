@@ -4,6 +4,20 @@
 #import "TCColorUtilities.h"
 #import <PhotosUI/PhotosUI.h>
 #import "TCPrivacyViewController.h"
+#import "TouchColor-Swift.h"
+
+#if DEBUG
+// Read-only test diagnostics. Touch handling and layout remain UIScrollView's.
+@interface TCScrollStateProbe : UIScrollView
+@end
+@implementation TCScrollStateProbe
+- (NSString *)accessibilityValue {
+    return [NSString stringWithFormat:@"offsetY=%.3f contentHeight=%.3f boundsHeight=%.3f insetTop=%.3f insetBottom=%.3f canCancelTouches=%d",
+        self.contentOffset.y,self.contentSize.height,self.bounds.size.height,
+        self.adjustedContentInset.top,self.adjustedContentInset.bottom,self.canCancelContentTouches];
+}
+@end
+#endif
 
 @interface ColorMainViewController () <UITableViewDelegate, UITableViewDataSource, PHPickerViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIAdaptivePresentationControllerDelegate>
 @property (nonatomic, strong) UITableView *tableView;
@@ -12,10 +26,12 @@
 @property (nonatomic, copy) NSArray<NSString *> *colors;
 @property (nonatomic, strong) UIActivityIndicatorView *loading;
 @property (nonatomic) NSUInteger selectionGeneration;
+@property (nonatomic, strong) TCPhotoImportTask *photoImportTask;
 #if DEBUG
 @property (nonatomic, strong) UILabel *permissionStatus;
 @property (nonatomic) NSUInteger permissionActivations;
 @property (nonatomic) NSUInteger sourceAttempts;
+@property (nonatomic) NSUInteger photoImportAttempts;
 #endif
 @end
 @implementation ColorMainViewController
@@ -33,9 +49,9 @@
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 70;
     [self.view addSubview:self.tableView];
-    NSArray *titles = @[NSLocalizedString(@"Choose Photo", nil), NSLocalizedString(@"Take Photo", nil), NSLocalizedString(@"Live Color", nil)];
-    NSArray *identifiers = @[@"choosePhoto", @"takePhoto", @"liveColor"];
-    NSArray *symbols = @[@"photo", @"camera", @"viewfinder"];
+    NSArray *titles = @[NSLocalizedString(@"Choose Photo", nil), NSLocalizedString(@"Take Photo", nil), NSLocalizedString(@"Live Color", nil), NSLocalizedString(@"Import Palette", nil), NSLocalizedString(@"Watch Inbox", nil)];
+    NSArray *identifiers = @[@"choosePhoto", @"takePhoto", @"liveColor", @"palette.import.open", @"watch.inbox.open"];
+    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down", @"applewatch"];
     UIStackView *buttons = [UIStackView new];
     self.sourceButtons = buttons;
     buttons.axis = UILayoutConstraintAxisVertical;
@@ -63,7 +79,12 @@
         [button addTarget:self action:@selector(selectSource:) forControlEvents:UIControlEventTouchUpInside];
         [buttons addArrangedSubview:button];
     }
-    UIScrollView *sourceControls = [UIScrollView new];
+    UIScrollView *sourceControls;
+#if DEBUG
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-scroll-state"]) sourceControls=[TCScrollStateProbe new];
+    else
+#endif
+    sourceControls = [UIScrollView new];
     sourceControls.accessibilityIdentifier = @"sourceControls";
     sourceControls.translatesAutoresizingMaskIntoConstraints = NO;
     [sourceControls addSubview:buttons];
@@ -119,7 +140,7 @@
         self.sourceButtons.axis = axis;
         self.sourceButtons.distribution = wide ? UIStackViewDistributionFillEqually : UIStackViewDistributionFill;
     }
-    NSArray *symbols = @[@"photo", @"camera", @"viewfinder"];
+    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down", @"applewatch"];
     BOOL hideIcons = UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
     for (UIButton *button in self.sourceButtons.arrangedSubviews) {
         BOOL hasImage = button.configuration.image != nil;
@@ -146,7 +167,12 @@
     empty.textColor = UIColor.secondaryLabelColor;
     empty.accessibilityIdentifier = @"history.empty";
     empty.translatesAutoresizingMaskIntoConstraints = NO;
-    UIScrollView *emptyScroll = [UIScrollView new];
+    UIScrollView *emptyScroll;
+#if DEBUG
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-scroll-state"]) emptyScroll=[TCScrollStateProbe new];
+    else
+#endif
+    emptyScroll = [UIScrollView new];
     emptyScroll.accessibilityIdentifier = @"history.emptyScroll";
     [emptyScroll addSubview:empty];
     [NSLayoutConstraint activateConstraints:@[
@@ -167,7 +193,7 @@
         : [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)];
     privacy.accessibilityLabel = title;
     privacy.accessibilityIdentifier = @"privacyPolicy";
-    self.navigationItem.rightBarButtonItem = privacy;
+    self.navigationItem.rightBarButtonItems = @[privacy];
 }
 - (UIViewController *)sourcePresenter { return [self.workspaceDelegate sourcePresenterForPalette:self] ?: self; }
 - (void)sourceFlowActive:(BOOL)active { [self.workspaceDelegate palette:self sourceFlowActive:active]; }
@@ -207,6 +233,20 @@
     [self sourceFlowActive:YES];
     [[self sourcePresenter] presentViewController:policy animated:YES completion:nil];
 }
+- (void)openPaletteImport {
+    UIViewController *presenter = [self sourcePresenter];
+    if (presenter.presentedViewController || self.loading.isAnimating) return;
+    [self sourceFlowActive:YES];
+    __weak typeof(self) weakSelf = self;
+    [TCPaletteImportController presentFrom:presenter completion:^{ [weakSelf sourceFlowActive:NO]; }];
+}
+- (void)openWatchInbox {
+    UIViewController *presenter = [self sourcePresenter];
+    if (presenter.presentedViewController || self.loading.isAnimating) return;
+    [self sourceFlowActive:YES];
+    __weak typeof(self) weakSelf = self;
+    [[TCWatchPaletteInbox sharedInbox] presentInboxFrom:presenter completion:^{ [weakSelf sourceFlowActive:NO]; }];
+}
 - (void)showMessage:(NSString *)message {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"TouchColor", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
@@ -224,12 +264,15 @@
     if (self.loading.isAnimating || [self sourcePresenter].presentedViewController) return;
     if (button.tag == 0) [self choosePhoto];
     else if (button.tag == 1) [self takePhoto];
-    else [self openLiveColor];
+    else if (button.tag == 2) [self openLiveColor];
+    else if (button.tag == 3) [self openPaletteImport];
+    else if (button.tag == 4) [self openWatchInbox];
 }
 - (void)choosePhoto {
     PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
     configuration.filter = PHPickerFilter.imagesFilter;
     configuration.selectionLimit = 1;
+    configuration.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
     picker.delegate = self;
     [self presentSource:picker sourceView:self.sourceButtons.arrangedSubviews.firstObject];
@@ -280,30 +323,72 @@
     [controller setChooseImage:image];
     [self showCanvas:controller];
 }
-- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+- (void)beginPhotoLoading {
+    [self sourceFlowActive:YES];
+    self.loading.accessibilityIdentifier = @"photo.import.loading";
+    self.loading.isAccessibilityElement = YES;
+    self.loading.accessibilityLabel = NSLocalizedString(@"Opening Photo", nil);
+    [self.loading startAnimating];
+    UIBarButtonItem *activity = [[UIBarButtonItem alloc] initWithCustomView:self.loading];
+    UIBarButtonItem *cancel = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelPhotoImport)];
+    cancel.accessibilityIdentifier = @"photo.import.cancel";
+    self.navigationItem.rightBarButtonItems = @[cancel, activity];
+    [self.workspaceDelegate palette:self loadingPhoto:YES];
+}
+- (void)endPhotoLoading {
+    [self.loading stopAnimating];
+    [self showPrivacyButton];
+    [self.workspaceDelegate palette:self loadingPhoto:NO];
+}
+- (void)cancelPhotoImport {
+    ++self.selectionGeneration;
+    [self.photoImportTask cancel];
+    self.photoImportTask = nil;
+    [self endPhotoLoading];
+    [self sourceFlowActive:NO];
+}
+- (void)loadPhotoFromProvider:(NSItemProvider *)provider {
     NSUInteger generation = ++self.selectionGeneration;
-    [picker dismissViewControllerAnimated:YES completion:^{
-        NSItemProvider *provider = results.firstObject.itemProvider;
-        if (!provider) { [self sourceFlowActive:NO]; return; } // Cancel retains the current canvas.
-        if (![provider canLoadObjectOfClass:UIImage.class]) {
-            [self showMessage:NSLocalizedString(@"This image could not be opened. Please choose another photo.", nil)];
-            return;
-        }
-        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:self.loading];
-        [self.loading startAnimating];
-        [self.workspaceDelegate palette:self loadingPhoto:YES];
-        __weak typeof(self) weakSelf = self;
-        [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                typeof(self) self = weakSelf;
-                if (!self || generation != self.selectionGeneration) return;
-                [self.loading stopAnimating];
-                [self.workspaceDelegate palette:self loadingPhoto:NO];
-                [self showPrivacyButton];
+    [self.photoImportTask cancel];
+    self.photoImportTask = nil;
+    [self beginPhotoLoading];
+    __weak typeof(self) weakSelf = self;
+    void (^startImport)(void) = ^{
+        typeof(self) self = weakSelf;
+        if (!self || generation != self.selectionGeneration) return;
+        self.photoImportTask = [TCPhotoImportTask loadProvider:provider completion:^(UIImage *image, NSError *error) {
+            typeof(self) self = weakSelf;
+            if (!self || generation != self.selectionGeneration) return;
+            self.photoImportTask = nil;
+            [self endPhotoLoading];
+            if (error) {
+                // Keep the current canvas and keep live capture paused until the native alert closes.
+                [self showMessage:error.localizedDescription];
+            } else {
+                if (image) [self showImage:image];
                 [self sourceFlowActive:NO];
-                [self showImage:[object isKindOfClass:UIImage.class] ? (UIImage *)object : nil];
-            });
+            }
         }];
+    };
+#if DEBUG
+    // Exercise the real loading Cancel control before a provider request starts.
+    // The actual file selection and decoding paths remain the production paths.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-delay-photo-import"] && ++self.photoImportAttempts == 2) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,8*NSEC_PER_SEC),dispatch_get_main_queue(),startImport);
+        return;
+    }
+#endif
+    startImport();
+}
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    NSUInteger dismissalGeneration = ++self.selectionGeneration;
+    [self.photoImportTask cancel];
+    self.photoImportTask = nil;
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (dismissalGeneration != self.selectionGeneration) return;
+        NSItemProvider *provider = results.firstObject.itemProvider;
+        if (!provider) { [self endPhotoLoading]; [self sourceFlowActive:NO]; return; }
+        [self loadPhotoFromProvider:provider];
     }];
 }
 - (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
@@ -349,7 +434,7 @@
 - (void)defaultsChanged:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{ if (self.isViewLoaded) [self reloadHistory]; });
 }
-- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+- (void)dealloc { [_photoImportTask cancel]; [NSNotificationCenter.defaultCenter removeObserver:self]; }
 #if DEBUG
 - (void)updatePermissionProbe {
     AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];

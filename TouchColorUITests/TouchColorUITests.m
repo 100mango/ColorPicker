@@ -1,7 +1,10 @@
+#include <stdlib.h>
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
+#import "TCPaletteUIHelpers.h"
 #include <stdio.h>
 @interface TouchColorUITests : XCTestCase
+@property (nonatomic, strong) id<NSObject> failClosedInterruption;
 @property (nonatomic, strong) XCUIApplication *app;
 @property (nonatomic) BOOL recordingIssue;
 @end
@@ -33,8 +36,20 @@
     XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
     image.name=name;image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
 }
+- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
+- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
+- (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
+- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
+- (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
+- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)setUp {
     [super setUp];
+    // Install before launch; known dialog controls stay in their explicit tests.
+    self.failClosedInterruption=[self addUIInterruptionMonitorWithDescription:@"Abort every unhandled system interruption" handler:^BOOL(XCUIElement *unusedAlert) {
+        // No UI query or failure recorder can throw and reach XCTest's default handler.
+        fputs("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT class=TouchColorUITests; no alert action taken\n",stderr);
+        abort();
+    }];
     self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
@@ -43,9 +58,10 @@
 }
 - (void)revealControl:(XCUIElement *)element inScrollView:(XCUIElement *)scroll {
     for (NSUInteger attempt=0;attempt<5 && (!element.hittable || !CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)));attempt++) {
-        if (CGRectGetMinY(element.frame)<CGRectGetMinY(scroll.frame)) [scroll swipeDown]; else [scroll swipeUp];
+        [self scrollTowardElement:element inScroll:scroll];
     }
     XCTAssertTrue(element.hittable,@"%@",self.app.debugDescription);
+    XCTAssertTrue(CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)),@"The entire control must remain inside its scroll viewport");
 }
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     for (NSUInteger attempt=0; attempt<2; attempt++) {
@@ -107,14 +123,28 @@
 }
 - (void)respondToRealCameraPromptAllow:(BOOL)allow {
     XCUIApplication *system=[[XCUIApplication alloc] initWithBundleIdentifier:@"com.apple.springboard"];
-    XCUIElement *alert=system.alerts.firstMatch;
-    XCTAssertTrue([alert waitForExistenceWithTimeout:15],@"Camera prompt missing. App: %@ System: %@",self.app.debugDescription,system.debugDescription);
+    // Exact English title observed in run37162409475/job111318389328 for both choices.
+    NSString *cameraTitle=@"Allow “TouchColor” to access your camera?";
+    XCUIElement *alert=system.alerts[cameraTitle];
+    if (![alert waitForExistenceWithTimeout:15]) {
+        XCTFail(@"The exact TouchColor system camera prompt is missing; no consent action taken");
+        return;
+    }
     BOOL namesApp=[alert.label containsString:@"TouchColor"] || [alert.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'TouchColor'"]].count>0;
-    XCTAssertTrue(namesApp,@"Only answer the TouchColor camera dialog: %@",alert.debugDescription);
-    XCTAssertTrue(alert.buttons[@"Don’t Allow"].exists || alert.buttons[@"Don't Allow"].exists,@"An app-owned OK alert is not proof of system camera consent: %@",alert.debugDescription);
-    XCUIElement *button=alert.buttons[allow ? @"Allow" : @"Don’t Allow"];
-    if (!button.exists) button=alert.buttons[allow ? @"OK" : @"Don't Allow"];
-    XCTAssertTrue(button.exists,@"%@",alert.debugDescription);
+    if (!namesApp || ![alert.label isEqualToString:cameraTitle]) {
+        XCTFail(@"Unexpected system prompt; no consent action taken");
+        return;
+    }
+    XCUIElement *allowButton=alert.buttons[@"Allow"], *denyButton=alert.buttons[@"Don’t Allow"];
+    if (!allowButton.exists || !denyButton.exists) {
+        XCTFail(@"Observed camera consent choices are missing; no consent action taken");
+        return;
+    }
+    XCUIElement *button=allow ? allowButton : denyButton;
+    if (!button.enabled || !button.hittable) {
+        XCTFail(@"Observed camera consent choice is not actionable; no consent action taken");
+        return;
+    }
     [button tap];
     [self assertPresentationDisappears:alert];
     NSLog(@"REAL_OS_CAMERA_PROMPT_%@",allow ? @"ALLOW" : @"DENY");
@@ -182,7 +212,7 @@
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
     [self.app activate];
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
-    [self.app.navigationBars.buttons.firstMatch tap];
+    [self returnToPaletteFrom:@"Live Color" app:self.app];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
 }
 - (void)testAdaptiveLandscapePhotoSampling {
@@ -197,12 +227,24 @@
 }
 - (void)testLargestDynamicTypeControlsRemainReachable {
     [self.app terminate];
-    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"--ui-test-scroll-state",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+    XCUIElement *emptyScroll=self.app.scrollViews[@"history.emptyScroll"];
+    XCUIElement *emptyMessage=emptyScroll.staticTexts[@"history.empty"].firstMatch;
+    XCTAssertTrue([emptyMessage waitForExistenceWithTimeout:5]);
+    NSLog(@"EMPTY_INSTRUCTION before frame=%@ viewport=%@ state=%@",NSStringFromCGRect(emptyMessage.frame),NSStringFromCGRect(emptyScroll.frame),emptyScroll.value);
+    XCTAssertGreaterThanOrEqual(CGRectGetMinY(emptyMessage.frame),CGRectGetMinY(emptyScroll.frame)-1);
+    for (NSUInteger attempt=0;attempt<5 && CGRectGetMaxY(emptyMessage.frame)>CGRectGetMaxY(emptyScroll.frame)+1;attempt++) {
+        [emptyScroll swipeUpWithVelocity:XCUIGestureVelocitySlow];
+    }
+    NSLog(@"EMPTY_INSTRUCTION after frame=%@ viewport=%@ state=%@",NSStringFromCGRect(emptyMessage.frame),NSStringFromCGRect(emptyScroll.frame),emptyScroll.value);
+    XCTAssertLessThanOrEqual(CGRectGetMaxY(emptyMessage.frame),CGRectGetMaxY(emptyScroll.frame)+1,@"The complete instruction's final line must be revealable by actual user scrolling");
     [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"palette.import.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"watch.inbox.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self.app.buttons[@"Sample Fixture"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
     [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
@@ -210,7 +252,7 @@
     [self revealControl:self.app.buttons[@"saveColor"] inScrollView:self.app.scrollViews[@"photoControls"]];
     XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
     [self.app.buttons[@"saveColor"] tap];
-    [self.app.navigationBars.buttons.firstMatch tap];
+    [self returnToPaletteFrom:@"Photo Color" app:self.app];
     XCTAssertTrue([self.app.tables[@"colorHistory"].cells.firstMatch waitForExistenceWithTimeout:5]);
     XCUIElement *table=self.app.tables[@"colorHistory"];
     XCUIElement *detail=table.staticTexts[@"R 255   G 0   B 0"];
@@ -224,6 +266,8 @@
     [self revealControl:self.app.buttons[@"choosePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"palette.import.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self revealControl:self.app.buttons[@"watch.inbox.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     XCTAssertGreaterThan(table.frame.size.height,44);
     for (NSUInteger i=0;i<4 && !CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1));i++) {
         if (CGRectGetMinY(detail.frame) < CGRectGetMinY(table.frame)) [table swipeDown]; else [table swipeUp];
@@ -308,5 +352,13 @@
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     [[self.app.images[@"sampleImage"] coordinateWithNormalizedOffset:CGVectorMake(0.15,0.25)] tap];
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff0000"]);
+}
+- (void)tearDown {
+    @try {
+        [super tearDown];
+    } @finally {
+        if (self.failClosedInterruption) [self removeUIInterruptionMonitor:self.failClosedInterruption];
+        self.failClosedInterruption=nil;
+    }
 }
 @end
