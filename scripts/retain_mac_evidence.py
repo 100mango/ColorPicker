@@ -127,7 +127,7 @@ def correlated_frame(proof_item, items, summary):
     identifier = 'TouchColorMacUITests/' + REQUESTED[state] + '()'
     require(proof_item['group'].get('testIdentifier') == identifier,
             'Proof test does not match its requested state')
-    require(proof.get('testName') == '-[TouchColorMacUITests.TouchColorMacUITests ' + REQUESTED[state] + ']',
+    require(proof.get('testName') == '-[TouchColorMacUITests ' + REQUESTED[state] + ']',
             'Proof runtime test identity mismatch')
     require(proof.get('imageName') == FRAME_PREFIX + audit
             and proof_item['attachment']['suggestedHumanReadableName'].startswith(PROOF_PREFIX + audit + '_'), 'Image/audit identity mismatch')

@@ -48,7 +48,7 @@ class Fixture:
             image = png(image_size); when = index * 30 + 10
             name = self.add(group, keep.FRAME_PREFIX + audit, image, '.png', when + 1)
             self.images[state] = name
-            proof = {'schema': 1, 'auditID': audit, 'state': state, 'testName': '-[TouchColorMacUITests.TouchColorMacUITests ' + method + ']',
+            proof = {'schema': 1, 'auditID': audit, 'state': state, 'testName': '-[TouchColorMacUITests ' + method + ']',
                      'capturePhase': 'immediately before audit', 'sequential': True, 'sandbox': False,
                      'imageName': keep.FRAME_PREFIX + audit, 'pngSHA256': keep.digest(image), 'pngBytes': len(image),
                      'capturedAt': when, 'appExecutableSHA256': 'e' * 64, 'appLogicSHA256': 'f' * 64}
@@ -80,7 +80,8 @@ class Fixture:
 class RetentionTests(unittest.TestCase):
     def setUp(self):
         # Portable fixtures are synthetic even when CI exports a real source SHA.
-        environment = patch.dict(os.environ, {'GITHUB_SHA': '', 'GITHUB_OUTPUT': ''})
+        environment = patch.dict(os.environ, {'GITHUB_SHA': '', 'GITHUB_OUTPUT': '',
+                                             'TOUCHCOLOR_JOB_PLATFORM': 'mac', 'TOUCHCOLOR_VISION_CASE': ''})
         environment.start(); self.addCleanup(environment.stop)
 
     def test_guard_rejects_a_packet_from_another_ci_source(self):
@@ -121,7 +122,7 @@ class RetentionTests(unittest.TestCase):
             self.assertEqual(omitted[0]['retention']['sourceSHA256'], keep.digest(image))
 
     def test_missing_invalid_or_duplicate_correlation_never_infers_state_from_filename(self):
-        for kind in ('hash', 'test', 'lane', 'time', 'device', 'duplicate'):
+        for kind in ('hash', 'test', 'lane', 'time', 'device', 'missing-frame', 'duplicate'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp); fixture = Fixture(root); state = next(iter(keep.REQUESTED))
                 group, meta, path, proof = fixture.proof(state)
@@ -130,11 +131,44 @@ class RetentionTests(unittest.TestCase):
                 elif kind == 'lane': proof['sandbox'] = True
                 elif kind == 'time': proof['capturedAt'] = 900
                 elif kind == 'device': meta['deviceId'] = 'foreign'
+                elif kind == 'missing-frame':
+                    filename=fixture.images[state].split('/',1)[1]
+                    group['attachments']=[item for item in group['attachments'] if item['exportedFileName']!=filename]
+                    (root/fixture.images[state]).unlink()
                 else: fixture.add(group, meta['suggestedHumanReadableName'], json.dumps(proof).encode(), '.txt', meta['timestamp'])
                 path.write_text(json.dumps(proof)); fixture.save()
                 result = keep.retain(root, SOURCE)
                 self.assertFalse(result['complete']); self.assertNotEqual(result['requested'][state]['status'], 'retained')
                 self.assertFalse((root / fixture.images[state]).exists())
+
+    def test_runtime_identity_requires_observed_exact_class_and_method(self):
+        state='empty workspace';method=keep.REQUESTED[state]
+        wrong_names=[
+            '-[TouchColorMacUITests.TouchColorMacUITests '+method+']',
+            '-[ForeignModule.TouchColorMacUITests '+method+']',
+            '-[ForeignClass '+method+']',
+            '-[TouchColorMacUITests testOfficialAccessibilityCameraAndPrivacy]',
+            'prefix-[TouchColorMacUITests '+method+']',
+            '-[TouchColorMacUITests '+method+']suffix',
+        ]
+        for name in wrong_names:
+            with self.subTest(name=name),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder);fixture=Fixture(root);_,_,proof_path,proof=fixture.proof(state)
+                self.assertEqual(proof['testName'],'-[TouchColorMacUITests '+method+']')
+                proof['testName']=name;proof_path.write_text(json.dumps(proof))
+                result=keep.retain(root,SOURCE)
+                self.assertFalse(result['complete'])
+                self.assertNotEqual(result['requested'][state]['status'],'retained')
+        # The positive fixture uses the exact runtime string observed in f977,
+        # while existing tests independently bind URL, method, source, device,
+        # timestamp, image hash, and complete audit counters.
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);fixture=Fixture(root)
+            for observed_state,observed_method in keep.REQUESTED.items():
+                self.assertEqual(fixture.proof(observed_state)[3]['testName'],
+                                 '-[TouchColorMacUITests '+observed_method+']')
+            self.assertTrue(keep.retain(root,SOURCE)['complete'])
+            keep.validate_selection(root,require_complete=True)
 
     def test_raw_prefix_hashes_and_full_original_hashes_survive_hierarchy_omission(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -263,6 +297,35 @@ class RetentionTests(unittest.TestCase):
                 else:
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(output.read_text(), 'mac_evidence_complete=' + ('true' if state == 'complete' else 'false') + '\nvision_offline_qualified=true\n')
+
+    def test_synthetic_mac_scope_isolated_from_all_live_lane_environments(self):
+        for platform in ('mac','ios','watch','tv','paired','vision'):
+            with self.subTest(platform=platform), patch.dict(os.environ, {
+                    'TOUCHCOLOR_JOB_PLATFORM':platform,'TOUCHCOLOR_VISION_CASE':'canvas-audit'}):
+                nested=RetentionTests('test_guard_emits_boolean_only_after_all_checks_and_builtin_fails_missing')
+                try:
+                    nested.setUp()
+                    self.assertEqual(os.environ['TOUCHCOLOR_JOB_PLATFORM'],'mac')
+                    self.assertEqual(os.environ['TOUCHCOLOR_VISION_CASE'],'')
+                    nested.test_guard_emits_boolean_only_after_all_checks_and_builtin_fails_missing()
+                finally:
+                    nested.doCleanups()
+                self.assertEqual(os.environ['TOUCHCOLOR_JOB_PLATFORM'],platform)
+                self.assertEqual(os.environ['TOUCHCOLOR_VISION_CASE'],'canvas-audit')
+
+    def test_real_vision_lane_still_marks_missing_vision_result_unqualified(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);root=base/'evidence';root.mkdir();Fixture(root);keep.retain(root,SOURCE)
+            output=base/'step-output'
+            env={**os.environ,'GITHUB_OUTPUT':str(output),'GITHUB_ENV':str(base/'fixture-env'),
+                 'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_VISION_CASE':'canvas-audit'}
+            result=subprocess.run([sys.executable,str(ROOT/'scripts/validate_evidence.py'),str(root),str(keep.LIMIT)],
+                                  env=env,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr) # Safe partial evidence may be uploaded.
+            self.assertEqual(output.read_text(),'mac_evidence_complete=true\nvision_offline_qualified=false\n')
+            gate=subprocess.run(['bash','-c','test "$VISION_OFFLINE_QUALIFIED" = true'],
+                                env={**os.environ,'VISION_OFFLINE_QUALIFIED':'false'},timeout=2)
+            self.assertNotEqual(gate.returncode,0) # It cannot qualify the real Vision row.
 
     def test_native_source_keeps_audit_failure_behavior_and_limits_helper_edit(self):
         source = (ROOT/'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
