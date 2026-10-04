@@ -4,6 +4,20 @@ import UniformTypeIdentifiers
 import ColorPaletteLegacy
 @testable import TouchColor
 
+/// Observe UIKit's real owner appearance once; never synthesize lifecycle calls.
+@MainActor private final class PhonePaletteImportTestOwner: UIViewController {
+    var onFirstAppearance: (() -> Void)?
+    private(set) var hasAppeared = false
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !hasAppeared else { return }
+        hasAppeared = true
+        let completion = onFirstAppearance
+        onFirstAppearance = nil
+        completion?()
+    }
+}
+
 /// Integrated UIKit review lifecycle and unsupported-companion behavior.
 @MainActor final class PhonePaletteImportTests: XCTestCase {
     func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult() async throws {
@@ -13,9 +27,17 @@ import ColorPaletteLegacy
         defaults.set(original, forKey: "colorArray")
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
         let oldKeyWindow = scene.windows.first { $0.isKeyWindow }
-        let owner = UIViewController(), window = UIWindow(windowScene: scene)
+        let owner = PhonePaletteImportTestOwner(), window = UIWindow(windowScene: scene)
+        let ownerAppeared = expectation(description: "Actual UIKit test owner appeared")
+        owner.onFirstAppearance = { ownerAppeared.fulfill() }
         window.rootViewController = owner; window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil; oldKeyWindow?.makeKey() }
+        // makeKeyAndVisible begins appearance asynchronously. Present only after
+        // UIKit has delivered its actual owner callback, with the original import
+        // presentation and dismissal gates still independently capped at 3 seconds.
+        await fulfillment(of: [ownerAppeared], timeout: 3)
+        XCTAssertTrue(owner.viewIfLoaded?.window === window)
+        guard owner.hasAppeared, owner.viewIfLoaded?.window === window else { return }
         let content = PhonePaletteImportController(defaults: defaults)
         let navigation = UINavigationController(rootViewController: content); navigation.modalPresentationStyle = .fullScreen
         let presented = expectation(description: "Actual full-screen UIKit import host appeared")

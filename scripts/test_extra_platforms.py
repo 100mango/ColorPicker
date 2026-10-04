@@ -8,14 +8,36 @@ from watch_runtime_pair import phone_template, device_inventory, verify_pair, ve
 from bounded_process import run_captured, check_output, stop_group
 from vision_suites import CASES as VISION_CASES, needs_photo_seed
 from native_resources import snapshot as resource_snapshot, require_responsive
+from job_budget import enabled_budget, fail_record, BudgetExhausted, EXPECTED_MINUTES
 from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, permits_public_trait_fallback, run_public_trait_fallback
+from watch_diagnostics import ListFrameDiagnostics, summarize_editor_lifecycle, log_lookback
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'captures':[],'platform':kind,'sha':check_output(['git','rev-parse','HEAD'],text=True,timeout=10).strip(),'stages':[]}
+watch_frames=ListFrameDiagnostics()
+if kind=='watch': report['watch_list_frames']=watch_frames.report
 def run(command,timeout,required=True):
+    from job_budget import enabled_budget, fail_record, BudgetExhausted
+    budget=enabled_budget()
+    if budget is not None:
+        try:
+            minimum=1
+            if command[:2]==['xcodebuild','test-without-building']:
+                allowance=int(command[command.index('-maximum-test-execution-time-allowance')+1]) if '-maximum-test-execution-time-allowance' in command else 180
+                minimum=min(timeout,max(180,allowance+60)) # Keep the whole declared case plus launch allowance.
+            timeout=budget.admit(' '.join(command[:3]),timeout,minimum=minimum,cleanup=0)
+        except (BudgetExhausted,ValueError) as error:
+            report['budget_incomplete']={'command':command,'phase':budget.phase,'reason':str(error),'started':False}
+            confirmed=getattr(error,'cleanup_confirmed',False) is True
+            if not confirmed: report['cleanup_unconfirmed']=True
+            report['stages'].append({'command':command,'exit':124,'started':False,'budget_incomplete':str(error),
+                'process_group_gone':confirmed,'capture_reader_finished':confirmed,'elapsed_seconds':0,'wall_elapsed_seconds':0})
+            fail_record(error,phase=budget.phase,cleanup_unconfirmed=not confirmed)
+            if required: raise
+            return 124
     if report.get('cleanup_unconfirmed'):
         if required: raise RuntimeError('Prior process exit is unconfirmed; no new work on this VM')
         return 124
@@ -33,6 +55,7 @@ def run(command,timeout,required=True):
     def read_output():
         for line in p.stdout:
             print(line,end='',flush=True)
+            if kind=='watch': watch_frames.record(line)
             ready=re.search(r'TOUCHCOLOR_PHOTOS_RUNNER_READY ([0-9A-F-]{36})',line)
             if ready and kind=='vision' and os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos' and device:
                 try:
@@ -87,7 +110,9 @@ def run(command,timeout,required=True):
         report['cleanup_unconfirmed']=True
         cleanup_error='Owned output/capture lifecycle did not finish cleanly'
         code=124
-    if report.get('cleanup_unconfirmed'): code=124
+    if report.get('cleanup_unconfirmed'):
+        code=124
+        if budget is not None: fail_record('Native command or capture cleanup unconfirmed',phase=budget.phase,cleanup_unconfirmed=True)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
     report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
@@ -138,7 +163,7 @@ try:
     report['binary_platform_minimum']=summary;print('\n'.join(summary),flush=True)
     text=check_output(['strings',str(binary)],text=True,timeout=30)
     assert 'TOUCHCOLOR_PAIRED_E2E' not in text and 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
-    assert 'WATCH_EDITOR' not in text and 'com.mango.touchColor.WatchDiagnostics' not in text, 'Debug Watch lifecycle diagnostics leaked into Release'
+    assert 'WATCH_EDITOR' not in text and 'com.mango.touchColor.WatchDiagnostics' not in text and 'TOUCHCOLOR_TEST_CASE' not in text, 'Debug Watch lifecycle diagnostics leaked into Release'
     assert 'TOUCHCOLOR_TEST_LARGEST_TRAIT' not in text and 'TOUCHCOLOR_TEST_TRAIT_PROOF' not in text, 'Debug public-trait seam leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
     if kind=='vision':
@@ -275,7 +300,7 @@ try:
         # Preserve completed hosted evidence independently. The observed49mm cold
         # install/hosted startup consumed much of a shared840s command, so later UI
         # cases never ran. Each phase remains bounded on the same fresh VM; the
-        # outer25-minute job and per-case120/240s allowances are unchanged.
+        # source-bound Watch job budget and per-case120/240s allowances remain finite.
         report['xctest_summary_scope']='hosted tests only; watch-ui-summary.json contains the separate UI result'
         run(test_common+test_arguments+['-resultBundlePath','build/watch-tests.xcresult','-only-testing:TouchColorWatchTests'],480)
         run(test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
@@ -324,13 +349,13 @@ except Exception as error:
     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
+    if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
     if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed'):
         try:
-            lifecycle=run_captured(['xcrun','simctl','spawn',device['udid'],'log','show','--last','20m','--style','compact',
+            lookback=log_lookback(EXPECTED_MINUTES['watch'])
+            lifecycle=run_captured(['xcrun','simctl','spawn',device['udid'],'log','show','--last',lookback,'--style','compact',
                 '--predicate','subsystem == "com.mango.touchColor.WatchDiagnostics"'],text=True,timeout=15)
-            lines=[line[:400] for line in lifecycle.stdout.splitlines() if 'WATCH_EDITOR' in line]
-            retained=(lines[:16]+lines[-64:]) if len(lines)>80 else lines
-            report['watch_editor_lifecycle']={'exit':lifecycle.returncode,'matched_events':len(lines),'events':retained}
+            report['watch_editor_lifecycle']={'exit':lifecycle.returncode,'lookback':lookback,**summarize_editor_lifecycle(lifecycle.stdout)}
             print('WATCH_EDITOR_LIFECYCLE',json.dumps(report['watch_editor_lifecycle']),flush=True)
         except Exception as error:
             report['watch_editor_lifecycle']={'error':type(error).__name__}
@@ -356,6 +381,9 @@ finally:
             if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
     elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
         run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
+    if report.get('budget_incomplete') or Path('build/job-budget-phase-cleanup.json').exists():
+        report['result']='failed'
+        report['cleanup_budget_status']='At least one mandatory command could not finish within the reserved lifecycle budget'
     if report.get('cleanup_unconfirmed'):
         report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
         report['result']='failed'

@@ -209,18 +209,19 @@ static TCFilesRoute TCFilesRouteForElement(XCUIElement *element, NSString *locat
     [self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
 }
 - (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app {
-    // Cold UIDocumentPicker remote attachment took 11.9–15.8s in the two
-    // failing iPad jobs at 510fd5a. It is a distinct boundary from readiness of
-    // an attached control. Bound this one system presentation to 20s, then keep
-    // the ordinary 5s enabled/hittable gate. Never reopen or retap a failed flow.
+    // Cold remote attachment took 11.9–15.8s on iPads at 510fd5a and 21.853s
+    // on the compact phone at 80cef6ad. This is a harness allowance, not a product
+    // startup SLO. Keep iPad 20s and use a bounded 25s phone presentation gate;
+    // attached controls still require 5s readiness. Never reopen or retry a flow.
+    NSTimeInterval budget=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPhone ? 25 : 20;
     XCUIElement *picker=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]].firstMatch;
     NSTimeInterval start=NSProcessInfo.processInfo.systemUptime;
-    BOOL appeared=[picker waitForExistenceWithTimeout:20];
+    BOOL appeared=[picker waitForExistenceWithTimeout:budget];
     NSTimeInterval elapsed=NSProcessInfo.processInfo.systemUptime-start;
-    NSLog(@"PALETTE_FILES_PRESENTATION appeared=%d elapsed=%.3f budget=20",appeared,elapsed);
+    NSLog(@"PALETTE_FILES_PRESENTATION appeared=%d elapsed=%.3f budget=%.0f",appeared,elapsed,budget);
     XCTAssertTrue(appeared,@"The real system Files presentation must attach");
-    XCTAssertLessThanOrEqual(elapsed,20,@"Files remote attachment must stay within its presentation budget");
-    return appeared && elapsed<=20;
+    XCTAssertLessThanOrEqual(elapsed,budget,@"Files remote attachment must stay within its presentation budget");
+    return appeared && elapsed<=budget;
 }
 - (void)selectSyntheticPaletteFile:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];

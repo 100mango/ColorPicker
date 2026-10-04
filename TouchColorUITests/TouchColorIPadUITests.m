@@ -132,12 +132,63 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
         picker=observedPicker;
         CGPoint point;
         if (TCPickerDismissalPoint(window,picker,&point)) {
-            XCUICoordinate *origin=[windowElement coordinateWithNormalizedOffset:CGVectorMake(0,0)];
-            XCUICoordinate *target=[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)];
+            UIDeviceOrientation orientation=XCUIDevice.sharedDevice.orientation;
+            TCPickerScreenContext screenContext={(long)orientation,UIDeviceOrientationIsLandscape(orientation),UIScreen.mainScreen.bounds,UIScreen.mainScreen.fixedCoordinateSpace.bounds};
+            XCTAssertTrue(TCPickerScreenContextUsable(screenContext),@"A valid recorded landscape screen context is required before measuring coordinates");
+            if (!TCPickerScreenContextUsable(screenContext)) return;
+            // AX frames follow the app orientation; screenPoint is dynamically
+            // resolved by XCTest. Measure its basis instead of assuming that an
+            // AX point can be added as an absolute offset in the same space.
+            CGPoint zero=[windowElement coordinateWithNormalizedOffset:CGVectorMake(0,0)].screenPoint;
+            CGPoint oneX=[windowElement coordinateWithNormalizedOffset:CGVectorMake(1,0)].screenPoint;
+            CGPoint oneY=[windowElement coordinateWithNormalizedOffset:CGVectorMake(0,1)].screenPoint;
+            NSLog(@"PHOTO_PICKER_BASIS deviceOrientation=%ld runnerScreenBounds=%@ fixedScreenBounds=%@ AXWindow=%@ basis00=%@ basis10=%@ basis01=%@",screenContext.orientation,NSStringFromCGRect(screenContext.currentBounds),NSStringFromCGRect(screenContext.fixedBounds),NSStringFromCGRect(window),NSStringFromCGPoint(zero),NSStringFromCGPoint(oneX),NSStringFromCGPoint(oneY));
+            TCPickerScreenMap map;
+            BOOL validMap=TCPickerMakeScreenMap(window,zero,oneX,oneY,&map);
+            XCTAssertTrue(validMap,@"Measured XCTest coordinate basis must be finite and nondegenerate");
+            if (!validMap) return;
+            CGPoint expected,expectedCorner,corners[4];
+            CGRect exclusion=CGRectInset(picker,-12,-12);
+            BOOL mapped=TCPickerMapAXPoint(map,point,&expected) &&
+                TCPickerMapAXPoint(map,CGPointMake(CGRectGetMaxX(window),CGRectGetMaxY(window)),&expectedCorner) &&
+                TCPickerMapAXRect(map,exclusion,corners);
+            XCTAssertTrue(mapped,@"Window and popover exclusion must map into the same screen-point space");
+            if (!mapped) return;
+            XCUICoordinate *target=[windowElement coordinateWithNormalizedOffset:CGVectorMake((point.x-window.origin.x)/window.size.width,(point.y-window.origin.y)/window.size.height)];
             CGPoint actual=target.screenPoint;
-            XCTAssertEqualWithAccuracy(actual.x,point.x,1);XCTAssertEqualWithAccuracy(actual.y,point.y,1);
-            XCTAssertFalse(CGRectContainsPoint(CGRectInset(picker,-12,-12),actual));
-            NSLog(@"PHOTO_PICKER_DISMISS window=%@ presentation=%@ point=%@",NSStringFromCGRect(window),NSStringFromCGRect(picker),NSStringFromCGPoint(actual));
+            CGPoint farCorner=[windowElement coordinateWithNormalizedOffset:CGVectorMake(1,1)].screenPoint;
+            NSLog(@"PHOTO_PICKER_COORDINATES deviceOrientation=%ld runnerScreenBounds=%@ fixedScreenBounds=%@ AXWindow=%@ AXPresentation=%@ AXPoint=%@ basis00=%@ basis10=%@ basis01=%@ basis11=%@ expected=%@ actual=%@ screenExclusion=%@,%@,%@,%@",screenContext.orientation,NSStringFromCGRect(screenContext.currentBounds),NSStringFromCGRect(screenContext.fixedBounds),NSStringFromCGRect(window),NSStringFromCGRect(picker),NSStringFromCGPoint(point),NSStringFromCGPoint(zero),NSStringFromCGPoint(oneX),NSStringFromCGPoint(oneY),NSStringFromCGPoint(farCorner),NSStringFromCGPoint(expected),NSStringFromCGPoint(actual),NSStringFromCGPoint(corners[0]),NSStringFromCGPoint(corners[1]),NSStringFromCGPoint(corners[2]),NSStringFromCGPoint(corners[3]));
+            BOOL affine=TCPickerPointIsFinite(farCorner) && fabs(farCorner.x-expectedCorner.x)<=1 && fabs(farCorner.y-expectedCorner.y)<=1;
+            BOOL targetMatches=TCPickerPointIsFinite(actual) && fabs(actual.x-expected.x)<=1 && fabs(actual.y-expected.y)<=1;
+            XCTAssertTrue(affine,@"The fourth normalized corner must agree with the measured affine basis");
+            XCTAssertEqualWithAccuracy(actual.x,expected.x,1);XCTAssertEqualWithAccuracy(actual.y,expected.y,1);
+            BOOL outside=TCPickerScreenPointRelation(map,exclusion,actual)==TCPickerScreenRelationOutside;
+            BOOL insideWindow=TCPickerScreenPointRelation(map,CGRectInset(window,20,20),actual)==TCPickerScreenRelationInside;
+            XCTAssertTrue(outside,@"The actual screen coordinate must be outside the transformed popover exclusion");
+            XCTAssertTrue(insideWindow,@"The actual screen coordinate must remain inside the transformed host window");
+            CGPoint reportedCoordinates[5]={zero,oneX,oneY,farCorner,actual};CGRect screenEnvelope;
+            TCPickerScreenEnvelope envelopeKind=TCPickerChooseScreenEnvelope(screenContext,reportedCoordinates,&screenEnvelope);
+            XCTAssertNotEqual(envelopeKind,TCPickerEnvelopeInvalid,@"All four basis corners and target must fit one complete reported screen envelope");
+            if (envelopeKind==TCPickerEnvelopeInvalid) return;
+            BOOL unchanged=CGRectEqualToRect(windowElement.frame,window) && CGRectEqualToRect(popover.frame,picker);
+            XCTAssertTrue(unchanged,@"The measured window and popover must remain unchanged before the single tap");
+            if (!affine || !targetMatches || !outside || !insideWindow || !unchanged) return;
+            // Coordinates are dynamic. Verify the final value against the same
+            // selected envelope, then recheck the recorded orientation and both bounds.
+            CGPoint finalPoint=target.screenPoint;
+            reportedCoordinates[4]=finalPoint;
+            BOOL finalSafe=TCPickerScreenContainsCoordinates(screenEnvelope,reportedCoordinates,5) &&
+                fabs(finalPoint.x-expected.x)<=1 && fabs(finalPoint.y-expected.y)<=1 &&
+                TCPickerScreenPointRelation(map,exclusion,finalPoint)==TCPickerScreenRelationOutside &&
+                TCPickerScreenPointRelation(map,CGRectInset(window,20,20),finalPoint)==TCPickerScreenRelationInside;
+            UIDeviceOrientation finalOrientation=XCUIDevice.sharedDevice.orientation;
+            TCPickerScreenContext finalContext={(long)finalOrientation,UIDeviceOrientationIsLandscape(finalOrientation),UIScreen.mainScreen.bounds,UIScreen.mainScreen.fixedCoordinateSpace.bounds};
+            BOOL contextStable=TCPickerScreenContextStable(screenContext,finalContext);
+            NSLog(@"PHOTO_PICKER_SCREEN_ENVELOPE kind=%d bounds=%@ finalPoint=%@ finalOrientation=%ld finalCurrent=%@ finalFixed=%@ stable=%d",envelopeKind,NSStringFromCGRect(screenEnvelope),NSStringFromCGPoint(finalPoint),finalContext.orientation,NSStringFromCGRect(finalContext.currentBounds),NSStringFromCGRect(finalContext.fixedBounds),contextStable);
+            XCTAssertTrue(finalSafe,@"The final coordinate must remain safe in the same verified physical-screen envelope");
+            XCTAssertTrue(contextStable,@"Recorded landscape orientation and both reported screen bounds must remain stable before tapping");
+            if (!finalSafe || !contextStable) return;
+            NSLog(@"PHOTO_PICKER_DISMISS window=%@ presentation=%@ screenPoint=%@",NSStringFromCGRect(window),NSStringFromCGRect(picker),NSStringFromCGPoint(finalPoint));
             [target tap];dismissedPopover=YES;
         }
     }

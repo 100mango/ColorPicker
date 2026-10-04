@@ -45,8 +45,8 @@ jobs:
         working-directory: scripts
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry
-          python3 -O -m unittest -v test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json
+          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step
+          python3 -O -m unittest -v test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step
           python3 test_evidence_guard.py
           bash -n test_simulators.sh
       - name: Execute shared package tests
@@ -157,12 +157,12 @@ jobs:
           - platform: watch
             lane: watch-smallest
             watch_profile: smallest
-            minutes: 25
+            minutes: 45
             evidence_bytes: 2000000
           - platform: watch
             lane: watch-largest
             watch_profile: largest
-            minutes: 25
+            minutes: 45
             evidence_bytes: 2000000
           - platform: paired
             minutes: 45
@@ -170,18 +170,35 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
+      TOUCHCOLOR_JOB_PLATFORM: ${{ matrix.platform }}
+      TOUCHCOLOR_JOB_MINUTES: ${{ matrix.minutes }}
+      TOUCHCOLOR_JOB_LANE: ${{ matrix.lane || matrix.platform }}
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
       TOUCHCOLOR_WATCH_PROFILE: ${{ matrix.watch_profile || 'largest' }}
       TOUCHCOLOR_VISION_CASE: ${{ matrix.vision_case }}
       TOUCHCOLOR_EVIDENCE_LIMIT: ${{ matrix.evidence_bytes }}
     steps:
+      - name: Start exact native job clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              stream.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
       - name: Check out exact source
+        timeout-minutes: 1
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
+      - name: Initialize exact row budget
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py initialize
       - name: Verify source and stable toolchain
         id: toolchain
+        timeout-minutes: 2
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
@@ -217,16 +234,23 @@ jobs:
           xcodebuild -list -project TouchColorMac.xcodeproj
       - name: Probe native XCTest accessibility audit availability
         if: ${{ !cancelled() && matrix.platform == 'mac' && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 7
-        run: python3 scripts/probe_accessibility_audits.py
+        timeout-minutes: 10
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Probe native XCTest accessibility audit availability' --seconds 420 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/probe_accessibility_audits.py
+          TC_BUDGET_BODY
       - name: Portable domain, raster and preservation tests
         if: ${{ matrix.platform == 'mac' }}
-        timeout-minutes: 8
-        run: swift test --package-path Packages/ColorCore --scratch-path build/package
+        timeout-minutes: 11
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Portable domain, raster and preservation tests' --seconds 480 --phase work <<'TC_BUDGET_BODY'
+          swift test --package-path Packages/ColorCore --scratch-path build/package
+          TC_BUDGET_BODY
       - name: Build native arm64 Release app and inspect identity
         if: ${{ matrix.platform == 'mac' }}
-        timeout-minutes: 8
+        timeout-minutes: 11
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Build native arm64 Release app and inspect identity' --seconds 480 --phase work <<'TC_BUDGET_BODY'
           set -euo pipefail
           xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
@@ -247,12 +271,14 @@ jobs:
           if grep -E -- '--ui-test-|TOUCHCOLOR_TEST_DEFAULTS|TOUCHCOLOR_SANDBOX_PROBE_FILE|TOUCHCOLOR_NATIVE_MODAL_PROBE|debug.sandbox.proof|TouchColor-fixture-' /tmp/touchcolor-mac-release-strings.txt; then
             echo 'Test seam leaked into Release'; exit 1
           fi
+          TC_BUDGET_BODY
       - name: Build x86_64 slice only if accepted by the real SDK
         if: ${{ matrix.platform == 'mac' }}
         id: intel
         continue-on-error: true
-        timeout-minutes: 7
+        timeout-minutes: 10
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Build x86_64 slice only if accepted by the real SDK' --seconds 420 --phase work <<'TC_BUDGET_BODY'
           set -euo pipefail
           xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-x86_64 \
@@ -260,20 +286,24 @@ jobs:
           python3 scripts/verify_privacy_manifest.py build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/Resources/PrivacyInfo.xcprivacy selected
           lipo -info build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/MacOS/TouchColor
           echo 'x86_64 build only; no Intel runtime execution claimed'
+          TC_BUDGET_BODY
       - name: Native Mac app-hosted unit tests
         if: ${{ matrix.platform == 'mac' }}
         id: units
-        timeout-minutes: 8
+        timeout-minutes: 11
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Native Mac app-hosted unit tests' --seconds 480 --phase work <<'TC_BUDGET_BODY'
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-unit.xcresult -parallel-testing-enabled NO \
             -collect-test-diagnostics never -only-testing:TouchColorMacTests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+          TC_BUDGET_BODY
       - name: Native Mac UI runtime workflows
         id: ui
         if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: 13
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Native Mac UI runtime workflows' --seconds 600 --phase work <<'TC_BUDGET_BODY'
           python3 scripts/prepare_sandbox_probe.py build/mac-tests/probe-info.json
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
@@ -283,11 +313,13 @@ jobs:
             -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit \
             -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+          TC_BUDGET_BODY
       - name: Diagnose standard AppKit modal audits separately
         if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
         continue-on-error: true
-        timeout-minutes: 4
+        timeout-minutes: 7
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Diagnose standard AppKit modal audits separately' --seconds 240 --phase work <<'TC_BUDGET_BODY'
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
             -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
             -resultBundlePath build/mac-modal-probe.xcresult -parallel-testing-enabled NO \
@@ -296,35 +328,52 @@ jobs:
             -only-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit \
             -only-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test-without-building
+          TC_BUDGET_BODY
       - name: Native visionOS executable and real simulator workflows
         id: vision
         if: ${{ !cancelled() && matrix.platform == 'vision' && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 22
-        run: python3 scripts/test_extra_platforms.py vision
+        timeout-minutes: 25
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Native visionOS executable and real simulator workflows' --seconds 1320 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_extra_platforms.py vision
+          TC_BUDGET_BODY
       - name: Native watchOS executable and real simulator workflows
         id: watch
         if: ${{ !cancelled() && matrix.platform == 'watch' && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 22
-        run: python3 scripts/test_extra_platforms.py watch
+        timeout-minutes: 45
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Native watchOS executable and real simulator workflows' --seconds 2520 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_extra_platforms.py watch
+          TC_BUDGET_BODY
       - name: Native tvOS executable and real remote workflows
         id: tv
         if: ${{ !cancelled() && matrix.platform == 'tv' && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 22
-        run: python3 scripts/test_extra_platforms.py tv
+        timeout-minutes: 25
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Native tvOS executable and real remote workflows' --seconds 1320 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_extra_platforms.py tv
+          TC_BUDGET_BODY
       - name: Real paired foreground Watch and phone review workflows
         if: ${{ !cancelled() && matrix.platform == 'paired' && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 42
-        run: python3 scripts/test_paired_watch.py
+        timeout-minutes: 45
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Real paired foreground Watch and phone review workflows' --seconds 2520 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_paired_watch.py
+          TC_BUDGET_BODY
       - name: Minimal ad-hoc sandbox native Mac UI workflows
         id: sandbox
         if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
-        timeout-minutes: 12
-        run: bash scripts/test_mac_sandbox.sh
+        timeout-minutes: 15
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Minimal ad-hoc sandbox native Mac UI workflows' --seconds 720 --phase work <<'TC_BUDGET_BODY'
+          bash scripts/test_mac_sandbox.sh
+          TC_BUDGET_BODY
       - name: Build original iOS app and direct cross-language equivalence tests
         id: ios
         if: ${{ !cancelled() && matrix.platform == 'ios' && steps.toolchain.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: 13
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Build original iOS app and direct cross-language equivalence tests' --seconds 600 --phase work <<'TC_BUDGET_BODY'
           xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
             -destination 'generic/platform=iOS' -derivedDataPath build/ios-device CODE_SIGNING_ALLOWED=NO build
           test "$(/usr/libexec/PlistBuddy -c 'Print MinimumOSVersion' build/ios-device/Build/Products/Release-iphoneos/TouchColor.app/Info.plist)" = 15.0
@@ -333,14 +382,19 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator ARCHS=arm64 build-for-testing
           bash scripts/test_simulators.sh iPhoneCompact prepare-unit
           bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
+          TC_BUDGET_BODY
       - name: Shut down iOS test simulator
         if: ${{ always() && matrix.platform == 'ios' && steps.ios.outcome != 'skipped' }}
-        timeout-minutes: 2
-        run: bash scripts/test_simulators.sh iPhoneCompact shutdown || true
+        timeout-minutes: 5
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Shut down iOS test simulator' --seconds 120 --phase cleanup <<'TC_BUDGET_BODY'
+          bash scripts/test_simulators.sh iPhoneCompact shutdown || true
+          TC_BUDGET_BODY
       - name: Report bounded evidence and unchanged source
         if: always()
-        timeout-minutes: 2
+        timeout-minutes: 4
         run: |
+          python3 scripts/run_budgeted_step.py --label 'Report bounded evidence and unchanged source' --seconds 180 --phase evidence <<'TC_BUDGET_BODY'
           mkdir -p build/evidence
           if test -f build/paired-runtime/runtime.json; then cp build/paired-runtime/runtime.json build/evidence/paired-runtime.json; fi
           for role in phone watch; do
@@ -348,27 +402,27 @@ jobs:
               if test -f "build/paired-runtime/$role-summary.json"; then
                 cp "build/paired-runtime/$role-summary.json" "build/evidence/paired-$role-summary.json"
               fi
-              xcrun xcresulttool export attachments --path "build/paired-$role.xcresult" --output-path "build/evidence/paired-$role-screenshots" || true
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/paired-$role.xcresult" --output-path "build/evidence/paired-$role-screenshots" || true
             fi
           done
           if test -f build/accessibility-api/results.json; then cp build/accessibility-api/results.json build/evidence/accessibility-api.json; fi
           echo 'Intel slice build outcome: ${{ steps.intel.outcome }}; Intel runtime: not tested' | tee build/evidence/architecture.txt
           for name in unit ui sandbox modal-probe; do
             if test -d "build/mac-$name.xcresult"; then
-              xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
             fi
           done
           if test -d build/iPhoneCompact-TouchColorTests.xcresult; then
-            xcrun xcresulttool get test-results summary --path build/iPhoneCompact-TouchColorTests.xcresult | tee build/evidence/ios-equivalence-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/iPhoneCompact-TouchColorTests.xcresult | tee build/evidence/ios-equivalence-summary.json || true
           fi
           if test -d build/mac-ui.xcresult; then
-            xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
           fi
           if test -d build/mac-sandbox.xcresult; then
-            xcrun xcresulttool export attachments --path build/mac-sandbox.xcresult --output-path build/evidence/sandbox-screenshots || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-sandbox.xcresult --output-path build/evidence/sandbox-screenshots || true
           fi
           if test -d build/mac-modal-probe.xcresult; then
-            xcrun xcresulttool export attachments --path build/mac-modal-probe.xcresult --output-path build/evidence/modal-probe-screenshots || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-modal-probe.xcresult --output-path build/evidence/modal-probe-screenshots || true
           fi
           if test -f build/mac-sandbox-entitlements.plist; then
             python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-entitlements.json
@@ -380,27 +434,27 @@ jobs:
             cp -R build/vision-runtime/screenshots build/evidence/vision-checkpoints
           fi
           if test -d build/vision-ui.xcresult; then
-            xcrun xcresulttool get test-results summary --path build/vision-ui.xcresult | tee build/evidence/vision-ui-summary.json || true
-            xcrun xcresulttool export attachments --path build/vision-ui.xcresult --output-path build/evidence/vision-ui-screenshots || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/vision-ui.xcresult | tee build/evidence/vision-ui-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/vision-ui.xcresult --output-path build/evidence/vision-ui-screenshots || true
           fi
           if test -d build/watch-ui.xcresult; then
-            xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
-            xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
           fi
           if test -d build/watch-public-trait.xcresult; then
-            xcrun xcresulttool get test-results summary --path build/watch-public-trait.xcresult | tee build/evidence/watch-public-trait-summary.json || true
-            xcrun xcresulttool export attachments --path build/watch-public-trait.xcresult --output-path build/evidence/watch-public-trait-screenshots || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/watch-public-trait.xcresult | tee build/evidence/watch-public-trait-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/watch-public-trait.xcresult --output-path build/evidence/watch-public-trait-screenshots || true
           fi
           for platform in vision watch; do
             if test -d "build/$platform-largest-text.xcresult"; then
-              xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
-              xcrun xcresulttool export attachments --path "build/$platform-largest-text.xcresult" --output-path "build/evidence/$platform-largest-text-screenshots" || true
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-largest-text.xcresult" --output-path "build/evidence/$platform-largest-text-screenshots" || true
             fi
           done
           for platform in vision watch tv; do
             if test -d "build/$platform-tests.xcresult"; then
-              xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
-              xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
             fi
             if test -f "build/$platform-runtime/runtime.json"; then
               cp "build/$platform-runtime/runtime.json" "build/evidence/$platform-runtime.json"
@@ -410,7 +464,7 @@ jobs:
           python3 - <<'PY'
           import json,os
           from pathlib import Path
-          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
           for manifest in root.glob('*/manifest.json'):
               groups=json.loads(manifest.read_text()); keep=set()
               for group in groups:
@@ -430,7 +484,7 @@ jobs:
           python3 - <<'PY'
           import json,os
           from pathlib import Path
-          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
           for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
               if p.is_file():
                   size=p.stat().st_size
@@ -446,13 +500,20 @@ jobs:
           PY
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
+          TC_BUDGET_BODY
       - name: Validate final evidence byte and path limits
         id: evidence_guard
         if: always()
         timeout-minutes: 1
         run: python3 scripts/validate_evidence.py build/evidence "$TOUCHCOLOR_EVIDENCE_LIMIT"
-      - name: Retain small test evidence for review
+      - name: Verify artifact upload reserve
+        id: upload_budget
         if: ${{ always() && steps.evidence_guard.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py check-upload
+      - name: Retain small test evidence for review
+        if: ${{ always() && steps.evidence_guard.outcome == 'success' && steps.upload_budget.outcome == 'success' }}
+        timeout-minutes: 1
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: touchcolor-native-evidence-${{ matrix.lane || matrix.platform }}

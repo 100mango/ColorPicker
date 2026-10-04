@@ -97,6 +97,28 @@ class NativeContentSizeTests(unittest.TestCase):
         code,_,operation=runner(['xcrun','simctl','ui',DEVICE,'content_size','medium'],10,output_limit=100,tail_limit=100)
         self.assertEqual(code,0);self.assertTrue(operation['cleanup_confirmed']);execute.assert_called_once()
 
+    def test_work_expiry_does_not_claim_ui_execution_and_still_restores_original(self):
+        fixture=core_tests.SimulatorContentSizeTests()
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'TOUCHCOLOR_BUDGET_PHASE':'work'}):
+            contract,command=fixture.ui_fixture(folder)
+            current='medium';phases=[]
+            def execute(args,timeout,**kwargs):
+                nonlocal current
+                phases.append((args.copy(),os.environ.get('TOUCHCOLOR_BUDGET_PHASE')))
+                if args==['xcrun','simctl','help','ui']:text=HELP
+                elif args[:4]==['xcrun','simctl','list','devices']:
+                    text=json.dumps({'devices':{'runtime':[{'udid':DEVICE,'state':'Booted'}]}})
+                else:
+                    if len(args)==6:current=args[-1]
+                    text=current
+                return subprocess.CompletedProcess(args,0,text,'')
+            ui=Mock(return_value=(124,'mandatory UI not admitted',{'started':False,'process_group_gone':True,'capture_reader_finished':True}))
+            result=run_largest(DEVICE,Path(folder)/'report.json',command,contract,['testImport'],TouchSizeRunner(ui,execute))
+            self.assertFalse(result['ui_executed']);self.assertFalse(qualified(result))
+            self.assertTrue(result['restore_verified']);self.assertEqual(current,'medium')
+            self.assertEqual([phase for args,phase in phases[-3:]],['cleanup']*3)
+            self.assertEqual(os.environ['TOUCHCOLOR_BUDGET_PHASE'],'work')
+
     def test_bounded_output_failure_does_not_become_success(self):
         execute=Mock(return_value=subprocess.CompletedProcess(['synthetic'],0,'x'*101,''))
         code,text,operation=TouchSizeRunner(Mock(),execute)(['synthetic'],1,output_limit=100,tail_limit=40)
@@ -215,6 +237,21 @@ class NativeContentSizeTests(unittest.TestCase):
                        report={'captures':[],'stages':[],'ui_runner_identifier':'synthetic.runner'})
         exec(compile(ast.Module(body=[function],type_ignores=[]),'actual-native-run','exec'),namespace)
         return namespace
+
+    def test_actual_ui_runner_rejects_insufficient_whole_case_budget_before_launch(self):
+        from job_budget import JobBudget,create_record
+        from test_job_budget import Clock
+        clock=Clock();record=create_record({'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_JOB_MINUTES':'25',
+            'TOUCHCOLOR_JOB_STARTED_EPOCH':str(clock.wall),'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(clock.mono),
+            'GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123'},wall=lambda:clock.wall,monotonic=lambda:clock.mono)
+        budget=JobBudget(record,wall=lambda:clock.wall,monotonic=lambda:clock.mono);clock.advance(601)
+        with tempfile.TemporaryDirectory() as folder:
+            state=self.driver_runner(folder,Mock())
+            with patch('job_budget.enabled_budget',return_value=budget),patch('job_budget.fail_record'),patch('subprocess.Popen') as launch:
+                self.assertEqual(state['run'](['xcodebuild','test-without-building','-maximum-test-execution-time-allowance','360'],600,required=False),124)
+            launch.assert_not_called()
+            self.assertFalse(state['report']['stages'][-1]['started'])
+            self.assertEqual(budget.events[-1]['minimum_seconds'],420)
 
     def test_actual_ui_runner_waits_for_capture_lifecycle_before_proving_cleanup(self):
         with tempfile.TemporaryDirectory() as folder:

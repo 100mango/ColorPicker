@@ -28,7 +28,7 @@ struct WatchHome: View {
                     }
                 }
                 NavigationLink("Transfer Status") { WatchTransferView(transfer: transfer) }.accessibilityIdentifier("watch.transfer.open")
-                NavigationLink("Privacy") { WatchPrivacy() }
+                NavigationLink("Privacy") { WatchPrivacy() }.accessibilityIdentifier("watch.privacy")
             }.navigationTitle("TouchColor")
         }
     }
@@ -147,16 +147,26 @@ struct WatchColorEditor: View {
 /// regression. No values, photos or palette contents are logged.
 @MainActor private enum WatchEditorDiagnostics {
     private static var visibleEditors = Set<UUID>()
-    private static var events = 0
+    // Repeated focus changes must not consume the appearance/disappearance
+    // allowance. Inactive callbacks have their own allowance as well.
+    private static let limits = ["lifecycle": 32, "focusVisible": 16, "focusHidden": 16,
+                                 "writeVisible": 16, "writeHidden": 16]
+    private static var seen: [String: Int] = [:]
+    private static let testCase = String((ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_CASE"] ?? "unscoped")
+        .map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == ".") ? $0 : "_" }.prefix(120))
     private static let logger = Logger(subsystem: "com.mango.touchColor.WatchDiagnostics", category: "editor")
-    private static func emit(_ kind: String, _ id: UUID, focused: Bool = false, visible: Bool) {
-        guard events < 80 else { return }; events += 1
-        logger.notice("WATCH_EDITOR \(kind, privacy: .public) id=\(id.uuidString, privacy: .public) visible=\(visible) focused=\(focused) active=\(visibleEditors.count)")
+    private static func emit(_ kind: String, _ id: UUID, bucket: String, focused: Bool? = nil, visible: Bool) {
+        seen[bucket, default: 0] += 1
+        guard seen[bucket, default: 0] <= limits[bucket, default: 0] else { return }
+        let dropped = seen.reduce(0) { $0 + max(0, $1.value - limits[$1.key, default: 0]) }
+        // Only onChange(of: crownFocused) supplies a measured focus value.
+        let focus = focused.map { " focused=\($0)" } ?? ""
+        logger.notice("WATCH_EDITOR \(kind, privacy: .public) case=\(testCase, privacy: .public) id=\(id.uuidString, privacy: .public) visible=\(visible)\(focus, privacy: .public) active=\(visibleEditors.count) dropped=\(dropped)")
     }
-    static func appeared(_ id: UUID) { visibleEditors.insert(id); emit("appear", id, visible: true) }
-    static func disappeared(_ id: UUID) { visibleEditors.remove(id); emit("disappear", id, visible: false) }
-    static func focus(_ id: UUID, focused: Bool, visible: Bool) { emit("focus", id, focused: focused, visible: visible) }
-    static func writeback(_ id: UUID, changed: Bool, visible: Bool) { emit(changed ? "component changed" : "component unchanged", id, visible: visible) }
+    static func appeared(_ id: UUID) { visibleEditors.insert(id); emit("appear", id, bucket: "lifecycle", visible: true) }
+    static func disappeared(_ id: UUID) { visibleEditors.remove(id); emit("disappear", id, bucket: "lifecycle", visible: false) }
+    static func focus(_ id: UUID, focused: Bool, visible: Bool) { emit("focus", id, bucket: visible ? "focusVisible" : "focusHidden", focused: focused, visible: visible) }
+    static func writeback(_ id: UUID, changed: Bool, visible: Bool) { emit(changed ? "component_changed" : "component_unchanged", id, bucket: visible ? "writeVisible" : "writeHidden", visible: visible) }
 }
 #endif
 struct WatchTransferView: View {

@@ -21,5 +21,13 @@ class ProfileTests(unittest.TestCase):
             select_profile({}, 'watchOS-27-0', 'unknown')
 
 
+def load_tests(loader, tests, pattern):
+    # Keep the new diagnostics checks on the existing source-owned Watch
+    # preflight entrypoint without changing any workflow timeout/budget rows.
+    from test_watch_diagnostics import WatchDiagnosticsTests
+    tests.addTests(loader.loadTestsFromTestCase(WatchDiagnosticsTests))
+    return tests
+
+
 if __name__ == '__main__':
     unittest.main()

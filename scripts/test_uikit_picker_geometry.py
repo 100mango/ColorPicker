@@ -199,6 +199,113 @@ assert(!TCPickerDismissalPoint(w,CGRectMake(100,50,200,300),NULL));
 for(int x=-40;x<400;x+=20)for(int y=-40;y<550;y+=20)for(int width=20;width<400;width+=40){CGRect r=CGRectMake(x,y,width,200);if(TCPickerDismissalPoint(w,r,&p)){assert(CGRectContainsPoint(CGRectInset(w,20,20),p));assert(!CGRectContainsPoint(CGRectInset(r,-12,-12),p));}}
 ''')
 
+    def test_observed_landscape_components_are_compared_in_measured_screen_space(self):
+        evidence = json.loads((ROOT / 'TouchColorUITests/Fixtures/photos-ipad-80cef-coordinates.json').read_text())
+        self.assertIn('no basis coordinates or actual y', evidence['source']['kind'])
+        self.assertEqual([item['job'] for item in evidence['devices']], [111462362804,111462362779])
+        for device in evidence['devices']:
+            window = ','.join(map(str,device['window_ax']))
+            picker = ','.join(map(str,device['popover_ax']))
+            x,y = device['chosen_point_ax']
+            width,height = device['window_ax'][2:]
+            observed_x = device['actual_screen_x']
+            self.assertNotEqual(x,observed_x)
+            bases = [[(height,0),(height,width),(0,0)], [(0,width),(0,0),(height,width)]]
+            initializer = "{" + ",".join("{" + ",".join("{" + str(a) + "," + str(b) + "}" for a,b in basis) + "}" for basis in bases) + "}"
+            self.run_helper(f'''
+CGRect window=CGRectMake({window}),picker=CGRectMake({picker});CGPoint point;
+assert(TCPickerDismissalPoint(window,picker,&point));assert(point.x=={x});assert(point.y=={y});
+CGPoint bases[2][3]={initializer};
+for(int i=0;i<2;i++){{
+ TCPickerScreenMap map;assert(TCPickerMakeScreenMap(window,bases[i][0],bases[i][1],bases[i][2],&map));
+ CGPoint screen,inside,corners[4];assert(TCPickerMapAXPoint(map,point,&screen));assert(fabs(screen.x-{observed_x})<1e-6);
+ assert(fabs(screen.x-point.x)>1);
+ assert(TCPickerMapAXRect(map,CGRectInset(picker,-12,-12),corners));
+ assert(TCPickerScreenPointRelation(map,CGRectInset(picker,-12,-12),screen)==TCPickerScreenRelationOutside);
+ assert(TCPickerScreenPointRelation(map,CGRectInset(window,20,20),screen)==TCPickerScreenRelationInside);
+ assert(TCPickerMapAXPoint(map,CGPointMake(CGRectGetMidX(picker),CGRectGetMidY(picker)),&inside));
+ assert(TCPickerScreenPointRelation(map,picker,inside)==TCPickerScreenRelationInside);
+ assert(TCPickerScreenPointRelation(map,picker,corners[0])!=TCPickerScreenRelationInvalid);
+}}
+''')
+
+    def test_coordinate_map_rejects_nonfinite_and_degenerate_bases(self):
+        self.run_helper('''
+CGRect window=CGRectMake(0,0,1376,1032);CGPoint out;
+CGPoint bad[6][3]={{{NAN,0},{1376,0},{0,1032}},{{0,0},{0,0},{0,1032}},{{0,0},{1376,0},{688,0}},
+ {{0,0},{1376,0},{1376,0.0001}},{{0,0},{INFINITY,0},{0,1032}},{{0,0},{1e308,1e308},{1e308,-1e308}}};
+for(int i=0;i<6;i++){
+ TCPickerScreenMap map;assert(!TCPickerMakeScreenMap(window,bad[i][0],bad[i][1],bad[i][2],&map));assert(!map.valid);
+ assert(!TCPickerMapAXPoint(map,CGPointMake(186,516),&out));
+ assert(TCPickerScreenPointRelation(map,CGRectMake(364,372,833,640),CGPointMake(516,186))==TCPickerScreenRelationInvalid);
+}
+TCPickerScreenMap map;
+assert(!TCPickerMakeScreenMap(CGRectMake(0,0,0,100),CGPointMake(0,0),CGPointMake(100,0),CGPointMake(0,100),&map));
+assert(!TCPickerMakeScreenMap(CGRectMake(1e308,0,1e308,100),CGPointMake(0,0),CGPointMake(100,0),CGPointMake(0,100),&map));
+assert(!TCPickerMakeScreenMap(window,CGPointMake(0,0),CGPointMake(100,0),CGPointMake(0,100),NULL));
+assert(TCPickerMakeScreenMap(window,CGPointMake(0,0),CGPointMake(1376,0),CGPointMake(0,1032),&map));
+assert(!TCPickerMapAXPoint(map,CGPointMake(NAN,0),&out));assert(!TCPickerMapAXPoint(map,CGPointMake(10,10),NULL));
+assert(TCPickerScreenPointRelation(map,CGRectNull,CGPointMake(1,1))==TCPickerScreenRelationInvalid);
+assert(TCPickerScreenPointRelation(map,window,CGPointMake(INFINITY,1))==TCPickerScreenRelationInvalid);
+''')
+
+    def test_translated_reflected_scaled_and_sheared_maps_keep_exclusion_semantics(self):
+        self.run_helper('''
+CGRect window=CGRectMake(80,40,694,600),picker=CGRectMake(280,60,450,560);CGPoint point;
+assert(TCPickerDismissalPoint(window,picker,&point));
+CGPoint bases[4][3]={{{80,40},{774,40},{80,640}},{{900,100},{900,794},{300,100}},
+ {{1600,100},{212,100},{1600,1300}},{{100,200},{1488,350},{400,1400}}};
+for(int i=0;i<4;i++){
+ TCPickerScreenMap map;assert(TCPickerMakeScreenMap(window,bases[i][0],bases[i][1],bases[i][2],&map));
+ CGPoint screen,inside;assert(TCPickerMapAXPoint(map,point,&screen));
+ assert(TCPickerScreenPointRelation(map,CGRectInset(picker,-12,-12),screen)==TCPickerScreenRelationOutside);
+ assert(TCPickerScreenPointRelation(map,CGRectInset(window,20,20),screen)==TCPickerScreenRelationInside);
+ assert(TCPickerMapAXPoint(map,CGPointMake(CGRectGetMidX(picker),CGRectGetMidY(picker)),&inside));
+ assert(TCPickerScreenPointRelation(map,picker,inside)==TCPickerScreenRelationInside);
+}
+''')
+
+    def test_consistent_offscreen_translation_fails_reported_screen_envelope(self):
+        self.run_helper('''
+TCPickerScreenContext context={3,YES,CGRectMake(0,0,1376,1032),CGRectMake(0,0,1032,1376)};
+CGRect window=CGRectMake(0,0,1376,1032),envelope;TCPickerScreenMap map;
+assert(TCPickerMakeScreenMap(window,CGPointMake(10000,10000),CGPointMake(11376,10000),CGPointMake(10000,11032),&map));
+CGPoint target;assert(TCPickerMapAXPoint(map,CGPointMake(186,516),&target));
+assert(TCPickerScreenPointRelation(map,CGRectMake(352,360,857,664),target)==TCPickerScreenRelationOutside);
+assert(TCPickerScreenPointRelation(map,CGRectInset(window,20,20),target)==TCPickerScreenRelationInside);
+CGPoint points[5]={{10000,10000},{11376,10000},{10000,11032},{11376,11032},target};
+assert(TCPickerChooseScreenEnvelope(context,points,&envelope)==TCPickerEnvelopeInvalid);assert(CGRectIsNull(envelope));
+''')
+
+    def test_mixing_reported_screen_spaces_per_point_cannot_validate_a_basis(self):
+        self.run_helper('''
+TCPickerScreenContext context={3,YES,CGRectMake(0,0,1376,1032),CGRectMake(0,0,1032,1376)};
+CGPoint points[5]={{900,900},{1200,500},{400,1200},{700,800},{690,996}};
+TCPickerScreenMap map;assert(TCPickerMakeScreenMap(CGRectMake(0,0,1376,1032),points[0],points[1],points[2],&map));
+for(int i=0;i<5;i++)assert(CGRectContainsPoint(context.currentBounds,points[i])||CGRectContainsPoint(context.fixedBounds,points[i]));
+CGRect envelope;assert(TCPickerChooseScreenEnvelope(context,points,&envelope)==TCPickerEnvelopeInvalid);assert(CGRectIsNull(envelope));
+assert(!TCPickerScreenContainsCoordinates(context.currentBounds,points,5));assert(!TCPickerScreenContainsCoordinates(context.fixedBounds,points,5));
+''')
+
+    def test_envelope_edges_and_recorded_landscape_context_are_fail_closed(self):
+        self.run_helper('''
+TCPickerScreenContext context={3,YES,CGRectMake(0,0,1376,1032),CGRectMake(0,0,1032,1376)},changed=context;
+CGPoint fixed[5]={{0,0},{1032,0},{0,1376},{1032,1376},{516,186}};CGRect envelope;
+assert(TCPickerChooseScreenEnvelope(context,fixed,&envelope)==TCPickerEnvelopeFixed);assert(CGRectEqualToRect(envelope,context.fixedBounds));
+fixed[0]=CGPointMake(-1,0);assert(TCPickerChooseScreenEnvelope(context,fixed,&envelope)==TCPickerEnvelopeFixed);
+fixed[0]=CGPointMake(-1.01,0);assert(TCPickerChooseScreenEnvelope(context,fixed,&envelope)==TCPickerEnvelopeInvalid);
+fixed[0]=CGPointMake(NAN,0);assert(TCPickerChooseScreenEnvelope(context,fixed,&envelope)==TCPickerEnvelopeInvalid);
+CGPoint current[5]={{0,0},{1376,0},{0,1032},{1376,1032},{186,516}};
+assert(TCPickerChooseScreenEnvelope(context,current,&envelope)==TCPickerEnvelopeCurrent);
+assert(!TCPickerScreenContainsCoordinates(envelope,current,4));assert(!TCPickerScreenContainsCoordinates(envelope,NULL,5));
+assert(TCPickerScreenContextStable(context,context));
+changed.orientation=4;assert(!TCPickerScreenContextStable(context,changed));
+changed=context;changed.landscape=NO;assert(!TCPickerScreenContextStable(context,changed));assert(TCPickerChooseScreenEnvelope(changed,current,&envelope)==TCPickerEnvelopeInvalid);
+changed=context;changed.currentBounds.size.width+=1;assert(!TCPickerScreenContextStable(context,changed));
+changed=context;changed.fixedBounds.size.height+=1;assert(!TCPickerScreenContextStable(context,changed));
+changed=context;changed.fixedBounds=CGRectNull;assert(!TCPickerScreenContextStable(context,changed));assert(TCPickerChooseScreenEnvelope(changed,current,&envelope)==TCPickerEnvelopeInvalid);
+''')
+
 
 if __name__ == '__main__':
     unittest.main()

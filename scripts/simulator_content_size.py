@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import contextlib
 """Discover, verify and restore a system text-size setting on one owned simulator.
 
 No SDK support is assumed. The installed tool's help must expose the action and
@@ -83,9 +84,15 @@ def probe(device,report_path,ui_command=None,ui_timeout=300,runner=None,expected
         if report.get('cleanup_unconfirmed'):
             raise RuntimeError('No further command is permitted with unresolved owned process cleanup')
         try:
-            code,text,operation=runner(args,seconds,output_limit=limit,tail_limit=limit,echo=label=='actual_ui')
+            restoring=label in ('read_before_restore','restore_original','read_restored')
+            scope=runner.restoring() if restoring and hasattr(runner,'restoring') else contextlib.nullcontext()
+            with scope:
+                code,text,operation=runner(args,seconds,output_limit=limit,tail_limit=limit,echo=label=='actual_ui')
         except Exception as error:
             code,text,operation=1,str(error),{'command':args,'state':'execution_error','error_type':type(error).__name__,'cleanup_confirmed':False}
+        if label=='actual_ui' and operation.get('command_started') is False:
+            report['ui_executed']=False
+            report['ui_not_started_reason']=operation.get('state','job budget exhausted')
         report['operations'].append({'label':label,'operation':operation,'output':text[:12000 if label=='help' else 2048]})
         if operation.get('cleanup_confirmed') is not True:
             report.update(cleanup_unconfirmed=True,status='owned_process_cleanup_unconfirmed')

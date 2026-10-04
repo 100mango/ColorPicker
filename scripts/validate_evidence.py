@@ -12,6 +12,7 @@ if not (root.is_dir() and (not root.is_symlink())):
 allowed_root = {'architecture.txt', 'accessibility-api.json', 'mac-sandbox-entitlements.json', 'mac-sandbox-post-entitlements.json', 'vision-ui-summary.json', 'watch-ui-summary.json', 'mac-unit-summary.json', 'mac-ui-summary.json', 'mac-sandbox-summary.json', 'ios-equivalence-summary.json'}
 allowed_root.update((f'{p}-{suffix}.json' for p in ('vision', 'watch', 'tv') for suffix in ('summary', 'runtime')))
 allowed_root.add('mac-modal-probe-summary.json')
+allowed_root.add('job-budget.json')
 allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vision-ui-screenshots', 'vision-screenshots', 'watch-screenshots', 'watch-ui-screenshots', 'tv-screenshots'}
 allowed_dirs.add('modal-probe-screenshots')
 allowed_root.update({'vision-largest-text-summary.json','watch-largest-text-summary.json'})

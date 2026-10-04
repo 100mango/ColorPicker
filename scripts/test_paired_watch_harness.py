@@ -22,6 +22,14 @@ class PairedHarnessTests(unittest.TestCase):
     def process(self, role):
         return SimpleNamespace(markers=['TOUCHCOLOR_PAIRED_'+role.upper()+'_RELAUNCH_VERIFIED'], cleanup_confirmed=True)
 
+    def test_job_budget_expiry_retains_not_started_paired_command(self):
+        from job_budget import BudgetExhausted
+        with patch.object(harness,'run_captured',side_effect=BudgetExhausted('synthetic work reserve exhausted')),patch.object(harness,'save_report'):
+            with self.assertRaises(RuntimeError):harness.run(['synthetic'],60)
+        self.assertFalse(harness.report['budget_incomplete']['started'])
+        self.assertEqual(harness.report['stages'][-1]['exit'],124)
+        self.assertFalse(harness.report.get('cleanup_unconfirmed',False))
+
     def test_failure_diagnostic_is_specific_and_bounded(self):
         text='unrelated output\n/owned/PhonePairedTransferTests.swift:90: error: test: expected enabled\n'
         text += "Test Case 'case' failed (1 seconds).\n"

@@ -15,6 +15,7 @@ import threading
 import time
 import uuid
 from bounded_process import run_captured, stop_group
+from job_budget import enabled_budget, BudgetExhausted
 from capture_simulator_checkpoint import publish_acknowledgement
 from verify_embedded_watch import verify as verify_embedded_watch
 from watch_runtime_pair import phone_template, device_inventory, verify_new_device, verify_pair, activate_owned_pair
@@ -46,6 +47,11 @@ def run(command, timeout):
     try:
         result = run_captured(command, timeout, checkpoint=checkpoint)
         output, code, diagnostic = result.stdout, result.returncode, (result.stdout+result.stderr)[-6000:]
+    except BudgetExhausted as error:
+        output,code,diagnostic='',124,str(error)
+        active['started']=False
+        report['budget_incomplete']={'command':command,'reason':str(error),'started':False}
+        if not error.cleanup_confirmed: report['cleanup_unconfirmed']=True
     except subprocess.TimeoutExpired as error:
         confirmed = bool(getattr(error, 'cleanup_confirmed', False))
         if not confirmed: report['cleanup_unconfirmed'] = True
@@ -365,6 +371,9 @@ def main():
             return ['xcodebuild','-xctestrun',str(paths[role]),'-destination','platform='+platform+' Simulator,id='+selected[role],'-resultBundlePath','build/paired-'+role+'.xcresult','-parallel-testing-enabled','NO','-collect-test-diagnostics','never','-test-timeouts-enabled','YES','-maximum-test-execution-time-allowance','240','-only-testing:'+test,'test-without-building']
         installed_products('before XCTest',selected)
         runtime_inventory('before XCTest',selected,original_devices,original_pairs,pair)
+        budget=enabled_budget()
+        if budget is not None:
+            budget.admit('paired phone readiness, receipt barrier and both completions',450,minimum=450,cleanup=0)
         processes['phone']=RunningTests('phone',command('phone','TouchColorUITests/PhonePairedTransferTests/testIncomingForegroundTransferReviewAcceptAndRelaunch'))
         require(processes['phone'].ready.wait(timeout=120),'Phone actual inbox readiness missing')
         processes['watch']=RunningTests('watch',command('watch','TouchColorWatchUITests/WatchPairedTransferTests/testForegroundSendAcceptReceiptAndBothLocalStatesAfterRelaunch'))
@@ -378,6 +387,7 @@ def main():
     except Exception as error:
         report['result']='failed'; report['error']=str(error)
     finally:
+        if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
         cleanup(processes,created,pair,selected,original_devices,original_pairs,booted)
         save_report(); print('PAIRED_RESULT',json.dumps(report),flush=True)
     return 0 if report['result']=='passed' else 1

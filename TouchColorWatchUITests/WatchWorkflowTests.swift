@@ -18,6 +18,7 @@ final class WatchWorkflowTests: XCTestCase {
         // the normal functional cases, which retain the 120-second allowance.
         executionTimeAllowance = name.contains("Chinese") ? 240 : 120
         app = XCUIApplication()
+        app.launchEnvironment["TOUCHCOLOR_TEST_CASE"] = name
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.watch-ui.\(UUID())"
         if name.contains("PublicLargestTrait") { app.launchEnvironment["TOUCHCOLOR_TEST_TRAIT_PROOF"] = "1" }
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]
@@ -230,10 +231,60 @@ final class WatchWorkflowTests: XCTestCase {
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch real Digital Crown RGB adjustment"; shot.lifetime = .keepAlways; add(shot)
     }
 
-    func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() {
-        func reach(_ identifier: String) {
+    /// One real AX snapshot per observation; no coordinates, focus changes,
+    /// scrolling, labels or color values are synthesized by this diagnostic.
+    @MainActor private func logHomeListFrame(_ phase: String) throws {
+        print("WATCH_LIST_SNAPSHOT_BEGIN case=\(name) phase=\(phase)"); fflush(stdout)
+        let snapshotStarted = ProcessInfo.processInfo.systemUptime
+        let root = try app.snapshot()
+        let snapshotMilliseconds = Int((ProcessInfo.processInfo.systemUptime - snapshotStarted) * 1000)
+        var pending: [any XCUIElementSnapshot] = [root]
+        var rows: [[String: Any]] = []
+        var visited = 0
+        func rectangle(_ frame: CGRect) -> [Double] {
+            [Double(frame.minX), Double(frame.minY), Double(frame.width), Double(frame.height)]
+        }
+        while let element = pending.popLast() {
+            visited += 1
+            guard visited <= 512 else { XCTFail("Home List diagnostic exceeded its snapshot bound"); return }
+            let identifier = element.identifier
+            if ["watch.editor", "watch.photo", "watch.count", "watch.transfer.open", "watch.privacy"].contains(identifier)
+                || identifier.hasPrefix("watch.color.") {
+                rows.append(["id": identifier, "frame": rectangle(element.frame)])
+            }
+            pending.append(contentsOf: element.children)
+        }
+        XCTAssertLessThanOrEqual(rows.count, 24)
+        let data = try JSONSerialization.data(withJSONObject: ["case": name, "phase": phase,
+            "viewport": rectangle(root.frame), "rows": rows, "snapshotMilliseconds": snapshotMilliseconds], options: [.sortedKeys])
+        XCTAssertLessThanOrEqual(data.count, 4096)
+        print("WATCH_LIST_FRAME " + String(decoding: data, as: UTF8.self)); fflush(stdout)
+    }
+
+    @MainActor func testHomeListDigitalCrownFromColdLaunch() throws {
+        // Cold-home control: no editor destination has been opened. The same
+        // Crown delta and bound must reach the real, initially offscreen row.
+        XCTAssertTrue(app.buttons["watch.editor"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["BackButton"].exists, app.debugDescription)
+        XCTAssertEqual(app.staticTexts["watch.count"].label, "0")
+        let target = app.buttons["watch.privacy"]
+        XCTAssertFalse(target.exists && target.isHittable, "The cold-home control must require actual scrolling")
+        for attempt in 0..<12 {
+            if target.exists && target.isHittable { break }
+            try logHomeListFrame("cold.\(attempt).before")
+            XCUIDevice.shared.rotateDigitalCrown(delta: -0.1)
+            try logHomeListFrame("cold.\(attempt).after")
+        }
+        XCTAssertTrue(target.isHittable, app.debugDescription)
+        target.tap()
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["BackButton"].exists)
+    }
+
+    @MainActor func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() throws {
+        func reach(_ identifier: String) throws {
             let button = app.buttons[identifier]
-            for _ in 0..<12 {
+            for attempt in 0..<12 {
                 if button.exists && button.isHittable { break }
                 var above = button.exists && button.frame.midY < app.frame.midY
                 if !button.exists, let targetIndex = Int(identifier.replacingOccurrences(of: "watch.color.", with: "")) {
@@ -252,8 +303,53 @@ final class WatchWorkflowTests: XCTestCase {
                     // Keep small bounded Crown movement and the exact target.
                     XCTAssertFalse(app.buttons["BackButton"].exists, app.debugDescription)
                     print("WATCH_LIST_CROWN: target=\(identifier) above=\(above)"); fflush(stdout)
+                    try logHomeListFrame("return.\(identifier).\(attempt).before")
                     XCUIDevice.shared.rotateDigitalCrown(delta: above ? 0.1 : -0.1)
+                    try logHomeListFrame("return.\(identifier).\(attempt).after")
                 } else if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+            }
+            XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()
+        }
+        func back() { app.buttons["BackButton"].tap() }
+        app.buttons["watch.editor"].tap(); app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
+        try reach("watch.save"); app.buttons["watch.save"].tap(); back()
+        try reach("watch.color.1")
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
+        try reach("watch.edit.copy")
+        app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fd0000")
+        try reach("watch.save"); back(); back()
+        for _ in 0..<4 { app.swipeDown() }
+        try reach("watch.color.0"); try reach("watch.delete.0")
+        app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
+        XCTAssertTrue(app.staticTexts["watch.count"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["watch.count"].label, "2")
+        for _ in 0..<6 where !app.buttons["watch.color.1"].exists { app.swipeUp() }
+        XCTAssertTrue(app.buttons["watch.color.0"].label.contains("#fe0000"), app.debugDescription)
+        XCTAssertTrue(app.buttons["watch.color.1"].label.contains("#fd0000"), app.debugDescription)
+        let image = XCTAttachment(screenshot: app.screenshot())
+        image.name = "Native Watch edit copy and delete preserve palette order"; image.lifetime = .keepAlways; add(image)
+    }
+
+    func testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() {
+        func reach(_ identifier: String) {
+            let button = app.buttons[identifier]
+            for _ in 0..<12 {
+                if button.exists && button.isHittable { break }
+                var above = button.exists && button.frame.midY < app.frame.midY
+                if !button.exists, let targetIndex = Int(identifier.replacingOccurrences(of: "watch.color.", with: "")) {
+                    // Lists virtualize offscreen rows. A fast full-screen swipe can
+                    // skip color 0 on the 40mm display; use the actual neighboring
+                    // row identities to reverse direction instead of scrolling
+                    // farther toward the end after every unsuccessful query.
+                    let indices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "watch.color."))
+                        .allElementsBoundByIndex.compactMap { Int($0.identifier.dropFirst("watch.color.".count)) }
+                    if let first = indices.min() { above = targetIndex < first }
+                }
+                // This separate, freshly launched case qualifies the complete
+                // touch workflow. It never runs as a fallback from the Crown case.
+                if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
             }
             XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()
         }
@@ -276,7 +372,7 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["watch.color.0"].label.contains("#fe0000"), app.debugDescription)
         XCTAssertTrue(app.buttons["watch.color.1"].label.contains("#fd0000"), app.debugDescription)
         let image = XCTAttachment(screenshot: app.screenshot())
-        image.name = "Native Watch edit copy and delete preserve palette order"; image.lifetime = .keepAlways; add(image)
+        image.name = "Native Watch touch edit copy and delete preserve palette order"; image.lifetime = .keepAlways; add(image)
     }
 
 }

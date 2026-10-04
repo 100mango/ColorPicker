@@ -3,10 +3,13 @@
 Normal-size tests run first. Only the existing Chinese/layout cases below are
 repeated under an actually read-back system setting on the same owned device.
 """
+import contextlib
+import os
 import json
 import subprocess
 from pathlib import Path
 from bounded_process import run_captured
+from job_budget import BudgetExhausted
 from simulator_content_size import LARGEST, probe, validate_ui_command
 
 WATCH_CASES = (
@@ -33,6 +36,17 @@ class TouchSizeRunner:
         self.command_runner = command_runner
         self.cleanup_unconfirmed = False
 
+    @contextlib.contextmanager
+    def restoring(self):
+        # Probe enters this scope only after the owned UI group/capture reader
+        # are confirmed gone. A work-budget expiry must still allow restoration.
+        prior=os.environ.get('TOUCHCOLOR_BUDGET_PHASE')
+        if prior=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
+        try: yield
+        finally:
+            if prior is None: os.environ.pop('TOUCHCOLOR_BUDGET_PHASE',None)
+            else: os.environ['TOUCHCOLOR_BUDGET_PHASE']=prior
+
     def __call__(self, command, timeout, *, output_limit, tail_limit, echo=False):
         if self.cleanup_unconfirmed:
             raise RuntimeError('Prior owned command/capture cleanup is unconfirmed')
@@ -46,6 +60,7 @@ class TouchSizeRunner:
             for key in ('process_group_gone','capture_reader_finished','elapsed_seconds','wall_elapsed_seconds'):
                 operation[key]=detail.get(key)
             confirmed = detail.get('process_group_gone') is True and detail.get('capture_reader_finished') is True
+            operation['command_started'] = detail.get('started',True)
             operation['cleanup_confirmed'] = confirmed
             if confirmed: self.cleanup_unconfirmed = False
         else:
@@ -55,6 +70,9 @@ class TouchSizeRunner:
                 text = (result.stdout or '') + (result.stderr or '')
                 # run_captured returns only after the complete owned group exits.
                 operation.update(cleanup_confirmed=True, state='completed')
+            except BudgetExhausted as error:
+                code,text=124,str(error)
+                operation.update(cleanup_confirmed=error.cleanup_confirmed,state='not_started_budget',command_started=False)
             except subprocess.TimeoutExpired as error:
                 code, text = 124, 'Owned command exceeded its bounded deadline'
                 operation.update(cleanup_confirmed=getattr(error, 'cleanup_confirmed', False) is True,

@@ -50,6 +50,66 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 @interface TCAdaptiveLayoutTests : XCTestCase
 @end
 @implementation TCAdaptiveLayoutTests
+- (void)testScreenEnvelopeRejectsOffscreenAndMixedSpaceCoordinates {
+    TCPickerScreenContext context={3,YES,CGRectMake(0,0,1376,1032),CGRectMake(0,0,1032,1376)};
+    TCPickerScreenMap map;CGRect window=CGRectMake(0,0,1376,1032),envelope;
+    XCTAssertTrue(TCPickerMakeScreenMap(window,CGPointMake(10000,10000),CGPointMake(11376,10000),CGPointMake(10000,11032),&map));
+    CGPoint target;XCTAssertTrue(TCPickerMapAXPoint(map,CGPointMake(186,516),&target));
+    XCTAssertEqual(TCPickerScreenPointRelation(map,CGRectMake(352,360,857,664),target),TCPickerScreenRelationOutside);
+    CGPoint offscreen[5]={{10000,10000},{11376,10000},{10000,11032},{11376,11032},target};
+    XCTAssertEqual(TCPickerChooseScreenEnvelope(context,offscreen,&envelope),TCPickerEnvelopeInvalid);
+    CGPoint mixed[5]={{900,900},{1200,500},{400,1200},{700,800},{690,996}};
+    XCTAssertTrue(TCPickerMakeScreenMap(window,mixed[0],mixed[1],mixed[2],&map));
+    XCTAssertEqual(TCPickerChooseScreenEnvelope(context,mixed,&envelope),TCPickerEnvelopeInvalid,@"No screen can contain this whole sample even though each point fits one of the two screens");
+    XCTAssertTrue(CGRectIsNull(envelope));
+}
+- (void)testScreenEnvelopeAllowsEdgesButRequiresStableLandscapeContext {
+    TCPickerScreenContext context={3,YES,CGRectMake(0,0,1376,1032),CGRectMake(0,0,1032,1376)};
+    CGPoint points[5]={{0,0},{1032,0},{0,1376},{1032,1376},{516,186}};CGRect envelope;
+    XCTAssertEqual(TCPickerChooseScreenEnvelope(context,points,&envelope),TCPickerEnvelopeFixed);
+    XCTAssertTrue(CGRectEqualToRect(envelope,context.fixedBounds));
+    points[0]=CGPointMake(-1,0);XCTAssertEqual(TCPickerChooseScreenEnvelope(context,points,&envelope),TCPickerEnvelopeFixed);
+    points[0]=CGPointMake(-1.01,0);XCTAssertEqual(TCPickerChooseScreenEnvelope(context,points,&envelope),TCPickerEnvelopeInvalid);
+    XCTAssertTrue(TCPickerScreenContextStable(context,context));
+    TCPickerScreenContext changed=context;changed.orientation=4;XCTAssertFalse(TCPickerScreenContextStable(context,changed));
+    changed=context;changed.landscape=NO;XCTAssertFalse(TCPickerScreenContextStable(context,changed));
+    changed=context;changed.currentBounds.size.width+=1;XCTAssertFalse(TCPickerScreenContextStable(context,changed));
+    changed=context;changed.fixedBounds.size.height+=1;XCTAssertFalse(TCPickerScreenContextStable(context,changed));
+}
+- (void)testLandscapeCoordinateMappingsRetainObservedMismatchAndSafeExclusion {
+    CGRect window=CGRectMake(0,0,1376,1032), picker=CGRectMake(364,372,833,640);
+    CGPoint point;XCTAssertTrue(TCPickerDismissalPoint(window,picker,&point));
+    XCTAssertEqualWithAccuracy(point.x,186,0.001);XCTAssertEqualWithAccuracy(point.y,516,0.001);
+    // 80cef recorded only screenPoint.x=516 before its first assertion failed.
+    // Both quarter-turn bases fit that observation; neither is claimed as the
+    // unrecorded runtime basis. The UI helper measures the actual basis itself.
+    CGPoint bases[2][3]={{{1032,0},{1032,1376},{0,0}},{{0,1376},{0,0},{1032,1376}}};
+    for (NSUInteger i=0;i<2;i++) {
+        TCPickerScreenMap map;XCTAssertTrue(TCPickerMakeScreenMap(window,bases[i][0],bases[i][1],bases[i][2],&map));
+        CGPoint screen,inside;
+        XCTAssertTrue(TCPickerMapAXPoint(map,point,&screen));
+        XCTAssertEqualWithAccuracy(screen.x,516,0.001);
+        XCTAssertGreaterThan(fabs(screen.x-point.x),1);
+        XCTAssertEqual(TCPickerScreenPointRelation(map,CGRectInset(picker,-12,-12),screen),TCPickerScreenRelationOutside);
+        XCTAssertEqual(TCPickerScreenPointRelation(map,CGRectInset(window,20,20),screen),TCPickerScreenRelationInside);
+        XCTAssertTrue(TCPickerMapAXPoint(map,CGPointMake(CGRectGetMidX(picker),CGRectGetMidY(picker)),&inside));
+        XCTAssertEqual(TCPickerScreenPointRelation(map,picker,inside),TCPickerScreenRelationInside);
+    }
+}
+- (void)testInvalidAndDegenerateCoordinateBasesFailClosed {
+    CGRect window=CGRectMake(0,0,1376,1032);
+    CGPoint invalid[4][3]={{{NAN,0},{1376,0},{0,1032}},{{0,0},{0,0},{0,1032}},
+        {{0,0},{1376,0},{688,0}},{{0,0},{1376,0},{1376,0.0001}}};
+    for (NSUInteger i=0;i<4;i++) {
+        TCPickerScreenMap map;
+        XCTAssertFalse(TCPickerMakeScreenMap(window,invalid[i][0],invalid[i][1],invalid[i][2],&map));
+        CGPoint result;
+        XCTAssertFalse(TCPickerMapAXPoint(map,CGPointMake(186,516),&result));
+        XCTAssertEqual(TCPickerScreenPointRelation(map,CGRectMake(364,372,833,640),CGPointMake(516,186)),TCPickerScreenRelationInvalid);
+    }
+    TCPickerScreenMap map;
+    XCTAssertFalse(TCPickerMakeScreenMap(CGRectZero,CGPointZero,CGPointMake(1,0),CGPointMake(0,1),&map));
+}
 - (void)testInvalidPopoverRootCannotBeReplacedByValidPhotosChild {
     TCPickerSnapshotObservation invalid={CGRectNull,0,0,NO};
     TCObservePhotosSnapshotNode(&invalid,TCPickerNodePopover,"","",CGRectMake(NAN,0,0,0),YES);

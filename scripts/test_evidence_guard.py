@@ -20,6 +20,7 @@ def check(prepare, expected, limit=4_000_000, optimized=False):
         checked += 1
 def valid(root):
     (root/'architecture.txt').write_text('arm64 synthetic check')
+    (root/'job-budget.json').write_text('{"result":"budget_only_not_test_acceptance"}')
     (root/'mac-sandbox-post-entitlements.json').write_text('{}')
     directory = root/'screenshots'; directory.mkdir()
     name = str(uuid.uuid4()).upper()+'.txt'

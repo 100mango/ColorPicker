@@ -46,6 +46,17 @@ def stop_group(process, grace=10, checkpoint=None):
 
 def run_captured(command, timeout, *, text=True, stderr=subprocess.PIPE, checkpoint=None):
     """Bound command and whole owned-group cleanup, including orphan descendants."""
+    # Enabled only inside a source-bound native workflow controller. Portable
+    # tests and unrelated callers preserve their original explicit deadlines.
+    from job_budget import enabled_budget, fail_record
+    budget = enabled_budget()
+    if budget is not None:
+        try:
+            timeout = budget.admit(' '.join(str(v) for v in command[:3]), timeout,
+                                   minimum=min(timeout, 1), cleanup=20)
+        except Exception as error:
+            fail_record(error, phase=budget.phase)
+            raise
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr,
                                text=text, start_new_session=True)
     try:
@@ -57,6 +68,14 @@ def run_captured(command, timeout, *, text=True, stderr=subprocess.PIPE, checkpo
     except subprocess.TimeoutExpired as error:
         if not hasattr(error, 'cleanup_confirmed'):
             error.cleanup_confirmed = stop_group(process, checkpoint=checkpoint)
+        if budget is not None:
+            fail_record('Bounded command timeout: '+' '.join(str(v) for v in command[:3]),
+                        phase=budget.phase, cleanup_unconfirmed=not getattr(error, 'cleanup_confirmed', False))
+        raise
+    except BaseException:
+        confirmed = stop_group(process, checkpoint=checkpoint)
+        if budget is not None:
+            fail_record('Bounded command interrupted', phase=budget.phase, cleanup_unconfirmed=not confirmed)
         raise
     finally:
         for pipe in (process.stdout, process.stderr):
