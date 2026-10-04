@@ -37,8 +37,10 @@ def fail_cached_capture(device, runner_identifier, request_id, reason):
     publish_acknowledgement(request.with_suffix('.ack'), outcome)
     return outcome
 
-def capture(device,runner_identifier,request_id,output):
+def capture(device,runner_identifier,request_id,output,may_start=lambda: True):
     assert str(uuid.UUID(request_id)).upper()==request_id
+    if not may_start():
+        return fail_cached_capture(device,runner_identifier,request_id,'No capture command: host lifecycle cleanup is unconfirmed')
     key=(device,runner_identifier)
     container=_containers.get(key)
     # Reuse only a previously discovered runner container holding this exact new UUID.
@@ -58,6 +60,9 @@ def capture(device,runner_identifier,request_id,output):
         # command once, with a distinct file so an old writer cannot race it.
         outcome['attempts']=[]
         for attempt in range(2):
+            if not may_start():
+                outcome['cleanup_unconfirmed']=True
+                raise RuntimeError('No further capture command: host lifecycle cleanup is unconfirmed')
             destination=output/((request_id if attempt==0 else str(uuid.uuid4()).upper())+'.jpeg')
             command=['xcrun','simctl','io',device,'screenshot','--type=jpeg',str(destination)]
             try:

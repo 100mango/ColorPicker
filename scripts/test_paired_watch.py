@@ -15,7 +15,7 @@ import uuid
 from bounded_process import run_captured, stop_group
 from capture_simulator_checkpoint import publish_acknowledgement
 from verify_embedded_watch import verify as verify_embedded_watch
-from watch_runtime_pair import phone_template, device_inventory, verify_new_device, verify_pair
+from watch_runtime_pair import phone_template, device_inventory, verify_new_device, verify_pair, activate_owned_pair
 
 OUT = Path('build/paired-runtime')
 report = {}
@@ -269,7 +269,7 @@ def main():
         report['sha']=run(['git','rev-parse','HEAD'],10)
         for target, platform, directory in [('TouchColor','iOS','paired-phone'),('TouchColorWatch','watchOS','paired-watch')]:
             run(['xcodebuild','-quiet','-project',target+'.xcodeproj','-scheme',target,'-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+directory,'ARCHS=arm64','CODE_SIGNING_ALLOWED=NO','build-for-testing'],420)
-        report['embedded_simulator_product']=verify_embedded_watch('build/paired-phone/Build/Products/Debug-iphonesimulator/TouchColor.app','simulator',False)
+        report['embedded_simulator_product']=verify_embedded_watch('build/paired-phone/Build/Products/Debug-iphonesimulator/TouchColor.app','simulator',False,build_for_testing=True)
         original_devices=json.loads(run(['xcrun','simctl','list','devices','-j'],30))['devices']
         original_pairs=json.loads(run(['xcrun','simctl','list','pairs','-j'],30))['pairs']
         report['original_devices']=device_inventory(original_devices); report['original_pairs']=original_pairs
@@ -281,10 +281,12 @@ def main():
             verify_new_device(identifier,original_devices,[{'udid':x} for x in created]); created.append(identifier); selected[role]=identifier
             report['devices'].append({'role':role,'id':identifier,'runtime':runtime,'type':template['deviceTypeIdentifier']})
         candidate=run(['xcrun','simctl','pair',selected['watch'],selected['phone']],60); uuid.UUID(candidate)
-        verify_pair(json.loads(run(['xcrun','simctl','list','pairs','-j'],30)),candidate,selected['watch'],selected['phone'],original_pairs)
+        pair_inventory=json.loads(run(['xcrun','simctl','list','pairs','-j'],30))
+        verify_pair(pair_inventory,candidate,selected['watch'],selected['phone'],original_pairs)
         pair=candidate
-        run(['xcrun','simctl','pair_activate',pair],60)
-        report['active_pair']=verify_pair(json.loads(run(['xcrun','simctl','list','pairs','-j'],30)),pair,selected['watch'],selected['phone'],original_pairs)
+        report['active_pair']=activate_owned_pair(pair_inventory,pair,selected['watch'],selected['phone'],original_pairs,
+            lambda identifier: run(['xcrun','simctl','pair_activate',identifier],60),
+            lambda: json.loads(run(['xcrun','simctl','list','pairs','-j'],30)))
         runner_ids={}; paths={}
         for role in ('phone','watch'):
             run(['xcrun','simctl','boot',selected[role]],120); booted.append(selected[role])

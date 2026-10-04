@@ -4,10 +4,11 @@ import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,
 from pathlib import Path
 from capture_simulator_checkpoint import capture as capture_checkpoint, fail_cached_capture
 from watch_profiles import select_profile
-from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device
+from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device, activate_owned_pair
 from bounded_process import run_captured, check_output, stop_group
 from vision_suites import CASES as VISION_CASES, needs_photo_seed
 from native_resources import snapshot as resource_snapshot
+from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
@@ -27,7 +28,9 @@ def run(command,timeout,required=True):
     report['active_command'].update(pid=p.pid,phase='running')
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     print('NATIVE_COMMAND_STARTED',json.dumps(report['active_command']),flush=True)
-    def output():
+    reader_complete=threading.Event()
+    reader_errors=[]
+    def read_output():
         for line in p.stdout:
             print(line,end='',flush=True)
             checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
@@ -36,7 +39,8 @@ def run(command,timeout,required=True):
                     if report.get('cleanup_unconfirmed'):
                         result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started')
                     else:
-                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots')
+                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots',may_start=lambda: not report.get('cleanup_unconfirmed'))
+                    if report.get('text_size_phase')=='largest': result['system_text_size']='accessibility-extra-extra-extra-large'
                     if result.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
                 except Exception as error:
@@ -44,6 +48,12 @@ def run(command,timeout,required=True):
                     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
                     report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
+    def output():
+        try:
+            read_output()
+            reader_complete.set()
+        except Exception as error:
+            reader_errors.append(type(error).__name__)
     reader=threading.Thread(target=output,daemon=True);reader.start()
     cleanup_error=None
     try:code=p.wait(timeout=timeout)
@@ -57,14 +67,21 @@ def run(command,timeout,required=True):
             cleanup_error='Owned process-group exit was not confirmed after bounded TERM/KILL waits'
             report['cleanup_unconfirmed']=True
         code=124
-    if not stop_group(p):
+    process_group_gone=stop_group(p)
+    if not process_group_gone:
         report['cleanup_unconfirmed']=True
         cleanup_error='Owned descendants remain after command leader exit'
         code=124
     reader.join(timeout=5)
+    capture_reader_finished=reader_complete.is_set() and not reader.is_alive()
+    if not capture_reader_finished:
+        report['cleanup_unconfirmed']=True
+        cleanup_error='Owned output/capture lifecycle did not finish cleanly'
+        code=124
+    if report.get('cleanup_unconfirmed'): code=124
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
+    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
     report['active_command']=None
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
@@ -153,7 +170,11 @@ try:
         owned_watch_pair=paired
         report['watch_owned_pair']={'id':paired,'record':record}
         print('WATCH_OWNED_PAIR_VERIFIED',json.dumps(report['watch_owned_pair']),flush=True)
-        run(['xcrun','simctl','pair_activate',paired],60)
+        report['watch_owned_pair']['activation']=activate_owned_pair(
+            actual_pairs,paired,watch_id,phone_id,original_pairs['pairs'],
+            lambda identifier: run(['xcrun','simctl','pair_activate',identifier],60),
+            lambda: json.loads(check_output(['xcrun','simctl','list','pairs','-j'],timeout=30)))
+        print('WATCH_OWNED_PAIR_ACTIVE',json.dumps(report['watch_owned_pair']),flush=True)
         resources('before owned phone boot')
         run(['xcrun','simctl','boot',phone_id],180)
         run(['xcrun','simctl','bootstatus',phone_id,'-b'],420)
@@ -180,16 +201,19 @@ try:
         print('SIMULATOR_WINDOW_DISCOVERY',json.dumps(report['simulator_window_discovery']),flush=True)
         if discovered: run(['open','-a',str(discovered[0]),'--args','-CurrentDeviceUDID',device['udid']],30,required=False)
         else: report['simulator_window']='No graphical Simulator bundle found in bounded standard locations; supported headless runtime tests continue'
-    if needs_photo_seed(kind, os.environ.get('TOUCHCOLOR_VISION_CASE')):
-        w,h=300,200
-        palette=[bytes(v) for v in [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255)]]
-        rows=b''.join(b'\0'+b''.join(palette[(y//100)*3+x//100] for x in range(w)) for y in range(h))
-        chunk=lambda n,d:struct.pack('>I',len(d))+n+d+struct.pack('>I',zlib.crc32(n+d)&0xffffffff)
-        fixture=out/'asymmetric.png';fixture.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b''))
-        photo_seed_failed = run(['xcrun','simctl','addmedia',device['udid'],str(fixture)],120,required=False) != 0
-        report['photos_seed']='failed' if photo_seed_failed else 'passed'
-    else:
-        report['photos_seed']='not required by this exact case'
+    def seed_photos():
+        global photo_seed_failed
+        if needs_photo_seed(kind, os.environ.get('TOUCHCOLOR_VISION_CASE')):
+            w,h=300,200
+            palette=[bytes(v) for v in [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(255,0,255),(0,255,255)]]
+            rows=b''.join(b'\0'+b''.join(palette[(y//100)*3+x//100] for x in range(w)) for y in range(h))
+            chunk=lambda n,d:struct.pack('>I',len(d))+n+d+struct.pack('>I',zlib.crc32(n+d)&0xffffffff)
+            fixture=out/'asymmetric.png';fixture.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b''))
+            photo_seed_failed = run(['xcrun','simctl','addmedia',device['udid'],str(fixture)],120,required=False) != 0
+            report['photos_seed']='failed' if photo_seed_failed else 'passed'
+        else:
+            report['photos_seed']='not required by this exact case'
+    if kind!='vision': seed_photos()
     skip=[]
     if photo_seed_failed:
         # Preserve the failed prerequisite, but still execute unrelated real input, storage and UI paths.
@@ -202,10 +226,17 @@ try:
     test_arguments=['-configuration','Debug','-destination','platform='+platform+' Simulator,id='+device['udid'],
         '-derivedDataPath','build/'+kind+'-tests','-parallel-testing-enabled','NO','-collect-test-diagnostics','never',
         '-test-timeouts-enabled','YES','-default-test-execution-time-allowance','180' if kind=='vision' else '120',
-        '-maximum-test-execution-time-allowance','360' if kind=='vision' else '240' if kind=='watch' else '120','ARCHS=arm64','test-without-building']
+        '-maximum-test-execution-time-allowance','360' if kind=='vision' else '240' if kind=='watch' else '120',
+        '-maximum-concurrent-test-simulator-destinations','1','ARCHS=arm64']
+    test_common=['xcodebuild','test-without-building']+test_common[1:]
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
         run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)
+        # A completed hosted launch establishes runtime readiness before the one
+        # bounded Photos import. bootstatus alone preceded a real addmedia timeout.
+        seed_photos()
+        if photo_seed_failed:
+            skip=['-skip-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPhotosImport']
         case=os.environ['TOUCHCOLOR_VISION_CASE']
         assert case in VISION_CASES, 'Unknown isolated Vision case'
         method,budget=VISION_CASES[case]
@@ -229,6 +260,33 @@ try:
     else:
         run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
     report['tests']='passed'
+    largest_cases=applicable_cases(kind,os.environ.get('TOUCHCOLOR_VISION_CASE'))
+    if largest_cases:
+        # The full normal-size scope above remains required. This is a small
+        # existing Chinese/layout subset, not a second full Watch suite.
+        def size_ui_runner(command,seconds):
+            code=run(command,seconds,required=False)
+            stage=report['stages'][-1]
+            return code,'',dict(stage,process_group_gone=stage.get('process_group_gone') is True and not report.get('cleanup_unconfirmed'))
+        size_runner=TouchSizeRunner(size_ui_runner)
+        contract={'root':str(Path.cwd()),'project':project,'scheme':name,
+                  'derived_data':'build/'+kind+'-tests','test_bundle':name+'UITests',
+                  'platform':platform+' Simulator'}
+        command=test_common+test_arguments+['-resultBundlePath','build/'+kind+'-largest-text.xcresult']
+        command+=['-only-testing:'+name+'UITests/'+('WatchWorkflowTests' if kind=='watch' else 'VisionWorkflowTests')+'/'+method for method in largest_cases]
+        report['text_size_phase']='largest'
+        try:
+            setting=run_largest(device['udid'],out/'largest-text.json',command,contract,largest_cases,size_runner,timeout=600)
+            report['largest_system_text']=setting
+            print('NATIVE_SYSTEM_TEXT_SIZE',json.dumps({key:value for key,value in setting.items() if key!='operations'}),flush=True)
+            if setting.get('cleanup_unconfirmed') or size_runner.cleanup_unconfirmed:
+                report['cleanup_unconfirmed']=True
+            if not qualified(setting):
+                raise RuntimeError('Required system-largest-text gate: '+setting['status'])
+        finally:
+            if size_runner.cleanup_unconfirmed: report['cleanup_unconfirmed']=True
+            report['text_size_phase']=None
+
     if photo_seed_failed: raise RuntimeError('Photos seeding timed out or failed; other native tests executed, real Photos import remains unqualified')
     report['result']='passed'
 except Exception as error:
@@ -267,6 +325,8 @@ finally:
             if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
     elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
         run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
-    if report.get('cleanup_unconfirmed'): report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
+    if report.get('cleanup_unconfirmed'):
+        report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
+        report['result']='failed'
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
 if report['result']!='passed':raise SystemExit(1)

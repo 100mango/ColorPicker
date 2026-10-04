@@ -7,13 +7,20 @@ import os
 import pathlib
 import re
 import subprocess
+import sys
 
 # All four fresh hosts use these same checked-in allocations and exact-source proof.
-# Five JPEGs at most; reserve base64 and chunk/metadata overhead within 20 MiB.
-ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 1, 'iPhoneCompact': 1, 'iPhoneLarge': 1}
+# Eight JPEGs at most; include base64, metadata and bounded child diagnostics.
+# Raw attachment manifests and result bundles are read locally, never emitted.
+ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 2, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
 MAX_IMAGE_BYTES = 500 * 1024
-MAX_RUN_LOG_BYTES = 20 * 1024 * 1024
-RESERVED_LOG_BYTES = sum(ALLOCATIONS.values()) * (4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024)
+MAX_RUN_LOG_BYTES = 20_000_000
+MAX_EXPORT_DIAGNOSTIC_BYTES = 16 * 1024
+MAX_EXPORTS_PER_DEVICE = 2  # Functional and accessibility result bundles.
+MAX_RUNTIME_DIAGNOSTIC_BYTES = 32 * 1024  # One framed metadata record per device.
+RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * (4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024)
+                      + len(ALLOCATIONS) * (MAX_EXPORTS_PER_DEVICE * (MAX_EXPORT_DIAGNOSTIC_BYTES + 512)
+                                            + MAX_RUNTIME_DIAGNOSTIC_BYTES))
 assert RESERVED_LOG_BYTES <= MAX_RUN_LOG_BYTES
 family = os.environ['TC_TEST_FAMILY']
 assert family in ALLOCATIONS
@@ -44,7 +51,17 @@ def export_named(suite, names, limit):
     if suite not in exports:
         destination = pathlib.Path('build', 'evidence', family, suite)
         destination.mkdir(parents=True, exist_ok=True)
-        subprocess.run(['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(destination)], check=True)
+        # A child's stderr can split a buffered SCREENSHOT_CHUNK in the Actions
+        # stream. Keep all exporter diagnostics between complete envelopes.
+        sys.stdout.flush()
+        exported = subprocess.run(['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(destination)], capture_output=True, text=True)
+        diagnostics = (exported.stdout + exported.stderr).encode('utf-8')
+        if diagnostics:
+            bounded = diagnostics[:MAX_EXPORT_DIAGNOSTIC_BYTES].decode('utf-8', errors='ignore')
+            print(bounded, end='' if bounded.endswith('\n') else '\n', flush=True)
+            if len(diagnostics) > MAX_EXPORT_DIAGNOSTIC_BYTES:
+                print(f'EXPORT_DIAGNOSTICS_TRUNCATED original_bytes={len(diagnostics)} limit={MAX_EXPORT_DIAGNOSTIC_BYTES}', flush=True)
+        exported.check_returncode()
         exports[suite] = destination, list(records(json.loads((destination / 'manifest.json').read_text())))
     destination, attachments = exports[suite]
     count = 0
@@ -66,12 +83,13 @@ def export_named(suite, names, limit):
         for offset in range(0, len(encoded), 4096):
             print('SCREENSHOT_CHUNK:' + encoded[offset:offset + 4096])
         print(f'SCREENSHOT_END:{family}-{name}')
+        sys.stdout.flush()
         count += 1
     return count
 
 
-# One first failure per non-mini row. Mini retains a distinct audit failure
-# alongside a functional failure before filling spare slots with passing states.
+# Every device retains its first functional failure and first distinct audit
+# failure before filling a spare slot with another failure or a passing state.
 functional_prefix = 'touchcolor-ipad-functional-failure-' if family.startswith('iPad') else 'touchcolor-phone-functional-failure-'
 count = export_named('TouchColorUITests', [functional_prefix + '1'], 1)
 count += export_named('AccessibilityAudits', [

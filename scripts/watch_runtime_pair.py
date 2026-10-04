@@ -41,3 +41,18 @@ def verify_pair(value, pair_id, watch_id, phone_id, original_pairs=None):
     if pair.get('watch', {}).get('udid') != watch_id or pair.get('phone', {}).get('udid') != phone_id:
         raise ValueError('Created pair does not match both owned device UUIDs')
     return pair
+
+
+def activate_owned_pair(value, pair_id, watch_id, phone_id, original_pairs, activate, read_pairs):
+    """Avoid reactivating an already-active new pair, with exact identity readback."""
+    def active(record):
+        state = record.get('state')
+        if state in ('(active, connected)', '(active, disconnected)'): return True
+        if state in ('(inactive, connected)', '(inactive, disconnected)'): return False
+        raise ValueError('Unrecognized owned pair activation state: '+str(state))
+    before = verify_pair(value, pair_id, watch_id, phone_id, original_pairs)
+    requested = not active(before)
+    if requested: activate(pair_id)
+    after = verify_pair(read_pairs(), pair_id, watch_id, phone_id, original_pairs)
+    if not active(after): raise ValueError('Owned pair activation was not confirmed')
+    return {'activation_requested': requested, 'record': after}

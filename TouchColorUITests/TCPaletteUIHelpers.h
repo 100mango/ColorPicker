@@ -1,6 +1,7 @@
 #import <XCTest/XCTest.h>
 
 @interface XCTestCase (TCPaletteUIHelpers)
+- (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
 - (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll;
 - (void)returnToPaletteFrom:(NSString *)title app:(XCUIApplication *)app;

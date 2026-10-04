@@ -1,6 +1,6 @@
 import unittest
 import uuid
-from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device
+from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device, activate_owned_pair
 
 
 class WatchPairTests(unittest.TestCase):
@@ -33,6 +33,26 @@ class WatchPairTests(unittest.TestCase):
         with self.assertRaises(ValueError): verify_pair({'pairs':[]},'created-pair','owned-watch','owned-phone')
         with self.assertRaises(ValueError):
             verify_pair(value,'created-pair','owned-watch','owned-phone',{'created-pair':{}})
+
+    def test_already_active_owned_pair_is_read_back_without_reactivation(self):
+        value={'pairs':{'new':{'watch':{'udid':'w'},'phone':{'udid':'p'},'state':'(active, disconnected)'}}}
+        calls=[]
+        result=activate_owned_pair(value,'new','w','p',{},lambda pair:calls.append(pair),lambda:value)
+        self.assertFalse(result['activation_requested']);self.assertEqual(calls,[])
+        with self.assertRaises(ValueError):activate_owned_pair(value,'new','w','p',{'new':{}},lambda pair:calls.append(pair),lambda:value)
+        with self.assertRaises(ValueError):activate_owned_pair(value,'new','other','p',{},lambda pair:calls.append(pair),lambda:value)
+        self.assertEqual(calls,[])
+
+    def test_inactive_pair_requires_one_activation_and_exact_active_readback(self):
+        def value(state,phone='p'):
+            return {'pairs':{'new':{'watch':{'udid':'w'},'phone':{'udid':phone},'state':state}}}
+        calls=[]
+        result=activate_owned_pair(value('(inactive, disconnected)'),'new','w','p',{},calls.append,lambda:value('(active, disconnected)'))
+        self.assertTrue(result['activation_requested']);self.assertEqual(calls,['new'])
+        for bad in (value('(inactive, disconnected)'),value('(active, disconnected)','other')):
+            with self.assertRaises(ValueError):activate_owned_pair(value('(inactive, disconnected)'),'new','w','p',{},calls.append,lambda:bad)
+        for state in ('inactive','unknown',None):
+            with self.assertRaises(ValueError):activate_owned_pair(value(state),'new','w','p',{},calls.append,lambda:value('(active, disconnected)'))
 
 
 if __name__=='__main__': unittest.main()

@@ -2,9 +2,36 @@
 #import <UIKit/UIKit.h>
 
 @implementation XCTestCase (TCPaletteUIHelpers)
+- (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime;
+    NSTimeInterval deadline=started+timeout;
+    // Resolve a remote Files element through XCTest's native existence wait
+    // before asking for enabled/hittable. All waits use one monotonic deadline;
+    // XCTest remote calls are not interruptible, so any overrun must still fail.
+    BOOL exists=[element waitForExistenceWithTimeout:timeout];
+    NSTimeInterval elapsed=NSProcessInfo.processInfo.systemUptime-started;
+    NSLog(@"PALETTE_READINESS existence=%d elapsed=%.3f budget=%.3f",exists,elapsed,timeout);
+    XCTAssertTrue(exists,@"The observed palette element must exist before checking readiness");
+    if (!exists) return NO;
+    BOOL withinDeadline=NSProcessInfo.processInfo.systemUptime<deadline;
+    XCTAssertTrue(withinDeadline,@"Native existence resolution exhausted the original readiness budget");
+    if (!withinDeadline) return NO;
+    NSPredicate *readyPredicate=[NSPredicate predicateWithFormat:@"enabled == true AND hittable == true"];
+    BOOL readyNow=[readyPredicate evaluateWithObject:element];
+    withinDeadline=NSProcessInfo.processInfo.systemUptime<deadline;
+    XCTAssertTrue(withinDeadline,@"Remote readiness evaluation overran the original budget");
+    if (!withinDeadline) return NO;
+    if (readyNow) return YES;
+    NSTimeInterval remaining=MAX(0,deadline-NSProcessInfo.processInfo.systemUptime);
+    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:readyPredicate object:element];
+    XCTWaiterResult result=[XCTWaiter waitForExpectations:@[ready] timeout:remaining];
+    XCTAssertEqual(result,XCTWaiterResultCompleted,@"Palette action must be ready before its single tap");
+    withinDeadline=NSProcessInfo.processInfo.systemUptime<=deadline;
+    XCTAssertTrue(withinDeadline,@"Remote readiness wait overran the original budget");
+    return result==XCTWaiterResultCompleted && withinDeadline;
+}
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
-    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"exists == true AND enabled == true AND hittable == true"] object:element];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:timeout],XCTWaiterResultCompleted,@"Palette action must be ready before its single tap");
+    if (![self waitForReadyPaletteElement:element timeout:timeout]) return;
     NSLog(@"PALETTE_ACTION_READY identifier=%@ label=%@ frame=%@",element.identifier,element.label,NSStringFromCGRect(element.frame));
     [element tap];
 }
@@ -170,17 +197,14 @@
         // The wide picker shows a location sidebar without a Browse button. Wait
         // for an observed route instead of branching on a pre-readiness exists query.
         XCUIElement *route=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[localType,browseType,fileType]]].firstMatch;
-        NSPredicate *readyPredicate=[NSPredicate predicateWithFormat:@"exists == true AND enabled == true AND hittable == true"];
-        XCTNSPredicateExpectation *routeReady=[[XCTNSPredicateExpectation alloc] initWithPredicate:readyPredicate object:route];
-        XCTAssertEqual([XCTWaiter waitForExpectations:@[routeReady] timeout:5],XCTWaiterResultCompleted,@"The observed Files route must be ready: %@",app.debugDescription);
+        if (![self waitForReadyPaletteElement:route timeout:5]) return;
         NSString *routeLabel=route.label;
         NSLog(@"FILE_PICKER_ROUTE label=%@ identifier=%@ frame=%@",routeLabel,route.identifier,NSStringFromCGRect(route.frame));
         if (![routeLabel hasPrefix:@"TouchColor-Ordered-Colors"]) {
             [route tap];
             if ([routeLabel isEqualToString:@"Browse"]) {
                 XCUIElement *local=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:localType].firstMatch;
-                XCTNSPredicateExpectation *localReady=[[XCTNSPredicateExpectation alloc] initWithPredicate:readyPredicate object:local];
-                XCTAssertEqual([XCTWaiter waitForExpectations:@[localReady] timeout:5],XCTWaiterResultCompleted,@"The selected local Files location must be ready: %@",app.debugDescription);
+                if (![self waitForReadyPaletteElement:local timeout:5]) return;
                 [local tap];
             }
             XCUIElement *folder=app.staticTexts[@"Palette Fixtures"].firstMatch;

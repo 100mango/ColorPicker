@@ -12,9 +12,10 @@ def require(condition, message):
     if not condition: raise ValueError(message)
 
 
-def verify(phone, mode='device', release=True):
+def verify(phone, mode='device', release=True, *, build_for_testing=False):
     phone=Path(phone); watch=phone/'Watch/TouchColor.app'
     require(mode in ('device','simulator'), 'Invalid packaging mode')
+    require(not build_for_testing or (mode=='simulator' and not release), 'Build-for-testing mode requires a Debug simulator product')
     require(watch.is_dir(), 'Actual embedded Watch app missing from phone Watch directory')
     require(sorted(p.name for p in (phone/'Watch').iterdir()) == ['TouchColor.app'], 'Unexpected Watch content')
     values={}
@@ -41,8 +42,26 @@ def verify(phone, mode='device', release=True):
         values[role]={key:info.get(key) for key in ('CFBundleIdentifier','CFBundleShortVersionString','CFBundleVersion','MinimumOSVersion','CFBundleSupportedPlatforms','WKCompanionAppBundleIdentifier')}
         with executable.open('rb') as stream:
             values[role]['executable_sha256']=hashlib.file_digest(stream,'sha256').hexdigest()
-    require(not list(phone.rglob('*.xctest')) and not list(phone.rglob('PaletteFixtures.app')), 'Test product embedded in shipping app')
+    require(not list(phone.rglob('PaletteFixtures.app')), 'Files fixture embedded in app product')
+    test_bundles=sorted(phone.rglob('*.xctest'))
+    if build_for_testing:
+        # Xcode embeds this registered hosted unit target in the Debug test host.
+        # The external paired UI tests still run separately. Release permits none.
+        expected=phone/'PlugIns/TouchColorTests.xctest'
+        require(test_bundles==[expected] and expected.is_dir() and not expected.is_symlink(),
+                'Debug test host must contain exactly its registered test bundle: '+str([str(path.relative_to(phone)) for path in test_bundles]))
+        for path in test_bundles:
+            info=plistlib.loads((path/'Info.plist').read_bytes())
+            require(info.get('CFBundleIdentifier')=='com.mango.touchColor.TouchColorTests' and
+                    info.get('CFBundleExecutable')=='TouchColorTests' and info.get('CFBundlePackageType')=='BNDL',
+                    'Debug hosted test bundle identity mismatch')
+            require((path/'TouchColorTests').is_file() and not (path/'TouchColorTests').is_symlink(),
+                    'Debug hosted test bundle executable missing')
+        values['debug_test_host_bundles']=[str(path.relative_to(phone)) for path in test_bundles]
+    else:
+        require(not test_bundles, 'Test product embedded in shipping app')
     return values
 
 if __name__=='__main__':
-    print(json.dumps(verify(sys.argv[1],sys.argv[2] if len(sys.argv)>2 else 'device','--debug' not in sys.argv),indent=2))
+    print(json.dumps(verify(sys.argv[1],sys.argv[2] if len(sys.argv)>2 else 'device','--debug' not in sys.argv,
+                            build_for_testing='--build-for-testing' in sys.argv),indent=2))

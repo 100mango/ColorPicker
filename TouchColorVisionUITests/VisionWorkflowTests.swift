@@ -142,26 +142,39 @@ final class VisionWorkflowTests: XCTestCase {
         print("VISION_JSON_REOPEN_VERIFIED: actual Copy values magenta, magenta, green")
         capture("Native Vision changed-color JSON export reopened with duplicates")
     }
+    private func selectLocalFilesLocation(until deadline: Date) {
+        let location = app.cells["DOC.sidebar.item.On My Apple Vision Pro"]
+        XCTAssertTrue(location.waitForExistence(timeout: max(0, deadline.timeIntervalSinceNow)), app.debugDescription)
+        XCTAssertTrue(location.isEnabled && location.isHittable, app.debugDescription)
+        location.tap()
+        let title = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].staticTexts["On My Apple Vision Pro"]
+        XCTAssertTrue(title.waitForExistence(timeout: max(0, deadline.timeIntervalSinceNow)), app.debugDescription)
+    }
     func testRealFilesPickerSelectsExportedPNG() {
         executionTimeAllowance = 360
         paste(); app.buttons["image.export"].tap()
         let filename = "TouchSelect-" + String(UUID().uuidString.prefix(6))
         let field = app.textFields["DOCPicker.filenameTextField"]
+        let saveLocationDeadline = Date().addingTimeInterval(45)
         XCTAssertTrue(field.waitForExistence(timeout: 45), app.debugDescription)
+        selectLocalFilesLocation(until: saveLocationDeadline)
         field.tap()
         if let value = field.value as? String, !value.isEmpty {
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
         }
         field.typeText(filename)
         let save = app.buttons["DOCPicker.actionButton"]
-        XCTAssertTrue(save.waitForExistence(timeout: 10)); XCTAssertEqual(save.label, "Save"); save.tap()
+        XCTAssertTrue(save.waitForExistence(timeout: 10)); XCTAssertEqual(save.label, "Save")
+        XCTAssertTrue(save.isEnabled && save.isHittable); save.tap()
         XCTAssertTrue(app.buttons["export.reopen"].waitForExistence(timeout: 15), app.debugDescription)
         // Leave a different selection before opening the genuine system picker.
         // A cancelled or ineffective selection must not satisfy the import oracle.
         app.buttons["sample.above"].tap(); hex("#00ff00")
         app.buttons["image.open"].tap()
         let picker = app.navigationBars["DOCSidebarView"]
+        let openLocationDeadline = Date().addingTimeInterval(45)
         XCTAssertTrue(picker.waitForExistence(timeout: 45), app.debugDescription)
+        selectLocalFilesLocation(until: openLocationDeadline)
         let savedFile = app.cells.matching(NSPredicate(format: "label CONTAINS %@", filename)).firstMatch
         XCTAssertTrue(savedFile.waitForExistence(timeout: 30), app.debugDescription)
         savedFile.tap()

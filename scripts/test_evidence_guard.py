@@ -31,6 +31,13 @@ def watch_ui(root):
     name=str(uuid.uuid4()).upper()+'.png'
     (directory/name).write_bytes(b'synthetic image bytes')
     (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native Watch synthetic UI image'}]}]))
+def largest_text(root):
+    for platform in ('watch','vision'):
+        (root/(platform+'-largest-text-summary.json')).write_text('{}')
+        directory=root/(platform+'-largest-text-screenshots');directory.mkdir()
+        name=str(uuid.uuid4()).upper()+'.png'
+        (directory/name).write_bytes(b'synthetic image bytes')
+        (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native '+platform.title()+' largest text synthetic'}]}]))
 def modal_probe(root):
     (root/'mac-modal-probe-summary.json').write_text('{}')
     directory=root/'modal-probe-screenshots'; directory.mkdir()
@@ -63,6 +70,7 @@ def oversize_text(root):
 check(valid, True)
 check(watch_ui, True)
 check(modal_probe, True)
+check(largest_text, True)
 check(lambda root: None, False)
 for prepare in [unknown, oversize, symlink, directory_link, hardlink, bad_manifest, unapproved_text, oversize_text, orphan_text]: check(prepare, False)
 check(aggregate, False, 5000)

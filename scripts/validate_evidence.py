@@ -13,6 +13,8 @@ allowed_root.update((f'{p}-{suffix}.json' for p in ('vision', 'watch', 'tv') for
 allowed_root.add('mac-modal-probe-summary.json')
 allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vision-ui-screenshots', 'vision-screenshots', 'watch-screenshots', 'watch-ui-screenshots', 'tv-screenshots'}
 allowed_dirs.add('modal-probe-screenshots')
+allowed_root.update({'vision-largest-text-summary.json','watch-largest-text-summary.json'})
+allowed_dirs.update({'vision-largest-text-screenshots','watch-largest-text-screenshots'})
 allowed_dirs.update({'paired-phone-screenshots','paired-watch-screenshots'})
 allowed_root.update({'paired-runtime.json','paired-phone-summary.json','paired-watch-summary.json'})
 total = 0

@@ -380,6 +380,11 @@ import AVFoundation
             print("MAC_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
             try app.performAccessibilityAudit(for: .all) { issue in
                 print("MAC_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
+                print("MAC_ACCESSIBILITY_ISSUE_TYPE: \(issue.auditType.rawValue)")
+                if let element = issue.element {
+                    print("MAC_ACCESSIBILITY_ISSUE_ATTRIBUTES: role=\(element.elementType.rawValue) identifier=\(element.identifier) label=\(element.label) value=\(String(describing: element.value)) frame=\(element.frame) isEnabled=\(element.isEnabled)")
+                    self.recordAuditOwnership(element)
+                }
                 print("MAC_ACCESSIBILITY_ISSUE_ELEMENT: \(String((issue.element?.debugDescription ?? "none").prefix(12_000)))")
                 fflush(stdout)
                 let details = "State: \(state)\nIssue: \(issue.compactDescription)\nElement: \(issue.element?.debugDescription ?? "none")\nHierarchy: \(self.app.debugDescription)"
@@ -391,6 +396,58 @@ import AVFoundation
             print("MAC_ACCESSIBILITY_AUDIT_PASS: \(state)")
         } else { throw XCTSkip("Native audit qualification targets the installed macOS 27 runtime") }
     }
+    private func recordAuditOwnership(_ element: XCUIElement) {
+        do {
+            let target = try element.snapshot()
+            let root = try app.snapshot()
+            func attributes(_ node: any XCUIElementSnapshot) -> [String: Any] {
+                ["role": node.elementType.rawValue, "identifier": String(node.identifier.prefix(256)),
+                 "label": String(node.label.prefix(256)), "value": String(String(describing: node.value).prefix(256)),
+                 "frame": String(describing: node.frame), "isEnabled": node.isEnabled]
+            }
+            let owners = root.children.filter { $0.elementType == .window }.prefix(4).compactMap { window -> [String: Any]? in
+                let matches = window.children.filter {
+                    $0.elementType == target.elementType && $0.frame == target.frame &&
+                    $0.identifier == target.identifier && $0.label == target.label &&
+                    String(describing: $0.value) == String(describing: target.value)
+                }
+                guard !matches.isEmpty else { return nil }
+                return ["directChildMatches": matches.count, "window": attributes(window),
+                        "directSheets": window.children.filter { $0.elementType == .sheet }.prefix(4).map(attributes)]
+            }
+            // These are sequential snapshots. Exact role/geometry/identity
+            // attributes must correlate uniquely before claiming ownership.
+            let unique = owners.count == 1 && (owners.first?["directChildMatches"] as? Int) == 1
+            let data = try JSONSerialization.data(withJSONObject: ["sequentialSnapshots": true,
+                "uniqueDirectChildCorrelation": unique, "issueElement": attributes(target), "directWindowOwners": owners], options: [.sortedKeys])
+            let text = String(decoding: data, as: UTF8.self)
+            print("MAC_ACCESSIBILITY_OWNERSHIP: \(text)")
+            let attachment = XCTAttachment(string: text)
+            attachment.name = "Native Mac accessibility issue ownership"; attachment.lifetime = .keepAlways; add(attachment)
+        } catch {
+            print("MAC_ACCESSIBILITY_OWNERSHIP_UNAVAILABLE: \(error)")
+        }
+    }
+    private func retainModalAuditFailure(_ state: String) -> Error? {
+        // Keep the raw audit failure, but obtain the same-window after-dismissal
+        // measurement before rethrowing it. All action assertions stay fail-fast.
+        let previous = continueAfterFailure
+        continueAfterFailure = true
+        defer { continueAfterFailure = previous }
+        do { try audit(state); return nil } catch { return error }
+    }
+    private func finishStandardModal(_ sheet: XCUIElement, action: XCUIElement, window: XCUIElement,
+                                     originalFrame: CGRect, state: String, modalError: Error?) throws {
+        XCTAssertTrue(action.exists && action.isEnabled && action.isHittable, app.debugDescription)
+        XCTAssertTrue(sheet.frame.contains(action.frame), app.debugDescription)
+        action.click()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheet)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed, app.debugDescription)
+        XCTAssertEqual(app.windows.count, 1); XCTAssertEqual(window.frame, originalFrame)
+        XCTAssertTrue(window.buttons["probe.standard.sheet"].isHittable)
+        try audit(state + " after dismissal")
+        if let modalError { throw modalError }
+    }
     private func launchStandardModalProbe() {
         app.terminate()
         app.launchEnvironment["TOUCHCOLOR_NATIVE_MODAL_PROBE"] = "1"
@@ -400,23 +457,50 @@ import AVFoundation
     }
     @MainActor func testDiagnosticStandardAppKitSheetAudit() throws {
         launchStandardModalProbe()
+        XCTAssertEqual(app.windows.count, 1)
+        let window = app.windows.element(boundBy: 0); let originalFrame = window.frame
+        try audit("diagnostic standard AppKit sheet before presentation")
         app.buttons["probe.standard.sheet"].click()
-        XCTAssertTrue(app.buttons["probe.sheet.done"].waitForExistence(timeout: 5), app.debugDescription)
+        let sheet = window.sheets.element(boundBy: 0)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(window.sheets.count, 1)
+        XCTAssertTrue(sheet.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", "Active standard sheet content", "Active standard sheet content")).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        let done = sheet.buttons["probe.sheet.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(done.label, "Done")
         print("NATIVE_STANDARD_SHEET_AX: \(app.debugDescription)"); fflush(stdout)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Mac standard AppKit sheet diagnostic"; image.lifetime = .keepAlways; add(image)
-        try audit("diagnostic standard AppKit sheet")
-        app.buttons["probe.sheet.done"].click()
+        let modalError = retainModalAuditFailure("diagnostic standard AppKit sheet")
+        try finishStandardModal(sheet, action: done, window: window, originalFrame: originalFrame,
+                                state: "diagnostic standard AppKit sheet", modalError: modalError)
     }
     @MainActor func testDiagnosticStandardAppKitAlertAudit() throws {
         launchStandardModalProbe()
+        XCTAssertEqual(app.windows.count, 1)
+        let window = app.windows.element(boundBy: 0); let originalFrame = window.frame
+        try audit("diagnostic standard AppKit alert before presentation")
         app.buttons["probe.standard.alert"].click()
-        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 5), app.debugDescription)
+        let sheet = window.sheets.element(boundBy: 0)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(window.sheets.count, 1)
+        for value in ["Standard AppKit Alert", "Active standard alert content"] {
+            XCTAssertTrue(sheet.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
+        }
+        let done = sheet.buttons["action-button-1"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5)); XCTAssertEqual(done.label, "OK")
         print("NATIVE_STANDARD_ALERT_AX: \(app.debugDescription)"); fflush(stdout)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Mac standard AppKit alert diagnostic"; image.lifetime = .keepAlways; add(image)
-        try audit("diagnostic standard AppKit alert")
-        app.buttons["OK"].click()
+        let modalError = retainModalAuditFailure("diagnostic standard AppKit alert")
+        try finishStandardModal(sheet, action: done, window: window, originalFrame: originalFrame,
+                                state: "diagnostic standard AppKit alert", modalError: modalError)
+    }
+    @MainActor private func nativeSliderValue(_ slider: XCUIElement) -> Double? {
+        let value = slider.value
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let text = value as? String { return Double(text) }
+        return nil
     }
     @MainActor func testOfficialAccessibilityEmptyAndPopulatedCanvas() throws {
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 10))
@@ -427,7 +511,7 @@ import AVFoundation
         let zoom = app.sliders["sample.zoom"]
         XCTAssertTrue(zoom.exists); XCTAssertEqual(zoom.label, "Image zoom")
         XCTAssertFalse(zoom.isEnabled)
-        XCTAssertEqual(Double(zoom.value as? String ?? ""), 1)
+        XCTAssertEqual(nativeSliderValue(zoom), 1)
         XCTAssertEqual(zoom.descendants(matching: .valueIndicator)
             .matching(NSPredicate(format: "label == '' AND (value == nil OR value == '')")).count, 0)
         try audit("empty workspace")
@@ -440,10 +524,10 @@ import AVFoundation
         let originalWidth = canvas.frame.width
         zoom.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
         XCTAssertGreaterThan(canvas.frame.width, originalWidth * 1.5)
-        let zoomBeforeKeyboard = try XCTUnwrap(Double(zoom.value as? String ?? ""))
+        let zoomBeforeKeyboard = try XCTUnwrap(nativeSliderValue(zoom))
         app.typeKey("+", modifierFlags: .command)
         let keyboardZoom = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (Double(zoom.value as? String ?? "") ?? 0) > zoomBeforeKeyboard
+            (self.nativeSliderValue(zoom) ?? 0) > zoomBeforeKeyboard
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [keyboardZoom], timeout: 5), .completed,
                        "The native range value must follow the real Zoom In keyboard command")

@@ -9,7 +9,91 @@ concurrency:
   group: touchcolor-platforms-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  native-prerequisites:
+    name: Compile native and paired prerequisites
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify source and stable toolchain
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          sw_vers -buildVersion | grep -Fx 26A428
+          xcodebuild -version | tee /tmp/touchcolor-prerequisite-xcode.txt
+          grep -Fx 'Xcode 27.0' /tmp/touchcolor-prerequisite-xcode.txt
+          grep -Fx 'Build version 27A266a' /tmp/touchcolor-prerequisite-xcode.txt
+          uname -m | grep -Fx arm64
+          python3 scripts/generate_project.py
+          python3 scripts/generate_mac_project.py
+          python3 scripts/generate_vision_project.py
+          python3 scripts/generate_watch_project.py
+          python3 scripts/generate_tv_project.py
+          git diff --exit-code HEAD --
+      - name: Fail closed on setup regression failures
+        timeout-minutes: 3
+        working-directory: scripts
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair
+          python3 -O -m unittest -v test_native_content_size test_simulator_content_size test_atomic_json
+          python3 test_evidence_guard.py
+          bash -n test_simulators.sh
+      - name: Execute shared package tests
+        timeout-minutes: 8
+        run: swift test --package-path Packages/ColorCore --scratch-path build/package
+      - name: Compile both native Mac configurations and UI tests
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMacSandbox -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-sandbox ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
+            TOUCHCOLOR_ENABLE_SANDBOX=YES TOUCHCOLOR_SANDBOX_ENTITLEMENTS=TouchColorMac/TouchColorMac.entitlements build-for-testing
+      - name: Compile native Vision and TV tests
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          xcodebuild -quiet -project TouchColorVision.xcodeproj -scheme TouchColorVision -configuration Debug \
+            -destination 'generic/platform=visionOS Simulator' -derivedDataPath build/vision-tests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
+          xcodebuild -quiet -project TouchColorTV.xcodeproj -scheme TouchColorTV -configuration Debug \
+            -destination 'generic/platform=tvOS Simulator' -derivedDataPath build/tv-tests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
+      - name: Compile real paired phone and Watch products
+        timeout-minutes: 7
+        run: |
+          set -euo pipefail
+          xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/paired-phone ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
+          xcodebuild -quiet -project TouchColorWatch.xcodeproj -scheme TouchColorWatch -configuration Debug \
+            -destination 'generic/platform=watchOS Simulator' -derivedDataPath build/paired-watch ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
+      - name: Verify actual Debug embedding and paired test registration
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_embedded_watch.py build/paired-phone/Build/Products/Debug-iphonesimulator/TouchColor.app simulator --debug --build-for-testing
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts')
+          from test_paired_watch import configured_test_run
+          for role in ('phone', 'watch'):
+              print('Verified compiled paired configuration:', configured_test_run('build/paired-'+role, role, 'prerequisite-only'))
+          PY
+      - name: Verify prerequisite source stayed unchanged
+        if: always()
+        run: git diff --exit-code HEAD --
   native-platform:
+    needs: native-prerequisites
     name: ${{ matrix.lane || matrix.platform }} on a fresh standard VM
     strategy:
       fail-fast: false
@@ -247,7 +331,7 @@ jobs:
           python3 scripts/verify_embedded_watch.py build/ios-device/Build/Products/Release-iphoneos/TouchColor.app device
           xcodebuild -quiet -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator ARCHS=arm64 build-for-testing
-          bash scripts/test_simulators.sh iPhoneCompact prepare
+          bash scripts/test_simulators.sh iPhoneCompact prepare-unit
           bash scripts/test_simulators.sh iPhoneCompact TouchColorTests
       - name: Shut down iOS test simulator
         if: ${{ always() && matrix.platform == 'ios' && steps.ios.outcome != 'skipped' }}
@@ -303,6 +387,12 @@ jobs:
             xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
             xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
           fi
+          for platform in vision watch; do
+            if test -d "build/$platform-largest-text.xcresult"; then
+              xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
+              xcrun xcresulttool export attachments --path "build/$platform-largest-text.xcresult" --output-path "build/evidence/$platform-largest-text-screenshots" || true
+            fi
+          done
           for platform in vision watch tv; do
             if test -d "build/$platform-tests.xcresult"; then
               xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true

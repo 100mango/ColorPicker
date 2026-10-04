@@ -1,4 +1,5 @@
 import plistlib
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -27,4 +28,39 @@ class EmbeddedWatchTests(unittest.TestCase):
                 with self.assertRaises(ValueError):verify(phone)
             (watch/'Info.plist').unlink()
             with self.assertRaises(FileNotFoundError):verify(phone,release=False)
+    def simulator_host(self,root):
+        phone,watch=self.create(root)
+        for app,platform in [(phone,'iPhoneSimulator'),(watch,'WatchSimulator')]:
+            info=plistlib.loads((app/'Info.plist').read_bytes());info['CFBundleSupportedPlatforms']=[platform]
+            (app/'Info.plist').write_bytes(plistlib.dumps(info))
+        bundle=phone/'PlugIns/TouchColorTests.xctest';bundle.mkdir(parents=True)
+        (bundle/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.mango.touchColor.TouchColorTests',
+            'CFBundleExecutable':'TouchColorTests','CFBundlePackageType':'BNDL'}))
+        (bundle/'TouchColorTests').write_bytes(b'synthetic test executable')
+        return phone,watch,bundle
+    def test_debug_test_host_requires_the_bundle_and_its_executable(self):
+        with tempfile.TemporaryDirectory() as root:
+            phone,watch,bundle=self.simulator_host(Path(root))
+            (bundle/'TouchColorTests').unlink()
+            with self.assertRaises(ValueError):verify(phone,'simulator',False,build_for_testing=True)
+            shutil.rmtree(bundle)
+            with self.assertRaises(ValueError):verify(phone,'simulator',False,build_for_testing=True)
+    def test_only_explicit_debug_mode_allows_the_registered_hosted_test_bundle(self):
+        with tempfile.TemporaryDirectory() as root,patch('verify_embedded_watch.check_output',return_value='production'):
+            phone,watch,bundle=self.simulator_host(Path(root))
+            self.assertEqual(verify(phone,'simulator',False,build_for_testing=True)['debug_test_host_bundles'],['PlugIns/TouchColorTests.xctest'])
+            for release in (True,False):
+                with self.assertRaises(ValueError):verify(phone,'simulator',release)
+            with self.assertRaises(ValueError):verify(phone,'simulator',True,build_for_testing=True)
+            with self.assertRaises(ValueError):verify(phone,'device',False,build_for_testing=True)
+    def test_debug_mode_rejects_other_nested_tests_and_fixture_products(self):
+        with tempfile.TemporaryDirectory() as root:
+            phone,watch,bundle=self.simulator_host(Path(root))
+            extra=watch/'PlugIns/Other.xctest';extra.mkdir(parents=True)
+            with self.assertRaises(ValueError):verify(phone,'simulator',False,build_for_testing=True)
+            extra.rmdir();fixture=phone/'PaletteFixtures.app';fixture.mkdir()
+            with self.assertRaises(ValueError):verify(phone,'simulator',False,build_for_testing=True)
+            fixture.rmdir();info=plistlib.loads((bundle/'Info.plist').read_bytes());info['CFBundleIdentifier']='unrelated'
+            (bundle/'Info.plist').write_bytes(plistlib.dumps(info))
+            with self.assertRaises(ValueError):verify(phone,'simulator',False,build_for_testing=True)
 if __name__=='__main__':unittest.main()

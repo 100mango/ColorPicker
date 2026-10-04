@@ -62,6 +62,25 @@ class CaptureCheckpointTests(unittest.TestCase):
         self.assertFalse(result['success']); self.assertEqual(count,1)
         self.assertTrue(result['cleanup_unconfirmed'])
 
+    def test_unconfirmed_host_prevents_lookup_and_capture(self):
+        checkpoint._containers[('synthetic-device','synthetic-runner')]=self.root
+        with patch.object(checkpoint,'check_output') as lookup, patch.object(checkpoint,'run_captured') as command:
+            result=checkpoint.capture('synthetic-device','synthetic-runner',self.identifier,self.output,may_start=lambda: False)
+        lookup.assert_not_called();command.assert_not_called()
+        self.assertFalse(result['success']);self.assertTrue(result['acknowledged'])
+
+    def test_host_cleanup_loss_prevents_capture_retry(self):
+        permitted=True
+        def behavior(command, **options):
+            nonlocal permitted
+            permitted=False
+            error=subprocess.TimeoutExpired(command,options['timeout']);error.cleanup_confirmed=True;raise error
+        with patch.object(checkpoint,'run_captured',side_effect=behavior) as command:
+            result=checkpoint.capture('synthetic-device','synthetic-runner',self.identifier,self.output,may_start=lambda: permitted)
+        self.assertEqual(command.call_count,1)
+        self.assertTrue(result['cleanup_unconfirmed']);self.assertFalse(result['success'])
+        self.assertEqual(json.loads(self.ack.read_text()),result)
+
     def test_nonzero_permission_result_is_not_retried(self):
         result,count = self.run_capture(lambda command,**_: subprocess.CompletedProcess(command,13,stdout='',stderr='Synthetic access denied'))
         self.assertFalse(result['success']); self.assertEqual(count,1)
