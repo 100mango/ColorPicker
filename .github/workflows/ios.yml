@@ -51,7 +51,7 @@ jobs:
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_uikit_picker_geometry
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_uikit_picker_geometry test_uikit_warmup
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
         timeout-minutes: 6
@@ -251,9 +251,11 @@ jobs:
         if: always()
         run: |
           vm_stat
-          xcrun simctl list devices
+          tc_report_status=0
+          python3 scripts/uikit_warmup.py "$TC_TEST_FAMILY" report || tc_report_status=$?
           find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
           find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true
+          exit "$tc_report_status"
       - name: Verify tested source stayed unchanged
         if: always()
         shell: bash

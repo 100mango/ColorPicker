@@ -16,12 +16,21 @@ import ColorDomain
         tableView.accessibilityIdentifier = "watch.inbox"
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
         navigationItem.rightBarButtonItem?.accessibilityIdentifier = "watch.inbox.close"
+#if DEBUG
+        if ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(sampleConnection))
+            navigationItem.leftBarButtonItem?.accessibilityIdentifier = "watch.inbox.refresh"
+        }
+#endif
         observation = NotificationCenter.default.addObserver(forName: .touchColorWatchInboxChanged, object: inbox, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
         reload()
     }
     deinit { if let observation { NotificationCenter.default.removeObserver(observation) } }
+#if DEBUG
+    @objc private func sampleConnection() { inbox.samplePairedReadiness() }
+#endif
     @objc private func close() { dismiss(animated: true) { self.finishDismissal() } }
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { finishDismissal() }
     override func viewDidDisappear(_ animated: Bool) {

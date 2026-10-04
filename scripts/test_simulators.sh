@@ -4,9 +4,12 @@ family="${1:?Provide iPhoneCompact, iPhoneLarge, iPadLarge or iPadMini}"
 suite="${2:?Provide prepare, prepare-unit, seed, shutdown, TouchColorTests, TouchColorUITests or AccessibilityAudits}"
 case "$family" in iPhoneCompact|iPhoneLarge|iPadLarge|iPadMini) ;; *) exit 2;; esac
 case "$suite" in prepare|prepare-unit|seed|shutdown|TouchColorTests|TouchColorUITests|AccessibilityAudits) ;; *) exit 2;; esac
-if [[ -f "build/$family-runtime-command-uncertain" ]]; then
-  echo 'BLOCKED: an owned simulator diagnostic has no confirmed exit; no later simulator action is permitted' >&2
+if [[ -e "build/$family-runtime-command-uncertain" || -L "build/$family-runtime-command-uncertain" ]]; then
+  echo 'BLOCKED: an owned simulator command has no confirmed timely exit; no later simulator action is permitted' >&2
   exit 3
+fi
+if [[ "$suite" == prepare || "$suite" == prepare-unit ]]; then
+  exec python3 "$(dirname -- "$0")/uikit_warmup.py" "$family" "$suite"
 fi
 xcrun simctl list devices available -j > /tmp/touchcolor-devices.json
 device=$(python3 - "$family" "$suite" <<'PY'
@@ -48,51 +51,6 @@ print(selected['udid'])
 print('Selected '+selected['name']+' '+selected['udid'],file=sys.stderr)
 PY
 )
-# Cold CoreSimulator startup has a separate budget; unit and UI suites share the warm device.
-if [[ "$suite" == prepare || "$suite" == prepare-unit ]]; then
-  echo "[$(date -u +%FT%TZ)] Booting $family $device"
-  xcrun simctl boot "$device" || true
-  xcrun simctl bootstatus "$device" -b
-  echo "[$(date -u +%FT%TZ)] Boot completed; installing the exact test app"
-  xcrun simctl install "$device" build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app
-  echo "[$(date -u +%FT%TZ)] Launching the app for readiness"
-  xcrun simctl launch --terminate-running-process "$device" com.mango.touchColor
-  echo "[$(date -u +%FT%TZ)] App launch returned successfully; stopping the readiness process"
-  xcrun simctl terminate "$device" com.mango.touchColor
-  if [[ "$suite" == prepare-unit ]]; then
-    echo "[$(date -u +%FT%TZ)] Unit-only preparation complete; no Files fixture is used by TouchColorTests"
-    exit 0
-  fi
-  echo "[$(date -u +%FT%TZ)] Installing the separate synthetic Files fixture host"
-  xcrun simctl install "$device" build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app
-  xcrun simctl launch --terminate-running-process "$device" com.mango.touchColor.tests.paletteFixtures
-  fixture_container=$(xcrun simctl get_app_container "$device" com.mango.touchColor.tests.paletteFixtures data)
-  python3 - "$fixture_container" <<'PYFIXTURE'
-import json,pathlib,sys,time
-path=pathlib.Path(sys.argv[1])/'Documents/TouchColor-Ordered-Colors.json'
-deadline=time.monotonic()+10
-while not path.is_file() and time.monotonic()<deadline: time.sleep(0.1)
-assert json.loads(path.read_text())==['#445566','#445566','#AABBCC']
-assert len(list(path.parent.iterdir()))==1, 'Only the deterministic JSON fixture may be exposed'
-print('Synthetic Files fixture is ready')
-PYFIXTURE
-  xcrun simctl terminate "$device" com.mango.touchColor.tests.paletteFixtures
-  echo "[$(date -u +%FT%TZ)] App launch completed; collecting optional bounded inventories"
-  python3 - "$device" <<'PYDIAGNOSTICS'
-import datetime,subprocess,sys
-commands=[(['xcrun','simctl','spawn',sys.argv[1],'launchctl','print','system'],20,subprocess.DEVNULL),
-          (['xcodebuild','-project','TouchColor.xcodeproj','-scheme','TouchColor','-showdestinations'],30,None)]
-for command,seconds,output in commands:
-    print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'Optional diagnostic:', ' '.join(command), flush=True)
-    try:
-        result=subprocess.run(command,timeout=seconds,stdout=output,check=False)
-        print('Optional diagnostic exit:',result.returncode,flush=True)
-    except subprocess.TimeoutExpired:
-        print(f'Optional diagnostic exceeded {seconds}s; continuing to the actual XCTest gates',flush=True)
-PYDIAGNOSTICS
-  echo "[$(date -u +%FT%TZ)] Simulator preparation complete"
-  exit 0
-fi
 if [[ "$suite" == shutdown ]]; then
   xcrun simctl shutdown "$device" || true
   exit 0

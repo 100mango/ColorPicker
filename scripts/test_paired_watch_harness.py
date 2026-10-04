@@ -17,6 +17,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 import test_paired_watch as harness
+from paired_product_diagnostics import CommandResult
+# Existing workflow module suites also execute the new helper's negative cases.
+from test_paired_product_diagnostics import ProductDiagnosticsTests, RegistrationTests, BoundedInspectionTests
 
 
 class PairedHarnessTests(unittest.TestCase):
@@ -25,10 +28,13 @@ class PairedHarnessTests(unittest.TestCase):
         harness.report.update(result='passed', stages=[], receipt_barrier='acknowledged')
 
     def observation(self, role='watch', phase='pre-send'):
-        value = {'schema':'1','role':role,'source':'public-WCSession','event':'activation-completed',
+        value = {'schema':'2','role':role,'source':'public-WCSession','event':'activation-completed',
                  'sequence':'2','supported':'true','sessionPresent':'true','activationState':'2',
                  'activationCallbackState':'2','activationErrorDomain':'','activationErrorCode':'',
-                 'reachable':'true','selectedTransport':'none','runID':'synthetic-run','phase':phase}
+                 'reachable':'true','selectedTransport':'none','runID':'synthetic-run','phase':phase,
+                 'sampleEpoch':'12345678-1234-1234-1234-123456789ABC','sampleUptimeMilliseconds':'1000',
+                 'explicitSampleSequence':'1','latestDelegateEvent':'activation-completed','delegateSequence':'1',
+                 'samplingFreshness':'newly-observed'}
         value.update({'companionInstalled':'true'} if role == 'watch' else {'paired':'true','watchInstalled':'true'})
         return value
 
@@ -36,7 +42,7 @@ class PairedHarnessTests(unittest.TestCase):
         start = self.observation(role, 'bootstrap' if role == 'phone' else 'pre-send')
         receipt = {**start, 'phase':'receipt','event':'sendMessage','selectedTransport':'sendMessage'}
         return SimpleNamespace(markers=['TOUCHCOLOR_PAIRED_'+role.upper()+'_RELAUNCH_VERIFIED'], cleanup_confirmed=True,
-                               readiness=[start, receipt], readiness_errors=0, readiness_overflow=False)
+                               readiness=[start, receipt], readiness_errors=0, readiness_overflow=False, sample_incomplete=[])
 
     def test_job_budget_expiry_retains_not_started_paired_command(self):
         from job_budget import BudgetExhausted
@@ -167,7 +173,7 @@ class PairedHarnessTests(unittest.TestCase):
             for key in ('companionInstalled', 'paired', 'watchInstalled'):
                 if key in absent: absent[key] = 'unknown'
             self.assertEqual(harness.decode_readiness(json.dumps(absent), role, 'synthetic-run'), absent)
-            for key,bad in [('schema','2'),('role','different'),('runID','other'),('source','mock'),
+            for key,bad in [('schema','1'),('role','different'),('runID','other'),('source','mock'),
                             ('supported','yes'),('activationState','3'),('phase','invented'),('event','invented'),
                             ('sequence','1000001'),('activationErrorDomain','x'*129),('selectedTransport','injected')]:
                 with self.assertRaises(RuntimeError,msg=key):
@@ -209,7 +215,7 @@ class PairedHarnessTests(unittest.TestCase):
     def test_reader_bounds_observations_retains_last_and_reports_invalid(self):
         process = object.__new__(harness.RunningTests)
         process.label = 'watch'; process.run_id = 'synthetic-run'
-        process.readiness = []; process.readiness_errors = 0; process.readiness_overflow = False
+        process.readiness = []; process.readiness_errors = 0; process.readiness_overflow = False; process.sample_incomplete = []
         process.tail = collections.deque(maxlen=1000); process.lock = threading.Lock()
         process.markers = []; process.ready = threading.Event(); process.barriers = queue.Queue()
         lines = [harness.READINESS_PREFIX + json.dumps({**self.observation(),'sequence':str(i+1)}) + '\n' for i in range(70)]
@@ -249,8 +255,10 @@ class PairedHarnessTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         watch = (root/'TouchColorPhoneCompanion/PairedTests/WatchPairedTransferTests.swift').read_text()
         self.assertIn('let transportDeadline = ProcessInfo.processInfo.systemUptime + 60',watch)
-        self.assertIn('timeout: 20',watch)
+        self.assertIn('let readinessDeadline = ProcessInfo.processInfo.systemUptime + 20',watch)
+        self.assertLess(watch.index('requestFreshSample(refresh'),watch.index('send.tap()'))
         self.assertLess(watch.index('guard readinessResult == .completed else { return }'),watch.index('send.tap()'))
+        self.assertIn('confirmsFreshSample(value, after: request)',watch)
         self.assertIn('timeout: min(20, remaining)',watch)
         phone = (root/'TouchColorPhoneCompanion/PairedTests/PhonePairedTransferTests.swift').read_text()
         self.assertIn('timeout: 120',phone)
@@ -263,6 +271,135 @@ class PairedHarnessTests(unittest.TestCase):
         self.assertNotIn('"connection"',common.split('let receiptKeys = Set(',1)[1].split(')',1)[0])
         for key in ('requestID','requestProtocol','receiptProtocol','version','fingerprint','outcome','receiveChannel'):
             self.assertIn('"'+key+'"',common.split('let receiptKeys = Set(',1)[1].split(')',1)[0])
+
+    def test_fresh_schema_labels_and_explicit_sampling_are_required(self):
+        value=self.observation()
+        for key,bad in [('sampleEpoch','not-a-uuid'),('sampleUptimeMilliseconds','nan'),
+                        ('explicitSampleSequence','-1'),('delegateSequence','1000001'),
+                        ('latestDelegateEvent','sendMessage'),('samplingFreshness','fresh-by-assumption')]:
+            with self.assertRaises((RuntimeError,ValueError),msg=key):
+                harness.decode_readiness(json.dumps({**value,key:bad}),'watch','synthetic-run')
+        for role in ('phone','watch'):
+            phone,watch=self.process('phone'),self.process('watch')
+            (phone if role=='phone' else watch).readiness[0]['explicitSampleSequence']='0'
+            with self.assertRaises(RuntimeError):harness.validate_readiness_evidence(phone,watch)
+        common=(Path(__file__).resolve().parents[1]/'TouchColorPhoneCompanion/PairedTests/PairedReceiptBarrier.swift').read_text()
+        self.assertIn('value["sampleEpoch"] == request.epoch',common)
+        self.assertIn('return count > request.previousExplicitSequence',common)
+        self.assertGreaterEqual(common.count('ProcessInfo.processInfo.systemUptime < deadline'),2)
+        self.assertIn('"repeated" : "newly-observed"',common)
+
+    def stopped_processes(self, clean=True):
+        values={}
+        for role in ('phone','watch'):
+            process=SimpleNamespace(label=role,cleanup_confirmed=None)
+            def stop(process=process):
+                process.cleanup_confirmed=clean;return clean
+            process.stop=stop
+            process.finish=lambda timeout,role=role:harness.report.setdefault(role,{'exit':65})
+            values[role]=process
+        return values
+
+    def selected_pair(self):
+        return {'phone':'12345678-1234-1234-1234-123456789ABC','watch':'ABCDEF12-1234-1234-1234-123456789ABC'}
+
+    def test_post_diagnostics_refuse_unknown_cleanup_missing_or_wrong_phase_budget(self):
+        for mode in ('unclean','missing','cleanup-phase','exhausted'):
+            harness.report.clear();harness.report.update(result='failed',error='original assertion')
+            processes=self.stopped_processes(clean=mode!='unclean')
+            budget=None if mode=='missing' else SimpleNamespace(phase='cleanup' if mode=='cleanup-phase' else 'work',admit=lambda *a,**k:300)
+            if mode=='exhausted':budget.admit=lambda *a,**k:(_ for _ in ()).throw(harness.BudgetExhausted('synthetic'))
+            with patch.object(harness,'enabled_budget',return_value=budget),patch.object(harness,'diagnostic_execute') as execute,patch.object(harness,'identity_receipt') as identity:
+                harness.post_xctest_diagnostics(processes,self.selected_pair())
+            execute.assert_not_called();identity.assert_not_called()
+            self.assertEqual(harness.report['result'],'failed');self.assertEqual(harness.report['error'],'original assertion')
+            self.assertEqual(harness.report['post_xctest_diagnostics']['status'],'incomplete')
+
+    def test_post_diagnostics_stop_both_groups_before_owned_reads_and_preserve_failure(self):
+        harness.report.update(result='failed',error='original assertion')
+        processes=self.stopped_processes();selected=self.selected_pair();calls=[]
+        budget=SimpleNamespace(phase='work',admit=lambda *a,**k:calls.append(('admit',a,k)))
+        def execute(command,**kwargs):
+            self.assertTrue(all(p.cleanup_confirmed is True for p in processes.values()))
+            self.assertEqual(command[:3],['xcrun','simctl','get_app_container'])
+            self.assertEqual(command[-1],'app');self.assertIn(command[3],selected.values())
+            calls.append(('execute',command))
+            return CommandResult(0,('/owned/'+command[3]+'/TouchColor.app\n').encode(),True)
+        with patch.object(harness,'enabled_budget',return_value=budget),patch.object(harness,'diagnostic_execute',side_effect=execute), \
+             patch.object(harness,'identity_receipt',return_value={'status':'observed'}) as identity, \
+             patch.object(harness,'collect_registration_receipt',return_value={'status':'observed'}) as registration:
+            harness.post_xctest_diagnostics(processes,selected)
+        self.assertEqual(calls[0][0],'admit');self.assertEqual(calls[0][1][1],300)
+        self.assertEqual(calls[0][2],{'minimum':300,'cleanup':0,'phase':'work'})
+        self.assertEqual(len([x for x in calls if x[0]=='execute']),2)
+        self.assertEqual(set(identity.call_args.args[0]),{'phone','watch'})
+        self.assertEqual(registration.call_count,2)
+        self.assertEqual(harness.report['post_xctest_diagnostics']['status'],'observed')
+        self.assertEqual(harness.report['result'],'failed');self.assertEqual(harness.report['error'],'original assertion')
+
+    def test_post_lifecycle_reaches_real_capability_helper_with_supported_bound(self):
+        processes=self.stopped_processes();selected=self.selected_pair();calls=[]
+        harness.report.update(result='failed',error='original readiness assertion')
+        budget=SimpleNamespace(phase='work',admit=lambda *a,**k:300)
+        def inspect(command,timeout,max_output_bytes):
+            self.assertTrue(all(p.cleanup_confirmed is True for p in processes.values()))
+            self.assertEqual(timeout,10);calls.append(command)
+            if command[2]=='get_app_container':
+                body=('/owned/'+command[3]+'/TouchColor.app\n').encode()
+            elif command==['xcrun','simctl','help']:body=RegistrationTests.help
+            elif command==['xcrun','simctl','help','appinfo']:body=RegistrationTests.usage
+            else:
+                self.assertEqual(command[2],'appinfo')
+                body=json.dumps({'CFBundleIdentifier':command[4],'DataContainer':'DO_NOT_RETAIN'}).encode()
+            return CommandResult(0,body,True)
+        with patch.object(harness,'enabled_budget',return_value=budget),patch.object(harness,'run_inspection',side_effect=inspect), \
+             patch.object(harness,'identity_receipt',return_value={'status':'observed'}):
+            harness.post_xctest_diagnostics(processes,selected)
+        receipt=harness.report['post_xctest_diagnostics']
+        self.assertEqual(receipt['status'],'observed')
+        self.assertEqual(len(calls),8);self.assertEqual(len(harness.report['inspection_commands']),8)
+        for role in ('phone','watch'):
+            self.assertTrue(receipt['registration'][role]['capability']['usageVerified'])
+            self.assertEqual(receipt['registration'][role]['status'],'observed')
+        self.assertNotIn('DO_NOT_RETAIN',json.dumps(harness.report))
+        self.assertEqual(harness.report['error'],'original readiness assertion')
+
+    def test_inspection_uncertain_cleanup_latches_and_forbids_next_command(self):
+        budget=SimpleNamespace(phase='work',admit=lambda *a,**k:10)
+        with patch.object(harness,'enabled_budget',return_value=budget),patch.object(harness,'run_inspection',return_value=CommandResult(124,b'',False,timed_out=True)) as run,patch.object(harness,'fail_record') as fail:
+            harness.diagnostic_execute(['synthetic'],timeout=1,max_output_bytes=10)
+            self.assertTrue(harness.report['cleanup_unconfirmed']);fail.assert_called_once()
+            with self.assertRaises(RuntimeError):harness.diagnostic_execute(['synthetic'],timeout=1,max_output_bytes=10)
+            self.assertEqual(run.call_count,1)
+        harness.report.clear()
+        error=OSError('synthetic');error.cleanup_confirmed=False
+        with patch.object(harness,'enabled_budget',return_value=budget),patch.object(harness,'run_inspection',side_effect=error),patch.object(harness,'fail_record'):
+            with self.assertRaises(OSError):harness.diagnostic_execute(['synthetic'],timeout=1,max_output_bytes=10)
+        self.assertTrue(harness.report['cleanup_unconfirmed'])
+
+    def test_inspection_admission_and_receipt_caps_are_not_silent(self):
+        with patch.object(harness,'enabled_budget',return_value=None),patch.object(harness,'run_inspection') as run:
+            with self.assertRaises(RuntimeError):harness.diagnostic_execute(['synthetic'],timeout=1,max_output_bytes=10)
+        run.assert_not_called();self.assertFalse(harness.report['inspection_commands'][0]['started'])
+        self.assertEqual(harness.report['inspection_commands'][0]['reason'],'work_admission_unavailable')
+        self.assertEqual(harness.bounded_diagnostic_record({'oversize':'x'*70000})['status'],'incomplete')
+        harness.report['inspection_commands']=[{}]*8
+        with patch.object(harness,'run_inspection') as run:
+            with self.assertRaises(RuntimeError):harness.diagnostic_execute(['synthetic'],timeout=1,max_output_bytes=10)
+        run.assert_not_called()
+
+    def test_incomplete_fresh_sample_markers_are_bounded_correlated_and_never_readiness(self):
+        process=object.__new__(harness.RunningTests)
+        process.label='watch';process.run_id='synthetic-run';process.sample_incomplete=[]
+        process.readiness=[];process.readiness_errors=0;process.readiness_overflow=False
+        process.tail=collections.deque(maxlen=1000);process.lock=threading.Lock()
+        process.markers=[];process.ready=threading.Event();process.barriers=queue.Queue()
+        value={'role':'watch','runID':'synthetic-run','phase':'pre-send','reason':'fresh-read-unconfirmed'}
+        line=harness.SAMPLE_INCOMPLETE_PREFIX+json.dumps(value)+'\n'
+        process.process=SimpleNamespace(stdout=io.StringIO(line*10+line.replace('synthetic-run','wrong')))
+        with patch('builtins.print'):process.read()
+        self.assertEqual(len(process.sample_incomplete),8);self.assertTrue(process.readiness_overflow)
+        self.assertEqual(process.readiness_errors,1);self.assertEqual(process.markers,[]);self.assertEqual(process.readiness,[])
 
     def test_optimized_python_keeps_failed_exit_and_cleanup_gates(self):
         code='''

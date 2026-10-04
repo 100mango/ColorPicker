@@ -7,8 +7,10 @@ final class WatchPairedTransferTests: XCTestCase {
     private var failClosedInterruption: NSObjectProtocol?
     private var app: XCUIApplication!
     private let readiness = PairedReadinessObserver(role: "watch")
+    private var diagnosticDeadline: TimeInterval = 0
     override func setUpWithError() throws {
         try super.setUpWithError()
+        diagnosticDeadline = ProcessInfo.processInfo.systemUptime + 240
         // Keep intended dialog actions explicit. Never fall through to XCTest's
         // default handler for an otherwise-unhandled system interruption.
         failClosedInterruption = addUIInterruptionMonitor(withDescription: "Abort every unhandled system interruption") { _ in
@@ -33,9 +35,13 @@ final class WatchPairedTransferTests: XCTestCase {
         }
         guard let app else { return }
         if (testRun?.totalFailureCount ?? 0) > 0 {
-            if app.buttons["watch.send"].exists {
-                readiness.observe(app.buttons["watch.send"], phase: "failure", nested: false)
-            } else { readiness.observe(app.staticTexts["watch.transfer.status"], phase: "failure") }
+            let editor = app.buttons["watch.send"].exists
+            let refresh = app.buttons["watch.connection.refresh"]
+            let state = editor ? refresh : app.staticTexts["watch.transfer.status"]
+            if let request = readiness.requestFreshSample(refresh, from: state, phase: "failure", nested: !editor, deadline: diagnosticDeadline),
+               !PairedReadinessObserver.confirmsFreshSample(readiness.observe(state, phase: "failure", nested: !editor), after: request) {
+                readiness.incomplete("failure", reason: "fresh-read-unconfirmed")
+            }
             print("WATCH_PAIRED_FAILURE_AX: \(app.debugDescription)")
             let image = XCTAttachment(screenshot: app.screenshot())
             image.name = "Native Watch paired transfer failure"; image.lifetime = .keepAlways; add(image)
@@ -63,17 +69,27 @@ final class WatchPairedTransferTests: XCTestCase {
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
         reach(app.buttons["watch.save"])
         let send = app.buttons["watch.send"]
-        reveal(send)
         // Readiness consumes the original 60-second transport observation budget;
         // neither the 120-second phone wait nor 240-second XCTest allowance grows.
         let transportDeadline = ProcessInfo.processInfo.systemUptime + 60
+        let readinessDeadline = ProcessInfo.processInfo.systemUptime + 20
+        let refresh = app.buttons["watch.connection.refresh"]
+        reveal(refresh)
+        guard let request = readiness.requestFreshSample(refresh, from: refresh, phase: "pre-send", nested: false, deadline: readinessDeadline) else {
+            XCTFail("Fresh public Watch session read was not safely requested"); return
+        }
         let foregroundReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            PairedReadinessObserver.watchIsForegroundReady(self.readiness.observe(send, phase: "pre-send", nested: false))
+            let value = self.readiness.observe(refresh, phase: "pre-send", nested: false)
+            return PairedReadinessObserver.confirmsFreshSample(value, after: request) && PairedReadinessObserver.watchIsForegroundReady(value)
         }, object: nil)
-        let readinessResult = XCTWaiter.wait(for: [foregroundReady], timeout: 20)
+        let remainingReadiness = max(0, readinessDeadline - ProcessInfo.processInfo.systemUptime)
+        let readinessResult = remainingReadiness > 0 ? XCTWaiter.wait(for: [foregroundReady], timeout: remainingReadiness) : .timedOut
+        if readinessResult != .completed && !PairedReadinessObserver.confirmsFreshSample(readiness.latest, after: request) {
+            readiness.incomplete("pre-send", reason: "fresh-read-unconfirmed")
+        }
         XCTAssertEqual(readinessResult, .completed, "Actual Watch WCSession foreground readiness missing: \(String(describing: readiness.latest))")
         guard readinessResult == .completed else { return } // Never tap Send after a failed gate.
-        send.tap()
+        reveal(send); send.tap()
         XCTAssertTrue(app.staticTexts["Send this color to iPhone for review?"].waitForExistence(timeout: 5))
         app.buttons["Send"].firstMatch.tap()
         print("TOUCHCOLOR_PAIRED_WATCH_REQUESTED"); fflush(stdout)

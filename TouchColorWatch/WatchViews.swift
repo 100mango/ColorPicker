@@ -113,6 +113,7 @@ struct WatchColorEditor: View {
                 Button("Save Color") { palette.save() }.accessibilityIdentifier("watch.save")
 #if DEBUG
                 if ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" {
+                    PairedWatchReadButton(transfer: transfer)
                     Button("Send to iPhone") { sendSelection = palette.selected }.accessibilityIdentifier("watch.send")
                         .accessibilityValue(transfer.pairedReadinessValue)
                 } else {
@@ -178,6 +179,17 @@ struct WatchColorEditor: View {
     static func writeback(_ id: UUID, changed: Bool, visible: Bool) { emit(changed ? "component_changed" : "component_unchanged", id, bucket: visible ? "writeVisible" : "writeHidden", visible: visible) }
 }
 #endif
+#if DEBUG
+private struct PairedWatchReadButton: View {
+    @ObservedObject var transfer: WatchTransfer
+    var body: some View {
+        Button { transfer.samplePairedReadiness() } label: { Image(systemName: "arrow.clockwise") }
+            .accessibilityLabel(Text(verbatim: "Refresh connection state"))
+            .accessibilityIdentifier("watch.connection.refresh")
+            .accessibilityValue(transfer.pairedReadinessValue)
+    }
+}
+#endif
 struct WatchTransferView: View {
     @ObservedObject var transfer: WatchTransfer
     var body: some View {
@@ -185,6 +197,7 @@ struct WatchTransferView: View {
             VStack(spacing: 12) {
 #if DEBUG
                 if ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" {
+                    PairedWatchReadButton(transfer: transfer)
                     // Read-only correlation of the actual received receipt; no transport injection.
                     Text(transfer.status).accessibilityIdentifier("watch.transfer.status")
                         .accessibilityValue(transfer.pairedReceiptValue)

@@ -28,10 +28,9 @@ elif args[:2] not in [['simctl','boot'],['simctl','bootstatus'],['simctl','launc
  raise SystemExit('Unexpected command '+str(args))
 ''')
             fake.chmod(0o700)
-            # Isolate only the shell's fixed temporary inventory path. Its real
-            # branch selection and required install/launch commands execute.
-            source=Path(__file__).with_name('test_simulators.sh').read_text()
-            script=root/'prepare.sh'; script.write_text(source.replace('/tmp/touchcolor-devices.json',str(root/'devices.json')))
+            # The real shell dispatches to its sibling preparation driver;
+            # inventory is captured in memory, without the old fixed /tmp file.
+            script=Path(__file__).with_name('test_simulators.sh').resolve()
             if app_exists: (root/'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app').mkdir(parents=True)
             env={**os.environ,'PATH':str(binary)+os.pathsep+os.environ['PATH'],'TC_SYNTHETIC_TRACE':str(trace)}
             result=subprocess.run(['bash',str(script),'iPhoneCompact',mode],cwd=root,env=env,capture_output=True,text=True,timeout=10)
@@ -51,7 +50,8 @@ elif args[:2] not in [['simctl','boot'],['simctl','bootstatus'],['simctl','launc
 
     def test_full_preparation_still_fails_when_required_fixture_is_missing(self):
         result,calls,_=self.prepare('prepare')
-        self.assertEqual(result.returncode,2)
+        self.assertEqual(result.returncode,3)
+        self.assertIn('Preparation command failed with exit 2',result.stderr)
         self.assertEqual(calls[-1],['simctl','install','synthetic-owned-phone','build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'])
 
 

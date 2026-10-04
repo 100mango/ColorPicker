@@ -15,7 +15,8 @@ import threading
 import time
 import uuid
 from bounded_process import run_captured, stop_group
-from job_budget import enabled_budget, BudgetExhausted
+from job_budget import enabled_budget, BudgetExhausted, fail_record
+from paired_product_diagnostics import collect_product_identities, collect_registration_receipt, run_inspection, Limits
 from capture_simulator_checkpoint import publish_acknowledgement
 from verify_embedded_watch import verify as verify_embedded_watch
 from watch_runtime_pair import phone_template, device_inventory, verify_new_device, verify_pair, activate_owned_pair
@@ -122,7 +123,7 @@ def prepare_owned_pair(selected, booted, original_devices, original_pairs, pair)
 
 
 def installed_products(label, selected):
-    values={}
+    values={}; installed_paths={}
     for role in ('phone','watch'):
         product='Debug-iphonesimulator' if role=='phone' else 'Debug-watchsimulator'
         built=Path('build/paired-'+role)/'Build/Products'/product/'TouchColor.app'
@@ -131,9 +132,137 @@ def installed_products(label, selected):
         require(path.is_absolute() and path.is_dir(),'Installed app container missing')
         actual=product_record(path,role)
         require(actual==expected,'Installed code payload differs from the exact built product')
-        values[role]=actual
-    report.setdefault('installed_products',{})[label]=values;save_report()
+        values[role]=actual; installed_paths[role]=path
+    report.setdefault('installed_products',{})[label]=values
+    if label == 'before XCTest': retain_identity_receipt(label, installed_paths)
+    save_report()
 
+
+
+PRODUCT_RECEIPT_LIMIT = 65_536
+POST_DIAGNOSTIC_SECONDS = 300
+
+
+def bounded_diagnostic_record(value, limit=PRODUCT_RECEIPT_LIMIT):
+    if len(json.dumps(value).encode('utf-8')) > limit:
+        return {'status':'incomplete','reason':'diagnostic_receipt_size_limit'}
+    return value
+
+
+def identity_receipt(installed_paths):
+    phone = Path('build/paired-phone/Build/Products/Debug-iphonesimulator/TouchColor.app').absolute()
+    watch = Path('build/paired-watch/Build/Products/Debug-watchsimulator/TouchColor.app').absolute()
+    products = {'builtPhone':phone,'embeddedWatch':phone/'Watch/TouchColor.app','standaloneWatch':watch}
+    roots = [phone,watch]
+    if 'phone' in installed_paths:
+        products.update(installedPhone=installed_paths['phone'], installedEmbeddedWatch=installed_paths['phone']/'Watch/TouchColor.app')
+        roots.append(installed_paths['phone'])
+    if 'watch' in installed_paths:
+        products['installedWatch']=installed_paths['watch'];roots.append(installed_paths['watch'])
+    return bounded_diagnostic_record(collect_product_identities(products, roots))
+
+
+def retain_identity_receipt(label, installed_paths):
+    try:
+        require(not report.get('cleanup_unconfirmed'), 'cleanup_unconfirmed')
+        budget = enabled_budget()
+        require(budget is not None and budget.phase == 'work', 'work_budget_unavailable')
+        budget.admit('bounded paired product identities',10,minimum=10,cleanup=0,phase='work')
+        receipt=identity_receipt(installed_paths)
+    except Exception as error:
+        receipt={'status':'incomplete','reason':'identity_inspection_not_admitted','errorType':type(error).__name__}
+    report.setdefault('product_identity_receipts',{})[label]=receipt
+
+
+def diagnostic_execute(command, *, timeout, max_output_bytes):
+    # The helper constructs capability-proven per-app registration commands;
+    # the owner uses only its already-proven exact app-container query here.
+    require(not report.get('cleanup_unconfirmed'), 'cleanup_unconfirmed')
+    require(len(report.get('inspection_commands',[])) < 8, 'inspection_command_count_limit')
+    try:
+        budget=enabled_budget()
+        require(budget is not None and budget.phase == 'work', 'work_budget_unavailable')
+        budget.admit('bounded owned app inspection',timeout,minimum=timeout,cleanup=20,phase='work')
+    except Exception as error:
+        report.setdefault('inspection_commands',[]).append({'command':command,'started':False,
+            'reason':'work_admission_unavailable','errorType':type(error).__name__})
+        raise
+    started=time.monotonic()
+    try:
+        result=run_inspection(command,timeout,max_output_bytes)
+    except BaseException as error:
+        # An exceptional capture without positive cleanup proof prohibits any
+        # further simulator command, including owned-device teardown.
+        if getattr(error,'cleanup_confirmed',False) is not True:
+            report['cleanup_unconfirmed']=True
+            fail_record('Paired inspection exception cleanup unconfirmed',phase='work',cleanup_unconfirmed=True)
+        raise
+    if result.cleanup_confirmed is not True:
+        report['cleanup_unconfirmed']=True
+        fail_record('Paired inspection process cleanup unconfirmed',phase='work',cleanup_unconfirmed=True)
+    report.setdefault('inspection_commands',[]).append({'command':command,'started':True,'exit':result.returncode,
+        'seconds':round(time.monotonic()-started,3),'bytes':len(result.stdout),
+        'output_truncated':result.output_truncated,'timed_out':result.timed_out,'cleanup_confirmed':result.cleanup_confirmed})
+    return result
+
+
+def post_xctest_diagnostics(processes, selected):
+    # No optional read is allowed until every started XCTest process group has
+    # positively stopped. Existing cleanup calls are idempotent after this step.
+    receipt={'status':'incomplete','phase':'after XCTest before owned-device cleanup','started_test_roles':sorted(processes)}
+    report['post_xctest_diagnostics']=receipt
+    if not processes:
+        receipt['reason']='xctest_not_started';return
+    try:
+        for process in processes.values():
+            if not process.stop(): report['cleanup_unconfirmed']=True
+            if process.label not in report: process.finish(1)
+    except BaseException as error:
+        report['cleanup_unconfirmed']=True
+        receipt.update(reason='xctest_process_cleanup_interrupted',errorType=type(error).__name__);return
+    if report.get('cleanup_unconfirmed') or any(process.cleanup_confirmed is not True for process in processes.values()):
+        receipt['reason']='xctest_process_cleanup_unconfirmed';return
+    if set(selected) != {'phone','watch'}:
+        receipt['reason']='owned_pair_identity_incomplete';return
+    try:
+        for identifier in selected.values(): uuid.UUID(identifier)
+        budget=enabled_budget()
+        require(budget is not None and budget.phase == 'work', 'work_budget_unavailable')
+        # Full optional work fits before the unchanged cleanup/evidence tail.
+        # Do not shorten individual reads or borrow from any reserved phase.
+        budget.admit('post-XCTest owned products and capability-gated registration',POST_DIAGNOSTIC_SECONDS,
+                     minimum=POST_DIAGNOSTIC_SECONDS,cleanup=0,phase='work')
+    except Exception as error:
+        receipt.update(reason='safe_work_admission_unavailable',errorType=type(error).__name__);return
+    paths={}
+    receipt['paths']={}
+    for role,bundle in [('phone','com.mango.touchColor'),('watch','com.mango.touchColor.watchkitapp')]:
+        if report.get('cleanup_unconfirmed'): break
+        try:
+            result=diagnostic_execute(['xcrun','simctl','get_app_container',selected[role],bundle,'app'],timeout=10,max_output_bytes=4096)
+            require(result.cleanup_confirmed is True and result.returncode == 0 and not result.output_truncated and not result.timed_out,
+                    'owned_app_container_unavailable')
+            value=result.stdout.decode('utf-8').strip()
+            require(value and '\n' not in value and '\r' not in value, 'invalid_app_container_receipt')
+            path=Path(value)
+            require(path.is_absolute() and '..' not in path.parts and path.name == 'TouchColor.app'
+                    and selected[role] in path.parts,'app_container_not_bound_to_owned_device')
+            paths[role]=path;receipt['paths'][role]={'status':'observed','bundleIdentifier':bundle}
+        except Exception as error:
+            receipt['paths'][role]={'status':'incomplete','reason':'app_container_read_failed','errorType':type(error).__name__}
+    if report.get('cleanup_unconfirmed'):
+        receipt['reason']='inspection_process_cleanup_unconfirmed';return
+    try: receipt['products']=identity_receipt(paths)
+    except Exception as error: receipt['products']={'status':'incomplete','reason':'identity_inspection_failed','errorType':type(error).__name__}
+    receipt['registration']={}
+    for role,bundle in [('phone','com.mango.touchColor'),('watch','com.mango.touchColor.watchkitapp')]:
+        if report.get('cleanup_unconfirmed'):
+            receipt['registration'][role]={'status':'unavailable','reason':'prior_inspection_cleanup_unconfirmed'};continue
+        receipt['registration'][role]=bounded_diagnostic_record(collect_registration_receipt(selected[role],bundle,diagnostic_execute,
+            limits=Limits(command_timeout=10)),8192)
+    observed=receipt.get('products',{}).get('status') == 'observed' and all(value.get('status') == 'observed' for value in receipt['registration'].values())
+    receipt['status']='observed' if observed else 'incomplete'
+    if not observed: receipt['reason']='one_or_more_product_or_registration_receipts_unavailable'
 
 def configured_test_run(directory, role, run_id):
     candidates = [p for p in (Path(directory)/'Build/Products').glob('*.xctestrun') if not p.stem.endswith('-paired')]
@@ -172,6 +301,7 @@ def bounded_failure_lines(text):
 
 READINESS_PREFIX = 'TOUCHCOLOR_PAIRED_READINESS '
 READINESS_OVERFLOW_PREFIX = 'TOUCHCOLOR_PAIRED_READINESS_OVERFLOW '
+SAMPLE_INCOMPLETE_PREFIX = 'TOUCHCOLOR_PAIRED_SAMPLE_INCOMPLETE '
 READINESS_LIMIT = 64
 
 
@@ -181,16 +311,24 @@ def decode_readiness(text, role, run_id):
     value = json.loads(text)
     common = {'schema','role','source','event','sequence','supported','sessionPresent',
               'activationState','activationCallbackState','activationErrorDomain','activationErrorCode',
-              'reachable','selectedTransport','runID','phase'}
+              'reachable','selectedTransport','runID','phase','sampleEpoch','sampleUptimeMilliseconds',
+              'explicitSampleSequence','latestDelegateEvent','delegateSequence','samplingFreshness'}
     expected = common | ({'companionInstalled'} if role == 'watch' else {'paired','watchInstalled'})
     require(isinstance(value, dict) and set(value) == expected, 'Invalid paired readiness fields')
     require(all(isinstance(item, str) and len(item) <= 128 for item in value.values()), 'Invalid paired readiness value')
-    require(value['schema'] == '1' and value['role'] == role and value['runID'] == run_id
+    require(value['schema'] == '2' and value['role'] == role and value['runID'] == run_id
             and value['source'] == 'public-WCSession', 'Uncorrelated paired readiness observation')
-    require(value['event'] in {'initialized','activate-called','unsupported','activation-completed','retry','sendMessage',
+    require(value['event'] in {'explicit-sample','initialized','activate-called','unsupported','activation-completed','retry','sendMessage',
             'transferUserInfo','companion-installed-changed','reachability-changed','watch-state-changed',
             'inactive','deactivated'}, 'Unknown paired readiness event')
     require(value['phase'] in {'bootstrap','pre-send','wait-receipt','receipt','relaunch','failure'}, 'Unknown paired readiness phase')
+    require(str(uuid.UUID(value['sampleEpoch'])).upper() == value['sampleEpoch'], 'Invalid sample epoch')
+    require(re.fullmatch(r'[0-9]{1,19}',value['sampleUptimeMilliseconds']) is not None, 'Invalid sample time')
+    for key in ('explicitSampleSequence','delegateSequence'):
+        require(re.fullmatch(r'[0-9]{1,7}',value[key]) is not None and 0 <= int(value[key]) <= 1_000_000, 'Invalid sample/delegate sequence')
+    require(value['samplingFreshness'] in {'newly-observed','repeated'}, 'Invalid observation freshness')
+    require(value['latestDelegateEvent'] in {'none','activation-completed','companion-installed-changed',
+            'watch-state-changed','reachability-changed','inactive','deactivated'}, 'Invalid latest delegate event')
     require(re.fullmatch(r'[0-9]{1,7}', value['sequence']) is not None
             and 1 <= int(value['sequence']) <= 1_000_000, 'Invalid readiness sequence')
     for key in ('supported','sessionPresent'):
@@ -220,17 +358,17 @@ def watch_foreground_ready(value):
 
 def validate_readiness_evidence(phone, watch):
     for process in (phone, watch):
-        require(process.readiness_errors == 0 and not process.readiness_overflow, 'Paired readiness evidence incomplete')
+        require(process.readiness_errors == 0 and not process.readiness_overflow and not process.sample_incomplete, 'Paired readiness evidence incomplete')
         require(any(value['phase'] == 'receipt' and value['selectedTransport'] == 'sendMessage'
                     for value in process.readiness), 'Actual foreground transport selection missing')
-    require(any(value['phase'] == 'bootstrap' for value in phone.readiness), 'Phone bootstrap observation missing')
-    require(any(value['phase'] == 'pre-send' and watch_foreground_ready(value) for value in watch.readiness),
+    require(any(value['phase'] == 'bootstrap' and int(value['explicitSampleSequence']) > 0 for value in phone.readiness), 'Phone bootstrap observation missing')
+    require(any(value['phase'] == 'pre-send' and int(value['explicitSampleSequence']) > 0 and watch_foreground_ready(value) for value in watch.readiness),
             'Actual Watch pre-Send readiness observation missing')
 
 
 class RunningTests:
     def __init__(self, label, command, run_id):
-        self.run_id = run_id; self.readiness = []; self.readiness_errors = 0; self.readiness_overflow = False
+        self.run_id = run_id; self.readiness = []; self.readiness_errors = 0; self.readiness_overflow = False; self.sample_incomplete = []
         self.label = label; self.ready = threading.Event(); self.markers = []; self.barriers = queue.Queue()
         self.tail = collections.deque(maxlen=1000); self.lock = threading.Lock()
         self.started = time.monotonic(); self.wall_started = time.time(); self.cleanup_confirmed = None
@@ -259,6 +397,22 @@ class RunningTests:
                 except (ValueError, RuntimeError):
                     with self.lock: self.readiness_errors = min(self.readiness_errors + 1, 1_000_000)
                 continue # Diagnostic records are not lifecycle or receipt markers.
+            if SAMPLE_INCOMPLETE_PREFIX in line:
+                try:
+                    raw = line.split(SAMPLE_INCOMPLETE_PREFIX,1)[1].strip()
+                    require(len(raw.encode('utf-8')) <= 512, 'Oversize incomplete-sample marker')
+                    value = json.loads(raw)
+                    require(isinstance(value,dict) and set(value) == {'role','runID','phase','reason'}
+                            and value['role'] == self.label and value['runID'] == self.run_id
+                            and value['phase'] in {'bootstrap','pre-send','failure'}
+                            and value['reason'] in {'budget-exhausted','snapshot-unavailable','read-control-unavailable','fresh-read-unconfirmed'},
+                            'Uncorrelated incomplete-sample marker')
+                    with self.lock:
+                        if len(self.sample_incomplete) < 8: self.sample_incomplete.append(value)
+                        else: self.readiness_overflow = True
+                except (ValueError, RuntimeError):
+                    with self.lock: self.readiness_errors = min(self.readiness_errors + 1,1_000_000)
+                continue
             found = re.search(r'TOUCHCOLOR_PAIRED_[A-Z_]+(?: [0-9A-F-]{36})?', line)
             if found:
                 self.markers.append(found.group(0)); print(found.group(0), flush=True)
@@ -281,7 +435,7 @@ class RunningTests:
         # Keep the precise assertion even when readiness fails before both roles
         # start. Previously only 'Phone actual inbox readiness missing' survived.
         failures=bounded_failure_lines(tail)
-        report[self.label] = {'exit': code, 'markers': self.markers, 'cleanup_confirmed': self.cleanup_confirmed, 'monotonic_seconds': round(time.monotonic()-self.started, 3), 'wall_seconds': round(time.time()-self.wall_started, 3), 'failure_lines': failures, 'readiness': list(self.readiness), 'readiness_errors': self.readiness_errors, 'readiness_overflow': self.readiness_overflow}
+        report[self.label] = {'exit': code, 'markers': self.markers, 'cleanup_confirmed': self.cleanup_confirmed, 'monotonic_seconds': round(time.monotonic()-self.started, 3), 'wall_seconds': round(time.time()-self.wall_started, 3), 'failure_lines': failures, 'readiness': list(self.readiness), 'readiness_errors': self.readiness_errors, 'readiness_overflow': self.readiness_overflow, 'sample_incomplete': list(self.sample_incomplete)}
         if failures: print('PAIRED_XCTEST_FAILURES',json.dumps({'role':self.label,'lines':failures}),flush=True)
         return code
 
@@ -467,6 +621,11 @@ def main():
     except Exception as error:
         report['result']='failed'; report['error']=str(error)
     finally:
+        try: post_xctest_diagnostics(processes,selected)
+        except BaseException as diagnostic_error:
+            report['post_xctest_diagnostics']={'status':'incomplete','reason':'diagnostic_collection_interrupted','errorType':type(diagnostic_error).__name__}
+            # Cleanup will still check every original owned test group. Any
+            # inspection cleanup uncertainty is already latched by its executor.
         if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
         cleanup(processes,created,pair,selected,original_devices,original_pairs,booted)
         save_report(); print('PAIRED_RESULT',json.dumps(report),flush=True)

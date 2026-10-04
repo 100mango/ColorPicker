@@ -25,13 +25,26 @@ extension Notification.Name { static let touchColorWatchInboxChanged = Notificat
     private var pairedActivationCallbackState = ""
     private var pairedSelectedTransport = "none"
     private var pairedReadinessSequence = 0
+    private let pairedSampleEpoch = UUID().uuidString
+    private var pairedExplicitSamples = 0
+    private var pairedLatestDelegateEvent = "none"
+    private var pairedDelegateSequence = 0
+    // This DEBUG action reads public state only; it never activates or sends.
+    func samplePairedReadiness() { recordPairedReadiness("explicit-sample") }
     private func recordPairedReadiness(_ event: String, transport: String? = nil) {
         guard ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_E2E"] == "1" else { return }
         if let transport { pairedSelectedTransport = transport }
         pairedReadinessSequence = min(pairedReadinessSequence + 1, 1_000_000)
+        if event == "explicit-sample" { pairedExplicitSamples = min(pairedExplicitSamples + 1, 1_000_000) }
+        if ["activation-completed", "companion-installed-changed", "watch-state-changed", "reachability-changed", "inactive", "deactivated"].contains(event) {
+            pairedLatestDelegateEvent = event; pairedDelegateSequence = min(pairedDelegateSequence + 1, 1_000_000)
+        }
         let active = connectivity?.activationState == .activated
         let value: [String: String] = [
-            "schema": "1", "role": "phone", "source": "public-WCSession", "event": event,
+            "schema": "2", "role": "phone", "source": "public-WCSession", "event": event,
+            "sampleEpoch": pairedSampleEpoch, "sampleUptimeMilliseconds": String(Int64(ProcessInfo.processInfo.systemUptime * 1000)),
+            "explicitSampleSequence": String(pairedExplicitSamples), "latestDelegateEvent": pairedLatestDelegateEvent,
+            "delegateSequence": String(pairedDelegateSequence),
             "sequence": String(pairedReadinessSequence), "supported": WCSession.isSupported() ? "true" : "false",
             "sessionPresent": connectivity == nil ? "false" : "true",
             "activationState": connectivity.map { String($0.activationState.rawValue) } ?? "absent",

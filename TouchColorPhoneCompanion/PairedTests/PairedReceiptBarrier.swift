@@ -13,6 +13,7 @@ func pairedObservation(_ element: XCUIElement) throws -> [String: String] {
 final class PairedReadinessObserver {
     let role: String
     private var lastRecord = ""
+    private var lastSampleIdentity = ""
     private var emitted = 0
     private var overflowReported = false
     private(set) var latest: [String: String]?
@@ -27,15 +28,21 @@ final class PairedReadinessObserver {
                   let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return nil }
             value = decoded
         } else { value = outer }
-        guard value["schema"] == "1", value["role"] == role, value["source"] == "public-WCSession",
+        guard value["schema"] == "2", value["role"] == role, value["source"] == "public-WCSession",
               let runID = ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_RUN_ID"] else { return nil }
         latest = value
         var record = value; record["runID"] = runID; record["phase"] = phase
+        let sampleIdentity = (value["sampleEpoch"] ?? "") + ":" + (value["sequence"] ?? "")
+        // "Newly observed" is not a claim that this AX read sampled WCSession.
+        // Explicit UI sample requests below prove a separate app-side public read.
+        record["samplingFreshness"] = sampleIdentity == lastSampleIdentity ? "repeated" : "newly-observed"
         guard let encoded = try? JSONSerialization.data(withJSONObject: record, options: .sortedKeys),
               encoded.count <= 2048 else { return nil }
         let text = String(decoding: encoded, as: UTF8.self)
-        if text != lastRecord {
-            lastRecord = text
+        var comparison = record; comparison.removeValue(forKey: "samplingFreshness")
+        let stable = (try? JSONSerialization.data(withJSONObject: comparison, options: .sortedKeys)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        if stable != lastRecord {
+            lastRecord = stable; lastSampleIdentity = sampleIdentity
             if emitted < 64 {
                 emitted += 1
                 print("TOUCHCOLOR_PAIRED_READINESS " + text); fflush(stdout)
@@ -48,6 +55,29 @@ final class PairedReadinessObserver {
             }
         }
         return value
+    }
+    struct SampleRequest { let epoch: String; let previousExplicitSequence: Int }
+    func incomplete(_ phase: String, reason: String) {
+        guard let runID = ProcessInfo.processInfo.environment["TOUCHCOLOR_PAIRED_RUN_ID"],
+              let data = try? JSONSerialization.data(withJSONObject: ["role": role, "runID": runID, "phase": phase, "reason": reason], options: .sortedKeys) else { return }
+        print("TOUCHCOLOR_PAIRED_SAMPLE_INCOMPLETE " + String(decoding: data, as: UTF8.self)); fflush(stdout)
+    }
+    func requestFreshSample(_ button: XCUIElement, from element: XCUIElement, phase: String,
+                            nested: Bool = true, deadline: TimeInterval) -> SampleRequest? {
+        guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete(phase, reason: "budget-exhausted"); return nil }
+        guard let value = observe(element, phase: phase, nested: nested), let epoch = value["sampleEpoch"],
+              let count = value["explicitSampleSequence"].flatMap(Int.init) else { incomplete(phase, reason: "snapshot-unavailable"); return nil }
+        guard button.exists && button.isEnabled && button.isHittable else { incomplete(phase, reason: "read-control-unavailable"); return nil }
+        // AX queries can consume the remaining window; check again before the action.
+        guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete(phase, reason: "budget-exhausted"); return nil }
+        // One explicit, read-only UI action. No automatic activation/transport retry.
+        button.tap()
+        return SampleRequest(epoch: epoch, previousExplicitSequence: count)
+    }
+    static func confirmsFreshSample(_ value: [String: String]?, after request: SampleRequest) -> Bool {
+        guard let value, value["sampleEpoch"] == request.epoch,
+              let count = value["explicitSampleSequence"].flatMap(Int.init) else { return false }
+        return count > request.previousExplicitSequence
     }
     static func watchIsForegroundReady(_ value: [String: String]?) -> Bool {
         guard let value else { return false }

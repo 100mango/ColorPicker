@@ -8,8 +8,10 @@ import Darwin
     private var failClosedInterruption: NSObjectProtocol?
     private let app = XCUIApplication()
     private let readiness = PairedReadinessObserver(role: "phone")
+    private var diagnosticDeadline: TimeInterval = 0
     override func setUpWithError() throws {
         try super.setUpWithError()
+        diagnosticDeadline = ProcessInfo.processInfo.systemUptime + 240
         // Keep intended dialog actions explicit. Never fall through to XCTest's
         // default handler for an otherwise-unhandled system interruption.
         failClosedInterruption = addUIInterruptionMonitor(withDescription: "Abort every unhandled system interruption") { _ in
@@ -24,7 +26,11 @@ import Darwin
             failClosedInterruption = nil
         }
         if (testRun?.failureCount ?? 0) > 0 {
-            readiness.observe(app.cells["watch.inbox.status"], phase: "failure")
+            let state = app.cells["watch.inbox.status"]
+            if let request = readiness.requestFreshSample(app.buttons["watch.inbox.refresh"], from: state, phase: "failure", deadline: diagnosticDeadline),
+               !PairedReadinessObserver.confirmsFreshSample(readiness.observe(state, phase: "failure"), after: request) {
+                readiness.incomplete("failure", reason: "fresh-read-unconfirmed")
+            }
             if let data=XCUIScreen.main.screenshot().image.jpegData(compressionQuality:0.55), data.count<=500*1024 {
                 let image=XCTAttachment(data:data,uniformTypeIdentifier:"public.jpeg")
                 image.name="touchcolor-paired-phone-failure";image.lifetime = .keepAlways;add(image)
@@ -113,7 +119,11 @@ import Darwin
         open("watch.inbox.open")
         XCTAssertTrue(app.tables["watch.inbox"].waitForExistence(timeout: 5))
         _ = try healthyInbox(receipts: 0)
-        readiness.observe(app.cells["watch.inbox.status"], phase: "bootstrap")
+        let state = app.cells["watch.inbox.status"]
+        if let request = readiness.requestFreshSample(app.buttons["watch.inbox.refresh"], from: state, phase: "bootstrap", deadline: diagnosticDeadline),
+           !PairedReadinessObserver.confirmsFreshSample(readiness.observe(state, phase: "bootstrap"), after: request) {
+            readiness.incomplete("bootstrap", reason: "fresh-read-unconfirmed")
+        }
         print("TOUCHCOLOR_PAIRED_PHONE_READY"); fflush(stdout)
         let incoming = app.cells.matching(NSPredicate(format: "identifier BEGINSWITH 'watch.inbox.'")).containing(.staticText, identifier:"#fe0000").firstMatch
         let arrived = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
