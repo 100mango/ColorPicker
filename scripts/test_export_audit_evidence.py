@@ -61,7 +61,7 @@ class GeneratedIssueEvidenceTests(unittest.TestCase):
             summary=json.loads(text.split('AUDIT_ISSUE_DESCRIPTION_SUMMARY:')[1])
             self.assertEqual(summary['selected'],12)
             self.assertGreater(summary['omitted_by_limit'],0)
-            self.assertEqual(self.module['RESERVED_LOG_BYTES'],5_858_656)
+            self.assertEqual(self.module['RESERVED_LOG_BYTES'],7_256_760)
 
     def test_paths_and_missing_exact_source_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -103,6 +103,19 @@ class GeneratedIssueEvidenceTests(unittest.TestCase):
                     with original_open(current,'wb') as handle: handle.write(b'cut')
             with patch.object(Path,'open',changing_open), self.assertRaisesRegex(ValueError,'changed'):
                 self.emit(folder,[self.description()])
+
+    def test_requested_live_photo_saved_frames_fail_closed_if_one_is_omitted(self):
+        wanted=['live','photo','saved']
+        methods=['LiveCameraUnavailable','SampledPhoto','SavedPalette']
+        records=[self.description(test='TouchColorAccessibilityUITests/testAccessibility'+method+'()') for method in methods]
+        verify=self.module['require_requested_audit_frames']
+        frames=['touchcolor-audit-failure-'+state for state in wanted]
+        self.assertEqual(verify(records,frames),sorted(frames))
+        for missing in frames:
+            with self.assertRaisesRegex(ValueError,'omitted'): verify(records,[frame for frame in frames if frame!=missing])
+        self.assertEqual(verify([dict(record,isAssociatedWithFailure=False) for record in records],[]),[])
+        self.assertEqual(self.module['ALLOCATIONS']['iPadLarge'],4)
+        self.assertLessEqual(self.module['RESERVED_LOG_BYTES'],20_000_000)
 
     def test_nested_manifest_preserves_test_membership(self):
         result=list(self.module['records']([{'testIdentifier':'TouchColorAccessibilityUITests/testA','attachments':[{'exportedFileName':'one.txt'}]}]))

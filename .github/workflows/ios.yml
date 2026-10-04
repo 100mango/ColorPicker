@@ -51,7 +51,7 @@ jobs:
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          python3 -m unittest discover -s scripts -p test_uikit_runtime_diagnostics.py
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_uikit_picker_geometry
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
         timeout-minutes: 6
@@ -228,7 +228,7 @@ jobs:
       - name: Functional UI tests
         id: functional-tests
         if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
-        timeout-minutes: 16
+        timeout-minutes: 20
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
       - name: Read bounded Files-service metadata after a functional failure
         id: runtime-diagnostics

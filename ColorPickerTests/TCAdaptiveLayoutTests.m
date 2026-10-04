@@ -50,6 +50,75 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 @interface TCAdaptiveLayoutTests : XCTestCase
 @end
 @implementation TCAdaptiveLayoutTests
+- (void)testInvalidPopoverRootCannotBeReplacedByValidPhotosChild {
+    TCPickerSnapshotObservation invalid={CGRectNull,0,0,NO};
+    TCObservePhotosSnapshotNode(&invalid,TCPickerNodePopover,"","",CGRectMake(NAN,0,0,0),YES);
+    TCObservePhotosSnapshotNode(&invalid,TCPickerNodeNavigationBar,"Photos","",CGRectMake(380,120,600,62),NO);
+    XCTAssertFalse(invalid.rootUsable);
+    XCTAssertTrue(CGRectIsNull(invalid.bounds));
+    CGPoint point=CGPointZero;
+    XCTAssertFalse(TCPickerDismissalPoint(CGRectMake(0,0,1376,1032),invalid.bounds,&point));
+}
+- (void)testMissingOrInvalidPopoverPollResetsConsecutiveStability {
+    TCPickerSnapshotObservation good={CGRectNull,0,0,NO}, invalid={CGRectNull,0,0,NO};
+    TCObservePhotosSnapshotNode(&good,TCPickerNodePopover,"","",CGRectMake(364,372,833,640),YES);
+    TCObservePhotosSnapshotNode(&invalid,TCPickerNodePopover,"","",CGRectMake(NAN,0,0,0),YES);
+    TCObservePhotosSnapshotNode(&invalid,TCPickerNodeNavigationBar,"Photos","",CGRectMake(380,120,600,62),NO);
+    for (NSUInteger missing=0;missing<2;missing++) {
+        CGRect previous=CGRectNull, observedPicker=CGRectNull;
+        XCTAssertFalse(TCPickerAdvanceStability(&good,&previous,&observedPicker));
+        XCTAssertFalse(TCPickerAdvanceStability(missing ? NULL : &invalid,&previous,&observedPicker));
+        XCTAssertTrue(CGRectIsNull(previous));XCTAssertTrue(CGRectIsNull(observedPicker));
+        XCTAssertFalse(TCPickerAdvanceStability(&good,&previous,&observedPicker),@"The first good poll after interruption cannot be stable");
+        XCTAssertTrue(TCPickerAdvanceStability(&good,&previous,&observedPicker),@"Two consecutive good polls remain required");
+        XCTAssertFalse(TCPickerAdvanceStability(missing ? NULL : &invalid,&previous,&observedPicker));
+        XCTAssertTrue(CGRectIsNull(previous));XCTAssertTrue(CGRectIsNull(observedPicker));
+    }
+}
+- (void)testRetainedPhotosHierarchyAndLabelOnlyChromeUseQueriedPopoverBounds {
+    NSURL *URL=[[NSBundle bundleForClass:self.class] URLForResource:@"photos-ipad-large-7e3-hierarchy" withExtension:@"json"];
+    XCTAssertNotNil(URL);
+    if (!URL) return;
+    NSDictionary *fixture=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfURL:URL] options:0 error:nil];
+    NSArray<NSDictionary *> *nodes=fixture[@"nodes"];
+    XCTAssertEqual(nodes.count,256u,@"Replay the retained hierarchy, not only idealized rectangles");
+    if (nodes.count!=256) return;
+    NSUInteger root=[nodes indexOfObjectPassingTest:^BOOL(NSDictionary *node,NSUInteger index,BOOL *stop) { return [node[@"type"] isEqualToString:@"Popover"]; }];
+    XCTAssertNotEqual(root,NSNotFound);
+    if (root==NSNotFound) return;
+    for (NSUInteger labelOnly=0;labelOnly<2;labelOnly++) {
+        TCPickerSnapshotObservation observation={CGRectNull,0,0,NO};
+        for (NSUInteger index=root;index<nodes.count;index++) {
+            NSInteger ancestor=(NSInteger)index;
+            while (ancestor>=0 && ancestor!=(NSInteger)root) ancestor=[nodes[(NSUInteger)ancestor][@"parent"] integerValue];
+            if (ancestor<0) continue;
+            NSDictionary *node=nodes[index];NSArray<NSNumber *> *frame=node[@"frame"];
+            TCPickerNodeKind kind=TCPickerNodeOther;
+            if ([node[@"type"] isEqualToString:@"Popover"]) kind=TCPickerNodePopover;
+            else if ([node[@"type"] isEqualToString:@"NavigationBar"]) kind=TCPickerNodeNavigationBar;
+            else if ([node[@"type"] isEqualToString:@"ScrollView"]) kind=TCPickerNodeScrollView;
+            NSString *identifier=node[@"identifier"], *label=node[@"label"];
+            if (labelOnly && [identifier isEqualToString:@"Photos"]) { identifier=@"";label=@"Photos"; }
+            TCObservePhotosSnapshotNode(&observation,kind,identifier.UTF8String,label.UTF8String,
+                CGRectMake(frame[0].doubleValue,frame[1].doubleValue,frame[2].doubleValue,frame[3].doubleValue),index==root);
+        }
+        XCTAssertTrue(CGRectEqualToRect(observation.bounds,CGRectMake(364,372,833,640)));
+        XCTAssertEqual(observation.chromeMatches,2u);
+        CGPoint point=CGPointZero;
+        XCTAssertTrue(TCPickerDismissalPoint(CGRectMake(0,0,1376,1032),observation.bounds,&point));
+        XCTAssertEqualWithAccuracy(point.x,186,0.001);XCTAssertEqualWithAccuracy(point.y,516,0.001);
+    }
+    // Public snapshots may omit a remote subtree. The independently resolved
+    // popover root still has outer bounds; arbitrary unbound windows do not.
+    TCPickerSnapshotObservation shallow={CGRectNull,0,0,NO};
+    TCObservePhotosSnapshotNode(&shallow,TCPickerNodeOther,"","",CGRectMake(364,372,833,640),YES);
+    XCTAssertTrue(CGRectEqualToRect(shallow.bounds,CGRectMake(364,372,833,640)));
+    XCTAssertEqual(shallow.chromeMatches,0u);
+    TCPickerSnapshotObservation unrelated={CGRectNull,0,0,NO};
+    TCObservePhotosSnapshotNode(&unrelated,TCPickerNodeOther,"","Photos",CGRectMake(0,0,1376,1032),NO);
+    XCTAssertTrue(CGRectIsNull(unrelated.bounds));
+    XCTAssertFalse(TCPhotosSnapshotNodeIsChrome(TCPickerNodeNavigationBar,"Color Canvas","Color Canvas"));
+}
 - (void)testPickerDismissalUsesInteriorFreeSpaceInRecordedAndShiftedWindows {
     NSArray<NSValue *> *windows=@[[NSValue valueWithCGRect:CGRectMake(0,0,1133,744)],
         [NSValue valueWithCGRect:CGRectMake(0,0,1376,1032)], [NSValue valueWithCGRect:CGRectMake(80,40,694,600)]];

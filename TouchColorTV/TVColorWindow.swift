@@ -3,6 +3,7 @@ import ColorDomain
 import ColorRaster
 
 struct TVColorWindow: View {
+    @Environment(\.dynamicTypeSize) private var inheritedTextSize
     @ObservedObject var library: PaletteLibrary
     @StateObject private var session = ImageSession()
     @StateObject private var photoLibrary = TVPhotoLibrary()
@@ -10,12 +11,22 @@ struct TVColorWindow: View {
     @State private var privacy = false
     @State private var exportSelection: TVExportSelection?
     @State private var manual = false
+    @ViewBuilder private var paletteCount: some View {
+        let count = Text("\(library.colors.count)").accessibilityIdentifier("tv.palette.count")
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_TRAIT_PROOF"] == "1" {
+            count.accessibilityValue(Text(verbatim: "largest=\(inheritedTextSize == .accessibility5)"))
+        } else { count }
+        #else
+        count
+        #endif
+    }
     var body: some View {
         NavigationStack {
             HStack(spacing: 32) {
                 VStack(alignment: .leading) {
                     Text("Palette").font(.title2)
-                    Text("\(library.colors.count)").accessibilityIdentifier("tv.palette.count")
+                    paletteCount
                     List {
                         ForEach(Array(library.colors.enumerated()), id: \.offset) { index, color in
                             Button { exportSelection = TVExportSelection(color: color, index: index) } label: { Text(color.hex).monospaced() }
@@ -69,7 +80,11 @@ struct TVColorWindow: View {
         .sheet(item: $exportSelection) { selection in
             TVExportView(color: selection.color, index: selection.index, library: library)
         }
-        .sheet(isPresented: $manual) { TVColorEditor(library: library) }
+        .sheet(isPresented: $manual) {
+            // A presented hosting boundary can otherwise restore the default
+            // trait. Preserve the presenter's actual public environment value.
+            TVColorEditor(library: library).environment(\.dynamicTypeSize, inheritedTextSize)
+        }
         .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil || library.error != nil }, set: { if !$0 { session.errorMessage = nil; library.error = nil } })) {
             Button("OK", role: .cancel) { session.errorMessage = nil; library.error = nil }
         } message: { Text(session.errorMessage ?? library.error ?? "") }

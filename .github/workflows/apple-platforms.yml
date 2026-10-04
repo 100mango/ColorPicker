@@ -45,7 +45,7 @@ jobs:
         working-directory: scripts
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair
+          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry
           python3 -O -m unittest -v test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json
           python3 test_evidence_guard.py
           bash -n test_simulators.sh

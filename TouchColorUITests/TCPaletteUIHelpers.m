@@ -1,5 +1,15 @@
 #import "TCPaletteUIHelpers.h"
 #import <UIKit/UIKit.h>
+#import "TCFilesPickerRoute.h"
+
+static TCFilesRoute TCFilesRouteForElement(XCUIElement *element, NSString *location) {
+    TCFilesNodeKind kind=TCFilesNodeOther;
+    if (element.elementType==XCUIElementTypeCell) kind=TCFilesNodeCell;
+    else if (element.elementType==XCUIElementTypeButton) kind=TCFilesNodeButton;
+    else if (element.elementType==XCUIElementTypeStaticText) kind=TCFilesNodeStaticText;
+    else if (element.elementType!=XCUIElementTypeOther) return TCFilesRouteNone;
+    return TCClassifyFilesRoute(kind,element.identifier.UTF8String,element.label.UTF8String,location.UTF8String);
+}
 
 @implementation XCTestCase (TCPaletteUIHelpers)
 - (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName {
@@ -220,26 +230,59 @@
     XCUIElement *file=[app.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'TouchColor-Ordered-Colors'"]].firstMatch;
     if (!file.exists) {
         NSString *location=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad ? @"On My iPad" : @"On My iPhone";
-        NSPredicate *localType=[NSPredicate predicateWithFormat:@"(elementType == %lu OR elementType == %lu) AND (identifier == %@ OR label == %@)",(unsigned long)XCUIElementTypeCell,(unsigned long)XCUIElementTypeStaticText,[@"DOC.sidebar.item." stringByAppendingString:location],location];
+        NSPredicate *localType=[NSPredicate predicateWithFormat:@"elementType == %lu AND (identifier == %@ OR label == %@)",(unsigned long)XCUIElementTypeCell,[@"DOC.sidebar.item." stringByAppendingString:location],location];
+        NSString *providerIdentifier=[@"DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage, Title: " stringByAppendingString:location];
+        NSPredicate *providerType=[NSPredicate predicateWithFormat:@"elementType == %lu AND identifier == %@",(unsigned long)XCUIElementTypeOther,providerIdentifier];
         NSPredicate *browseType=[NSPredicate predicateWithFormat:@"elementType == %lu AND label == 'Browse'",(unsigned long)XCUIElementTypeButton];
         NSPredicate *fileType=[NSPredicate predicateWithFormat:@"elementType == %lu AND label BEGINSWITH 'TouchColor-Ordered-Colors'",(unsigned long)XCUIElementTypeStaticText];
-        // The wide picker shows a location sidebar without a Browse button. Wait
-        // for an observed route instead of branching on a pre-readiness exists query.
-        XCUIElement *route=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[localType,browseType,fileType]]].firstMatch;
-        // The remote presentation has attached; now require an actionable route
-        // using the same five-second readiness bound as other palette controls.
-        if (![self waitForReadyPaletteElement:route timeout:5]) return;
-        NSString *routeLabel=route.label;
-        NSLog(@"FILE_PICKER_ROUTE label=%@ identifier=%@ frame=%@",routeLabel,route.identifier,NSStringFromCGRect(route.frame));
-        if (![routeLabel hasPrefix:@"TouchColor-Ordered-Colors"]) {
-            [route tap];
-            if ([routeLabel isEqualToString:@"Browse"]) {
-                XCUIElement *local=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:localType].firstMatch;
-                if (![self waitForReadyPaletteElement:local timeout:5]) return;
-                [local tap];
+        XCUIElement *provider=app.otherElements[providerIdentifier];
+        BOOL needsFolder=YES;
+        NSTimeInterval folderDeadline=0;
+        if (!provider.exists) {
+            // Only real location cells and Browse are navigation actions. The
+            // On My iPhone/iPad navigation title must never enter this query.
+            XCUIElement *route=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[localType,browseType,fileType]]].firstMatch;
+            if (![self waitForReadyPaletteElement:route timeout:5]) return;
+            TCFilesRoute kind=TCFilesRouteForElement(route,location);
+            XCTAssertTrue(kind==TCFilesRouteBrowse || kind==TCFilesRouteLocationCell || kind==TCFilesRouteFixtureFile,@"Only a classified Files action may be tapped");
+            if (kind!=TCFilesRouteBrowse && kind!=TCFilesRouteLocationCell && kind!=TCFilesRouteFixtureFile) return;
+            NSLog(@"FILE_PICKER_ROUTE kind=%d label=%@ identifier=%@ frame=%@",kind,route.label,route.identifier,NSStringFromCGRect(route.frame));
+            if (kind==TCFilesRouteFixtureFile) needsFolder=NO;
+            else {
+                [route tap];
+                if (kind==TCFilesRouteBrowse) {
+                    // Browse can restore an already-open local provider. Use
+                    // the existing ten-second folder budget to resolve that
+                    // state or a genuine location cell; never tap the title.
+                    folderDeadline=NSProcessInfo.processInfo.systemUptime+10;
+                    XCUIElement *state=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[providerType,localType]]].firstMatch;
+                    BOOL appeared=[state waitForExistenceWithTimeout:10];
+                    XCTAssertTrue(appeared,@"Browse must expose the local provider or a location cell");
+                    if (!appeared) return;
+                    TCFilesRoute destination=TCFilesRouteForElement(state,location);
+                    XCTAssertTrue(destination==TCFilesRouteLocalProvider || destination==TCFilesRouteLocationCell,@"A Files title is not a location action");
+                    if (destination!=TCFilesRouteLocalProvider && destination!=TCFilesRouteLocationCell) return;
+                    NSLog(@"FILE_PICKER_DESTINATION kind=%d folderBudgetRemaining=%.3f",destination,folderDeadline-NSProcessInfo.processInfo.systemUptime);
+                    if (destination==TCFilesRouteLocationCell) {
+                        NSTimeInterval readiness=MIN(5,MAX(0,folderDeadline-NSProcessInfo.processInfo.systemUptime));
+                        XCTAssertGreaterThan(readiness,0,@"A location action must fit inside the remaining folder budget");
+                        if (readiness<=0 || ![self waitForReadyPaletteElement:state timeout:readiness]) return;
+                        [state tap];
+                    }
+                }
             }
+        }
+        if (needsFolder) {
             XCUIElement *folder=app.staticTexts[@"Palette Fixtures"].firstMatch;
-            XCTAssertTrue([folder waitForExistenceWithTimeout:10],@"%@",app.debugDescription);[folder tap];
+            NSTimeInterval remaining=folderDeadline ? MAX(0,folderDeadline-NSProcessInfo.processInfo.systemUptime) : 10;
+            XCTAssertGreaterThan(remaining,0,@"Browse resolution must not exhaust the original folder budget");
+            if (remaining<=0) return;
+            BOOL found=[folder waitForExistenceWithTimeout:remaining];
+            XCTAssertTrue(found,@"%@",app.debugDescription);
+            BOOL withinBudget=!folderDeadline || NSProcessInfo.processInfo.systemUptime<=folderDeadline;
+            XCTAssertTrue(withinBudget,@"Local-provider resolution and folder existence share the original ten-second folder budget");
+            if (!found || !withinBudget) return;
+            [folder tap];
         }
     }
     XCTAssertTrue([file waitForExistenceWithTimeout:10],@"%@",app.debugDescription);

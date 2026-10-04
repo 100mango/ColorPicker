@@ -6,15 +6,14 @@
 #import "TCSystemPickerGeometry.h"
 #import <math.h>
 
-static CGRect TCPhotosPresentationBounds(id<XCUIElementSnapshot> snapshot, BOOL *hasPhotosChrome) {
-    BOOL chrome=(snapshot.elementType==XCUIElementTypeNavigationBar && [snapshot.identifier isEqualToString:@"Photos"]) ||
-        [snapshot.identifier isEqualToString:@"photosView_content_scroll_view"];
-    if (chrome) *hasPhotosChrome=YES;
-    BOOL photos=snapshot.elementType==XCUIElementTypePopover ||
-        chrome;
-    CGRect bounds=photos && TCPickerRectIsUsable(snapshot.frame) ? snapshot.frame : CGRectNull;
-    for (id<XCUIElementSnapshot> child in snapshot.children) bounds=CGRectUnion(bounds,TCPhotosPresentationBounds(child,hasPhotosChrome));
-    return bounds;
+static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSnapshotObservation *observation, BOOL isRoot) {
+    TCPickerNodeKind kind=TCPickerNodeOther;
+    if (snapshot.elementType==XCUIElementTypePopover) kind=TCPickerNodePopover;
+    else if (snapshot.elementType==XCUIElementTypeNavigationBar) kind=TCPickerNodeNavigationBar;
+    else if (snapshot.elementType==XCUIElementTypeScrollView) kind=TCPickerNodeScrollView;
+    TCObservePhotosSnapshotNode(observation,kind,snapshot.identifier.UTF8String,snapshot.label.UTF8String,snapshot.frame,isRoot);
+    if (!observation->rootUsable) return; // Reject the actual root before traversing any children.
+    for (id<XCUIElementSnapshot> child in snapshot.children) TCObservePhotosSnapshot(child,observation,NO);
 }
 
 @interface TouchColorIPadUITests : XCTestCase
@@ -94,36 +93,43 @@ static CGRect TCPhotosPresentationBounds(id<XCUIElementSnapshot> snapshot, BOOL 
     XCUIElement *popover=self.app.popovers.firstMatch;
     XCUIElement *content=self.app.scrollViews[@"photosView_content_scroll_view"];
     XCUIElement *cancel=self.app.navigationBars[@"Photos"].buttons[@"Cancel"].firstMatch;
-    // Resolve either observed system presentation in one native existence wait.
-    // Import still waits separately for the real image and validates its RGB pixels.
-    NSPredicate *presentationType=[NSPredicate predicateWithFormat:@"elementType == %lu OR (elementType == %lu AND identifier == %@)",(unsigned long)XCUIElementTypePopover,(unsigned long)XCUIElementTypeNavigationBar,@"Photos"];
-    XCUIElement *presented=[[self.app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:presentationType].firstMatch;
-    XCTAssertTrue([presented waitForExistenceWithTimeout:15],@"The system Photos presentation must exist before cancellation");
+    // Resolve actual Photos chrome, not the app-owned placeholder popover. The
+    // keyed query accepts the observed system title as an identifier or label.
+    // Cancellation does not wait for any photo grid item to finish loading.
+    XCUIElement *photosNavigation=self.app.navigationBars[@"Photos"].firstMatch;
+    XCTAssertTrue([photosNavigation waitForExistenceWithTimeout:15],@"Actual system Photos navigation must attach before cancellation");
     XCUIElement *windowElement=self.app.windows.firstMatch;
     CGRect window=windowElement.frame;
     CGRect picker=popover.exists ? popover.frame : CGRectZero;
     BOOL dismissedPopover=NO;
     if (!CGRectIsEmpty(picker)) {
-        // A placeholder popover may exist before its remote Photos content has
-        // its final bounds. One mini run selected a waterfall with the old
-        // far-right "outside" tap. Read the whole presentation from one coherent
-        // snapshot and require two consecutive geometries to agree. No photo-grid
-        // contents are required, and no dismissal gesture is retried.
-        __block CGRect previous=CGRectNull, observedWindow=CGRectNull, observedPicker=CGRectNull;
+        // A first-window snapshot is not the resolved Photos presentation. Its
+        // missing/unexpanded remote descendants must not be a readiness gate.
+        // Snapshot the actual popover root after Photos chrome attaches, keeping
+        // its outer bounds even when remote descendants are not returned.
+        __block CGRect previous=CGRectNull, observedPicker=CGRectNull;
         __block NSError *snapshotError=nil;
+        __block NSUInteger observations=0;
         NSTimeInterval start=NSProcessInfo.processInfo.systemUptime;
         XCTNSPredicateExpectation *settled=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
-            id<XCUIElementSnapshot> snapshot=[windowElement snapshotWithError:&snapshotError];
-            if (!snapshot) return NO;
-            BOOL hasPhotosChrome=NO;
-            CGRect bounds=TCPhotosPresentationBounds(snapshot,&hasPhotosChrome);
-            BOOL same=hasPhotosChrome && TCPickerRectIsUsable(bounds) && CGRectEqualToRect(bounds,previous) && CGRectEqualToRect(snapshot.frame,observedWindow);
-            previous=hasPhotosChrome ? bounds : CGRectNull;observedPicker=bounds;observedWindow=snapshot.frame;
+            id<XCUIElementSnapshot> snapshot=[popover snapshotWithError:&snapshotError];
+            ++observations;
+            if (!snapshot) {
+                TCPickerAdvanceStability(NULL,&previous,&observedPicker);
+                if (observations<=5) NSLog(@"PHOTO_PICKER_SNAPSHOT observation=%lu missing=1 errorDomain=%@ errorCode=%ld",(unsigned long)observations,snapshotError.domain,(long)snapshotError.code);
+                return NO;
+            }
+            TCPickerSnapshotObservation observation={CGRectNull,0,0,NO};
+            TCObservePhotosSnapshot(snapshot,&observation,YES);
+            CGRect bounds=observation.bounds;
+            BOOL same=TCPickerAdvanceStability(&observation,&previous,&observedPicker);
+            if (observations<=5) NSLog(@"PHOTO_PICKER_SNAPSHOT observation=%lu root=%@ bounds=%@ nodes=%lu chrome=%lu stable=%d elapsed=%.3f",(unsigned long)observations,NSStringFromCGRect(snapshot.frame),NSStringFromCGRect(bounds),(unsigned long)observation.nodes,(unsigned long)observation.chromeMatches,same,NSProcessInfo.processInfo.systemUptime-start);
             return same;
         }] object:nil];
         XCTAssertEqual([XCTWaiter waitForExpectations:@[settled] timeout:5],XCTWaiterResultCompleted,@"Photos presentation geometry must settle before cancellation: %@",snapshotError);
         XCTAssertLessThanOrEqual(NSProcessInfo.processInfo.systemUptime-start,5,@"Snapshot resolution must stay within the geometry budget");
-        window=observedWindow;picker=observedPicker;
+        XCTAssertTrue(CGRectEqualToRect(windowElement.frame,window),@"The host window must not change during picker cancellation");
+        picker=observedPicker;
         CGPoint point;
         if (TCPickerDismissalPoint(window,picker,&point)) {
             XCUICoordinate *origin=[windowElement coordinateWithNormalizedOffset:CGVectorMake(0,0)];

@@ -40,6 +40,7 @@ testrefs.append(ref('ColorPickerTests/ColorCoreEquivalenceTests.swift','sourceco
 testrefs.append(ref('ColorPickerTests/TCPhotoImportTests.swift','sourcecode.swift'))
 testrefs.append(ref('TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift','sourcecode.swift'))
 testresources=[ref('ColorPickerTests/Fixtures/photo-over-100mp.b64','text')]
+testresources.append(ref('ColorPickerTests/Fixtures/photos-ipad-large-7e3-hierarchy.json','text.json'))
 bridgeref=ref('ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h','sourcecode.c.h')
 package=add('ColorCorePackage','XCLocalSwiftPackageReference',relativePath='Packages/ColorCore')
 uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m','TouchColorAccessibilityUITests.m','TCPaletteUIHelpers.m']]

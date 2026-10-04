@@ -1,0 +1,3684 @@
+{
+  "source": {
+    "commit": "7e3c1a9cc0282c7af038fdc732f0258104f7dedf",
+    "run": 37206406031,
+    "test": "TouchColorUITests/testPaletteFileSelectionReviewAndRelaunch",
+    "kind": "Normalized XCTest app.debugDescription captured at the failed post-Browse location readiness assertion",
+    "normalization": "Object addresses and timestamps removed; observed type, identifier, label, frame and parent retained.",
+    "data_scope": "Fresh disposable CI simulators, app and system Files UI, separate synthetic Palette Fixtures app; no personal files, machine paths or credentials."
+  },
+  "cases": [
+    {
+      "job": 111448839064,
+      "family": "iPhoneLarge",
+      "nodes": [
+        {
+          "type": "Window",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": -1
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 0
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 1
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 0
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 3
+        },
+        {
+          "type": "NavigationBar",
+          "identifier": "Import Palette",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            54.0
+          ],
+          "parent": 4
+        },
+        {
+          "type": "Button",
+          "identifier": "palette.import.close",
+          "label": "Cancel",
+          "frame": [
+            24.0,
+            66.0,
+            36.0,
+            36.0
+          ],
+          "parent": 5
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Import Palette",
+          "frame": [
+            163.3,
+            73.7,
+            113.0,
+            20.7
+          ],
+          "parent": 5
+        },
+        {
+          "type": "Button",
+          "identifier": "palette.import.accept",
+          "label": "Add Colors",
+          "frame": [
+            304.3,
+            66.0,
+            111.7,
+            36.0
+          ],
+          "parent": 5
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 4
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 9
+        },
+        {
+          "type": "Table",
+          "identifier": "palette.import.review",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 10
+        },
+        {
+          "type": "Cell",
+          "identifier": "palette.import.file",
+          "label": "",
+          "frame": [
+            20.0,
+            151.0,
+            400.0,
+            52.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            151.0,
+            400.0,
+            52.0
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            151.0,
+            400.0,
+            52.0
+          ],
+          "parent": 13
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Choose JSON File",
+          "frame": [
+            40.0,
+            167.0,
+            137.3,
+            20.3
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            40.0,
+            202.0,
+            360.0,
+            1.0
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "chevron",
+          "frame": [
+            389.7,
+            170.0,
+            10.3,
+            14.0
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Cell",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            203.0,
+            400.0,
+            75.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            203.0,
+            400.0,
+            75.0
+          ],
+          "parent": 18
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            203.0,
+            400.0,
+            75.0
+          ],
+          "parent": 19
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            277.0,
+            400.0,
+            1.0
+          ],
+          "parent": 18
+        },
+        {
+          "type": "Button",
+          "identifier": "palette.import.paste",
+          "label": "Paste",
+          "frame": [
+            40.0,
+            218.0,
+            87.3,
+            45.0
+          ],
+          "parent": 18
+        },
+        {
+          "type": "Cell",
+          "identifier": "palette.import.status",
+          "label": "",
+          "frame": [
+            20.0,
+            313.0,
+            400.0,
+            52.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            313.0,
+            400.0,
+            52.0
+          ],
+          "parent": 23
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            313.0,
+            400.0,
+            52.0
+          ],
+          "parent": 24
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            20.0,
+            364.0,
+            400.0,
+            1.0
+          ],
+          "parent": 23
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Reading palette\u2026",
+          "frame": [
+            40.0,
+            329.0,
+            132.3,
+            20.3
+          ],
+          "parent": 23
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            407.0,
+            116.0,
+            30.0,
+            778.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            434.0,
+            589.7,
+            3.0,
+            301.3
+          ],
+          "parent": 28
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Horizontal scroll bar, 1 page",
+          "frame": [
+            62.0,
+            923.0,
+            316.0,
+            30.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            65.0,
+            950.0,
+            310.0,
+            3.0
+          ],
+          "parent": 30
+        },
+        {
+          "type": "Toolbar",
+          "identifier": "Toolbar",
+          "label": "Toolbar",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 4
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 32
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 0
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            -440.0,
+            -956.0,
+            1320.0,
+            2868.0
+          ],
+          "parent": 34
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 34
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 36
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 37
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 38
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 39
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Cancel",
+          "frame": [
+            325.3,
+            86.0,
+            36.7,
+            36.0
+          ],
+          "parent": 40
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 39
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 42
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 43
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 44
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 45
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 46
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 47
+        },
+        {
+          "type": "Image",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            -150.0,
+            -88.0,
+            740.0,
+            1194.0
+          ],
+          "parent": 48
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 48
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 50
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 51
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 52
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 53
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 53
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 55
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 56
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 57
+        },
+        {
+          "type": "Other",
+          "identifier": "Browse View (Picker)",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 58
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 59
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 60
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 61
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 62
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 63
+        },
+        {
+          "type": "Other",
+          "identifier": "DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage, Title: On My iPhone",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 63
+        },
+        {
+          "type": "NavigationBar",
+          "identifier": "FullDocumentManagerViewControllerNavigationBar",
+          "label": "",
+          "frame": [
+            0.0,
+            82.0,
+            440.0,
+            108.0
+          ],
+          "parent": 65
+        },
+        {
+          "type": "Button",
+          "identifier": "DOC.navBarButton.backInHistory",
+          "label": "Back",
+          "frame": [
+            24.0,
+            86.0,
+            36.0,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Button",
+          "identifier": "DOC.navBarButton.forwardInHistory",
+          "label": "Forward",
+          "frame": [
+            76.0,
+            86.0,
+            36.0,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "On My iPhone",
+          "frame": [
+            165.0,
+            93.7,
+            109.7,
+            20.7
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Cancel",
+          "frame": [
+            325.3,
+            86.0,
+            36.7,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Button",
+          "identifier": "OverflowBarButtonItem",
+          "label": "More",
+          "frame": [
+            378.0,
+            86.0,
+            38.0,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "SearchField",
+          "identifier": "",
+          "label": "Search",
+          "frame": [
+            20.0,
+            136.0,
+            400.0,
+            44.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Image",
+          "identifier": "magnifyingglass",
+          "label": "Search",
+          "frame": [
+            32.0,
+            148.0,
+            20.7,
+            19.3
+          ],
+          "parent": 72
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 65
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 74
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 75
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 76
+        },
+        {
+          "type": "ScrollView",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 77
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            114.0
+          ],
+          "parent": 79
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            823.0,
+            440.0,
+            133.0
+          ],
+          "parent": 79
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            823.0,
+            440.0,
+            133.0
+          ],
+          "parent": 82
+        },
+        {
+          "type": "CollectionView",
+          "identifier": "File View",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            114.0
+          ],
+          "parent": 85
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            823.0,
+            440.0,
+            133.0
+          ],
+          "parent": 85
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Cell",
+          "identifier": "Palette Fixtures, Container",
+          "label": "Palette Fixtures, 1 item",
+          "frame": [
+            10.0,
+            200.0,
+            134.7,
+            189.7
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            10.0,
+            200.0,
+            134.7,
+            189.7
+          ],
+          "parent": 89
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            10.0,
+            200.0,
+            134.7,
+            189.7
+          ],
+          "parent": 89
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            35.3,
+            204.0,
+            84.0,
+            84.0
+          ],
+          "parent": 91
+        },
+        {
+          "type": "Image",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            35.3,
+            204.0,
+            84.0,
+            84.0
+          ],
+          "parent": 92
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            13.0,
+            293.0,
+            128.7,
+            55.7
+          ],
+          "parent": 91
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Palette Fixtures",
+          "frame": [
+            13.0,
+            293.0,
+            128.7,
+            20.0
+          ],
+          "parent": 94
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "1 item",
+          "frame": [
+            13.0,
+            316.0,
+            128.7,
+            14.3
+          ],
+          "parent": 94
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            13.0,
+            334.3,
+            128.7,
+            14.3
+          ],
+          "parent": 94
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            835.0,
+            440.0,
+            38.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "DOCItemCollectionViewFooterViewIdentifier",
+          "label": "",
+          "frame": [
+            0.0,
+            835.0,
+            440.0,
+            38.0
+          ],
+          "parent": 98
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "1 item",
+          "frame": [
+            198.3,
+            835.0,
+            43.7,
+            18.0
+          ],
+          "parent": 99
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            407.0,
+            190.0,
+            30.0,
+            683.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            434.0,
+            863.0,
+            3.0,
+            7.0
+          ],
+          "parent": 101
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            407.0,
+            190.0,
+            30.0,
+            683.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            434.0,
+            863.0,
+            3.0,
+            7.0
+          ],
+          "parent": 103
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            407.0,
+            190.0,
+            30.0,
+            683.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            434.0,
+            863.0,
+            3.0,
+            7.0
+          ],
+          "parent": 105
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Horizontal scroll bar, 1 page",
+          "frame": [
+            62.0,
+            840.0,
+            316.0,
+            30.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            368.0,
+            867.0,
+            7.0,
+            3.0
+          ],
+          "parent": 107
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            407.0,
+            190.0,
+            30.0,
+            683.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            434.0,
+            863.0,
+            3.0,
+            7.0
+          ],
+          "parent": 109
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Horizontal scroll bar, 1 page",
+          "frame": [
+            62.0,
+            840.0,
+            316.0,
+            30.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            368.0,
+            867.0,
+            7.0,
+            3.0
+          ],
+          "parent": 111
+        },
+        {
+          "type": "Toolbar",
+          "identifier": "Toolbar",
+          "label": "Toolbar",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 65
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 113
+        },
+        {
+          "type": "Toolbar",
+          "identifier": "Toolbar",
+          "label": "Toolbar",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 61
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 115
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 59
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 117
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 55
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 119
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            62.0,
+            440.0,
+            894.0
+          ],
+          "parent": 120
+        },
+        {
+          "type": "TabBar",
+          "identifier": "DOC.browsingModeTabBar",
+          "label": "Tab Bar",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 121
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            83.0,
+            873.0,
+            274.0,
+            62.0
+          ],
+          "parent": 122
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            83.0,
+            873.0,
+            94.0,
+            54.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            83.0,
+            873.0,
+            274.0,
+            62.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Recents",
+          "frame": [
+            87.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 125
+        },
+        {
+          "type": "Image",
+          "identifier": "clock.fill",
+          "label": "clock",
+          "frame": [
+            120.3,
+            883.3,
+            27.3,
+            27.3
+          ],
+          "parent": 126
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Shared",
+          "frame": [
+            173.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 125
+        },
+        {
+          "type": "Image",
+          "identifier": "person.2.fill",
+          "label": "Two people, filled",
+          "frame": [
+            201.7,
+            884.7,
+            37.0,
+            26.0
+          ],
+          "parent": 128
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Browse",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 125
+        },
+        {
+          "type": "Image",
+          "identifier": "folder.fill",
+          "label": "move",
+          "frame": [
+            290.0,
+            884.3,
+            32.0,
+            25.0
+          ],
+          "parent": 130
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            83.0,
+            873.0,
+            274.0,
+            62.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 133
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 134
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 134
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 136
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 137
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 138
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 137
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            259.0,
+            877.0,
+            94.0,
+            54.0
+          ],
+          "parent": 136
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 120
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 142
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 143
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 144
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 145
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 146
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 144
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            873.0,
+            440.0,
+            83.0
+          ],
+          "parent": 148
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            440.0,
+            956.0
+          ],
+          "parent": 46
+        }
+      ]
+    },
+    {
+      "job": 111448839139,
+      "family": "iPhoneCompact",
+      "nodes": [
+        {
+          "type": "Window",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": -1
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 0
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 1
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 0
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 3
+        },
+        {
+          "type": "NavigationBar",
+          "identifier": "Import Palette",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            54.0
+          ],
+          "parent": 4
+        },
+        {
+          "type": "Button",
+          "identifier": "palette.import.close",
+          "label": "Cancel",
+          "frame": [
+            20.0,
+            24.0,
+            36.0,
+            36.0
+          ],
+          "parent": 5
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Import Palette",
+          "frame": [
+            72.0,
+            31.5,
+            113.0,
+            21.0
+          ],
+          "parent": 5
+        },
+        {
+          "type": "Button",
+          "identifier": "palette.import.accept",
+          "label": "Add Colors",
+          "frame": [
+            243.0,
+            24.0,
+            112.0,
+            36.0
+          ],
+          "parent": 5
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 4
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 9
+        },
+        {
+          "type": "Table",
+          "identifier": "palette.import.review",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 10
+        },
+        {
+          "type": "Cell",
+          "identifier": "palette.import.file",
+          "label": "",
+          "frame": [
+            16.0,
+            109.0,
+            343.0,
+            52.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            109.0,
+            343.0,
+            52.0
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            109.0,
+            343.0,
+            52.0
+          ],
+          "parent": 13
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Choose JSON File",
+          "frame": [
+            32.0,
+            125.0,
+            137.5,
+            20.5
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            32.0,
+            160.0,
+            311.0,
+            1.0
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "chevron",
+          "frame": [
+            332.5,
+            128.0,
+            10.5,
+            14.0
+          ],
+          "parent": 12
+        },
+        {
+          "type": "Cell",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            161.0,
+            343.0,
+            75.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            161.0,
+            343.0,
+            75.0
+          ],
+          "parent": 18
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            161.0,
+            343.0,
+            75.0
+          ],
+          "parent": 19
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            235.0,
+            343.0,
+            1.0
+          ],
+          "parent": 18
+        },
+        {
+          "type": "Button",
+          "identifier": "palette.import.paste",
+          "label": "Paste",
+          "frame": [
+            32.0,
+            176.0,
+            87.0,
+            45.0
+          ],
+          "parent": 18
+        },
+        {
+          "type": "Cell",
+          "identifier": "palette.import.status",
+          "label": "",
+          "frame": [
+            16.0,
+            271.0,
+            343.0,
+            52.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            271.0,
+            343.0,
+            52.0
+          ],
+          "parent": 23
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            271.0,
+            343.0,
+            52.0
+          ],
+          "parent": 24
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            16.0,
+            322.0,
+            343.0,
+            1.0
+          ],
+          "parent": 23
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Reading palette\u2026",
+          "frame": [
+            32.0,
+            287.0,
+            132.5,
+            20.5
+          ],
+          "parent": 23
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            342.0,
+            74.0,
+            30.0,
+            593.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            369.0,
+            312.5,
+            3.0,
+            351.5
+          ],
+          "parent": 28
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Horizontal scroll bar, 1 page",
+          "frame": [
+            0.0,
+            634.0,
+            375.0,
+            30.0
+          ],
+          "parent": 11
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            3.0,
+            661.0,
+            369.0,
+            3.0
+          ],
+          "parent": 30
+        },
+        {
+          "type": "Toolbar",
+          "identifier": "Toolbar",
+          "label": "Toolbar",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 4
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 32
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 0
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            -375.0,
+            -667.0,
+            1125.0,
+            2001.0
+          ],
+          "parent": 34
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 34
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 36
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 37
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 38
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 39
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Cancel",
+          "frame": [
+            264.5,
+            40.0,
+            36.5,
+            36.0
+          ],
+          "parent": 40
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 39
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 42
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 43
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 44
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 45
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 46
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 47
+        },
+        {
+          "type": "Image",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            -150.0,
+            -130.0,
+            675.0,
+            947.0
+          ],
+          "parent": 48
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 48
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 50
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 51
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 52
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 53
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 53
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 55
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 56
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 57
+        },
+        {
+          "type": "Other",
+          "identifier": "Browse View (Picker)",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 58
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 59
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 60
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 61
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 62
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 63
+        },
+        {
+          "type": "Other",
+          "identifier": "DOC.browsingRoot Source: com.apple.FileProvider.LocalStorage, Title: On My iPhone",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 63
+        },
+        {
+          "type": "NavigationBar",
+          "identifier": "FullDocumentManagerViewControllerNavigationBar",
+          "label": "",
+          "frame": [
+            0.0,
+            36.0,
+            375.0,
+            108.0
+          ],
+          "parent": 65
+        },
+        {
+          "type": "Button",
+          "identifier": "DOC.navBarButton.backInHistory",
+          "label": "Back",
+          "frame": [
+            20.0,
+            40.0,
+            36.0,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Button",
+          "identifier": "DOC.navBarButton.forwardInHistory",
+          "label": "Forward",
+          "frame": [
+            72.0,
+            40.0,
+            36.0,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "On My iPhone",
+          "frame": [
+            132.5,
+            47.5,
+            110.0,
+            21.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Cancel",
+          "frame": [
+            264.5,
+            40.0,
+            36.5,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Button",
+          "identifier": "OverflowBarButtonItem",
+          "label": "More",
+          "frame": [
+            317.0,
+            40.0,
+            38.0,
+            36.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "SearchField",
+          "identifier": "",
+          "label": "Search",
+          "frame": [
+            16.0,
+            90.0,
+            343.0,
+            44.0
+          ],
+          "parent": 66
+        },
+        {
+          "type": "Image",
+          "identifier": "magnifyingglass",
+          "label": "Search",
+          "frame": [
+            28.0,
+            101.5,
+            20.5,
+            20.0
+          ],
+          "parent": 72
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 65
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 74
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 75
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 76
+        },
+        {
+          "type": "ScrollView",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 77
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            110.0
+          ],
+          "parent": 79
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            542.0,
+            375.0,
+            125.0
+          ],
+          "parent": 79
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            542.0,
+            375.0,
+            125.0
+          ],
+          "parent": 82
+        },
+        {
+          "type": "CollectionView",
+          "identifier": "File View",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            110.0
+          ],
+          "parent": 85
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            542.0,
+            375.0,
+            125.0
+          ],
+          "parent": 85
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Cell",
+          "identifier": "Palette Fixtures, Container",
+          "label": "Palette Fixtures, 1 item",
+          "frame": [
+            10.0,
+            154.0,
+            113.0,
+            190.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            10.0,
+            154.0,
+            113.0,
+            190.0
+          ],
+          "parent": 89
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            10.0,
+            154.0,
+            113.0,
+            190.0
+          ],
+          "parent": 89
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            24.5,
+            158.0,
+            84.0,
+            84.0
+          ],
+          "parent": 91
+        },
+        {
+          "type": "Image",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            24.5,
+            158.0,
+            84.0,
+            84.0
+          ],
+          "parent": 92
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            13.0,
+            247.0,
+            107.0,
+            76.0
+          ],
+          "parent": 91
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "Palette Fixtures",
+          "frame": [
+            13.0,
+            247.0,
+            107.0,
+            40.0
+          ],
+          "parent": 94
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "1 item",
+          "frame": [
+            13.0,
+            290.0,
+            107.0,
+            14.5
+          ],
+          "parent": 94
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            13.0,
+            308.5,
+            107.0,
+            14.5
+          ],
+          "parent": 94
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            554.0,
+            375.0,
+            38.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "DOCItemCollectionViewFooterViewIdentifier",
+          "label": "",
+          "frame": [
+            0.0,
+            554.0,
+            375.0,
+            38.0
+          ],
+          "parent": 98
+        },
+        {
+          "type": "StaticText",
+          "identifier": "",
+          "label": "1 item",
+          "frame": [
+            165.5,
+            554.0,
+            44.0,
+            18.0
+          ],
+          "parent": 99
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            342.0,
+            144.0,
+            30.0,
+            448.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            369.0,
+            582.0,
+            3.0,
+            7.0
+          ],
+          "parent": 101
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            342.0,
+            144.0,
+            30.0,
+            448.0
+          ],
+          "parent": 84
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            369.0,
+            582.0,
+            3.0,
+            7.0
+          ],
+          "parent": 103
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            342.0,
+            144.0,
+            30.0,
+            448.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            369.0,
+            582.0,
+            3.0,
+            7.0
+          ],
+          "parent": 105
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Horizontal scroll bar, 1 page",
+          "frame": [
+            0.0,
+            559.0,
+            375.0,
+            30.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            365.0,
+            586.0,
+            7.0,
+            3.0
+          ],
+          "parent": 107
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Vertical scroll bar, 1 page",
+          "frame": [
+            342.0,
+            144.0,
+            30.0,
+            448.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            369.0,
+            582.0,
+            3.0,
+            7.0
+          ],
+          "parent": 109
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "Horizontal scroll bar, 1 page",
+          "frame": [
+            0.0,
+            559.0,
+            375.0,
+            30.0
+          ],
+          "parent": 78
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            365.0,
+            586.0,
+            7.0,
+            3.0
+          ],
+          "parent": 111
+        },
+        {
+          "type": "Toolbar",
+          "identifier": "Toolbar",
+          "label": "Toolbar",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 65
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 113
+        },
+        {
+          "type": "Toolbar",
+          "identifier": "Toolbar",
+          "label": "Toolbar",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 61
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 115
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 59
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 117
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 55
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 119
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            20.0,
+            375.0,
+            647.0
+          ],
+          "parent": 120
+        },
+        {
+          "type": "TabBar",
+          "identifier": "DOC.browsingModeTabBar",
+          "label": "Tab Bar",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 121
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            50.5,
+            592.0,
+            274.0,
+            62.0
+          ],
+          "parent": 122
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            50.5,
+            592.0,
+            94.0,
+            54.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            50.5,
+            592.0,
+            274.0,
+            62.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Recents",
+          "frame": [
+            54.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 125
+        },
+        {
+          "type": "Image",
+          "identifier": "clock.fill",
+          "label": "clock",
+          "frame": [
+            88.0,
+            602.0,
+            27.5,
+            27.5
+          ],
+          "parent": 126
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Shared",
+          "frame": [
+            140.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 125
+        },
+        {
+          "type": "Image",
+          "identifier": "person.2.fill",
+          "label": "Two people, filled",
+          "frame": [
+            169.0,
+            604.0,
+            37.0,
+            26.0
+          ],
+          "parent": 128
+        },
+        {
+          "type": "Button",
+          "identifier": "",
+          "label": "Browse",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 125
+        },
+        {
+          "type": "Image",
+          "identifier": "folder.fill",
+          "label": "move",
+          "frame": [
+            257.5,
+            603.5,
+            32.0,
+            25.0
+          ],
+          "parent": 130
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            50.5,
+            592.0,
+            274.0,
+            62.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 123
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 133
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 134
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 134
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 136
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 137
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 138
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 137
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            226.5,
+            596.0,
+            94.0,
+            54.0
+          ],
+          "parent": 136
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 120
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 142
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 143
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 144
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 145
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            83.0
+          ],
+          "parent": 146
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            75.0
+          ],
+          "parent": 144
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            592.0,
+            375.0,
+            83.0
+          ],
+          "parent": 148
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 46
+        },
+        {
+          "type": "Window",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": -1
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 151
+        },
+        {
+          "type": "Other",
+          "identifier": "",
+          "label": "",
+          "frame": [
+            0.0,
+            0.0,
+            375.0,
+            667.0
+          ],
+          "parent": 152
+        }
+      ]
+    }
+  ]
+}

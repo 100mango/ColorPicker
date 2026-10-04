@@ -225,7 +225,9 @@ final class VisionWorkflowTests: XCTestCase {
         capture("Native Vision actual Files picker selected exported PNG")
     }
     private func assertSavedPaletteValuesAreContained() {
-        let row = app.descendants(matching: .any)["palette.row.0"].firstMatch
+        // The retained native hierarchy identifies this exact container as
+        // Other. Avoid a whole-application all-types scan of the spatial tree.
+        let row = app.otherElements["palette.row.0"]
         let hex = app.staticTexts["palette.hex.0"]
         XCTAssertTrue(row.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(hex.waitForExistence(timeout: 5), app.debugDescription)
@@ -273,8 +275,10 @@ final class VisionWorkflowTests: XCTestCase {
         paste(); app.buttons["sample.above"].tap(); hex("#00ff00")
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
         app.buttons["sample.save"].tap()
-        assertSavedPaletteValuesAreContained()
+        // Preserve the unchanged visible state even if a subsequent AX query
+        // fails to resolve; the containment/value assertions still gate success.
         capture("Native Vision Chinese pasted image and precision controls")
+        assertSavedPaletteValuesAreContained()
     }
     func testNativeFileAndPhotosCancelRepeatedly() {
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 20))

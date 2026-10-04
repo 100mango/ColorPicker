@@ -10,9 +10,9 @@ import subprocess
 import sys
 
 # All four fresh hosts use these same checked-in allocations and exact-source proof.
-# Eight JPEGs at most; include base64, metadata and bounded child diagnostics.
+# Ten images at most; include base64, metadata and bounded child diagnostics.
 # Raw attachment manifests and result bundles are read locally, never emitted.
-ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 2, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
+ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 4, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
 MAX_IMAGE_BYTES = 500 * 1024
 MAX_RUN_LOG_BYTES = 20_000_000
 MAX_EXPORT_DIAGNOSTIC_BYTES = 4 * 1024
@@ -23,14 +23,15 @@ MAX_RUNTIME_DIAGNOSTIC_BYTES = 32 * 1024  # One framed metadata record per devic
 RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * (4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024)
                       + len(ALLOCATIONS) * (MAX_EXPORTS_PER_DEVICE * (MAX_EXPORT_DIAGNOSTIC_BYTES + 512)
                                             + MAX_ISSUE_DESCRIPTION_LOG_BYTES + MAX_RUNTIME_DIAGNOSTIC_BYTES))
-assert RESERVED_LOG_BYTES <= MAX_RUN_LOG_BYTES
+if RESERVED_LOG_BYTES > MAX_RUN_LOG_BYTES: raise ValueError('Whole-run evidence allocation exceeds its cap')
 family = os.environ['TC_TEST_FAMILY']
-assert family in ALLOCATIONS
+if family not in ALLOCATIONS: raise ValueError('Unknown evidence family')
 limit = ALLOCATIONS[family]
 print('EVIDENCE_BUDGET:' + json.dumps({'family': family, 'allocations': ALLOCATIONS,
     'maximum_image_bytes': MAX_IMAGE_BYTES, 'reserved_run_log_bytes': RESERVED_LOG_BYTES,
     'maximum_run_log_bytes': MAX_RUN_LOG_BYTES}, sort_keys=True))
 exports = {}
+emitted_images = []
 
 
 def records(value, test_identifier=None):
@@ -122,6 +123,24 @@ def paired_issue_image(record, attachments, destination):
     return None
 
 
+def require_requested_audit_frames(attachments, emitted):
+    requested = {
+        'testAccessibilityLiveCameraUnavailable': 'touchcolor-audit-failure-live',
+        'testAccessibilitySampledPhoto': 'touchcolor-audit-failure-photo',
+        'testAccessibilitySavedPalette': 'touchcolor-audit-failure-saved',
+    }
+    expected = set()
+    for item in attachments:
+        test = item.get('_testIdentifier') or ''
+        if not test.startswith('TouchColorAccessibilityUITests/') or item.get('isAssociatedWithFailure') is not True:
+            continue
+        method = test.split('/')[-1].removesuffix('()')
+        if method in requested: expected.add(requested[method])
+    missing = expected - set(emitted)
+    if missing: raise ValueError('Requested audit-state pixels were omitted: '+','.join(sorted(missing)))
+    return sorted(expected)
+
+
 def export_named(suite, names, limit):
     if limit <= 0:
         return 0
@@ -160,18 +179,33 @@ def export_named(suite, names, limit):
             raise ValueError('Screenshot exceeds the existing image size cap')
         data = path.read_bytes()
         assert data.startswith(b'\xff\xd8') and len(data) <= MAX_IMAGE_BYTES
+        requested_name = name
+        source_record = matches[0]
+        provenance = 'captured screen JPEG'
         if name.startswith('touchcolor-audit-failure-'):
             generated = paired_issue_image(matches[0], attachments, destination)
             if generated is not None:
                 data = generated
+                source_record = next(item for item in attachments if item.get('_testIdentifier') == matches[0].get('_testIdentifier')
+                    and item.get('isAssociatedWithFailure') is True
+                    and (item.get('suggestedHumanReadableName') or '').startswith('App Screenshot'))
+                provenance = 'unmodified XCTest issue PNG'
                 name += '-xctest-issue'
+        commit = os.environ.get('GITHUB_SHA', '')
+        if not re.fullmatch('[0-9a-f]{40}', commit): raise ValueError('Exact tested source SHA is required for frame evidence')
         encoded = base64.b64encode(data).decode('ascii')
-        print('SCREENSHOT_META:' + json.dumps({'name':family+'-'+name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()},sort_keys=True))
+        metadata = {'name':family+'-'+name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),
+            'tested_commit':commit,'suite':suite,'test':source_record.get('_testIdentifier'),
+            'attachment':source_record['exportedFileName'],'provenance':provenance,
+            'device_id':source_record.get('deviceId'),'timestamp':source_record.get('timestamp'),
+            'manifest_sha256':hashlib.sha256((destination/'manifest.json').read_bytes()).hexdigest()}
+        print('SCREENSHOT_META:' + json.dumps(metadata,sort_keys=True))
         print(f'SCREENSHOT_BEGIN:{family}-{name}')
         for offset in range(0, len(encoded), 4096):
             print('SCREENSHOT_CHUNK:' + encoded[offset:offset + 4096])
         print(f'SCREENSHOT_END:{family}-{name}')
         sys.stdout.flush()
+        emitted_images.append(requested_name)
         count += 1
     return count
 
@@ -181,9 +215,9 @@ def export_named(suite, names, limit):
 functional_prefix = 'touchcolor-ipad-functional-failure-' if family.startswith('iPad') else 'touchcolor-phone-functional-failure-'
 count = export_named('TouchColorUITests', [functional_prefix + '1'], 1)
 count += export_named('AccessibilityAudits', [
+    'touchcolor-audit-failure-live', 'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
     'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
-    'touchcolor-audit-failure-live', 'touchcolor-audit-failure-policy',
-    'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
+    'touchcolor-audit-failure-policy',
     'touchcolor-audit-failure-import', 'touchcolor-audit-failure-inbox',
 ], limit - count)
 if count < limit:
@@ -198,5 +232,8 @@ if family in ('iPhoneCompact', 'iPadLarge') and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review'], limit - count)
 if family == 'iPhoneLarge' and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-watch-inbox-status'], limit - count)
-assert count <= limit
+if family == 'iPadLarge' and 'AccessibilityAudits' in exports:
+    required = require_requested_audit_frames(exports['AccessibilityAudits'][1], emitted_images)
+    print('REQUESTED_AUDIT_FRAMES:' + json.dumps({'required':required,'all_emitted':True},sort_keys=True))
+if count > limit: raise ValueError('Device image allocation exceeded')
 print('EVIDENCE_IMAGES:' + json.dumps({'family': family, 'count': count, 'allocation': limit}))

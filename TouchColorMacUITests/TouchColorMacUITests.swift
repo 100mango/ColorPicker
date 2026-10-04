@@ -378,7 +378,14 @@ import AVFoundation
     @MainActor private func audit(_ state: String) throws {
         if #available(macOS 27.0, *) {
             print("MAC_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
+            var issueCount = 0
+            let failuresBefore = testRun?.totalFailureCount ?? 0
+            defer {
+                let recorded = (testRun?.totalFailureCount ?? failuresBefore) - failuresBefore
+                print("MAC_ACCESSIBILITY_AUDIT_END: \(state); issues=\(issueCount); recordedFailures=\(recorded)")
+            }
             try app.performAccessibilityAudit(for: .all) { issue in
+                issueCount += 1
                 print("MAC_ACCESSIBILITY_ISSUE: \(state): \(issue.compactDescription)")
                 print("MAC_ACCESSIBILITY_ISSUE_TYPE: \(issue.auditType.rawValue)")
                 if let element = issue.element {
@@ -393,7 +400,13 @@ import AVFoundation
                 attachment.lifetime = .keepAlways; self.add(attachment)
                 return false
             }
-            print("MAC_ACCESSIBILITY_AUDIT_PASS: \(state)")
+            // Under continueAfterFailure the API may record XCTest issues and
+            // return normally rather than throw. Returning does not imply a pass.
+            if issueCount == 0 && (testRun?.totalFailureCount ?? 0) == failuresBefore {
+                print("MAC_ACCESSIBILITY_AUDIT_PASS: \(state)")
+            } else {
+                print("MAC_ACCESSIBILITY_AUDIT_FAIL: \(state)")
+            }
         } else { throw XCTSkip("Native audit qualification targets the installed macOS 27 runtime") }
     }
     private func recordAuditOwnership(_ element: XCUIElement) {
@@ -448,6 +461,13 @@ import AVFoundation
             return error
         }
     }
+    private func finishRetainedAudits(_ errors: [Error?], route: String) throws {
+        // Recorded audit issues remain failures in this XCTest case. Only those
+        // audit calls continue after failure; all functional assertions stay
+        // fail-fast. API errors are rethrown after the complete route is measured.
+        print("MAC_FUNCTIONAL_AUDIT_ROUTE_COMPLETED: \(route); recorded XCTest failures=\(testRun?.totalFailureCount ?? 0)")
+        if let error = errors.compactMap({ $0 }).first { throw error }
+    }
     private func finishStandardModal(_ sheet: XCUIElement, action: XCUIElement, window: XCUIElement,
                                      originalFrame: CGRect, state: String, priorAuditErrors: [Error]) throws {
         XCTAssertTrue(action.exists && action.isEnabled && action.isHittable, app.debugDescription)
@@ -459,7 +479,7 @@ import AVFoundation
         XCTAssertTrue(window.buttons["probe.standard.sheet"].isHittable)
         let afterError = retainAuditFailure(state + " after dismissal")
         let errors = priorAuditErrors + [afterError].compactMap { $0 }
-        print("NATIVE_STANDARD_MODAL_THREE_PHASES_MEASURED: \(state); retained audit errors=\(errors.count)"); fflush(stdout)
+        print("NATIVE_STANDARD_MODAL_THREE_PHASES_MEASURED: \(state); retained API errors=\(errors.count); recorded XCTest failures=\(testRun?.totalFailureCount ?? 0)"); fflush(stdout)
         if let error = errors.first { throw error }
     }
     private func launchStandardModalProbe() {
@@ -530,10 +550,10 @@ import AVFoundation
         XCTAssertEqual(nativeSliderValue(zoom), 1)
         XCTAssertEqual(zoom.descendants(matching: .valueIndicator)
             .matching(NSPredicate(format: "label == '' AND (value == nil OR value == '')")).count, 0)
-        try audit("empty workspace")
+        let emptyAuditError = retainAuditFailure("empty workspace")
         openFile(fixture); assertHex("#ff00ff")
         app.buttons["sample.save"].click()
-        try audit("full image and palette")
+        let populatedAuditError = retainAuditFailure("full image and palette")
         // The standard AppKit control must retain real pointer/keyboard input,
         // an accessible numeric value and visible canvas magnification.
         let canvas = app.images["image.canvas"]
@@ -550,23 +570,25 @@ import AVFoundation
         let magnified = XCTAttachment(screenshot: app.screenshot())
         magnified.name = "Native Mac native slider pointer and keyboard magnification"; magnified.lifetime = .keepAlways; add(magnified)
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
+        try finishRetainedAudits([emptyAuditError, populatedAuditError], route: "empty/populated canvas and native slider")
     }
     @MainActor func testOfficialAccessibilityCameraAndPrivacy() throws {
         app.buttons["camera.open"].click()
         XCTAssertTrue(app.buttons["camera.close"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
         XCTAssertFalse(app.buttons["sample.save"].exists)
-        try audit("camera availability")
+        let cameraAuditError = retainAuditFailure("camera availability")
         app.buttons["camera.close"].click()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sample.save"].exists)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
-        try audit("offline privacy")
+        let privacyAuditError = retainAuditFailure("offline privacy")
         app.buttons["privacy.close"].click()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["image.open.empty"].exists)
+        try finishRetainedAudits([cameraAuditError, privacyAuditError], route: "camera and offline privacy return")
     }
 
     @MainActor func testOfficialAccessibilityCorruptImportRetainsPreviousSource() throws {
@@ -578,10 +600,11 @@ import AVFoundation
         XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
         XCTAssertFalse(app.buttons["sample.save"].exists)
-        try audit("corrupt import error")
+        let corruptAuditError = retainAuditFailure("corrupt import error")
         app.buttons["OK"].click(); assertHex("#ff00ff")
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sample.save"].exists)
+        try finishRetainedAudits([corruptAuditError], route: "corrupt alert preserves previous source")
     }
 
     func testSandboxBoundaryMatchesExactAppConfiguration() throws {

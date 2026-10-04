@@ -1,0 +1,3085 @@
+{
+  "source": {
+    "commit": "7e3c1a9cc0282c7af038fdc732f0258104f7dedf",
+    "job": 111448839083,
+    "test": "TouchColorIPadUITests/testKeyboardImportSamplingZoomSaveAndRotation",
+    "url": "https://github.com/100mango/ColorPicker/actions/runs/37206406031/job/111448839083",
+    "kind": "XCTest app.debugDescription captured on failure, not the unrecorded per-poll public snapshot",
+    "normalization": "Object addresses and log timestamps removed; observed type, identifier, label (including multiline text), frame and parent retained. Missing identifier or label is represented as an empty string.",
+    "data_scope": "Fresh disposable CI simulator, app UI and system Photos UI, seeded RGB test image and Apple simulator starter photos only; no connected user library, unrelated process metadata, filesystem paths or credentials."
+  },
+  "nodes": [
+    {
+      "type": "Window",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": -1
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 0
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 0
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 2
+    },
+    {
+      "type": "Other",
+      "identifier": "colorWorkspace",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 3
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 4
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 5
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 6
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 7
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 8
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 9
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 10
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 11
+    },
+    {
+      "type": "Table",
+      "identifier": "colorHistory",
+      "label": "Your saved colors appear here.\nChoose a photo or use the camera to begin.",
+      "frame": [
+        0.0,
+        86.0,
+        380.0,
+        658.0
+      ],
+      "parent": 11
+    },
+    {
+      "type": "ScrollView",
+      "identifier": "history.emptyScroll",
+      "label": "",
+      "frame": [
+        0.0,
+        86.0,
+        380.0,
+        658.0
+      ],
+      "parent": 13
+    },
+    {
+      "type": "StaticText",
+      "identifier": "history.empty",
+      "label": "Your saved colors appear here.\nChoose a photo or use the camera to begin.",
+      "frame": [
+        16.0,
+        102.0,
+        348.0,
+        42.5
+      ],
+      "parent": 14
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        347.0,
+        86.0,
+        30.0,
+        658.0
+      ],
+      "parent": 14
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        374.0,
+        734.0,
+        3.0,
+        7.0
+      ],
+      "parent": 16
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        0.0,
+        711.0,
+        380.0,
+        30.0
+      ],
+      "parent": 14
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        370.0,
+        738.0,
+        7.0,
+        3.0
+      ],
+      "parent": 18
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        347.0,
+        86.0,
+        30.0,
+        658.0
+      ],
+      "parent": 14
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        374.0,
+        734.0,
+        3.0,
+        7.0
+      ],
+      "parent": 20
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        0.0,
+        711.0,
+        380.0,
+        30.0
+      ],
+      "parent": 14
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        370.0,
+        738.0,
+        7.0,
+        3.0
+      ],
+      "parent": 22
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        347.0,
+        86.0,
+        30.0,
+        658.0
+      ],
+      "parent": 13
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        374.0,
+        674.5,
+        3.0,
+        66.5
+      ],
+      "parent": 24
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        0.0,
+        711.0,
+        380.0,
+        30.0
+      ],
+      "parent": 13
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        3.0,
+        738.0,
+        374.0,
+        3.0
+      ],
+      "parent": 26
+    },
+    {
+      "type": "StaticText",
+      "identifier": "history.empty",
+      "label": "Your saved colors appear here.\nChoose a photo or use the camera to begin.",
+      "frame": [
+        16.0,
+        102.0,
+        348.0,
+        42.5
+      ],
+      "parent": 13
+    },
+    {
+      "type": "ScrollView",
+      "identifier": "sourceControls",
+      "label": "",
+      "frame": [
+        0.0,
+        752.0,
+        380.0,
+        260.0
+      ],
+      "parent": 11
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        16.0,
+        752.0,
+        348.0,
+        252.0
+      ],
+      "parent": 29
+    },
+    {
+      "type": "Button",
+      "identifier": "choosePhoto",
+      "label": "Choose Photo",
+      "frame": [
+        16.0,
+        752.0,
+        348.0,
+        44.0
+      ],
+      "parent": 30
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Choose Photo",
+      "frame": [
+        156.5,
+        763.5,
+        107.5,
+        20.5
+      ],
+      "parent": 31
+    },
+    {
+      "type": "Button",
+      "identifier": "takePhoto",
+      "label": "Take Photo",
+      "frame": [
+        16.0,
+        804.0,
+        348.0,
+        44.0
+      ],
+      "parent": 30
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Take Photo",
+      "frame": [
+        168.5,
+        815.5,
+        84.5,
+        20.5
+      ],
+      "parent": 33
+    },
+    {
+      "type": "Button",
+      "identifier": "liveColor",
+      "label": "Live Color",
+      "frame": [
+        16.0,
+        856.0,
+        348.0,
+        44.0
+      ],
+      "parent": 30
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Live Color",
+      "frame": [
+        170.0,
+        867.5,
+        76.0,
+        20.5
+      ],
+      "parent": 35
+    },
+    {
+      "type": "Button",
+      "identifier": "palette.import.open",
+      "label": "Import Palette",
+      "frame": [
+        16.0,
+        908.0,
+        348.0,
+        44.0
+      ],
+      "parent": 30
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Import Palette",
+      "frame": [
+        153.0,
+        919.5,
+        107.5,
+        20.5
+      ],
+      "parent": 37
+    },
+    {
+      "type": "Button",
+      "identifier": "watch.inbox.open",
+      "label": "Watch Inbox",
+      "frame": [
+        16.0,
+        960.0,
+        348.0,
+        44.0
+      ],
+      "parent": 30
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Watch Inbox",
+      "frame": [
+        158.5,
+        971.5,
+        94.5,
+        20.5
+      ],
+      "parent": 39
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        347.0,
+        752.0,
+        30.0,
+        260.0
+      ],
+      "parent": 29
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        374.0,
+        713.0,
+        3.0,
+        36.0
+      ],
+      "parent": 41
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        10.0,
+        979.0,
+        370.0,
+        30.0
+      ],
+      "parent": 29
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        -39.0,
+        1006.0,
+        36.0,
+        3.0
+      ],
+      "parent": 43
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        347.0,
+        752.0,
+        30.0,
+        260.0
+      ],
+      "parent": 29
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        374.0,
+        713.0,
+        3.0,
+        36.0
+      ],
+      "parent": 45
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        10.0,
+        979.0,
+        370.0,
+        30.0
+      ],
+      "parent": 29
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        -39.0,
+        1006.0,
+        36.0,
+        3.0
+      ],
+      "parent": 47
+    },
+    {
+      "type": "NavigationBar",
+      "identifier": "TouchColor",
+      "label": "",
+      "frame": [
+        0.0,
+        32.0,
+        380.0,
+        54.0
+      ],
+      "parent": 8
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "TouchColor",
+      "frame": [
+        144.0,
+        43.5,
+        91.5,
+        21.0
+      ],
+      "parent": 49
+    },
+    {
+      "type": "Button",
+      "identifier": "privacyPolicy",
+      "label": "Privacy Policy",
+      "frame": [
+        274.0,
+        36.0,
+        36.0,
+        36.0
+      ],
+      "parent": 49
+    },
+    {
+      "type": "Button",
+      "identifier": "",
+      "label": "Hide Sidebar",
+      "frame": [
+        330.0,
+        36.0,
+        36.0,
+        36.0
+      ],
+      "parent": 49
+    },
+    {
+      "type": "Toolbar",
+      "identifier": "Toolbar",
+      "label": "Toolbar",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 8
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 53
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 7
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 55
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 56
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 57
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 58
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 59
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 57
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        380.0,
+        1032.0
+      ],
+      "parent": 61
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 6
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 63
+    },
+    {
+      "type": "NavigationBar",
+      "identifier": "Color Canvas",
+      "label": "",
+      "frame": [
+        0.0,
+        32.0,
+        1376.0,
+        54.0
+      ],
+      "parent": 64
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Color Canvas",
+      "frame": [
+        825.0,
+        43.5,
+        105.5,
+        21.0
+      ],
+      "parent": 65
+    },
+    {
+      "type": "Button",
+      "identifier": "workspace.sources",
+      "label": "Color Sources",
+      "frame": [
+        1326.0,
+        36.0,
+        36.0,
+        36.0
+      ],
+      "parent": 65
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 64
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 68
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 69
+    },
+    {
+      "type": "ScrollView",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        380.0,
+        86.0,
+        996.0,
+        926.0
+      ],
+      "parent": 70
+    },
+    {
+      "type": "StaticText",
+      "identifier": "workspace.empty",
+      "label": "Choose a photo or use the camera. Save colors to build your palette.",
+      "frame": [
+        404.0,
+        118.0,
+        948.0,
+        26.5
+      ],
+      "parent": 71
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        1343.0,
+        86.0,
+        30.0,
+        916.0
+      ],
+      "parent": 71
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        1370.0,
+        1002.0,
+        3.0,
+        7.0
+      ],
+      "parent": 73
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        380.0,
+        979.0,
+        986.0,
+        30.0
+      ],
+      "parent": 71
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        1366.0,
+        1006.0,
+        7.0,
+        3.0
+      ],
+      "parent": 75
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        1343.0,
+        86.0,
+        30.0,
+        916.0
+      ],
+      "parent": 71
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        1370.0,
+        1002.0,
+        3.0,
+        7.0
+      ],
+      "parent": 77
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        380.0,
+        979.0,
+        986.0,
+        30.0
+      ],
+      "parent": 71
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        1366.0,
+        1006.0,
+        7.0,
+        3.0
+      ],
+      "parent": 79
+    },
+    {
+      "type": "Toolbar",
+      "identifier": "Toolbar",
+      "label": "Toolbar",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 64
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 81
+    },
+    {
+      "type": "Toolbar",
+      "identifier": "Toolbar",
+      "label": "Toolbar",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 6
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 83
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 4
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 85
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 0
+    },
+    {
+      "type": "Other",
+      "identifier": "PopoverDismissRegion",
+      "label": "dismiss popup",
+      "frame": [
+        0.0,
+        0.0,
+        1376.0,
+        1032.0
+      ],
+      "parent": 87
+    },
+    {
+      "type": "Popover",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        833.0,
+        640.0
+      ],
+      "parent": 87
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        833.0,
+        640.0
+      ],
+      "parent": 89
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        833.0,
+        640.0
+      ],
+      "parent": 90
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        833.0,
+        640.0
+      ],
+      "parent": 91
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 92
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 93
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        0.0,
+        0.0
+      ],
+      "parent": 94
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 95
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        364.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 96
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 97
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 98
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 99
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 100
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 101
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 102
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 103
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 104
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 105
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 106
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 107
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 108
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 109
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 110
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 111
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 112
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 113
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 114
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 115
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 116
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 117
+    },
+    {
+      "type": "CollectionView",
+      "identifier": "PhotosSidebarScrollView",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 118
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        -16.0,
+        -2054.0,
+        272.0,
+        2162.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Cell",
+      "identifier": "PXPickerAllPhotosVirtualCollection",
+      "label": "Photos",
+      "frame": [
+        393.0,
+        382.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        382.0,
+        208.0,
+        44.0
+      ],
+      "parent": 121
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        382.0,
+        208.0,
+        44.0
+      ],
+      "parent": 122
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        382.0,
+        208.0,
+        44.0
+      ],
+      "parent": 123
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        382.0,
+        208.0,
+        44.0
+      ],
+      "parent": 121
+    },
+    {
+      "type": "Image",
+      "identifier": "photo.on.rectangle",
+      "label": "Photo on a rectangle",
+      "frame": [
+        409.0,
+        392.5,
+        28.0,
+        23.0
+      ],
+      "parent": 125
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Photos",
+      "frame": [
+        447.0,
+        394.0,
+        55.0,
+        20.5
+      ],
+      "parent": 125
+    },
+    {
+      "type": "Cell",
+      "identifier": "collections",
+      "label": "Collections",
+      "frame": [
+        393.0,
+        426.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        426.0,
+        208.0,
+        44.0
+      ],
+      "parent": 128
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        426.0,
+        208.0,
+        44.0
+      ],
+      "parent": 128
+    },
+    {
+      "type": "Image",
+      "identifier": "rectangle.stack",
+      "label": "Stack of rectangles",
+      "frame": [
+        409.0,
+        434.0,
+        28.0,
+        28.0
+      ],
+      "parent": 130
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Collections",
+      "frame": [
+        447.0,
+        438.0,
+        85.5,
+        20.5
+      ],
+      "parent": 130
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        -16.0,
+        108.0,
+        272.0,
+        274.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Cell",
+      "identifier": "PXBookmarksVirtualCollectionList",
+      "label": "Pinned",
+      "frame": [
+        393.0,
+        480.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        480.0,
+        208.0,
+        44.0
+      ],
+      "parent": 134
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        480.0,
+        178.0,
+        44.0
+      ],
+      "parent": 134
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Pinned",
+      "frame": [
+        409.0,
+        492.0,
+        54.0,
+        20.5
+      ],
+      "parent": 136
+    },
+    {
+      "type": "Other",
+      "identifier": "PXBookmarksVirtualCollectionList",
+      "label": "Pinned",
+      "frame": [
+        556.0,
+        480.0,
+        44.0,
+        44.0
+      ],
+      "parent": 134
+    },
+    {
+      "type": "Image",
+      "identifier": "chevron.forward",
+      "label": "Forward",
+      "frame": [
+        571.2,
+        496.8,
+        14.0,
+        10.5
+      ],
+      "parent": 138
+    },
+    {
+      "type": "Other",
+      "identifier": "PXBookmarksVirtualCollectionList",
+      "label": "Pinned",
+      "frame": [
+        556.0,
+        480.0,
+        44.0,
+        44.0
+      ],
+      "parent": 134
+    },
+    {
+      "type": "Image",
+      "identifier": "chevron.forward",
+      "label": "Forward",
+      "frame": [
+        571.2,
+        496.8,
+        14.0,
+        10.5
+      ],
+      "parent": 140
+    },
+    {
+      "type": "Cell",
+      "identifier": "smartAlbumFavorites",
+      "label": "Favorites",
+      "frame": [
+        393.0,
+        524.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        524.0,
+        208.0,
+        44.0
+      ],
+      "parent": 142
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        524.0,
+        208.0,
+        44.0
+      ],
+      "parent": 142
+    },
+    {
+      "type": "Image",
+      "identifier": "heart",
+      "label": "love",
+      "frame": [
+        409.5,
+        534.5,
+        27.0,
+        23.5
+      ],
+      "parent": 144
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Favorites",
+      "frame": [
+        447.0,
+        536.0,
+        69.5,
+        20.5
+      ],
+      "parent": 144
+    },
+    {
+      "type": "Cell",
+      "identifier": "recentlySaved",
+      "label": "Recently Saved",
+      "frame": [
+        393.0,
+        568.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        568.0,
+        208.0,
+        44.0
+      ],
+      "parent": 147
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        568.0,
+        208.0,
+        44.0
+      ],
+      "parent": 147
+    },
+    {
+      "type": "Image",
+      "identifier": "square.and.arrow.down.badge.clock",
+      "label": "Square with a downward arrow and a clock badge",
+      "frame": [
+        410.5,
+        576.0,
+        25.0,
+        28.0
+      ],
+      "parent": 149
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Recently Saved",
+      "frame": [
+        447.0,
+        580.0,
+        118.0,
+        20.5
+      ],
+      "parent": 149
+    },
+    {
+      "type": "Cell",
+      "identifier": "smartAlbumVideos",
+      "label": "Videos",
+      "frame": [
+        393.0,
+        612.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        612.0,
+        208.0,
+        44.0
+      ],
+      "parent": 152
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        612.0,
+        208.0,
+        44.0
+      ],
+      "parent": 152
+    },
+    {
+      "type": "Image",
+      "identifier": "video",
+      "label": "video",
+      "frame": [
+        409.0,
+        624.0,
+        28.0,
+        20.0
+      ],
+      "parent": 154
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Videos",
+      "frame": [
+        447.0,
+        624.0,
+        52.5,
+        20.5
+      ],
+      "parent": 154
+    },
+    {
+      "type": "Cell",
+      "identifier": "smartAlbumScreenshots",
+      "label": "Screenshots",
+      "frame": [
+        393.0,
+        656.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        656.0,
+        208.0,
+        44.0
+      ],
+      "parent": 157
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        656.0,
+        208.0,
+        44.0
+      ],
+      "parent": 157
+    },
+    {
+      "type": "Image",
+      "identifier": "camera.viewfinder",
+      "label": "screenshot",
+      "frame": [
+        410.0,
+        665.5,
+        26.0,
+        25.0
+      ],
+      "parent": 159
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Screenshots",
+      "frame": [
+        447.0,
+        668.0,
+        95.5,
+        20.5
+      ],
+      "parent": 159
+    },
+    {
+      "type": "Cell",
+      "identifier": "bookmarks.PXPeopleVirtualCollection",
+      "label": "People & Pets",
+      "frame": [
+        393.0,
+        700.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        700.0,
+        208.0,
+        44.0
+      ],
+      "parent": 162
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        700.0,
+        208.0,
+        44.0
+      ],
+      "parent": 162
+    },
+    {
+      "type": "Image",
+      "identifier": "person.crop.circle",
+      "label": "account",
+      "frame": [
+        410.0,
+        709.0,
+        26.0,
+        26.0
+      ],
+      "parent": 164
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "People & Pets",
+      "frame": [
+        447.0,
+        712.0,
+        106.0,
+        20.5
+      ],
+      "parent": 164
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        -16.0,
+        382.0,
+        272.0,
+        54.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Cell",
+      "identifier": "CAC0C712-E05B-40EC-95EA-28B43C205F60/L0/020",
+      "label": "Albums",
+      "frame": [
+        393.0,
+        754.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        754.0,
+        208.0,
+        44.0
+      ],
+      "parent": 168
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        754.0,
+        178.0,
+        44.0
+      ],
+      "parent": 168
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Albums",
+      "frame": [
+        409.0,
+        766.0,
+        59.5,
+        20.5
+      ],
+      "parent": 170
+    },
+    {
+      "type": "Other",
+      "identifier": "CAC0C712-E05B-40EC-95EA-28B43C205F60/L0/020",
+      "label": "Albums",
+      "frame": [
+        556.0,
+        754.0,
+        44.0,
+        44.0
+      ],
+      "parent": 168
+    },
+    {
+      "type": "Image",
+      "identifier": "chevron.forward",
+      "label": "Forward",
+      "frame": [
+        573.0,
+        769.0,
+        10.5,
+        14.0
+      ],
+      "parent": 172
+    },
+    {
+      "type": "Other",
+      "identifier": "CAC0C712-E05B-40EC-95EA-28B43C205F60/L0/020",
+      "label": "Albums",
+      "frame": [
+        556.0,
+        754.0,
+        44.0,
+        44.0
+      ],
+      "parent": 168
+    },
+    {
+      "type": "Image",
+      "identifier": "chevron.forward",
+      "label": "Forward",
+      "frame": [
+        573.0,
+        769.0,
+        10.5,
+        14.0
+      ],
+      "parent": 174
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        -16.0,
+        436.0,
+        272.0,
+        2118.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Cell",
+      "identifier": "listItem.utilities",
+      "label": "Utilities",
+      "frame": [
+        393.0,
+        808.0,
+        208.0,
+        44.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        808.0,
+        208.0,
+        44.0
+      ],
+      "parent": 177
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        393.0,
+        808.0,
+        178.0,
+        44.0
+      ],
+      "parent": 177
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Utilities",
+      "frame": [
+        409.0,
+        820.0,
+        59.0,
+        20.5
+      ],
+      "parent": 179
+    },
+    {
+      "type": "Other",
+      "identifier": "listItem.utilities",
+      "label": "Utilities",
+      "frame": [
+        556.0,
+        808.0,
+        44.0,
+        44.0
+      ],
+      "parent": 177
+    },
+    {
+      "type": "Image",
+      "identifier": "chevron.forward",
+      "label": "Forward",
+      "frame": [
+        573.0,
+        823.0,
+        10.5,
+        14.0
+      ],
+      "parent": 181
+    },
+    {
+      "type": "Other",
+      "identifier": "listItem.utilities",
+      "label": "Utilities",
+      "frame": [
+        556.0,
+        808.0,
+        44.0,
+        44.0
+      ],
+      "parent": 177
+    },
+    {
+      "type": "Image",
+      "identifier": "chevron.forward",
+      "label": "Forward",
+      "frame": [
+        573.0,
+        823.0,
+        10.5,
+        14.0
+      ],
+      "parent": 183
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        584.0,
+        382.0,
+        30.0,
+        630.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        611.0,
+        927.0,
+        3.0,
+        474.0
+      ],
+      "parent": 185
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        411.0,
+        979.0,
+        206.0,
+        30.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        380.0,
+        1006.0,
+        234.0,
+        3.0
+      ],
+      "parent": 187
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        584.0,
+        382.0,
+        30.0,
+        630.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        611.0,
+        927.0,
+        3.0,
+        474.0
+      ],
+      "parent": 189
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        411.0,
+        979.0,
+        206.0,
+        30.0
+      ],
+      "parent": 119
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        380.0,
+        1006.0,
+        234.0,
+        3.0
+      ],
+      "parent": 191
+    },
+    {
+      "type": "Toolbar",
+      "identifier": "Toolbar",
+      "label": "Toolbar",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 115
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 193
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 114
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 195
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 196
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 197
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 198
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        1032.0
+      ],
+      "parent": 199
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        640.0
+      ],
+      "parent": 197
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        240.0,
+        1032.0
+      ],
+      "parent": 201
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 113
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 203
+    },
+    {
+      "type": "NavigationBar",
+      "identifier": "Photos",
+      "label": "",
+      "frame": [
+        377.0,
+        382.0,
+        820.0,
+        62.0
+      ],
+      "parent": 204
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Photos",
+      "frame": [
+        637.0,
+        393.5,
+        56.0,
+        21.0
+      ],
+      "parent": 205
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        919.0,
+        386.0,
+        264.0,
+        36.0
+      ],
+      "parent": 205
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        919.0,
+        386.0,
+        264.0,
+        36.0
+      ],
+      "parent": 207
+    },
+    {
+      "type": "Other",
+      "identifier": "photosSearchBar",
+      "label": "",
+      "frame": [
+        929.0,
+        392.5,
+        246.0,
+        23.5
+      ],
+      "parent": 208
+    },
+    {
+      "type": "Image",
+      "identifier": "magnifyingglass",
+      "label": "Search",
+      "frame": [
+        929.0,
+        396.0,
+        16.5,
+        16.5
+      ],
+      "parent": 209
+    },
+    {
+      "type": "ScrollView",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        951.5,
+        392.5,
+        223.5,
+        23.5
+      ],
+      "parent": 209
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        951.5,
+        392.5,
+        223.5,
+        23.5
+      ],
+      "parent": 211
+    },
+    {
+      "type": "TextView",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        951.5,
+        392.5,
+        223.5,
+        23.5
+      ],
+      "parent": 212
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Vertical scroll bar, 1 page",
+      "frame": [
+        1142.0,
+        402.5,
+        30.0,
+        3.5
+      ],
+      "parent": 213
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        1169.0,
+        377.0,
+        3.0,
+        36.0
+      ],
+      "parent": 214
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Horizontal scroll bar, 1 page",
+      "frame": [
+        951.5,
+        401.2,
+        213.5,
+        11.8
+      ],
+      "parent": 213
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        920.5,
+        410.0,
+        36.0,
+        3.0
+      ],
+      "parent": 216
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Search your library\u2026",
+      "frame": [
+        955.5,
+        393.8,
+        155.0,
+        20.5
+      ],
+      "parent": 209
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 204
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 219
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 220
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "Photos",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 221
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 222
+    },
+    {
+      "type": "ScrollView",
+      "identifier": "photosView_content_scroll_view",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 223
+    },
+    {
+      "type": "Other",
+      "identifier": "photos_layout",
+      "label": "",
+      "frame": [
+        377.0,
+        444.0,
+        820.0,
+        374.0
+      ],
+      "parent": 224
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 225
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        104.0
+      ],
+      "parent": 226
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        908.0,
+        820.0,
+        104.0
+      ],
+      "parent": 226
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 225
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        372.0,
+        820.0,
+        640.0
+      ],
+      "parent": 225
+    },
+    {
+      "type": "Other",
+      "identifier": "PXGSingleViewLayout-Group",
+      "label": "",
+      "frame": [
+        377.0,
+        444.0,
+        820.0,
+        142.5
+      ],
+      "parent": 225
+    },
+    {
+      "type": "Other",
+      "identifier": "PXGSingleViewContainerView_AX",
+      "label": "",
+      "frame": [
+        377.0,
+        444.0,
+        820.0,
+        142.5
+      ],
+      "parent": 231
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        637.0,
+        444.0,
+        540.0,
+        130.5
+      ],
+      "parent": 232
+    },
+    {
+      "type": "Image",
+      "identifier": "PickerOnboardingHeaderViewIcon",
+      "label": "",
+      "frame": [
+        649.0,
+        454.0,
+        38.0,
+        38.0
+      ],
+      "parent": 233
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Private Access to Photos",
+      "frame": [
+        699.0,
+        456.0,
+        446.0,
+        20.5
+      ],
+      "parent": 233
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Your photo library is shown here, but \u201cTouchColor\u201d can only access the items you select.",
+      "frame": [
+        699.0,
+        482.5,
+        446.0,
+        38.0
+      ],
+      "parent": 233
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        699.0,
+        531.5,
+        478.0,
+        0.5
+      ],
+      "parent": 233
+    },
+    {
+      "type": "Button",
+      "identifier": "",
+      "label": "Learn\u00a0More\u2026",
+      "frame": [
+        699.0,
+        542.0,
+        99.5,
+        20.5
+      ],
+      "parent": 233
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Learn\u00a0More\u2026",
+      "frame": [
+        699.0,
+        542.0,
+        99.5,
+        20.5
+      ],
+      "parent": 238
+    },
+    {
+      "type": "Button",
+      "identifier": "",
+      "label": "Close",
+      "frame": [
+        1145.0,
+        452.0,
+        30.0,
+        22.0
+      ],
+      "parent": 232
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        377.0,
+        444.0,
+        820.0,
+        142.5
+      ],
+      "parent": 225
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        637.0,
+        444.0,
+        540.0,
+        130.5
+      ],
+      "parent": 241
+    },
+    {
+      "type": "Image",
+      "identifier": "PickerOnboardingHeaderViewIcon",
+      "label": "",
+      "frame": [
+        649.0,
+        454.0,
+        38.0,
+        38.0
+      ],
+      "parent": 242
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Private Access to Photos",
+      "frame": [
+        699.0,
+        456.0,
+        446.0,
+        20.5
+      ],
+      "parent": 242
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Your photo library is shown here, but \u201cTouchColor\u201d can only access the items you select.",
+      "frame": [
+        699.0,
+        482.5,
+        446.0,
+        38.0
+      ],
+      "parent": 242
+    },
+    {
+      "type": "Other",
+      "identifier": "",
+      "label": "",
+      "frame": [
+        699.0,
+        531.5,
+        478.0,
+        0.5
+      ],
+      "parent": 242
+    },
+    {
+      "type": "Button",
+      "identifier": "",
+      "label": "Learn\u00a0More\u2026",
+      "frame": [
+        699.0,
+        542.0,
+        99.5,
+        20.5
+      ],
+      "parent": 242
+    },
+    {
+      "type": "StaticText",
+      "identifier": "",
+      "label": "Learn\u00a0More\u2026",
+      "frame": [
+        699.0,
+        542.0,
+        99.5,
+        20.5
+      ],
+      "parent": 247
+    },
+    {
+      "type": "Button",
+      "identifier": "",
+      "label": "Close",
+      "frame": [
+        1145.0,
+        452.0,
+        30.0,
+        22.0
+      ],
+      "parent": 241
+    },
+    {
+      "type": "Other",
+      "identifier": "photos_sectioned_layout",
+      "label": "",
+      "frame": [
+        377.0,
+        586.5,
+        820.0,
+        231.5
+      ],
+      "parent": 225
+    },
+    {
+      "type": "Other",
+      "identifier": "PXAssetsSectionLayout-Group",
+      "label": "",
+      "frame": [
+        377.0,
+        586.5,
+        820.0,
+        231.5
+      ],
+      "parent": 250
+    },
+    {
+      "type": "Other",
+      "identifier": "PXZoomablePhotosLayout-Group",
+      "label": "",
+      "frame": [
+        377.0,
+        586.5,
+        820.0,
+        231.5
+      ],
+      "parent": 251
+    },
+    {
+      "type": "Other",
+      "identifier": "PXGZoomLayout-Group",
+      "label": "",
+      "frame": [
+        377.0,
+        586.5,
+        820.0,
+        231.5
+      ],
+      "parent": 252
+    },
+    {
+      "type": "Other",
+      "identifier": "PXGDecoratingLayout-Group",
+      "label": "",
+      "frame": [
+        377.0,
+        586.5,
+        820.0,
+        231.5
+      ],
+      "parent": 253
+    },
+    {
+      "type": "Other",
+      "identifier": "PXGGridLayout-Group",
+      "label": "Photo, October 04, 1:50\u202fPM, Photo, March 30, 2018, 7:14\u202fPM, Photo, August 08, 2012, 9:55\u202fPM, Photo, August 08, 2012, 9:29\u202fPM, Photo, August 08, 2012, 6:52\u202fPM, Photo, March 13, 2011, 12:17\u202fAM, Photo, October 09, 2009, 9:09\u202fPM",
+      "frame": [
+        377.0,
+        586.5,
+        820.0,
+        231.5
+      ],
+      "parent": 254
+    }
+  ]
+}

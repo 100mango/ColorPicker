@@ -150,7 +150,11 @@ final class TVWorkflowTests: XCTestCase {
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(zh-Hans)"]
         app.launchEnvironment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] = "1"; app.launch()
         XCTAssertEqual(app.frame, viewport)
+        let rootTrait = app.staticTexts["tv.palette.count"].value as? String
+        print("TV_PUBLIC_TRAIT_ROOT: \(rootTrait ?? "missing")")
         select(app.buttons["tv.editor"])
+        print("TV_PUBLIC_TRAIT_SHEET: \(String(describing: hex.value))")
+        XCTAssertEqual(rootTrait, "largest=true", "The root must receive the requested public trait before its sheet is qualified")
         let largest = try traitMetric(hex, largest: true)
         XCTAssertGreaterThan(largest, baseline)
         XCTAssertGreaterThan(hex.frame.height, baselineFrame.height)
