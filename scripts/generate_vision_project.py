@@ -70,7 +70,7 @@ action=ET.SubElement(scheme,'BuildAction',parallelizeBuildables='YES',buildImpli
 entries=ET.SubElement(action,'BuildActionEntries')
 def reference(parent,name): ET.SubElement(parent,'BuildableReference',BuildableIdentifier='primary',BlueprintIdentifier=uid(name),BuildableName='TouchColor.app' if name=='TouchColorVision' else name+'.xctest',BlueprintName=name,ReferencedContainer='container:TouchColorVision.xcodeproj')
 entry=ET.SubElement(entries,'BuildActionEntry',buildForTesting='YES',buildForRunning='YES',buildForProfiling='YES',buildForArchiving='YES',buildForAnalyzing='YES'); reference(entry,'TouchColorVision')
-action=ET.SubElement(scheme,'TestAction',buildConfiguration='Debug',selectedDebuggerIdentifier='Xcode.DebuggerFoundation.Debugger.LLDB',selectedLauncherIdentifier='Xcode.IDEFoundation.Launcher.LLDB',shouldUseLaunchSchemeArgsEnv='YES')
+action=ET.SubElement(scheme,'TestAction',preferredScreenCaptureFormat='screenshots',buildConfiguration='Debug',selectedDebuggerIdentifier='Xcode.DebuggerFoundation.Debugger.LLDB',selectedLauncherIdentifier='Xcode.IDEFoundation.Launcher.LLDB',shouldUseLaunchSchemeArgsEnv='YES')
 testables=ET.SubElement(action,'Testables')
 for name in ['TouchColorVisionTests','TouchColorVisionUITests']: reference(ET.SubElement(testables,'TestableReference',skipped='NO',parallelizable='NO'),name)
 launch=ET.SubElement(scheme,'LaunchAction',buildConfiguration='Debug',selectedDebuggerIdentifier='Xcode.DebuggerFoundation.Debugger.LLDB',selectedLauncherIdentifier='Xcode.IDEFoundation.Launcher.LLDB',launchStyle='0',useCustomWorkingDirectory='NO',ignoresPersistentStateOnLaunch='NO',debugDocumentVersioning='YES',debugServiceExtension='internal',allowLocationSimulation='NO')

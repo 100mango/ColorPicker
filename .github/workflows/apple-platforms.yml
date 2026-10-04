@@ -45,8 +45,8 @@ jobs:
         working-directory: scripts
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step
-          python3 -O -m unittest -v test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step
+          python3 -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_retain_mac_evidence test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step test_watch_failure_continuation
+          python3 -O -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_retain_mac_evidence test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step test_watch_failure_continuation
           python3 test_evidence_guard.py
           bash -n test_simulators.sh
       - name: Execute shared package tests
@@ -67,6 +67,7 @@ jobs:
           set -euo pipefail
           xcodebuild -quiet -project TouchColorVision.xcodeproj -scheme TouchColorVision -configuration Debug \
             -destination 'generic/platform=visionOS Simulator' -derivedDataPath build/vision-tests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
+          python3 scripts/vision_capture_format.py build/vision-tests
           xcodebuild -quiet -project TouchColorTV.xcodeproj -scheme TouchColorTV -configuration Debug \
             -destination 'generic/platform=tvOS Simulator' -derivedDataPath build/tv-tests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build-for-testing
       - name: Compile real paired phone and Watch products
@@ -220,6 +221,7 @@ jobs:
           python3 scripts/verify_mac_icons.py
           python3 scripts/verify_native_localizations.py
           python3 scripts/test_evidence_guard.py
+          python3 scripts/test_retain_mac_evidence.py
           python3 scripts/test_capture_checkpoint.py
           python3 scripts/test_watch_profiles.py
           python3 scripts/test_watch_runtime_pair.py
@@ -229,6 +231,7 @@ jobs:
           python3 scripts/test_vision_suites.py
           python3 scripts/test_native_runtime_diagnostics.py
           python3 scripts/test_native_resources.py
+          python3 scripts/test_vision_offline_result.py
           python3 scripts/test_checkpoint_image.py
           git diff --exit-code HEAD --
           xcodebuild -list -project TouchColorMac.xcodeproj
@@ -396,6 +399,7 @@ jobs:
         run: |
           python3 scripts/run_budgeted_step.py --label 'Report bounded evidence and unchanged source' --seconds 180 --phase evidence <<'TC_BUDGET_BODY'
           mkdir -p build/evidence
+          python3 scripts/vision_offline_result.py qualify
           if test -f build/paired-runtime/runtime.json; then cp build/paired-runtime/runtime.json build/evidence/paired-runtime.json; fi
           for role in phone watch; do
             if test -d "build/paired-$role.xcresult"; then
@@ -447,13 +451,21 @@ jobs:
           fi
           for platform in vision watch; do
             if test -d "build/$platform-largest-text.xcresult"; then
-              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
+              if test "$platform" = vision && { test "${TOUCHCOLOR_VISION_CASE:-}" = chinese || test "${TOUCHCOLOR_VISION_CASE:-}" = canvas-audit; }; then
+                python3 scripts/vision_offline_result.py copy-summary
+              else
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
+              fi
               python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-largest-text.xcresult" --output-path "build/evidence/$platform-largest-text-screenshots" || true
             fi
           done
           for platform in vision watch tv; do
             if test -d "build/$platform-tests.xcresult"; then
-              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
+              if test "$platform" = vision; then
+                python3 scripts/vision_offline_result.py copy-hosted-summary
+              else
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
+              fi
               python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
             fi
             if test -f "build/$platform-runtime/runtime.json"; then
@@ -481,9 +493,11 @@ jobs:
                           print('RETAINED_MAC_ACCESSIBILITY_DIAGNOSTIC',text[:12000],flush=True)
           PY
           python3 scripts/compress_vision_evidence.py build/evidence
+          python3 scripts/retain_mac_evidence.py build/evidence
           python3 - <<'PY'
-          import json,os
+          import json,os,sys
           from pathlib import Path
+          if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0) # Mac keeps its explicit priority/omission plan.
           root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
           for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
               if p.is_file():
@@ -521,3 +535,13 @@ jobs:
           retention-days: 1
           compression-level: 9
           if-no-files-found: ignore
+      - name: Require requested Mac audit pixels after retaining the review packet
+        if: ${{ always() && matrix.platform == 'mac' }}
+        timeout-minutes: 1
+        env:
+          MAC_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.mac_evidence_complete }}
+        run: test "$MAC_EVIDENCE_COMPLETE" = true
+      - name: Require every deferred Vision result qualification
+        if: ${{ always() && matrix.platform == 'vision' }}
+        timeout-minutes: 1
+        run: test '${{ steps.evidence_guard.outputs.vision_offline_qualified }}' = 'true'

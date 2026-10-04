@@ -163,7 +163,9 @@ final class TCPhotoImportTests: XCTestCase {
     }
     func testCancellationBeforeLateProviderResponseCompletesExactlyOnce() throws {
         try withFile(encoded(fixtureImage())) { url in
-            let provider = ControlledPhotoProvider(identifier: UTType.tiff.identifier)
+            let gate = DispatchSemaphore(value: 0)
+            defer { gate.signal() } // Release the provider even if an assertion aborts the test.
+            let provider = ControlledPhotoProvider(identifier: UTType.tiff.identifier, returnGate: gate)
             let result = PhotoImportResult()
             let completed = expectation(description: "Cancel completion")
             let task = TCPhotoImportTask.load(provider: provider) { image, error in result.record(image,error); completed.fulfill() }
@@ -173,8 +175,15 @@ final class TCPhotoImportTests: XCTestCase {
             let returned = expectation(description: "Late provider callback returned")
             provider.deliver(url) { returned.fulfill() }
             wait(for: [returned], timeout: 5)
+            // requested and the late callback do not join provider Progress registration.
+            // Hold that return path explicitly, then observe its actual cancellation.
+            XCTAssertFalse(provider.progress.isCancelled)
+            gate.signal()
+            let cancelled = XCTNSPredicateExpectation(predicate: NSPredicate { _,_ in provider.progress.isCancelled }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 5), .completed)
             XCTAssertTrue(provider.progress.isCancelled)
             XCTAssertEqual(result.snapshot.count, 1)
+            XCTAssertTrue(result.snapshot.allOnMain)
             XCTAssertNil(result.snapshot.image); XCTAssertNil(result.snapshot.error)
         }
     }

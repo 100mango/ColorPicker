@@ -229,6 +229,11 @@ import ColorPaletteLegacy
         try await waitForImport(session)
         session.select(NormalizedPoint(x: 0.95, y: 0.95)!)
         let canvas = PixelCanvas(frame: NSRect(x: 0, y: 0, width: 400, height: 200)); canvas.session = session
+        XCTAssertTrue(canvas.isAccessibilityElement())
+        XCTAssertEqual(canvas.accessibilityRole(), .image)
+        XCTAssertEqual(canvas.accessibilityIdentifier(), "image.canvas")
+        XCTAssertEqual(canvas.accessibilityLabel(), NSLocalizedString("Color sampler", comment: "Canvas accessibility label"))
+        XCTAssertEqual(canvas.accessibilityHelp(), NSLocalizedString("Click to sample a pixel; arrow keys move one pixel.", comment: "Canvas accessibility help"))
         let window = NSWindow(contentRect: canvas.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = canvas; window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil); window.contentView = nil }

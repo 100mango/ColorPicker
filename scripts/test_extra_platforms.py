@@ -11,6 +11,10 @@ from native_resources import snapshot as resource_snapshot, require_responsive
 from job_budget import enabled_budget, fail_record, BudgetExhausted, EXPECTED_MINUTES
 from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, permits_public_trait_fallback, run_public_trait_fallback
 from watch_diagnostics import ListFrameDiagnostics, summarize_editor_lifecycle, log_lookback
+from watch_failure_continuation import (BUNDLE as WATCH_UI_BUNDLE, WatchCaseLifecycle,
+    checkpoint as watch_checkpoint, inspect_failure as inspect_watch_failure, record_failure, require_no_failures)
+from vision_offline_result import pending as vision_summary_pending, confirm_shutdown as confirm_vision_shutdown, prepare_hosted as prepare_vision_hosted
+from vision_capture_format import verify_generated as verify_capture_format
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
@@ -46,6 +50,7 @@ def run(command,timeout,required=True):
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
+    watch_cases=WatchCaseLifecycle() if kind=='watch' and '-resultBundlePath' in command and command[command.index('-resultBundlePath')+1]==WATCH_UI_BUNDLE else None
     p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     report['active_command'].update(pid=p.pid,phase='running')
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
@@ -56,8 +61,9 @@ def run(command,timeout,required=True):
         for line in p.stdout:
             print(line,end='',flush=True)
             if kind=='watch': watch_frames.record(line)
-            ready=re.search(r'TOUCHCOLOR_PHOTOS_RUNNER_READY ([0-9A-F-]{36})',line)
-            if ready and kind=='vision' and os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos' and device:
+            if watch_cases is not None: watch_cases.record(line)
+            ready=re.search(r'TOUCHCOLOR_VISION_RUNNER_READY ([0-9A-F-]{36})',line)
+            if ready and kind=='vision' and device:
                 try:
                     if report.get('cleanup_unconfirmed'): raise RuntimeError('Prior owned process cleanup is unconfirmed')
                     report['runner_container_cache']=prime_container(device['udid'],report['ui_runner_identifier'],ready.group(1))
@@ -69,14 +75,14 @@ def run(command,timeout,required=True):
             if checkpoint and kind=='vision' and device and len(report['captures'])<16:
                 try:
                     if report.get('cleanup_unconfirmed'):
-                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started',require_primed=os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos')
+                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started',require_primed=True)
                     else:
-                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots',may_start=lambda: not report.get('cleanup_unconfirmed'),require_primed=os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos')
+                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots',may_start=lambda: not report.get('cleanup_unconfirmed'),require_primed=True)
                     if report.get('text_size_phase')=='largest': result['system_text_size']='accessibility-extra-extra-extra-large'
                     if result.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
                 except Exception as error:
-                    failure=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error),require_primed=os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos')
+                    failure=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error),require_primed=True)
                     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
                     report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
@@ -87,9 +93,11 @@ def run(command,timeout,required=True):
         except Exception as error:
             reader_errors.append(type(error).__name__)
     reader=threading.Thread(target=output,daemon=True);reader.start()
-    cleanup_error=None
-    try:code=p.wait(timeout=timeout)
+    cleanup_error=None;timed_out=False;raw_exit=None
+    try:
+        code=p.wait(timeout=timeout);raw_exit=code
     except subprocess.TimeoutExpired:
+        timed_out=True
         # A stuck test process must not turn our command deadline into an
         # unbounded wait while reaping after SIGKILL. The VM job owns final cleanup.
         report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
@@ -115,7 +123,8 @@ def run(command,timeout,required=True):
         if budget is not None: fail_record('Native command or capture cleanup unconfirmed',phase=budget.phase,cleanup_unconfirmed=True)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
+    report['stages'].append({'command':command,'exit':code,'raw_exit':raw_exit,'started':True,'timed_out':timed_out,'timeout_seconds':timeout,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
+    if watch_cases is not None: report['stages'][-1]['watch_case_lifecycle']=watch_cases.report
     report['active_command']=None
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
@@ -130,6 +139,11 @@ device=None
 owned_watch_devices=[]
 owned_watch_pair=None
 photo_seed_failed=False
+pending_vision_result=None
+pending_vision_hosted=None
+if kind=='vision':
+    report['vision_offline_case']=os.environ.get('TOUCHCOLOR_VISION_CASE')
+    report['vision_offline_expected']=['hosted']+(['largest'] if applicable_cases('vision',report['vision_offline_case']) else [])
 try:
     common=['xcodebuild','-quiet','-project',project,'-scheme',name,'CODE_SIGNING_ALLOWED=NO']
     run(common+['-configuration','Release','-destination','generic/platform='+platform,'-derivedDataPath','build/'+kind+'-device','build'],420)
@@ -167,6 +181,8 @@ try:
     assert 'TOUCHCOLOR_TEST_LARGEST_TRAIT' not in text and 'TOUCHCOLOR_TEST_TRAIT_PROOF' not in text, 'Debug public-trait seam leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
     if kind=='vision':
+        report['capture_configuration']=verify_capture_format('build/vision-tests')
+        print('VISION_CAPTURE_CONFIGURATION',json.dumps(report['capture_configuration']),flush=True)
         runner_info=Path('build/vision-tests/Build/Products/Debug-xrsimulator/TouchColorVisionUITests-Runner.app/Info.plist')
         report['ui_runner_identifier']=plistlib.loads(runner_info.read_bytes())['CFBundleIdentifier']
         assert report['ui_runner_identifier'].startswith('com.mango.touchColor.TouchColorVisionUITests'), 'Unexpected UI runner product'
@@ -269,7 +285,16 @@ try:
     test_common=['xcodebuild','test-without-building']+test_common[1:]
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
-        run(test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests'],360)
+        hosted_command=test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests']
+        hosted_code=run(hosted_command,360,required=False)
+        if hosted_code in (0,65):
+            try:
+                pending_vision_hosted=prepare_vision_hosted(hosted_command,Path.cwd(),report['sha'],device['udid'],runtime,report['stages'][-1])
+                report['vision_hosted_result']=pending_vision_hosted
+            except Exception as binding_error:
+                report['vision_hosted_binding_error']=str(binding_error)
+                if hosted_code==0: raise
+        if hosted_code: raise RuntimeError('Stage failed with exit '+str(hosted_code)+': '+' '.join(hosted_command))
         # A completed hosted launch establishes runtime readiness before the one
         # bounded Photos import. bootstatus alone preceded a real addmedia timeout.
         seed_photos()
@@ -303,15 +328,29 @@ try:
         # source-bound Watch job budget and per-case120/240s allowances remain finite.
         report['xctest_summary_scope']='hosted tests only; watch-ui-summary.json contains the separate UI result'
         run(test_common+test_arguments+['-resultBundlePath','build/watch-tests.xcresult','-only-testing:TouchColorWatchTests'],480)
-        run(test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
-            '-skip-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave'],840)
+        normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
+            '-skip-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
+        report['watch_inputs_before_normal']=watch_checkpoint(report,device=device['udid'],runtime=runtime)
+        if report.get('cleanup_unconfirmed'): raise RuntimeError('Watch checkpoint cleanup unconfirmed; normal UI not started')
+        normal_code=run(normal_command,840,required=False)
+        normal_stage=report['stages'][-1]
+        report['normal_watch_ui']={'exit':normal_code,'result':'failed' if normal_code else 'passed','stage_index':len(report['stages'])-1}
+        if normal_code:
+            report['tests']='failed'
+            record_failure(report,'watch-normal-ui','Stage failed with exit '+str(normal_code)+': '+' '.join(normal_command))
+            report['watch_failure_continuation']=inspect_watch_failure(report,normal_stage,normal_command,
+                report['watch_inputs_before_normal'],sha=report['sha'],device=device['udid'],runtime=runtime)
+            print('WATCH_FAILURE_CONTINUATION',json.dumps(report['watch_failure_continuation']),flush=True)
+            if report['watch_failure_continuation'].get('allowed') is not True:
+                report['largest_text_outcome']={'result':'not_started','reason':report['watch_failure_continuation']['reason']}
+                raise RuntimeError('Independent largest-text blocked: '+report['watch_failure_continuation']['reason'])
     else:
         run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
-    report['tests']='passed'
+    report['tests']='failed' if report.get('failures') else 'passed'
     largest_cases=applicable_cases(kind,os.environ.get('TOUCHCOLOR_VISION_CASE'))
     if largest_cases:
-        # The full normal-size scope above remains required. This is a small
-        # existing Chinese/layout subset, not a second full Watch suite.
+        # This independent Chinese/layout scope keeps fresh per-test state.
+        # A deferred normal failure remains failed after this phase, even on success.
         def size_ui_runner(command,seconds):
             code=run(command,seconds,required=False)
             stage=report['stages'][-1]
@@ -323,13 +362,17 @@ try:
         command=test_common+test_arguments+['-resultBundlePath','build/'+kind+'-largest-text.xcresult']
         command+=['-only-testing:'+name+'UITests/'+('WatchWorkflowTests' if kind=='watch' else 'VisionWorkflowTests')+'/'+method for method in largest_cases]
         report['text_size_phase']='largest'
+        if kind=='watch': report['largest_text_outcome']={'result':'running'}
         try:
-            setting=run_largest(device['udid'],out/'largest-text.json',command,contract,largest_cases,size_runner,timeout=600)
+            deferred={'defer_vision_summary':True,'source_sha':report['sha']} if kind=='vision' else {}
+            setting=run_largest(device['udid'],out/'largest-text.json',command,contract,largest_cases,size_runner,timeout=600,**deferred)
             report['largest_system_text']=setting
             print('NATIVE_SYSTEM_TEXT_SIZE',json.dumps({key:value for key,value in setting.items() if key!='operations'}),flush=True)
             if setting.get('cleanup_unconfirmed') or size_runner.cleanup_unconfirmed:
                 report['cleanup_unconfirmed']=True
-            if not qualified(setting):
+            if kind=='vision' and vision_summary_pending(setting):
+                pending_vision_result=setting
+            elif not qualified(setting):
                 if kind=='watch' and permits_public_trait_fallback(setting,device['udid'],size_runner):
                     fallback=test_common+test_arguments+['-resultBundlePath','build/watch-public-trait.xcresult',
                         '-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
@@ -339,15 +382,23 @@ try:
                 # A successful forced-layout test does not turn an unsupported
                 # actual system-setting route into a qualified propagation gate.
                 raise RuntimeError('Required system-largest-text gate: '+setting['status'])
+            if kind=='watch': report['largest_text_outcome']={'result':'passed'}
+        except Exception as error:
+            if kind=='watch': report['largest_text_outcome']={'result':'failed','error':str(error)}
+            record_failure(report,'largest-text',error)
+            raise
         finally:
             if size_runner.cleanup_unconfirmed: report['cleanup_unconfirmed']=True
             report['text_size_phase']=None
 
     if photo_seed_failed: raise RuntimeError('Photos seeding timed out or failed; other native tests executed, real Photos import remains unqualified')
-    report['result']='passed'
+    require_no_failures(report)
+    report['result']='pending_offline_qualification' if pending_vision_result is not None or pending_vision_hosted is not None else 'passed'
 except Exception as error:
     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
-    report['result']='failed';report['error']=str(error);print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
+    if not any(value['error']==str(error) for value in report.get('failures',[])):
+        record_failure(report,'platform',error)
+    print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
     if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
     if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed'):
@@ -362,7 +413,7 @@ finally:
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
-    if result_bundle.exists() and not report.get('cleanup_unconfirmed'):
+    if result_bundle.exists() and kind!='vision' and not report.get('cleanup_unconfirmed'):
         try:
             summary_run=run_captured(['xcrun','xcresulttool','get','test-results','summary','--path',str(result_bundle)],text=True,timeout=30)
             if summary_run.returncode==0:
@@ -381,11 +432,32 @@ finally:
             if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
     elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
         run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
+        if pending_vision_result is not None or pending_vision_hosted is not None:
+            report['vision_offline_shutdown']=report['stages'][-1]
+    if pending_vision_result is not None or pending_vision_hosted is not None:
+        def no_offline_ui(*args): raise RuntimeError('Shutdown proof cannot launch UI tests')
+        shutdown_runner=size_runner if pending_vision_result is not None else TouchSizeRunner(no_offline_ui)
+        try:
+            confirm_vision_shutdown(report,report.get('vision_offline_shutdown'),device=device['udid'],
+                runtime=runtime,runner=shutdown_runner,cleanup_unconfirmed=report.get('cleanup_unconfirmed',False))
+            for pending_result in (pending_vision_hosted,pending_vision_result):
+                if pending_result is not None: pending_result['offline_shutdown_verified']=report['offline_shutdown_verified']
+        except Exception as error:
+            report['result']='failed';report.setdefault('error',str(error))
+            report['vision_offline_qualification']={'result':'blocked','reason':str(error)}
+            if shutdown_runner.cleanup_unconfirmed:
+                report['cleanup_unconfirmed']=True
+                fail_record('Vision shutdown readback cleanup unconfirmed',phase='cleanup',cleanup_unconfirmed=True)
+        # Persist the pending ticket and shutdown proof, never mark a test pass
+        # from console output. Evidence180 owns each expected30s summary once.
+        if pending_vision_result is not None: (out/'largest-text.json').write_text(json.dumps(pending_vision_result,indent=2)+'\n')
     if report.get('budget_incomplete') or Path('build/job-budget-phase-cleanup.json').exists():
         report['result']='failed'
         report['cleanup_budget_status']='At least one mandatory command could not finish within the reserved lifecycle budget'
     if report.get('cleanup_unconfirmed'):
         report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
         report['result']='failed'
+    if report.get('failures'):
+        report['result']='failed';report['error']=report['failures'][0]['error']
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-if report['result']!='passed':raise SystemExit(1)
+if report['result'] not in ('passed','pending_offline_qualification'):raise SystemExit(1)

@@ -13,6 +13,7 @@ allowed_root = {'architecture.txt', 'accessibility-api.json', 'mac-sandbox-entit
 allowed_root.update((f'{p}-{suffix}.json' for p in ('vision', 'watch', 'tv') for suffix in ('summary', 'runtime')))
 allowed_root.add('mac-modal-probe-summary.json')
 allowed_root.add('job-budget.json')
+allowed_root.add('mac-evidence-selection.json')
 allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vision-ui-screenshots', 'vision-screenshots', 'watch-screenshots', 'watch-ui-screenshots', 'tv-screenshots'}
 allowed_dirs.add('modal-probe-screenshots')
 allowed_root.update({'vision-largest-text-summary.json','watch-largest-text-summary.json'})
@@ -82,6 +83,21 @@ for folder, dirs, files in os.walk(root, followlinks=False):
                         raise RuntimeError('Unexpected attachment provenance')
 if not text_files == approved_text_files:
     raise RuntimeError('Unmanifested accessibility text attachment')
+mac_evidence_complete = None
+if (root/'mac-evidence-selection.json').exists():
+    from retain_mac_evidence import validate_selection
+    mac_evidence_complete = validate_selection(root)['complete'] # Safety/integrity first; preserve safe partial packets.
+from vision_offline_result import evidence_complete
+vision_complete=evidence_complete(root)
 if not count:
     raise RuntimeError('No bounded evidence to retain')
 print(f'Final evidence guard passed: {count} files, {total} bytes (including final manifests)')
+
+# Publish only a fixed boolean after every byte/path/provenance check succeeded.
+# The post-upload step is a shell builtin, not a second unreserved file scan.
+if mac_evidence_complete is not None and os.environ.get("GITHUB_OUTPUT"):
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+        output.write("mac_evidence_complete=" + ("true" if mac_evidence_complete else "false") + "\n")
+
+if os.environ.get('GITHUB_OUTPUT'):
+    with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('vision_offline_qualified='+str(vision_complete).lower()+'\n')

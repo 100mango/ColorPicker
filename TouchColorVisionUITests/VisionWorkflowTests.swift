@@ -16,6 +16,11 @@ final class VisionWorkflowTests: XCTestCase {
             fatalError("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=vision; unexpected interruption; no alert action taken")
         }
         continueAfterFailure = false
+        captureLease = nil
+        app = nil
+        // Bind this test runner before any app launch or UI work. A thrown
+        // setup error fails the case rather than entering an unbound workflow.
+        try bindCaptureRunner()
         app = XCUIApplication(); app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.vision-ui.\(UUID())"
         let chinese = name.contains("Chinese")
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", chinese ? "(zh-Hans)" : "(en)", "-AppleLocale", chinese ? "zh_CN" : "en_US"]; app.launch()
@@ -25,11 +30,18 @@ final class VisionWorkflowTests: XCTestCase {
             if let monitor = failClosedInterruption { removeUIInterruptionMonitor(monitor) }
             failClosedInterruption = nil
         }
-        if (testRun?.totalFailureCount ?? 0) > 0 { capture("Native Vision failure"); print("VISION_FAILURE_AX: \(app.debugDescription)") }
-        app.terminate()
-        if let captureLease {
-            try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-runner-\(captureLease.uuidString).json"))
+        if let app {
+            if (testRun?.totalFailureCount ?? 0) > 0 && captureLease != nil {
+                capture("Native Vision failure"); print("VISION_FAILURE_AX: \(app.debugDescription)")
+            }
+            app.terminate()
         }
+        if let captureLease {
+            let request = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-runner-\(captureLease.uuidString).json")
+            try? FileManager.default.removeItem(at: request)
+            try? FileManager.default.removeItem(at: request.deletingPathExtension().appendingPathExtension("ack"))
+        }
+        captureLease = nil
         try super.tearDownWithError()
     }
     private func capture(_ name: String) {
@@ -38,6 +50,10 @@ final class VisionWorkflowTests: XCTestCase {
         let previousFailureBehavior = continueAfterFailure
         continueAfterFailure = true
         defer { continueAfterFailure = previousFailureBehavior }
+        guard let captureLease else {
+            XCTFail("No verified current runner lease; no simulator checkpoint was requested")
+            return
+        }
         // The spatial XCTest screenshot API can crop or stall. Hold this real UI state
         // while the CI host uses documented simctl screenshot, with a bounded acknowledgement.
         let id = UUID().uuidString
@@ -45,13 +61,41 @@ final class VisionWorkflowTests: XCTestCase {
         let request = root.appendingPathComponent("TouchColor-capture-\(id).json")
         let acknowledgement = root.appendingPathComponent("TouchColor-capture-\(id).ack")
         defer { try? FileManager.default.removeItem(at: request); try? FileManager.default.removeItem(at: acknowledgement) }
-        do { try JSONSerialization.data(withJSONObject: ["id": id, "name": name, "runner": Bundle.main.bundleIdentifier ?? "", "lease": captureLease?.uuidString ?? ""]).write(to: request) }
+        do { try JSONSerialization.data(withJSONObject: ["id": id, "name": name, "runner": Bundle.main.bundleIdentifier ?? "", "lease": captureLease.uuidString]).write(to: request) }
         catch { XCTFail("Could not request simulator checkpoint: \(error)"); return }
         print("TOUCHCOLOR_CAPTURE_REQUEST \(id)"); fflush(stdout)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: acknowledgement.path) }, object: nil)
         guard XCTWaiter.wait(for: [ready], timeout: 85) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
         let result = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         XCTAssertEqual(result?["success"] as? Bool, true, "Simulator checkpoint failed: \(String(describing: result))")
+    }
+    private func bindCaptureRunner() throws {
+        let lease = UUID()
+        let runner = Bundle.main.bundleIdentifier ?? ""
+        let request = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-runner-\(lease.uuidString).json")
+        let acknowledgement = request.deletingPathExtension().appendingPathExtension("ack")
+        var accepted = false
+        defer {
+            try? FileManager.default.removeItem(at: acknowledgement)
+            if !accepted { try? FileManager.default.removeItem(at: request) }
+        }
+        try JSONSerialization.data(withJSONObject: ["id": lease.uuidString, "runner": runner]).write(to: request, options: .atomic)
+        print("TOUCHCOLOR_VISION_RUNNER_READY \(lease.uuidString)"); fflush(stdout)
+        let bound = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            FileManager.default.fileExists(atPath: acknowledgement.path)
+        }, object: nil)
+        guard XCTWaiter.wait(for: [bound], timeout: 30) == .completed else {
+            throw NSError(domain: "TouchColorVisionRunnerBinding", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Current runner binding timed out before UI work"])
+        }
+        let binding = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        guard binding?["success"] as? Bool == true, binding?["lease"] as? String == lease.uuidString,
+              binding?["runner"] as? String == runner else {
+            throw NSError(domain: "TouchColorVisionRunnerBinding", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Current runner binding acknowledgement did not match"])
+        }
+        captureLease = lease
+        accepted = true
     }
     private func hex(_ expected: String) {
         let value = app.staticTexts["sample.hex"]
@@ -61,23 +105,6 @@ final class VisionWorkflowTests: XCTestCase {
     }
     private func photo() {
         XCTAssertTrue(app.buttons["image.photos"].waitForExistence(timeout: 20), app.debugDescription)
-        let lease = UUID()
-        captureLease = lease
-        let request = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-runner-\(lease.uuidString).json")
-        do {
-            try JSONSerialization.data(withJSONObject: ["id": lease.uuidString, "runner": Bundle.main.bundleIdentifier ?? ""]).write(to: request, options: .atomic)
-        } catch { XCTFail("Could not publish current runner identity: \(error)"); return }
-        print("TOUCHCOLOR_PHOTOS_RUNNER_READY \(lease.uuidString)"); fflush(stdout)
-        let acknowledgement = request.deletingPathExtension().appendingPathExtension("ack")
-        let bound = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            FileManager.default.fileExists(atPath: acknowledgement.path)
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [bound], timeout: 30), .completed,
-                       "Current runner must be bound before opening the Photos service")
-        let binding = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        XCTAssertEqual(binding?["success"] as? Bool, true)
-        XCTAssertEqual(binding?["lease"] as? String, lease.uuidString)
-        try? FileManager.default.removeItem(at: acknowledgement)
         app.buttons["image.photos"].tap()
         let picker = app.navigationBars["Photos"]
         XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)

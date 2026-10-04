@@ -7,6 +7,7 @@ import contextlib
 import os
 import json
 import subprocess
+import time
 from pathlib import Path
 from bounded_process import run_captured
 from job_budget import BudgetExhausted
@@ -112,14 +113,24 @@ def verify_summary(summary, device_id, platform, count):
     return {'totalTestCount': count, **expected, 'device': device}
 
 
-def run_largest(device, report_path, command, contract, cases, runner, *, timeout=600):
+def run_largest(device, report_path, command, contract, cases, runner, *, timeout=600, defer_vision_summary=False, source_sha=None):
     """Preserve exact setting status; no exit-code alias means restored/passed."""
+    if defer_vision_summary:
+        from vision_offline_result import validate_contract
+        validate_contract(command, contract, cases, source_sha, device)
+    started = time.time() if defer_vision_summary else None
     report = probe(device, report_path, command, timeout, runner=runner, expected_ui=contract)
     if runner.cleanup_unconfirmed or report.get('cleanup_unconfirmed'):
         return report
     if (report.get('status') != 'largest_ui_passed' or report.get('ui_executed') is not True
             or report.get('ui_exit') != 0 or report.get('observed_largest') != LARGEST
             or report.get('restore_verified') is not True):
+        return report
+    if defer_vision_summary:
+        from vision_offline_result import prepare
+        report = prepare(report, command, contract, cases, source_sha, device, started, time.time())
+        from atomic_json import write_json
+        write_json(report_path, report, limit=48*1024)
         return report
     result_path = command[command.index('-resultBundlePath') + 1]
     code, text, operation = runner(

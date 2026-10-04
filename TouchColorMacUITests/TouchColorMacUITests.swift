@@ -5,6 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 import CryptoKit
 import AVFoundation
+import ApplicationServices
 
 @MainActor final class TouchColorMacUITests: XCTestCase {
     private var failClosedInterruption: NSObjectProtocol?
@@ -13,6 +14,7 @@ import AVFoundation
     private var suite = ""
     private var expectedUID: Int?
     private var expectsSandbox = false
+    private var actionDiagnosticKeys = Set<String>()
     override func setUpWithError() throws {
         try super.setUpWithError()
         // Keep intended dialog actions explicit. Never fall through to XCTest's
@@ -23,6 +25,7 @@ import AVFoundation
             fatalError("TOUCHCOLOR_UI_FAIL_CLOSED_ABORT platform=mac; unexpected interruption; no alert action taken")
         }
         continueAfterFailure = false
+        actionDiagnosticKeys.removeAll()
         suite = "TouchColor.mac-ui.\(UUID())"
         fixture = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-fixture-\(UUID()).png")
         let bytes: [UInt8] = [255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,0,255, 255,0,255,255, 0,255,255,255]
@@ -378,11 +381,51 @@ import AVFoundation
     @MainActor private func audit(_ state: String) throws {
         if #available(macOS 27.0, *) {
             print("MAC_ACCESSIBILITY_AUDIT_BEGIN: \(state)")
+            let auditID = UUID().uuidString
+            // Retain native pixels immediately before this audit, without a UI
+            // action between capture and audit. These are sequential observations.
+            let requestedStates = ["empty workspace", "full image and palette", "camera availability", "offline privacy", "corrupt import error"]
+            if !expectsSandbox && requestedStates.contains(state) {
+                do {
+                    let png = app.screenshot().pngRepresentation
+                    let capturedAt = (Date().timeIntervalSince1970 * 1000).rounded(.down) / 1000
+                    let imageName = "Native Mac audit state " + auditID
+                    let image = XCTAttachment(data: png, uniformTypeIdentifier: UTType.png.identifier)
+                    image.name = imageName; image.lifetime = .keepAlways; add(image)
+                    let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
+                    guard running.count == 1, let actual = running.first,
+                          let executable = actual.executableURL, let bundleURL = actual.bundleURL else {
+                        throw NSError(domain: "NativeMacAuditEvidence", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey: "Exact running app is unavailable"])
+                    }
+                    let logic = bundleURL.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
+                    func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+                    let proof: [String: Any] = ["schema": 1, "auditID": auditID, "state": state,
+                        "testName": name, "capturePhase": "immediately before audit", "sequential": true,
+                        "sandbox": false, "imageName": imageName, "pngSHA256": digest(png), "pngBytes": png.count,
+                        "capturedAt": capturedAt,
+                        "appExecutableSHA256": digest(try Data(contentsOf: executable)),
+                        "appLogicSHA256": digest(try Data(contentsOf: logic))]
+                    let data = try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys])
+                    let attachment = XCTAttachment(string: String(decoding: data, as: UTF8.self))
+                    attachment.name = "Native Mac accessibility issue screenshot proof " + auditID
+                    attachment.lifetime = .keepAlways; add(attachment)
+                } catch {
+                    // Evidence failure must not prevent the unchanged audit.
+                    // The post-upload completeness gate will fail this row.
+                    let failure = XCTAttachment(string: "Audit-ID: \(auditID)\nState: \(state)\nCapture error: \(String(String(reflecting: error).prefix(2000)))")
+                    failure.name = "Native Mac accessibility issue screenshot unavailable " + auditID
+                    failure.lifetime = .keepAlways; add(failure)
+                }
+            }
             var issueCount = 0
             let failuresBefore = testRun?.totalFailureCount ?? 0
             defer {
                 let recorded = (testRun?.totalFailureCount ?? failuresBefore) - failuresBefore
                 print("MAC_ACCESSIBILITY_AUDIT_END: \(state); issues=\(issueCount); recordedFailures=\(recorded)")
+                let summary = XCTAttachment(string: "Audit-ID: \(auditID)\nState: \(state)\nIssues: \(issueCount)\nRecorded failures: \(recorded)")
+                summary.name = "Native Mac accessibility issue audit summary " + auditID
+                summary.lifetime = .keepAlways; add(summary)
             }
             try app.performAccessibilityAudit(for: .all) { issue in
                 issueCount += 1
@@ -391,11 +434,13 @@ import AVFoundation
                 if let element = issue.element {
                     print("MAC_ACCESSIBILITY_ISSUE_ATTRIBUTES: role=\(element.elementType.rawValue) identifier=\(element.identifier) label=\(element.label) value=\(String(describing: element.value)) frame=\(element.frame) isEnabled=\(element.isEnabled)")
                     self.recordAuditOwnership(element)
+                    self.recordAuditActions(element, state: state, auditID: auditID)
                 }
                 print("MAC_ACCESSIBILITY_ISSUE_ELEMENT: \(String((issue.element?.debugDescription ?? "none").prefix(12_000)))")
                 fflush(stdout)
-                let details = "State: \(state)\nIssue: \(issue.compactDescription)\nElement: \(issue.element?.debugDescription ?? "none")\nHierarchy: \(self.app.debugDescription)"
-                let attachment = XCTAttachment(string: String(details.prefix(64_000)))
+                let details = "State: \(state)\nAudit-ID: \(auditID)\nAudit type: \(issue.auditType.rawValue)\nIssue: \(issue.compactDescription)\nElement: \(issue.element?.debugDescription ?? "none")\nHierarchy: \(self.app.debugDescription)"
+                let retainedDetails = String(details.prefix(64_000)) + (details.count > 64_000 ? "\n[Producer truncated diagnostic after 64000 characters]" : "")
+                let attachment = XCTAttachment(string: retainedDetails)
                 attachment.name = "Native Mac accessibility issue"
                 attachment.lifetime = .keepAlways; self.add(attachment)
                 return false
@@ -408,6 +453,136 @@ import AVFoundation
                 print("MAC_ACCESSIBILITY_AUDIT_FAIL: \(state)")
             }
         } else { throw XCTSkip("Native audit qualification targets the installed macOS 27 runtime") }
+    }
+    private func recordAuditActions(_ element: XCUIElement, state: String, auditID: String) {
+        // Read only the application's existing public AX action names. Never
+        // request trust, execute an action, or alter an accessibility attribute.
+        guard state == "full image and palette" || state == "offline privacy" else { return }
+        do {
+            let target = try element.snapshot()
+            let expectedRole: String
+            if state == "full image and palette", target.identifier == "palette.actions.0", target.elementType == .menuButton {
+                expectedRole = kAXMenuButtonRole as String
+            } else if state == "offline privacy", target.identifier == "mailto:100mango@gmail.com", target.elementType == .link {
+                expectedRole = kAXLinkRole as String
+            } else { return }
+            let frame = target.frame
+            guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
+                  [frame.minX, frame.minY, frame.width, frame.height].allSatisfy({ $0.isFinite }) else { return }
+            let key = state + "|" + target.identifier + "|" + String(describing: frame)
+            guard !actionDiagnosticKeys.contains(key), actionDiagnosticKeys.count < 4 else { return }
+            actionDiagnosticKeys.insert(key)
+            var record: [String: Any] = ["schema": 1, "auditID": auditID, "state": state, "testName": name,
+                "sandbox": expectsSandbox, "sequentialObservations": true,
+                "targetIdentifier": target.identifier, "targetRole": expectedRole,
+                "targetFrame": String(describing: frame), "status": "unavailable", "matches": []]
+            func emit() {
+                guard let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return }
+                let text: String
+                if data.count <= 8192 { text = String(decoding: data, as: UTF8.self) }
+                else { text = "Audit-ID: \(auditID)\nState: \(state)\nAX action diagnostic unavailable: output exceeded 8192 bytes" }
+                print("MAC_ACCESSIBILITY_ACTION_NAMES: \(text)")
+                let attachment = XCTAttachment(string: text)
+                attachment.name = "Native Mac accessibility issue action names " + auditID
+                attachment.lifetime = .keepAlways; add(attachment)
+            }
+            defer { emit() }
+            guard AXIsProcessTrusted() else { record["reason"] = "AX client is not trusted; no prompt requested"; return }
+            var products = Bundle(for: Self.self).bundleURL
+            for _ in 0..<4 { products.deleteLastPathComponent() }
+            let expectedURL = products.appendingPathComponent("TouchColor.app").resolvingSymlinksInPath()
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
+            guard running.count == 1, let actual = running.first,
+                  actual.bundleURL?.resolvingSymlinksInPath() == expectedURL else {
+                record["reason"] = "Exact single owned app is unavailable"; return
+            }
+            let pid = actual.processIdentifier
+            record["pid"] = pid; record["applicationPath"] = expectedURL.path
+            let start = ProcessInfo.processInfo.systemUptime
+            var calls = 0, visited: [AXUIElement] = [], matches: [[String: Any]] = [], incomplete = false
+            enum Stop: Error { case bound, timeoutUnavailable, foreignPID }
+            func admit(_ node: AXUIElement) throws {
+                guard calls <= 510, ProcessInfo.processInfo.systemUptime - start < 2 else { throw Stop.bound }
+                // Apple documents this timeout as object-specific. Set it on
+                // every inspected object; do not change the process-global one.
+                guard AXUIElementSetMessagingTimeout(node, 0.15) == .success else { throw Stop.timeoutUnavailable }
+                calls += 2 // One timeout setup plus one admitted AX read.
+            }
+            func owned(_ node: AXUIElement) throws {
+                try admit(node)
+                var owner: pid_t = 0
+                guard AXUIElementGetPid(node, &owner) == .success, owner == pid else { throw Stop.foreignPID }
+            }
+            func value(_ node: AXUIElement, _ attribute: String) throws -> CFTypeRef? {
+                try admit(node)
+                var result: CFTypeRef?
+                let code = AXUIElementCopyAttributeValue(node, attribute as CFString, &result)
+                if code == .attributeUnsupported || code == .noValue { return nil }
+                guard code == .success else { incomplete = true; return nil }
+                return result
+            }
+            func children(_ node: AXUIElement, _ attribute: String, limit: Int) throws -> [AXUIElement] {
+                try admit(node)
+                var count: CFIndex = 0
+                let countCode = AXUIElementGetAttributeValueCount(node, attribute as CFString, &count)
+                if countCode == .attributeUnsupported || countCode == .noValue { return [] }
+                guard countCode == .success, count >= 0 else { incomplete = true; return [] }
+                if count > limit { incomplete = true }
+                guard count > 0 else { return [] }
+                try admit(node)
+                var result: CFArray?
+                let code = AXUIElementCopyAttributeValues(node, attribute as CFString, 0, min(count, limit), &result)
+                guard code == .success, let values = result as? [AXUIElement], values.count == min(count, limit) else {
+                    incomplete = true; return []
+                }
+                return values
+            }
+            func geometry(_ node: AXUIElement) throws -> CGRect? {
+                guard let position = try value(node, kAXPositionAttribute), let size = try value(node, kAXSizeAttribute),
+                      CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { incomplete = true; return nil }
+                let p = unsafeBitCast(position, to: AXValue.self), s = unsafeBitCast(size, to: AXValue.self)
+                var point = CGPoint.zero, extent = CGSize.zero
+                guard AXValueGetType(p) == .cgPoint, AXValueGetType(s) == .cgSize,
+                      AXValueGetValue(p, .cgPoint, &point), AXValueGetValue(s, .cgSize, &extent),
+                      [point.x, point.y, extent.width, extent.height].allSatisfy({ $0.isFinite }), extent.width > 0, extent.height > 0 else { incomplete = true; return nil }
+                return CGRect(origin: point, size: extent)
+            }
+            do {
+                let root = AXUIElementCreateApplication(pid)
+                try owned(root)
+                var pending = try children(root, kAXWindowsAttribute, limit: 4).map { ($0, 0) }
+                // Restrict traversal to the exact app's windows, excluding its
+                // root Touch Bar and menu bar. No other PID is inspected.
+                while !pending.isEmpty {
+                    guard visited.count < 128 else { throw Stop.bound }
+                    let (node, depth) = pending.removeFirst()
+                    if visited.contains(where: { CFEqual($0, node) }) { continue }
+                    visited.append(node); try owned(node)
+                    let identifier = try value(node, kAXIdentifierAttribute) as? String
+                    let role = try value(node, kAXRoleAttribute) as? String
+                    if identifier == target.identifier, role == expectedRole, let bounds = try geometry(node),
+                       abs(bounds.minX - frame.minX) <= 0.5, abs(bounds.minY - frame.minY) <= 0.5,
+                       abs(bounds.width - frame.width) <= 0.5, abs(bounds.height - frame.height) <= 0.5 {
+                        try admit(node)
+                        var names: CFArray?
+                        let code = AXUIElementCopyActionNames(node, &names)
+                        let actions = names as? [String]
+                        matches.append(["identifier": identifier ?? "", "role": role ?? "", "frame": String(describing: bounds),
+                            "actionReadCode": code.rawValue, "actions": Array((actions ?? []).prefix(16)).map { String($0.prefix(128)) },
+                            "actionsComplete": code == .success && actions != nil && actions!.count <= 16 && actions!.allSatisfy { $0.count <= 128 }])
+                        if matches.count >= 4 { incomplete = true; break }
+                    }
+                    if depth < 16 { pending += try children(node, kAXChildrenAttribute, limit: 16).map { ($0, depth + 1) } }
+                    else { incomplete = true }
+                }
+                record["status"] = !incomplete && matches.count == 1 && (matches[0]["actionsComplete"] as? Bool) == true
+                    ? "exact_node_action_names_observed" : "partial_or_ambiguous"
+            } catch { incomplete = true; record["reason"] = String(describing: error); record["status"] = "partial_or_unavailable" }
+            record["matches"] = matches; record["visitedNodes"] = visited.count; record["AXCalls"] = calls
+            record["elapsedSeconds"] = ProcessInfo.processInfo.systemUptime - start
+            record["traversalIncomplete"] = incomplete
+            record["scope"] = "owned app windows; maximum128nodes/16depth/512calls;2s admission deadline;0.15s per AX call"
+        } catch { print("MAC_ACCESSIBILITY_ACTION_NAMES_UNAVAILABLE: \(String(String(reflecting: error).prefix(1000)))") }
     }
     private func recordAuditOwnership(_ element: XCUIElement) {
         do {
@@ -597,11 +772,24 @@ import AVFoundation
         try Data("deliberately invalid synthetic PNG".utf8).write(to: bad)
         defer { try? FileManager.default.removeItem(at: bad) }
         openFile(bad)
-        XCTAssertTrue(app.buttons["OK"].waitForExistence(timeout: 10), app.debugDescription)
+        // NSAlert also mirrors OK into the application Touch Bar. Select the
+        // observed window-owned alert sheet, never the ambiguous global button.
+        let alert = app.windows.sheets.matching(NSPredicate(format: "label == %@", "alert")).element
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), app.debugDescription)
+        let title = alert.staticTexts.matching(NSPredicate(format: "value == %@ OR label == %@",
+                                                           "Could Not Complete", "Could Not Complete")).element
+        XCTAssertTrue(title.exists, alert.debugDescription)
+        let dismiss = alert.buttons["action-button-1"]
+        XCTAssertTrue(dismiss.exists, alert.debugDescription)
+        XCTAssertEqual(dismiss.label, "OK")
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
         XCTAssertFalse(app.buttons["sample.save"].exists)
         let corruptAuditError = retainAuditFailure("corrupt import error")
-        app.buttons["OK"].click(); assertHex("#ff00ff")
+        XCTAssertTrue(title.exists, alert.debugDescription)
+        XCTAssertEqual(dismiss.label, "OK")
+        dismiss.click()
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 5), app.debugDescription)
+        assertHex("#ff00ff")
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sample.save"].exists)
         try finishRetainedAudits([corruptAuditError], route: "corrupt alert preserves previous source")

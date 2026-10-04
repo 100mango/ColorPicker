@@ -5,3 +5,6 @@
 "Saved color palette" = "Saved color palette";
 
 "Image color sampler" = "Image color sampler";
+
+"Color sampler" = "Color sampler";
+"Click to sample a pixel; arrow keys move one pixel." = "Click to sample a pixel; arrow keys move one pixel.";
