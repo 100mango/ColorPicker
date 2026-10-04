@@ -22,6 +22,15 @@ class PairedHarnessTests(unittest.TestCase):
     def process(self, role):
         return SimpleNamespace(markers=['TOUCHCOLOR_PAIRED_'+role.upper()+'_RELAUNCH_VERIFIED'], cleanup_confirmed=True)
 
+    def test_failure_diagnostic_is_specific_and_bounded(self):
+        text='unrelated output\n/owned/PhonePairedTransferTests.swift:90: error: test: expected enabled\n'
+        text += "Test Case 'case' failed (1 seconds).\n"
+        self.assertEqual(len(harness.bounded_failure_lines(text)),2)
+        self.assertNotIn('unrelated',str(harness.bounded_failure_lines(text)))
+        large=('file.swift:1: error: '+('x'*5000)+'\n')*100
+        values=harness.bounded_failure_lines(large)
+        self.assertLessEqual(len(values),8);self.assertLessEqual(sum(map(len,values)),8000)
+
     def test_failed_exit_missing_marker_and_unclean_group_reject(self):
         phone, watch = self.process('phone'), self.process('watch')
         harness.validate_outcome(phone, watch, 0, 0)

@@ -22,7 +22,7 @@ struct TVColorWindow: View {
                                 .accessibilityIdentifier("tv.palette.\(index)")
                         }
                     }
-                }.frame(width: 270)
+                }.frame(width: 270).focusSection()
                 VStack(spacing: 18) {
                     HStack {
                         Button("Photos") { photos = true }.accessibilityIdentifier("tv.photos")
@@ -58,6 +58,10 @@ struct TVColorWindow: View {
                     if session.busy { HStack { ProgressView(); Button("Cancel") { photoLibrary.cancel(session) } } }
                     Text("sRGB · transparent pixels on white · local palette").font(.caption)
                 }
+                // The action column spans the list row vertically. Its focus
+                // section provides a real remote route out of the palette even
+                // when no image is open and the only buttons are at the top.
+                .frame(maxHeight: .infinity).focusSection()
             }.padding(40).navigationTitle("TouchColor")
         }
         .sheet(isPresented: $photos) { TVPhotoBrowser(library: photoLibrary, session: session) }

@@ -182,11 +182,12 @@
 - (void)exercisePaletteFileCancelAndWatchInboxReturn:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];
     XCUIElement *file=[self paletteElement:@"palette.import.file" app:app];[self tapReadyPaletteElement:file timeout:5];
+    if (![self waitForPaletteFilesPresentation:app]) return;
     // Observed system navigation owners differ between the wide sidebar and
     // phone picker. Scope positively to those owners, not a global exclusion.
     XCUIElementQuery *pickerBars=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]];
     XCUIElement *cancel=pickerBars.buttons[@"Cancel"].firstMatch;
-    [self tapReadyPaletteElement:cancel timeout:10];
+    [self tapReadyPaletteElement:cancel timeout:5];
     [self waitForPalettePresentationToClose:cancel];
     XCUIElement *close=app.buttons[@"palette.import.close"];
     XCTAssertTrue(close.hittable);XCTAssertTrue([[self paletteElement:@"palette.import.status" app:app].staticTexts.firstMatch.label containsString:@"cancelled"]);
@@ -197,12 +198,27 @@
     close=app.buttons[@"watch.inbox.close"];XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:5];
     [self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
 }
+- (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app {
+    // Cold UIDocumentPicker remote attachment took 11.9–15.8s in the two
+    // failing iPad jobs at 510fd5a. It is a distinct boundary from readiness of
+    // an attached control. Bound this one system presentation to 20s, then keep
+    // the ordinary 5s enabled/hittable gate. Never reopen or retap a failed flow.
+    XCUIElement *picker=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]].firstMatch;
+    NSTimeInterval start=NSProcessInfo.processInfo.systemUptime;
+    BOOL appeared=[picker waitForExistenceWithTimeout:20];
+    NSTimeInterval elapsed=NSProcessInfo.processInfo.systemUptime-start;
+    NSLog(@"PALETTE_FILES_PRESENTATION appeared=%d elapsed=%.3f budget=20",appeared,elapsed);
+    XCTAssertTrue(appeared,@"The real system Files presentation must attach");
+    XCTAssertLessThanOrEqual(elapsed,20,@"Files remote attachment must stay within its presentation budget");
+    return appeared && elapsed<=20;
+}
 - (void)selectSyntheticPaletteFile:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];
     XCUIElement *source=[self paletteElement:@"palette.import.file" app:app];
     [self tapReadyPaletteElement:source timeout:5];
+    if (![self waitForPaletteFilesPresentation:app]) return;
     XCUIElement *file=[app.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'TouchColor-Ordered-Colors'"]].firstMatch;
-    if (![file waitForExistenceWithTimeout:3]) {
+    if (!file.exists) {
         NSString *location=UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad ? @"On My iPad" : @"On My iPhone";
         NSPredicate *localType=[NSPredicate predicateWithFormat:@"(elementType == %lu OR elementType == %lu) AND (identifier == %@ OR label == %@)",(unsigned long)XCUIElementTypeCell,(unsigned long)XCUIElementTypeStaticText,[@"DOC.sidebar.item." stringByAppendingString:location],location];
         NSPredicate *browseType=[NSPredicate predicateWithFormat:@"elementType == %lu AND label == 'Browse'",(unsigned long)XCUIElementTypeButton];
@@ -210,17 +226,16 @@
         // The wide picker shows a location sidebar without a Browse button. Wait
         // for an observed route instead of branching on a pre-readiness exists query.
         XCUIElement *route=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[localType,browseType,fileType]]].firstMatch;
-        // The measured large-iPad remote existence/property resolution took
-        // about six seconds. Match the existing system Cancel budget, keeping
-        // the same monotonic overrun guard and the case's 180/240s outer bounds.
-        if (![self waitForReadyPaletteElement:route timeout:10]) return;
+        // The remote presentation has attached; now require an actionable route
+        // using the same five-second readiness bound as other palette controls.
+        if (![self waitForReadyPaletteElement:route timeout:5]) return;
         NSString *routeLabel=route.label;
         NSLog(@"FILE_PICKER_ROUTE label=%@ identifier=%@ frame=%@",routeLabel,route.identifier,NSStringFromCGRect(route.frame));
         if (![routeLabel hasPrefix:@"TouchColor-Ordered-Colors"]) {
             [route tap];
             if ([routeLabel isEqualToString:@"Browse"]) {
                 XCUIElement *local=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:localType].firstMatch;
-                if (![self waitForReadyPaletteElement:local timeout:10]) return;
+                if (![self waitForReadyPaletteElement:local timeout:5]) return;
                 [local tap];
             }
             XCUIElement *folder=app.staticTexts[@"Palette Fixtures"].firstMatch;

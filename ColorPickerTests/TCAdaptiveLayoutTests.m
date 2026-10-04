@@ -9,6 +9,7 @@
 #import "TCColorUtilities.h"
 #import "TCPrivacyViewController.h"
 #import <WebKit/WebKit.h>
+#import "../TouchColorUITests/TCSystemPickerGeometry.h"
 
 @interface ColorMainViewController (MinimumLayoutTests)
 - (void)reloadHistory;
@@ -49,6 +50,33 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 @interface TCAdaptiveLayoutTests : XCTestCase
 @end
 @implementation TCAdaptiveLayoutTests
+- (void)testPickerDismissalUsesInteriorFreeSpaceInRecordedAndShiftedWindows {
+    NSArray<NSValue *> *windows=@[[NSValue valueWithCGRect:CGRectMake(0,0,1133,744)],
+        [NSValue valueWithCGRect:CGRectMake(0,0,1376,1032)], [NSValue valueWithCGRect:CGRectMake(80,40,694,600)]];
+    NSArray<NSValue *> *presentations=@[[NSValue valueWithCGRect:CGRectMake(346.5,84,593,640)],
+        [NSValue valueWithCGRect:CGRectMake(380,120,600,700)], [NSValue valueWithCGRect:CGRectMake(280,60,450,560)]];
+    for (NSUInteger index=0;index<windows.count;index++) {
+        CGRect window=windows[index].CGRectValue, presentation=presentations[index].CGRectValue;
+        CGPoint point=CGPointZero;
+        XCTAssertTrue(TCPickerDismissalPoint(window,presentation,&point));
+        XCTAssertTrue(CGRectContainsPoint(CGRectInset(window,20,20),point));
+        XCTAssertLessThan(point.x,CGRectGetMinX(presentation)-12,@"Prefer the stable source-side gap");
+        XCTAssertFalse(CGRectContainsPoint(CGRectInset(presentation,-12,-12),point));
+        // Remote Photos can expand to the far-right edge without putting this
+        // source-side cancellation point inside the gallery.
+        CGRect expanded=CGRectMake(presentation.origin.x,presentation.origin.y,CGRectGetMaxX(window)-presentation.origin.x,presentation.size.height);
+        XCTAssertFalse(CGRectContainsPoint(expanded,point));
+    }
+}
+- (void)testPickerDismissalRejectsFullWindowInvalidAndNarrowGaps {
+    CGRect window=CGRectMake(0,0,375,514);CGPoint point=CGPointZero;
+    for (NSValue *value in @[[NSValue valueWithCGRect:window], [NSValue valueWithCGRect:CGRectInset(window,10,10)],
+        [NSValue valueWithCGRect:CGRectZero], [NSValue valueWithCGRect:CGRectNull],
+        [NSValue valueWithCGRect:CGRectMake(NAN,0,100,100)], [NSValue valueWithCGRect:CGRectMake(400,0,100,100)]]) {
+        XCTAssertFalse(TCPickerDismissalPoint(window,value.CGRectValue,&point),@"Use actual sheet Cancel when no safe outside region exists");
+    }
+    XCTAssertFalse(TCPickerDismissalPoint(window,CGRectMake(100,50,200,300),NULL));
+}
 - (void)withController:(UIViewController *)controller size:(CGSize)size style:(UIUserInterfaceStyle)style check:(void (^)(UIViewController *))check {
     UIWindowScene *scene=nil;
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {

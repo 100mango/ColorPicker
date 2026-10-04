@@ -55,3 +55,14 @@ def snapshot(label, build=Path('build'), command_runner=run_captured):
                 result['cleanup_unconfirmed'] = True; break
     result['elapsed_seconds'] = round(time.monotonic() - started, 3)
     return result
+
+
+def require_responsive(value):
+    """Do not start a costly suite after basic local 3s probes already failed."""
+    if value.get('cleanup_unconfirmed'):
+        raise RuntimeError('Native resource prerequisite: previous process cleanup unconfirmed')
+    for key in ('memory_swap', 'pages'):
+        probe = value.get(key, {})
+        if probe.get('exit') != 0 or probe.get('error'):
+            raise RuntimeError('Native resource prerequisite: '+key+' probe was not responsive')
+    return True

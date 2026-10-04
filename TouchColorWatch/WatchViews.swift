@@ -95,7 +95,9 @@ struct WatchColorEditor: View {
                     Button("−") { component.wrappedValue = max(0, component.wrappedValue - 1); crownFocused = true }.accessibilityIdentifier("watch.component.down")
                     Text("\(Int(component.wrappedValue.rounded()))").monospacedDigit()
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .focusable(true).focused($crownFocused)
+                        // A retained navigation destination must also leave the focus
+                        // system, not merely reject its stale binding writes.
+                        .focusable(editorIsVisible).focused($crownFocused)
                         .digitalCrownRotation(component, from: 0, through: 255, by: 1, sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
                         .onTapGesture { crownFocused = true }
                         .accessibilityLabel("Component")

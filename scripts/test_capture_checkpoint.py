@@ -169,7 +169,9 @@ class PrimedRunnerCaptureTests(unittest.TestCase):
         return value
 
     def test_current_runner_nonce_binds_supported_container_lookup_and_capture(self):
-        self.assertTrue(self.prime()['success'])
+        binding=self.prime()
+        self.assertTrue(binding['success'])
+        self.assertEqual(json.loads(self.lease_file.with_suffix('.ack').read_text()),binding)
         def screenshot(command,**kwargs):
             Path(command[-1]).write_bytes(b'synthetic image')
             return subprocess.CompletedProcess(command,0,'written','')

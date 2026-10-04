@@ -2,7 +2,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import unittest
-from native_resources import result_sizes, snapshot
+from native_resources import result_sizes, snapshot, require_responsive
 
 
 class ResourceTests(unittest.TestCase):
@@ -19,6 +19,14 @@ class ResourceTests(unittest.TestCase):
             self.assertEqual(value['bundles'], ['vision-ui.xcresult'])
             self.assertTrue(result_sizes(root, maximum_entries=1)['partial'])
             self.assertTrue(result_sizes(root, maximum_seconds=0)['partial'])
+
+    def test_responsiveness_requires_both_successful_bounded_probes(self):
+        healthy={'memory_swap':{'exit':0},'pages':{'exit':0}}
+        self.assertTrue(require_responsive(healthy))
+        for value in ({}, {'memory_swap':{'exit':0},'pages':{'error':'TimeoutExpired'}},
+                      {'memory_swap':{'exit':1},'pages':{'exit':0}},
+                      {**healthy,'cleanup_unconfirmed':True}):
+            with self.assertRaises(RuntimeError): require_responsive(value)
 
     def test_snapshot_is_small_and_does_not_enumerate_processes(self):
         commands = []

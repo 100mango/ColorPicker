@@ -35,7 +35,11 @@ def prime_container(device,runner_identifier,lease_id,device_root=None):
     info=container.stat();key=(device,runner_identifier)
     _containers[key]=container
     _bindings[key]={'lease':lease_id,'device':info.st_dev,'inode':info.st_ino}
-    return {'success':True,'device':device,'runner':runner_identifier,'lease':lease_id,'container_id':container.name}
+    result={'success':True,'device':device,'runner':runner_identifier,'lease':lease_id,'container_id':container.name}
+    # Finish the supported container lookup before XCTest opens the heavy Photos
+    # service. The test verifies this fresh nonce instead of racing that lookup.
+    publish_acknowledgement(lease.with_suffix('.ack'), result)
+    return result
 
 def _primed_container(device,runner_identifier):
     key=(device,runner_identifier);container=_containers.get(key);binding=_bindings.get(key)

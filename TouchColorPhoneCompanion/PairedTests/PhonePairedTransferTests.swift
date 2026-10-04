@@ -33,8 +33,15 @@ import Darwin
         super.tearDown()
     }
 
-    private func element(_ identifier: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    private func requireReady(_ element: XCUIElement, timeout: TimeInterval = 5) {
+        let start = ProcessInfo.processInfo.systemUptime
+        XCTAssertTrue(element.waitForExistence(timeout: timeout), "The actual palette control must exist")
+        let remaining = timeout - (ProcessInfo.processInfo.systemUptime - start)
+        XCTAssertGreaterThan(remaining, 0, "Element resolution exhausted the readiness budget")
+        guard remaining > 0 else { return }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: remaining), .completed, "The palette control must be enabled and hittable before its single tap")
+        XCTAssertLessThanOrEqual(ProcessInfo.processInfo.systemUptime - start, timeout, "Remote readiness must stay within its original budget")
     }
     private func open(_ identifier: String) {
         let button = app.buttons[identifier], scroll = app.scrollViews["sourceControls"]
@@ -84,11 +91,21 @@ import Darwin
         // Establish existing duplicates through the actual visible import review.
         UIPasteboard.general.string = "[\"#112233\",\"#112233\"]"
         open("palette.import.open")
-        let paste = element("palette.import.paste")
-        XCTAssertTrue(paste.waitForExistence(timeout: 5)); paste.tap()
-        XCTAssertTrue(element("palette.import.color.1").waitForExistence(timeout: 10))
+        let paste = app.buttons["palette.import.paste"]
+        requireReady(paste); paste.tap()
         let accept = app.buttons["palette.import.accept"], importClose = app.buttons["palette.import.close"]
-        XCTAssertTrue(accept.isEnabled); accept.tap(); assertClosed(importClose)
+        // The importer publishes enabled Add Colors after applying its result.
+        // Wait on that real completion state, then inspect typed review cells;
+        // a generic descendant appearing is not proof of action readiness.
+        requireReady(accept)
+        let reviewTable = app.tables["palette.import.review"]
+        for index in 0..<2 {
+            let row = reviewTable.cells["palette.import.color.\(index)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "Both imported duplicates must be visible for review")
+            XCTAssertTrue(row.staticTexts["#112233"].exists)
+            XCTAssertTrue(row.staticTexts["R 17   G 34   B 51"].exists)
+        }
+        accept.tap(); assertClosed(importClose)
         assertHistory(["#112233", "#112233"])
 
         open("watch.inbox.open")

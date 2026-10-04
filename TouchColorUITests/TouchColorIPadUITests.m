@@ -3,7 +3,19 @@
 #import <XCTest/XCTest.h>
 #import <UIKit/UIKit.h>
 #import "TCPaletteUIHelpers.h"
+#import "TCSystemPickerGeometry.h"
 #import <math.h>
+
+static CGRect TCPhotosPresentationBounds(id<XCUIElementSnapshot> snapshot, BOOL *hasPhotosChrome) {
+    BOOL chrome=(snapshot.elementType==XCUIElementTypeNavigationBar && [snapshot.identifier isEqualToString:@"Photos"]) ||
+        [snapshot.identifier isEqualToString:@"photosView_content_scroll_view"];
+    if (chrome) *hasPhotosChrome=YES;
+    BOOL photos=snapshot.elementType==XCUIElementTypePopover ||
+        chrome;
+    CGRect bounds=photos && TCPickerRectIsUsable(snapshot.frame) ? snapshot.frame : CGRectNull;
+    for (id<XCUIElementSnapshot> child in snapshot.children) bounds=CGRectUnion(bounds,TCPhotosPresentationBounds(child,hasPhotosChrome));
+    return bounds;
+}
 
 @interface TouchColorIPadUITests : XCTestCase
 @property (nonatomic, strong) id<NSObject> failClosedInterruption;
@@ -87,18 +99,40 @@
     NSPredicate *presentationType=[NSPredicate predicateWithFormat:@"elementType == %lu OR (elementType == %lu AND identifier == %@)",(unsigned long)XCUIElementTypePopover,(unsigned long)XCUIElementTypeNavigationBar,@"Photos"];
     XCUIElement *presented=[[self.app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:presentationType].firstMatch;
     XCTAssertTrue([presented waitForExistenceWithTimeout:15],@"The system Photos presentation must exist before cancellation");
-    CGRect window=self.app.windows.firstMatch.frame;
+    XCUIElement *windowElement=self.app.windows.firstMatch;
+    CGRect window=windowElement.frame;
     CGRect picker=popover.exists ? popover.frame : CGRectZero;
     BOOL dismissedPopover=NO;
     if (!CGRectIsEmpty(picker)) {
-        NSArray<NSValue *> *outside=@[[NSValue valueWithCGPoint:CGPointMake(CGRectGetMaxX(window)-20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMinX(window)+20,CGRectGetMidY(window))],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMaxY(window)-20)],[NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(window),CGRectGetMinY(window)+20)]];
-        for (NSValue *value in outside) {
-            CGPoint point=value.CGPointValue;
-            if (!CGRectContainsPoint(picker,point)) {
-                XCUICoordinate *origin=[self.app.windows.firstMatch coordinateWithNormalizedOffset:CGVectorMake(0,0)];
-                [[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)] tap];
-                dismissedPopover=YES;break;
-            }
+        // A placeholder popover may exist before its remote Photos content has
+        // its final bounds. One mini run selected a waterfall with the old
+        // far-right "outside" tap. Read the whole presentation from one coherent
+        // snapshot and require two consecutive geometries to agree. No photo-grid
+        // contents are required, and no dismissal gesture is retried.
+        __block CGRect previous=CGRectNull, observedWindow=CGRectNull, observedPicker=CGRectNull;
+        __block NSError *snapshotError=nil;
+        NSTimeInterval start=NSProcessInfo.processInfo.systemUptime;
+        XCTNSPredicateExpectation *settled=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+            id<XCUIElementSnapshot> snapshot=[windowElement snapshotWithError:&snapshotError];
+            if (!snapshot) return NO;
+            BOOL hasPhotosChrome=NO;
+            CGRect bounds=TCPhotosPresentationBounds(snapshot,&hasPhotosChrome);
+            BOOL same=hasPhotosChrome && TCPickerRectIsUsable(bounds) && CGRectEqualToRect(bounds,previous) && CGRectEqualToRect(snapshot.frame,observedWindow);
+            previous=hasPhotosChrome ? bounds : CGRectNull;observedPicker=bounds;observedWindow=snapshot.frame;
+            return same;
+        }] object:nil];
+        XCTAssertEqual([XCTWaiter waitForExpectations:@[settled] timeout:5],XCTWaiterResultCompleted,@"Photos presentation geometry must settle before cancellation: %@",snapshotError);
+        XCTAssertLessThanOrEqual(NSProcessInfo.processInfo.systemUptime-start,5,@"Snapshot resolution must stay within the geometry budget");
+        window=observedWindow;picker=observedPicker;
+        CGPoint point;
+        if (TCPickerDismissalPoint(window,picker,&point)) {
+            XCUICoordinate *origin=[windowElement coordinateWithNormalizedOffset:CGVectorMake(0,0)];
+            XCUICoordinate *target=[origin coordinateWithOffset:CGVectorMake(point.x-window.origin.x,point.y-window.origin.y)];
+            CGPoint actual=target.screenPoint;
+            XCTAssertEqualWithAccuracy(actual.x,point.x,1);XCTAssertEqualWithAccuracy(actual.y,point.y,1);
+            XCTAssertFalse(CGRectContainsPoint(CGRectInset(picker,-12,-12),actual));
+            NSLog(@"PHOTO_PICKER_DISMISS window=%@ presentation=%@ point=%@",NSStringFromCGRect(window),NSStringFromCGRect(picker),NSStringFromCGPoint(actual));
+            [target tap];dismissedPopover=YES;
         }
     }
     if (!dismissedPopover) {
@@ -229,6 +263,7 @@
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
     [self choosePhoto];
     [self cancelPicker];
+    XCTAssertFalse(self.app.images[@"sampleImage"].exists,@"Cancelling Photos must not import an image or replace the live canvas");
     XCTNSPredicateExpectation *resumed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'not available'"] object:self.app.staticTexts[@"cameraStatus"]];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[resumed] timeout:5],XCTWaiterResultCompleted,@"Popover dismissal must leave the paused state: %@",self.app.debugDescription);
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);

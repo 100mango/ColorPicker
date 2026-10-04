@@ -10,6 +10,7 @@
 - (void)activateVisiblePalettePaste:(XCUIApplication *)app;
 - (void)pastePalette:(NSString *)JSON app:(XCUIApplication *)app;
 - (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app;
+- (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app;
 - (void)exercisePalettePasteReviewAcceptAndRelaunch:(XCUIApplication *)app;
 - (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app;
 - (void)exercisePaletteFileCancelAndWatchInboxReturn:(XCUIApplication *)app;

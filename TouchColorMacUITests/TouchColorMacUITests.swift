@@ -482,7 +482,7 @@ import AVFoundation
         XCTAssertTrue(sheet.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", "Active standard sheet content", "Active standard sheet content")).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         let done = sheet.buttons["probe.sheet.done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
-        XCTAssertEqual(done.label, "Done")
+        XCTAssertEqual(done.title, "Done")
         print("NATIVE_STANDARD_SHEET_AX: \(app.debugDescription)"); fflush(stdout)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Mac standard AppKit sheet diagnostic"; image.lifetime = .keepAlways; add(image)
@@ -504,7 +504,7 @@ import AVFoundation
             XCTAssertTrue(sheet.staticTexts.matching(NSPredicate(format: "label == %@ OR value == %@", value, value)).firstMatch.waitForExistence(timeout: 5), app.debugDescription)
         }
         let done = sheet.buttons["action-button-1"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5)); XCTAssertEqual(done.label, "OK")
+        XCTAssertTrue(done.waitForExistence(timeout: 5)); XCTAssertEqual(done.title, "OK")
         print("NATIVE_STANDARD_ALERT_AX: \(app.debugDescription)"); fflush(stdout)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Mac standard AppKit alert diagnostic"; image.lifetime = .keepAlways; add(image)

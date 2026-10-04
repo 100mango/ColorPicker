@@ -154,6 +154,16 @@ def configured_test_run(directory, role, run_id):
     return destination
 
 
+def bounded_failure_lines(text):
+    lines=[]; total=0
+    for line in text.splitlines():
+        if not re.search(r'(?:\.swift:\d+.*error:|Test Case .*failed|exceeded execution time allowance)',line): continue
+        item=line[:1200]
+        if len(lines)>=8 or total+len(item)>8000: break
+        lines.append(item);total+=len(item)
+    return lines
+
+
 class RunningTests:
     def __init__(self, label, command):
         self.label = label; self.ready = threading.Event(); self.markers = []; self.barriers = queue.Queue()
@@ -183,7 +193,11 @@ class RunningTests:
         self.reader.join(timeout=2)
         with self.lock: tail = ''.join(self.tail)[-96_000:]
         (OUT/(self.label+'-test-tail.log')).write_text(tail)
-        report[self.label] = {'exit': code, 'markers': self.markers, 'cleanup_confirmed': self.cleanup_confirmed, 'monotonic_seconds': round(time.monotonic()-self.started, 3), 'wall_seconds': round(time.time()-self.wall_started, 3)}
+        # Keep the precise assertion even when readiness fails before both roles
+        # start. Previously only 'Phone actual inbox readiness missing' survived.
+        failures=bounded_failure_lines(tail)
+        report[self.label] = {'exit': code, 'markers': self.markers, 'cleanup_confirmed': self.cleanup_confirmed, 'monotonic_seconds': round(time.monotonic()-self.started, 3), 'wall_seconds': round(time.time()-self.wall_started, 3), 'failure_lines': failures}
+        if failures: print('PAIRED_XCTEST_FAILURES',json.dumps({'role':self.label,'lines':failures}),flush=True)
         return code
 
 

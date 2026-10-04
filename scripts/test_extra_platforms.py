@@ -7,7 +7,7 @@ from watch_profiles import select_profile
 from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device, activate_owned_pair
 from bounded_process import run_captured, check_output, stop_group
 from vision_suites import CASES as VISION_CASES, needs_photo_seed
-from native_resources import snapshot as resource_snapshot
+from native_resources import snapshot as resource_snapshot, require_responsive
 from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, permits_public_trait_fallback, run_public_trait_fallback
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
@@ -232,6 +232,7 @@ try:
         case={'vision':'VisionWorkflowTests/testRealPhotosImport','tv':'TVWorkflowTests/testActualPhotosRemoteSamplingZoomPaletteCodeAndPersistence'}[kind]
         skip=['-skip-testing:'+name+'UITests/'+case]
     resources('before tests')
+    require_responsive(report['resources'][-1])
     # Keep build logs quiet, but retain runtime test/checkpoint output for precise failures.
     test_common=[value for value in common if value!='-quiet']
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
@@ -265,6 +266,7 @@ try:
         selected=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/'+method]
         print('VISION_UI_EXACT_SCOPE',json.dumps(report['ui_scope']),flush=True)
         resources('before isolated '+method)
+        require_responsive(report['resources'][-1])
         try:
             run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip,600)
         finally:

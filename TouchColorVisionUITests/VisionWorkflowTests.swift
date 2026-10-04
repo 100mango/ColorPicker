@@ -68,6 +68,16 @@ final class VisionWorkflowTests: XCTestCase {
             try JSONSerialization.data(withJSONObject: ["id": lease.uuidString, "runner": Bundle.main.bundleIdentifier ?? ""]).write(to: request, options: .atomic)
         } catch { XCTFail("Could not publish current runner identity: \(error)"); return }
         print("TOUCHCOLOR_PHOTOS_RUNNER_READY \(lease.uuidString)"); fflush(stdout)
+        let acknowledgement = request.deletingPathExtension().appendingPathExtension("ack")
+        let bound = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            FileManager.default.fileExists(atPath: acknowledgement.path)
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [bound], timeout: 30), .completed,
+                       "Current runner must be bound before opening the Photos service")
+        let binding = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        XCTAssertEqual(binding?["success"] as? Bool, true)
+        XCTAssertEqual(binding?["lease"] as? String, lease.uuidString)
+        try? FileManager.default.removeItem(at: acknowledgement)
         app.buttons["image.photos"].tap()
         let picker = app.navigationBars["Photos"]
         XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
@@ -95,8 +105,14 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(paste.waitForExistence(timeout: 20), app.debugDescription)
         paste.tap(); hex("#ff00ff")
     }
-    func testRealPhotosImport() { photo(); capture("Native Vision actual system Photos import") }
+    func testRealPhotosImport() {
+        executionTimeAllowance = 300 // Cold spatial launch, actual picker and two held pixel checkpoints.
+        photo(); capture("Native Vision actual system Photos import")
+    }
     func testRealPastePrecisionZoomPaletteAndRelaunch() {
+        // 510fd5a completed both pixel checkpoints and relaunch, but its total
+        // cold-session duration exceeded 180s. Individual control bounds stay unchanged.
+        executionTimeAllowance = 300
         paste()
         app.buttons["sample.save"].tap(); app.buttons["sample.save"].tap()
         app.buttons["sample.above"].tap(); hex("#00ff00")
@@ -145,7 +161,17 @@ final class VisionWorkflowTests: XCTestCase {
         // Query the observed native Button directly, without an all-descendants scan.
         var reopened: [String] = []
         for index in 3..<6 {
-            app.buttons["palette.actions.\(index)"].tap()
+            let actions = app.buttons["palette.actions.\(index)"]
+            let sidebar = app.collectionViews["palette.list"]
+            XCTAssertTrue(sidebar.exists, app.debugDescription)
+            // A real List virtualizes later rows after the readable row reflow.
+            // Reveal the exact requested entry; never substitute another duplicate.
+            for _ in 0..<6 {
+                if actions.exists && actions.isHittable { break }
+                sidebar.swipeUp(velocity: .slow)
+            }
+            XCTAssertTrue(actions.exists && actions.isHittable, app.debugDescription)
+            actions.tap()
             let copy = app.buttons["palette.copy.\(index)"]
             XCTAssertTrue(copy.waitForExistence(timeout: 5), app.debugDescription); copy.tap()
             reopened.append(UIPasteboard.general.string ?? "")
@@ -275,6 +301,9 @@ final class VisionWorkflowTests: XCTestCase {
         } else { throw XCTSkip("Native audit qualification targets the installed visionOS 27 runtime") }
     }
     @MainActor func testOfficialAccessibilityEmptyAndPastedCanvas() throws {
+        // Both strict audits passed before the prior largest-text case crossed
+        // its 180s total allowance during teardown (186.456s).
+        executionTimeAllowance = 240
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 20))
         try audit("empty workspace")
         paste(); app.buttons["sample.save"].tap()

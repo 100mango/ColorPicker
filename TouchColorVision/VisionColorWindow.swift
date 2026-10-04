@@ -27,7 +27,7 @@ struct VisionColorWindow: View {
                 }
                 Button("Export Palette…") { preparePaletteExport() }.disabled(library.colors.isEmpty)
                     .accessibilityIdentifier("palette.export")
-            }.navigationTitle("Palette").navigationSplitViewColumnWidth(min: paletteColumnMinimum,
+            }.accessibilityIdentifier("palette.list").navigationTitle("Palette").navigationSplitViewColumnWidth(min: paletteColumnMinimum,
                 ideal: max(260, paletteColumnMinimum), max: max(320, paletteColumnMinimum))
         } detail: {
             VStack(spacing: 12) {

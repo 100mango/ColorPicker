@@ -216,9 +216,17 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertTrue(hex.waitForExistence(timeout: 5)); XCTAssertEqual(hex.label, "#ff0000")
         app.buttons["watch.component.down"].tap(); XCTAssertEqual(hex.label, "#fe0000")
         XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)
-        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", "#fe0000"), object: hex)
-        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed, app.debugDescription)
-        XCTAssertTrue(hex.label.hasSuffix("0000"), "The Crown should modify only the selected red channel")
+        // The synchronous Crown event waits for animation. The prior predicate
+        // wait timed out resolving remote snapshots even though its failure
+        // hierarchy already read #fa0000. Assert the returned numerical state.
+        let changed = hex.label
+        XCTAssertNotEqual(changed, "#fe0000", app.debugDescription)
+        XCTAssertTrue(changed.hasPrefix("#") && changed.hasSuffix("0000"), "The Crown should modify only the selected red channel")
+        XCTAssertEqual(changed.count, 7)
+        guard let red = Int(changed.dropFirst().prefix(2), radix: 16) else {
+            XCTFail("The changed red channel must remain valid hexadecimal: \(changed)"); return
+        }
+        XCTAssertTrue((0...253).contains(red), "The negative Crown event must decrease the starting red value 254")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch real Digital Crown RGB adjustment"; shot.lifetime = .keepAlways; add(shot)
     }
 
