@@ -24,8 +24,9 @@ RUNTIME = 'com.apple.CoreSimulator.SimRuntime.xrOS-27-0'
 CASE = 'testOfficialAccessibilityEmptyAndPastedCanvas'
 
 
+# Test roots mirror Path.cwd() in the live driver, including macOS /var aliases.
 def fixture(root):
-    root = Path(root)
+    root = Path(root).resolve()
     (root/'build/vision-runtime').mkdir(parents=True)
     bundle = root/offline.BUNDLE; bundle.mkdir(parents=True)
     (bundle/'Info.plist').write_bytes(b'portable fixture only')
@@ -48,7 +49,7 @@ def fixture(root):
 
 
 def hosted_fixture(root, summary, shutdown):
-    root=Path(root); bundle=root/offline.HOSTED_BUNDLE;bundle.mkdir(parents=True,exist_ok=True)
+    root=Path(root).resolve(); bundle=root/offline.HOSTED_BUNDLE;bundle.mkdir(parents=True,exist_ok=True)
     (bundle/'Info.plist').write_bytes(b'portable hosted result')
     command=['xcodebuild','test-without-building','-project','TouchColorVision.xcodeproj','-scheme','TouchColorVision',
              '-derivedDataPath','build/vision-tests','-resultBundlePath',offline.HOSTED_BUNDLE,'-destination',
@@ -375,6 +376,26 @@ class VisionOfflineTests(unittest.TestCase):
             job_budget.retain_metadata(fallback_reason='Evidence phase failed or exceeded its reserved deadline')
         self.assertEqual({p.name for p in evidence.iterdir()},{'job-budget.json','vision-runtime.json'})
         return evidence,environment
+
+    def test_symlinked_temporary_root_uses_canonical_fixture_bindings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            parent=Path(folder).resolve(); physical=parent/'physical';physical.mkdir()
+            alias=parent/'alias';alias.symlink_to(physical, target_is_directory=True)
+            evidence,environment=self.successful_fallback(alias)
+            runtime=json.loads((evidence/'vision-runtime.json').read_bytes())
+            hosted=runtime['vision_hosted_result']['deferred_result']
+            largest=runtime['largest_system_text']['deferred_result']
+            self.assertEqual(hosted['root'],str(physical))
+            self.assertEqual(largest['contract']['root'],str(physical))
+            self.assertEqual(hosted['bundle']['path'],str(physical/offline.HOSTED_BUNDLE))
+            self.assertEqual(largest['bundle']['path'],str(physical/offline.BUNDLE))
+            # Run the real validator after its prior real qualification/fallback,
+            # without writing to the enclosing CI step's environment/output files.
+            environment['GITHUB_ENV']=str(parent/'fixture-github-env')
+            result=subprocess.run([__import__('sys').executable,str(ROOT/'scripts/validate_evidence.py'),str(evidence),'650000'],
+                                  env=environment,capture_output=True,text=True,timeout=5)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(Path(environment['GITHUB_OUTPUT']).read_text(),'vision_offline_qualified=false\n')
 
     def test_actual_qualifier_then_controller_fallback_remains_uploadable_but_false(self):
         with tempfile.TemporaryDirectory() as folder:

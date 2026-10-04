@@ -172,7 +172,7 @@ class RunnerLeaseDriverTests(unittest.TestCase):
 class RunnerLeaseIdentityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)/'Devices'
+        self.root = (Path(self.temp.name)/'Devices').resolve()
         self.container = self.root/DEVICE/'data/Containers/Data/Application'/str(uuid.uuid4()).upper()
         (self.container/'tmp').mkdir(parents=True)
         self.lease_file = self.container/'tmp'/('TouchColor-runner-' + LEASE + '.json')
@@ -241,6 +241,22 @@ class RunnerLeaseIdentityTests(unittest.TestCase):
         self.prime()
         self.lease_file.unlink(); self.lease_file.symlink_to(old/'tmp'/self.lease_file.name)
         self.blocked_capture()
+
+    def test_symlinked_temporary_root_builds_the_real_fixture_canonically(self):
+        with tempfile.TemporaryDirectory() as folder:
+            parent=Path(folder).resolve();physical=parent/'physical';physical.mkdir()
+            alias=parent/'alias';alias.symlink_to(physical, target_is_directory=True)
+            class AliasedTemporaryDirectory:
+                name=str(alias)
+                def cleanup(self): pass # The enclosing real temporary directory owns cleanup.
+            nested=RunnerLeaseIdentityTests('test_fresh_runner_container_requires_new_priming_and_rejects_old_request')
+            try:
+                with patch.object(tempfile,'TemporaryDirectory',return_value=AliasedTemporaryDirectory()):
+                    nested.setUp()
+                self.assertEqual(nested.root,physical/'Devices')
+                nested.test_fresh_runner_container_requires_new_priming_and_rejects_old_request()
+            finally:
+                nested.doCleanups()
 
     def test_fresh_runner_container_requires_new_priming_and_rejects_old_request(self):
         self.prime()
