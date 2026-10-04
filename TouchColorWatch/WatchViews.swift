@@ -34,12 +34,26 @@ struct WatchHome: View {
     }
 }
 struct WatchSwatch: View {
+    #if DEBUG
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var measuredHeadlineSize: CGFloat = 17
+    #endif
     let color: RGBColor
+    @ViewBuilder private var hexadecimal: some View {
+        let text = Text(color.hex).font(.headline.monospaced()).accessibilityIdentifier("watch.hex")
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_TRAIT_PROOF"] == "1" {
+            text.accessibilityValue("largest=\(dynamicTypeSize == .accessibility5);metric=\(measuredHeadlineSize)")
+        } else { text }
+        #else
+        text
+        #endif
+    }
     var body: some View {
         VStack(spacing: 6) {
             Color(red: Double(color.red)/255, green: Double(color.green)/255, blue: Double(color.blue)/255).frame(height: 52).clipShape(RoundedRectangle(cornerRadius: 10)).accessibilityHidden(true)
-            Text(color.hex).font(.headline.monospaced()).accessibilityIdentifier("watch.hex")
-            Text(color.rgbDescription).font(.caption2.monospacedDigit())
+            hexadecimal
+            Text(color.rgbDescription).font(.caption2.monospacedDigit()).accessibilityIdentifier("watch.rgb")
         }
     }
 }

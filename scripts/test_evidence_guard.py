@@ -44,6 +44,11 @@ def modal_probe(root):
     name=str(uuid.uuid4()).upper()+'.png'
     (directory/name).write_bytes(b'synthetic image bytes')
     (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native Mac standard AppKit sheet diagnostic'}]}]))
+def public_trait(root):
+    (root/'watch-public-trait-summary.json').write_text('{}')
+    directory=root/'watch-public-trait-screenshots';directory.mkdir()
+    name=str(uuid.uuid4()).upper()+'.png';(directory/name).write_bytes(b'synthetic image bytes')
+    (directory/'manifest.json').write_text(json.dumps([{'attachments':[{'exportedFileName':name,'suggestedHumanReadableName':'Native Watch largest public trait synthetic'}]}]))
 def unknown(root): (root/'unapproved.txt').write_text('synthetic')
 def oversize(root): (root/'architecture.txt').write_bytes(b'x'*5_000_001)
 def aggregate(root):
@@ -71,6 +76,7 @@ check(valid, True)
 check(watch_ui, True)
 check(modal_probe, True)
 check(largest_text, True)
+check(public_trait, True)
 check(lambda root: None, False)
 for prepare in [unknown, oversize, symlink, directory_link, hardlink, bad_manifest, unapproved_text, oversize_text, orphan_text]: check(prepare, False)
 check(aggregate, False, 5000)

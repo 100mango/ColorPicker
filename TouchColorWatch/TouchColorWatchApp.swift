@@ -19,5 +19,15 @@ import SwiftUI
         _palette = StateObject(wrappedValue: WatchPalette(defaults: defaults))
         _transfer = StateObject(wrappedValue: WatchTransfer(directory: transferDirectory))
     }
-    var body: some Scene { WindowGroup { WatchHome(palette: palette, transfer: transfer) } }
+    var body: some Scene {
+        WindowGroup {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] == "1" {
+                WatchHome(palette: palette, transfer: transfer).dynamicTypeSize(.accessibility5)
+            } else { WatchHome(palette: palette, transfer: transfer) }
+            #else
+            WatchHome(palette: palette, transfer: transfer)
+            #endif
+        }
+    }
 }

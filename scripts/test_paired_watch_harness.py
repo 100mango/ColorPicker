@@ -74,6 +74,47 @@ class PairedHarnessTests(unittest.TestCase):
             (app/'TouchColor.debug.dylib').write_bytes(b'changed actual implementation')
             self.assertNotEqual(before,harness.product_record(app,'watch'))
 
+    def test_both_owned_devices_boot_before_unchanged_bounded_installs(self):
+        calls=[]; selected={'phone':'p','watch':'w'}; booted=[]
+        inventory={'runtime':[{'udid':'p','state':'Booted'},{'udid':'w','state':'Booted'}]}
+        with patch.object(harness,'run',side_effect=lambda command,timeout:calls.append((command,timeout))), \
+             patch.object(harness,'resources'), patch.object(harness,'runtime_inventory',return_value=inventory):
+            harness.prepare_owned_pair(selected,booted,{}, {},'pair')
+        self.assertEqual([row[0][2] for row in calls],['boot','bootstatus','boot','bootstatus','install','install'])
+        self.assertEqual(booted,['p','w'])
+        self.assertEqual([row[1] for row in calls[-2:]],[120,120])
+        self.assertEqual(calls[-2][0][3],'p'); self.assertEqual(calls[-1][0][3],'w')
+
+    def test_failed_watch_boot_or_wrong_booted_inventory_prevents_install(self):
+        for failure in ('watch boot','extra device'):
+            calls=[]
+            def run(command,timeout):
+                calls.append(command)
+                if failure=='watch boot' and command[2:4]==['boot','w']: raise RuntimeError('synthetic boot failure')
+            inventory={'r':[{'udid':x,'state':'Booted'} for x in ('p','w','unowned')]}
+            with patch.object(harness,'run',side_effect=run),patch.object(harness,'resources'),patch.object(harness,'runtime_inventory',return_value=inventory):
+                with self.assertRaises(RuntimeError):harness.prepare_owned_pair({'phone':'p','watch':'w'},[],{},{},'pair')
+            self.assertFalse(any(command[2]=='install' for command in calls))
+
+    def test_unknown_resource_cleanup_latches_before_any_device_command(self):
+        with patch.object(harness,'resource_snapshot',return_value={'cleanup_unconfirmed':True}),patch.object(harness,'save_report'),patch.object(harness,'run') as run:
+            with self.assertRaises(RuntimeError):harness.prepare_owned_pair({'phone':'p','watch':'w'},[],{},{},'pair')
+            run.assert_not_called()
+        self.assertTrue(harness.report['cleanup_unconfirmed'])
+        with patch.object(harness,'resource_snapshot') as sample:
+            with self.assertRaises(RuntimeError):harness.resources('must stop')
+            sample.assert_not_called()
+
+    def test_product_size_is_bounded_and_never_follows_external_symlinks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);app=root/'TouchColor.app';app.mkdir()
+            (app/'payload').write_bytes(b'12345');outside=root/'outside';outside.mkdir();(outside/'large').write_bytes(b'x'*100)
+            (app/'external').symlink_to(outside,target_is_directory=True)
+            value=harness.product_size(app)
+            self.assertEqual(value['bytes_observed'],5);self.assertEqual(value['files_observed'],1);self.assertFalse(value['partial'])
+            self.assertTrue(harness.product_size(app,maximum_entries=1)['partial'])
+            self.assertTrue(harness.product_size(app,maximum_seconds=0)['partial'])
+
     def test_actual_summary_requires_one_non_skipped_case_on_the_owned_destination(self):
         counts={'passedTests':1,'failedTests':0,'skippedTests':0,'expectedFailures':0}
         row={**counts,'device':{'deviceId':'owned','platform':'watchOS Simulator','osVersion':'27.0','architecture':'arm64'}}

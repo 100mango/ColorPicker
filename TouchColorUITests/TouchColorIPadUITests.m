@@ -29,6 +29,7 @@
     }
     // Capture pixels before the potentially slow remote hierarchy query.
     NSLog(@"IPAD_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,self.app.debugDescription);
+    [self observeFailedPalettePresentation:self.app caseName:self.name];
     self.recordingIssue=NO;
     [super recordIssue:issue];
 }
@@ -48,6 +49,8 @@
     }];self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndWatchInboxReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
+        self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-palette-lifecycle"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10],@"%@",self.app.debugDescription);

@@ -19,6 +19,7 @@ final class WatchWorkflowTests: XCTestCase {
         executionTimeAllowance = name.contains("Chinese") ? 240 : 120
         app = XCUIApplication()
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.watch-ui.\(UUID())"
+        if name.contains("PublicLargestTrait") { app.launchEnvironment["TOUCHCOLOR_TEST_TRAIT_PROOF"] = "1" }
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]
         app.launch()
     }
@@ -61,6 +62,51 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertEqual(app.buttons["watch.save"].label, "保存颜色")
         app.buttons["watch.save"].tap()
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch Chinese color editor"; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor func testPublicLargestTraitChineseColorEditorSave() throws {
+        // Invoked only by the host after this exact owned device returned the
+        // literal unsupported system-size query with confirmed command cleanup.
+        func metric(_ largest: Bool) throws -> Double {
+            let hex = app.staticTexts["watch.hex"]
+            XCTAssertTrue(hex.waitForExistence(timeout: 5))
+            let proof = try XCTUnwrap(hex.value as? String)
+            XCTAssertTrue(proof.hasPrefix("largest=\(largest);metric="), proof)
+            return try XCTUnwrap(Double(proof.components(separatedBy: "metric=").last ?? ""))
+        }
+        XCTAssertTrue(app.buttons["watch.editor"].waitForExistence(timeout: 15))
+        app.buttons["watch.editor"].tap()
+        let baseline = try metric(false), baselineFrame = app.staticTexts["watch.hex"].frame, viewport = app.frame
+        app.terminate(); app.launchEnvironment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] = "1"; app.launch()
+        XCTAssertEqual(app.frame, viewport)
+        testChineseColorEditorSave()
+        // Saving scrolls the editor. Return to its measured numerical readout.
+        for _ in 0..<5 where !app.staticTexts["watch.hex"].isHittable { app.swipeDown() }
+        let largest = try metric(true), hex = app.staticTexts["watch.hex"]
+        XCTAssertGreaterThan(largest, baseline); XCTAssertGreaterThan(hex.frame.height, baselineFrame.height)
+        XCTAssertEqual(hex.label, "#fe0000"); XCTAssertGreaterThan(hex.frame.width / hex.frame.height, 2.5)
+        XCTAssertEqual(app.staticTexts["watch.rgb"].label, "R 254   G 0   B 0")
+        XCTAssertTrue(viewport.contains(app.staticTexts["watch.rgb"].frame))
+        XCTAssertTrue(viewport.contains(hex.frame)); try audit("largest public trait Chinese editor")
+        app.buttons["BackButton"].tap()
+        for _ in 0..<5 where !app.buttons["watch.color.0"].isHittable { app.swipeUp() }
+        XCTAssertTrue(app.buttons["watch.color.0"].isHittable)
+        XCTAssertTrue(app.buttons["watch.color.0"].label.contains("#fe0000"))
+        XCTAssertTrue(viewport.contains(app.buttons["watch.color.0"].frame))
+        try audit("largest public trait saved palette")
+        for _ in 0..<5 where !app.buttons["watch.editor"].isHittable { app.swipeDown() }
+        app.buttons["watch.editor"].tap()
+        for _ in 0..<5 where !app.buttons["watch.send"].isHittable { app.swipeUp() }
+        app.buttons["watch.send"].tap()
+        let close = app.buttons["AX_ActionContentControllerCancelButton"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5)); XCTAssertTrue(close.isHittable)
+        try audit("largest public trait Send and Cancel")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch largest public trait Send and Cancel"; shot.lifetime = .keepAlways; add(shot)
+        close.tap(); XCTAssertTrue(app.buttons["watch.send"].waitForExistence(timeout: 5))
+        app.buttons["BackButton"].tap()
+        for _ in 0..<5 where !app.buttons["watch.transfer.open"].isHittable { app.swipeUp() }
+        app.buttons["watch.transfer.open"].tap()
+        XCTAssertFalse(app.staticTexts["watch.transfer.count"].exists)
+        print("WATCH_PUBLIC_TRAIT_PROOF: accessibility5; baselineMetric=\(baseline); largestMetric=\(largest); viewport=\(viewport); systemPropagation=unverified")
     }
     func testRealPhotoPickerSimulatorUnavailableAndCloseKeepsPalette() {
         app.buttons["watch.photo"].tap()
@@ -192,14 +238,13 @@ final class WatchWorkflowTests: XCTestCase {
                     if let first = indices.min() { above = targetIndex < first }
                 }
                 if identifier.hasPrefix("watch.color.") {
-                    // The real 40 mm trace alternated between the header and rows
-                    // 1/2 even at slow full-screen swipe velocity. A small Crown
-                    // turn scrolls the native home List without skipping row 0.
-                    // Never use this route inside the RGB editor, where the Crown
-                    // intentionally changes a color component instead of scrolling.
+                    // Apple's XCTest contract: positive scrolls UP, negative
+                    // scrolls DOWN, independent of wrist orientation. The old
+                    // reversed sign kept both actual sizes at the home header.
+                    // Keep small bounded Crown movement and the exact target.
                     XCTAssertFalse(app.buttons["BackButton"].exists, app.debugDescription)
                     print("WATCH_LIST_CROWN: target=\(identifier) above=\(above)"); fflush(stdout)
-                    XCUIDevice.shared.rotateDigitalCrown(delta: above ? -0.1 : 0.1)
+                    XCUIDevice.shared.rotateDigitalCrown(delta: above ? 0.1 : -0.1)
                 } else if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
             }
             XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()

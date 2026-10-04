@@ -49,6 +49,20 @@ class ScreenshotEnvelopeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_screenshots(self.envelope().split('SCREENSHOT_END:')[0])
 
+    def test_original_png_keeps_producer_hash_and_png_format(self):
+        self.data = b'\x89PNG\r\n\x1a\n' + b'synthetic-transport-only' + b'\x00\x00\x00\x00IEND\xaeB`\x82'
+        [(metadata, data)] = decode_screenshots(self.envelope())
+        self.assertEqual(metadata['format'], 'png')
+        self.assertEqual(data, self.data)
+        self.assertTrue(metadata['producer_integrity_verified'])
+        with self.assertRaisesRegex(ValueError, 'integrity mismatch'):
+            decode_screenshots(self.envelope(bad_digest=True))
+
+    def test_truncated_generated_png_is_rejected_even_with_matching_transport_digest(self):
+        self.data = b'\x89PNG\r\n\x1a\n' + b'incomplete generated issue screenshot'
+        with self.assertRaisesRegex(ValueError,'Invalid or oversized'):
+            decode_screenshots(self.envelope())
+
 
 if __name__ == '__main__':
     unittest.main()

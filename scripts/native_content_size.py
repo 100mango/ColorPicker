@@ -7,7 +7,7 @@ import json
 import subprocess
 from pathlib import Path
 from bounded_process import run_captured
-from simulator_content_size import LARGEST, probe
+from simulator_content_size import LARGEST, probe, validate_ui_command
 
 WATCH_CASES = (
     'testChineseColorEditorSave',
@@ -126,3 +126,41 @@ def qualified(report):
             and report.get('ui_executed') is True and report.get('ui_exit') == 0
             and report.get('observed_largest') == LARGEST and bool(report.get('verified_results'))
             and not report.get('cleanup_unconfirmed'))
+
+
+def permits_public_trait_fallback(setting, device, runner):
+    """Only an observed unsupported value, never a failed/unknown command."""
+    if (runner.cleanup_unconfirmed or setting.get('cleanup_unconfirmed') or setting.get('device') != device
+            or setting.get('status') != 'original_value_not_recognized'
+            or setting.get('original_raw') != 'unsupported' or setting.get('ui_executed') is not False
+            or setting.get('requested_largest') is not None): return False
+    operations=setting.get('operations',[])
+    if not operations or any(row.get('operation',{}).get('cleanup_confirmed') is not True for row in operations): return False
+    reads=[row for row in operations if row.get('label')=='read_original']
+    return (len(reads)==1 and reads[0].get('output','').strip()=='unsupported'
+            and reads[0]['operation'].get('exit')==0
+            and reads[0]['operation'].get('command')==['xcrun','simctl','ui',device,'content_size'])
+
+
+def run_public_trait_fallback(setting, device, command, contract, runner):
+    if not permits_public_trait_fallback(setting,device,runner):
+        raise RuntimeError('Public trait UI requires this owned device\'s verified unsupported query')
+    validate_ui_command(command,device,contract)
+    expected='-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave'
+    if [part for part in command if part.startswith('-only-testing:')]!=[expected]:
+        raise RuntimeError('Unexpected public trait case')
+    result={'kind':'DEBUG public SwiftUI accessibility5 layout stress','system_propagation_verified':False,'device':device}
+    code,_,operation=runner(command,300,output_limit=2*1024*1024,tail_limit=2*1024*1024,echo=True)
+    result.update(ui_exit=code,operation=operation)
+    if runner.cleanup_unconfirmed or operation.get('cleanup_confirmed') is not True:
+        result.update(cleanup_unconfirmed=True,status='owned_process_cleanup_unconfirmed');return result
+    if code: result['status']='public_trait_ui_failed';return result
+    path=command[command.index('-resultBundlePath')+1]
+    code,text,operation=runner(['xcrun','xcresulttool','get','test-results','summary','--path',path],30,output_limit=500000,tail_limit=500000)
+    result['summary_operation']=operation
+    if runner.cleanup_unconfirmed:
+        result.update(cleanup_unconfirmed=True,status='owned_process_cleanup_unconfirmed');return result
+    if code: result['status']='public_trait_summary_failed';return result
+    result['verified_results']=verify_summary(json.loads(text),device,contract['platform'],1)
+    result['status']='public_trait_ui_passed'
+    return result

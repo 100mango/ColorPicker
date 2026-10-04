@@ -117,16 +117,30 @@ struct TVExportView: View {
     }
 }
 struct TVColorEditor: View {
+    #if DEBUG
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title) private var measuredTitleSize: CGFloat = 48
+    #endif
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var library: PaletteLibrary
     @State private var red = 255
     @State private var green = 0
     @State private var blue = 0
     private var color: ColorDomain.RGBColor { ColorDomain.RGBColor(red: UInt8(red), green: UInt8(green), blue: UInt8(blue)) }
+    @ViewBuilder private var hexadecimal: some View {
+        let text = Text(color.hex).font(.title.monospaced()).accessibilityIdentifier("tv.editor.hex")
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_TRAIT_PROOF"] == "1" {
+            text.accessibilityValue("largest=\(dynamicTypeSize == .accessibility5);metric=\(measuredTitleSize)")
+        } else { text }
+        #else
+        text
+        #endif
+    }
     var body: some View {
         VStack(spacing: 24) {
-            Text(color.hex).font(.title.monospaced()).accessibilityIdentifier("tv.editor.hex")
-            Text(color.rgbDescription).monospacedDigit()
+            hexadecimal
+            Text(color.rgbDescription).monospacedDigit().accessibilityIdentifier("tv.editor.rgb")
             HStack {
                 Button("R −") { red = max(0, red - 1) }.accessibilityIdentifier("tv.red.down")
                 Button("R +") { red = min(255, red + 1) }

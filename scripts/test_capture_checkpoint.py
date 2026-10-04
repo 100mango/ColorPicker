@@ -21,7 +21,7 @@ class CaptureCheckpointTests(unittest.TestCase):
         request.write_text(json.dumps({'id':self.identifier,'name':'Native Vision synthetic protocol test'}))
         self.ack = request.with_suffix('.ack')
         self.output = self.root/'images'
-        checkpoint._containers.clear()
+        checkpoint._containers.clear(); checkpoint._bindings.clear()
         self.lookup = patch.object(checkpoint,'check_output',return_value=str(self.root)+'\n')
         self.lookup.start(); self.addCleanup(self.lookup.stop)
 
@@ -87,6 +87,14 @@ class CaptureCheckpointTests(unittest.TestCase):
         self.assertEqual(result['exit'],13)
         self.assertFalse((self.output/'manifest.json').exists())
 
+    def test_nonzero_with_existing_pixels_cannot_pass_under_optimized_python(self):
+        def behavior(command, **_):
+            Path(command[-1]).write_bytes(b'synthetic partial screenshot')
+            return subprocess.CompletedProcess(command,13,stdout='',stderr='Synthetic denied completion')
+        result,count=self.run_capture(behavior)
+        self.assertFalse(result['success']);self.assertEqual(count,1)
+        self.assertFalse((self.output/'manifest.json').exists())
+
     def test_oversize_image_is_rejected_before_manifest_or_success(self):
         def behavior(command, **_):
             with Path(command[-1]).open('wb') as file: file.truncate(3_000_001)
@@ -138,6 +146,71 @@ class CaptureCheckpointTests(unittest.TestCase):
             result = checkpoint.fail_cached_capture('synthetic-device', 'synthetic-runner', self.identifier, 'Unconfirmed cleanup')
         self.assertFalse(result['success']); self.assertFalse(result['acknowledged'])
         self.assertFalse(self.ack.exists()); lookup.assert_not_called(); launch.assert_not_called()
+
+
+class PrimedRunnerCaptureTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)/'Devices';self.device=str(uuid.uuid4()).upper()
+        self.runner='com.mango.touchColor.TouchColorVisionUITests.xctrunner'
+        self.container=self.root/self.device/'data/Containers/Data/Application'/str(uuid.uuid4()).upper()
+        (self.container/'tmp').mkdir(parents=True)
+        self.lease=str(uuid.uuid4()).upper();self.request=str(uuid.uuid4()).upper()
+        self.lease_file=self.container/'tmp'/('TouchColor-runner-'+self.lease+'.json')
+        self.lease_file.write_text(json.dumps({'id':self.lease,'runner':self.runner}))
+        self.capture_file=self.container/'tmp'/('TouchColor-capture-'+self.request+'.json')
+        self.capture_file.write_text(json.dumps({'id':self.request,'name':'Native Vision Photos grid before selection diagnostic','runner':self.runner,'lease':self.lease}))
+        checkpoint._containers.clear();checkpoint._bindings.clear()
+
+    def prime(self):
+        with patch.object(checkpoint,'check_output',return_value=str(self.container)) as lookup:
+            value=checkpoint.prime_container(self.device,self.runner,self.lease,device_root=self.root)
+        lookup.assert_called_once_with(['xcrun','simctl','get_app_container',self.device,self.runner,'data'],text=True,timeout=15)
+        return value
+
+    def test_current_runner_nonce_binds_supported_container_lookup_and_capture(self):
+        self.assertTrue(self.prime()['success'])
+        def screenshot(command,**kwargs):
+            Path(command[-1]).write_bytes(b'synthetic image')
+            return subprocess.CompletedProcess(command,0,'written','')
+        with patch.object(checkpoint,'check_output') as lookup,patch.object(checkpoint,'run_captured',side_effect=screenshot) as capture:
+            result=checkpoint.capture(self.device,self.runner,self.request,self.container/'images',require_primed=True)
+        lookup.assert_not_called();capture.assert_called_once();self.assertTrue(result['success'])
+        self.assertEqual(json.loads(self.capture_file.with_suffix('.ack').read_text()),result)
+
+    def test_wrong_device_or_runner_nonce_cannot_bind_cache(self):
+        with patch.object(checkpoint,'check_output',return_value=str(self.container)):
+            with self.assertRaises((ValueError,FileNotFoundError)):
+                checkpoint.prime_container(str(uuid.uuid4()).upper(),self.runner,self.lease,device_root=self.root)
+        self.lease_file.write_text(json.dumps({'id':self.lease,'runner':'another.runner'}))
+        with self.assertRaises(ValueError):self.prime()
+        self.assertEqual(checkpoint._bindings,{})
+
+    def test_changed_or_missing_lease_never_relooks_up_or_writes_stale_ack(self):
+        self.prime();self.lease_file.unlink()
+        with patch.object(checkpoint,'check_output') as lookup,patch.object(checkpoint,'run_captured') as command:
+            with self.assertRaises(ValueError):checkpoint.capture(self.device,self.runner,self.request,self.container/'images',require_primed=True)
+            value=checkpoint.fail_cached_capture(self.device,self.runner,self.request,'stale',require_primed=True)
+        lookup.assert_not_called();command.assert_not_called();self.assertFalse(value['acknowledged'])
+        self.assertFalse(self.capture_file.with_suffix('.ack').exists())
+
+    def test_replaced_container_identity_is_rejected_even_with_copied_nonce(self):
+        self.prime();old=self.container.with_name(self.container.name+'-old');self.container.rename(old)
+        (self.container/'tmp').mkdir(parents=True)
+        self.lease_file.write_text(json.dumps({'id':self.lease,'runner':self.runner}))
+        with self.assertRaisesRegex(ValueError,'identity changed'):checkpoint._primed_container(self.device,self.runner)
+
+    def test_capture_lease_mismatch_or_symlink_is_rejected_without_ack_or_command(self):
+        self.prime()
+        wrong={'id':self.request,'name':'Native Vision synthetic','runner':self.runner,'lease':str(uuid.uuid4()).upper()}
+        self.capture_file.write_text(json.dumps(wrong))
+        with patch.object(checkpoint,'run_captured') as command:
+            value=checkpoint.capture(self.device,self.runner,self.request,self.container/'images',require_primed=True)
+            self.assertFalse(value['success']);self.assertFalse(self.capture_file.with_suffix('.ack').exists())
+            self.capture_file.unlink();self.capture_file.symlink_to(self.lease_file)
+            value=checkpoint.capture(self.device,self.runner,self.request,self.container/'images',require_primed=True)
+            self.assertFalse(value['success']);self.assertFalse(self.capture_file.with_suffix('.ack').exists())
+        command.assert_not_called()
 
 
 if __name__=='__main__': unittest.main()

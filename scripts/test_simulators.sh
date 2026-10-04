@@ -4,6 +4,10 @@ family="${1:?Provide iPhoneCompact, iPhoneLarge, iPadLarge or iPadMini}"
 suite="${2:?Provide prepare, prepare-unit, seed, shutdown, TouchColorTests, TouchColorUITests or AccessibilityAudits}"
 case "$family" in iPhoneCompact|iPhoneLarge|iPadLarge|iPadMini) ;; *) exit 2;; esac
 case "$suite" in prepare|prepare-unit|seed|shutdown|TouchColorTests|TouchColorUITests|AccessibilityAudits) ;; *) exit 2;; esac
+if [[ -f "build/$family-runtime-command-uncertain" ]]; then
+  echo 'BLOCKED: an owned simulator diagnostic has no confirmed exit; no later simulator action is permitted' >&2
+  exit 3
+fi
 xcrun simctl list devices available -j > /tmp/touchcolor-devices.json
 device=$(python3 - "$family" "$suite" <<'PY'
 import json,sys,subprocess,time

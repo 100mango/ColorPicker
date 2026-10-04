@@ -38,8 +38,10 @@ def decode_screenshots(log, allow_unverified_legacy=False):
         if not chunks or any(len(chunk) > 4096 for chunk in chunks):
             raise ValueError('Invalid screenshot chunks')
         data = base64.b64decode(''.join(chunks), validate=True)
-        if len(data) > MAX_IMAGE_BYTES or not data.startswith(b'\xff\xd8') or not data.endswith(b'\xff\xd9'):
-            raise ValueError('Invalid or oversized JPEG envelope')
+        jpeg = data.startswith(b'\xff\xd8') and data.endswith(b'\xff\xd9')
+        png = data.startswith(b'\x89PNG\r\n\x1a\n') and data.endswith(b'\x00\x00\x00\x00IEND\xaeB`\x82')
+        if len(data) > MAX_IMAGE_BYTES or not (jpeg or png):
+            raise ValueError('Invalid or oversized JPEG/PNG envelope')
         digest = hashlib.sha256(data).hexdigest()
         producer = metadata.get(name)
         if producer is None:
@@ -47,7 +49,7 @@ def decode_screenshots(log, allow_unverified_legacy=False):
                 raise ValueError('Producer byte count and SHA256 are required')
         elif producer.get('bytes') != len(data) or producer.get('sha256') != digest:
             raise ValueError('Screenshot integrity mismatch')
-        results.append((dict(name=name, bytes=len(data), sha256=digest,
+        results.append((dict(name=name, bytes=len(data), sha256=digest, format='png' if png else 'jpg',
                              producer_integrity_verified=producer is not None), data))
     return results
 
@@ -61,7 +63,7 @@ def main():
     decoded = decode_screenshots(args.log.read_text(encoding='utf-8'), args.allow_unverified_legacy)
     args.output.mkdir(parents=True, exist_ok=True)
     for metadata, data in decoded:
-        path = args.output / (metadata['name'] + '.jpg')
+        path = args.output / (metadata['name'] + '.' + metadata['format'])
         if path.exists() and path.read_bytes() != data:
             raise FileExistsError('Refusing to replace a different evidence image: ' + str(path))
         path.write_bytes(data)

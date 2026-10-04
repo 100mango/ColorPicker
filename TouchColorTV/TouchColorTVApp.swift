@@ -13,5 +13,15 @@ import SwiftUI
         #endif
         _library = StateObject(wrappedValue: PaletteLibrary(defaults: defaults, domain: domain))
     }
-    var body: some Scene { WindowGroup { TVColorWindow(library: library) } }
+    var body: some Scene {
+        WindowGroup {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] == "1" {
+                TVColorWindow(library: library).dynamicTypeSize(.accessibility5)
+            } else { TVColorWindow(library: library) }
+            #else
+            TVColorWindow(library: library)
+            #endif
+        }
+    }
 }

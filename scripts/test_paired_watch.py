@@ -4,10 +4,12 @@ import collections
 import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import queue
 import re
+import stat
 import subprocess
 import threading
 import time
@@ -16,6 +18,7 @@ from bounded_process import run_captured, stop_group
 from capture_simulator_checkpoint import publish_acknowledgement
 from verify_embedded_watch import verify as verify_embedded_watch
 from watch_runtime_pair import phone_template, device_inventory, verify_new_device, verify_pair, activate_owned_pair
+from native_resources import snapshot as resource_snapshot
 
 OUT = Path('build/paired-runtime')
 report = {}
@@ -66,6 +69,50 @@ def product_record(app, role):
         require(path.is_file() and not path.is_symlink(),'Missing actual owned code payload')
         with path.open('rb') as stream: result['code'][path.name]=hashlib.file_digest(stream,'sha256').hexdigest()
     return result
+
+
+def product_size(app, maximum_entries=10000, maximum_seconds=0.25):
+    """Bounded metadata only, without following links or reading app contents."""
+    root=Path(app); require(root.is_dir() and not root.is_symlink(), 'Built app missing')
+    started=time.monotonic(); pending=[root]; entries=files=total=0; partial=False
+    while pending and not partial:
+        with os.scandir(pending.pop()) as children:
+            for child in children:
+                if entries >= maximum_entries or time.monotonic()-started >= maximum_seconds:
+                    partial=True; break
+                entries+=1; info=child.stat(follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode): pending.append(Path(child.path))
+                elif stat.S_ISREG(info.st_mode): files+=1; total+=info.st_size
+    return {'bytes_observed':total,'files_observed':files,'entries_observed':entries,'partial':partial}
+
+
+def resources(label):
+    require(not report.get('cleanup_unconfirmed'), 'Prior cleanup unknown; no resource command')
+    value=resource_snapshot(label)
+    report.setdefault('resources',[]).append(value)
+    if value.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
+    save_report(); print('PAIRED_RESOURCE_STATE',json.dumps(value),flush=True)
+    require(not report.get('cleanup_unconfirmed'), 'Resource command cleanup unknown')
+
+
+def prepare_owned_pair(selected, booted, original_devices, original_pairs, pair):
+    # The prior failed attempt installed the embedded-Watch phone product while
+    # its counterpart was still shut down. Match the successfully exercised
+    # standalone Watch sequence: boot both owned devices before either install.
+    # This is a sequencing hypothesis, not a proven simulator-service diagnosis.
+    resources('before owned pair boot')
+    for role in ('phone','watch'):
+        run(['xcrun','simctl','boot',selected[role]],120); booted.append(selected[role])
+        run(['xcrun','simctl','bootstatus',selected[role],'-b'],420)
+    inventory=runtime_inventory('both owned devices booted before install',selected,original_devices,original_pairs,pair)
+    actual={row['udid'] for rows in inventory.values() for row in rows if row.get('state')=='Booted'}
+    require(actual==set(selected.values()), 'Exact owned pair must be the only booted devices before install')
+    report['booted_before_install']=sorted(actual); resources('after owned pair boot before install')
+    for role in ('phone','watch'):
+        product='Debug-iphonesimulator' if role=='phone' else 'Debug-watchsimulator'
+        app=Path('build/paired-'+role)/'Build/Products'/product/'TouchColor.app'
+        run(['xcrun','simctl','install',selected[role],str(app)],120)
+        resources('after '+role+' install')
 
 
 def installed_products(label, selected):
@@ -196,6 +243,7 @@ def runtime_inventory(label, selected, original_devices, original_pairs, pair):
     require(not extra,'Unexpected simulator creation or XCTest clone; original pair execution unconfirmed')
     require(set(selected.values()).issubset(current),'An owned destination disappeared')
     save_report()
+    return devices
 
 
 def receipt_barrier(processes, selected, runner_ids, run_id, timeout=150):
@@ -270,6 +318,8 @@ def main():
         for target, platform, directory in [('TouchColor','iOS','paired-phone'),('TouchColorWatch','watchOS','paired-watch')]:
             run(['xcodebuild','-quiet','-project',target+'.xcodeproj','-scheme',target,'-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+directory,'ARCHS=arm64','CODE_SIGNING_ALLOWED=NO','build-for-testing'],420)
         report['embedded_simulator_product']=verify_embedded_watch('build/paired-phone/Build/Products/Debug-iphonesimulator/TouchColor.app','simulator',False,build_for_testing=True)
+        report['built_product_sizes']={role:product_size(Path('build/paired-'+role)/'Build/Products'/platform/'TouchColor.app')
+            for role,platform in [('phone','Debug-iphonesimulator'),('watch','Debug-watchsimulator')]}
         original_devices=json.loads(run(['xcrun','simctl','list','devices','-j'],30))['devices']
         original_pairs=json.loads(run(['xcrun','simctl','list','pairs','-j'],30))['pairs']
         report['original_devices']=device_inventory(original_devices); report['original_pairs']=original_pairs
@@ -288,12 +338,10 @@ def main():
             lambda identifier: run(['xcrun','simctl','pair_activate',identifier],60),
             lambda: json.loads(run(['xcrun','simctl','list','pairs','-j'],30)))
         runner_ids={}; paths={}
+        prepare_owned_pair(selected,booted,original_devices,original_pairs,pair)
         for role in ('phone','watch'):
-            run(['xcrun','simctl','boot',selected[role]],120); booted.append(selected[role])
-            run(['xcrun','simctl','bootstatus',selected[role],'-b'],420)
             product='Debug-iphonesimulator' if role=='phone' else 'Debug-watchsimulator'
             directory=Path('build/paired-'+role)/'Build/Products'/product
-            run(['xcrun','simctl','install',selected[role],str(directory/'TouchColor.app')],120)
             target='TouchColorUITests' if role=='phone' else 'TouchColorWatchUITests'
             runner_ids[role]=plistlib.loads((directory/(target+'-Runner.app/Info.plist')).read_bytes())['CFBundleIdentifier']
             require(runner_ids[role].startswith('com.mango.touchColor.'+target), 'Unexpected actual runner product')

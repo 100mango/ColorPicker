@@ -2,6 +2,19 @@
 #import <UIKit/UIKit.h>
 
 @implementation XCTestCase (TCPaletteUIHelpers)
+- (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName {
+    if (![app.launchArguments containsObject:@"--ui-test-palette-lifecycle"]) return;
+    BOOL fileCase=[caseName containsString:@"testPaletteFileCancellationAndWatchInboxReturn"] || [caseName containsString:@"testPaletteFileSelectionReviewAndRelaunch"];
+    if (!fileCase) return;
+    // The original failure and its pixels have already been recorded. Observe
+    // the same presentation once, without tapping, retrying the flow or changing
+    // its result. XCTest remote calls remain subject to the outer case deadline.
+    XCUIElement *picker=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]].firstMatch;
+    NSTimeInterval start=NSProcessInfo.processInfo.systemUptime;
+    BOOL appeared=[picker waitForExistenceWithTimeout:5];
+    NSLog(@"PALETTE_POST_FAILURE_OBSERVATION originalFailurePreserved=1 pickerAppeared=%d elapsed=%.3f budget=5",appeared,NSProcessInfo.processInfo.systemUptime-start);
+    if (appeared) NSLog(@"PALETTE_POST_FAILURE_PICKER identifier=%@ frame=%@",picker.identifier,NSStringFromCGRect(picker.frame));
+}
 - (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
     NSTimeInterval started=NSProcessInfo.processInfo.systemUptime;
     NSTimeInterval deadline=started+timeout;
@@ -197,14 +210,17 @@
         // The wide picker shows a location sidebar without a Browse button. Wait
         // for an observed route instead of branching on a pre-readiness exists query.
         XCUIElement *route=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[localType,browseType,fileType]]].firstMatch;
-        if (![self waitForReadyPaletteElement:route timeout:5]) return;
+        // The measured large-iPad remote existence/property resolution took
+        // about six seconds. Match the existing system Cancel budget, keeping
+        // the same monotonic overrun guard and the case's 180/240s outer bounds.
+        if (![self waitForReadyPaletteElement:route timeout:10]) return;
         NSString *routeLabel=route.label;
         NSLog(@"FILE_PICKER_ROUTE label=%@ identifier=%@ frame=%@",routeLabel,route.identifier,NSStringFromCGRect(route.frame));
         if (![routeLabel hasPrefix:@"TouchColor-Ordered-Colors"]) {
             [route tap];
             if ([routeLabel isEqualToString:@"Browse"]) {
                 XCUIElement *local=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:localType].firstMatch;
-                if (![self waitForReadyPaletteElement:local timeout:5]) return;
+                if (![self waitForReadyPaletteElement:local timeout:10]) return;
                 [local tap];
             }
             XCUIElement *folder=app.staticTexts[@"Palette Fixtures"].firstMatch;

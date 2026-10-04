@@ -5,6 +5,7 @@ is emitted. Missing service evidence remains an explicit observation gap.
 """
 import datetime
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -85,15 +86,22 @@ def owned_crashes(home, identity):
 
 def collect(identity, home, runner=run_captured):
     result = {'family': identity['family'], 'deviceId': identity['udid'], 'runtime': identity['runtime'],
-              'phase': 'after-functional-failure', 'wall_time': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+              'phase': 'after-functional-failure', 'wall_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'simulator_commands_completed': False}
     try:
         command = ['xcrun', 'simctl', 'spawn', identity['udid'], 'launchctl', 'list']
         process = runner(command, timeout=3, text=True)
         result['service_query_exit'] = process.returncode
         result['services'] = service_rows(process.stdout) if process.returncode == 0 else []
+        if process.returncode != 0:
+            return result
     except Exception as error:
         result['service_query_error'] = type(error).__name__
-        result['cleanup_confirmed'] = getattr(error, 'cleanup_confirmed', None)
+        result['host_client_cleanup_confirmed'] = getattr(error, 'cleanup_confirmed', None)
+        # Reaping simctl's host group does not prove its simulator-side command
+        # exited. The pending marker must block later simulator mutation.
+        return result
+    result['simulator_commands_completed'] = True
     result.update(owned_crashes(home, identity))
     return result
 
@@ -115,7 +123,22 @@ def main():
         raise ValueError('Invalid simulator family')
     path = Path('build') / (family + '-simulator.json')
     identity = validate_identity(json.loads(path.read_text()), family)
-    print(framed_record(collect(identity, Path.home())), end='', flush=True)
+    pending = Path('build') / (family + '-runtime-command-uncertain')
+    # An earlier unknown command cannot be cleared by a later successful query.
+    # Exclusive creation also refuses an existing linked marker before spawning.
+    try:
+        with pending.open('x') as marker:
+            marker.write('Simulator diagnostic exit has not been observed. Do not mutate this simulator.\n')
+    except FileExistsError:
+        raise SystemExit('An earlier simulator command has no confirmed exit; diagnostic retry is blocked')
+    result = collect(identity, Path.home())
+    print(framed_record(result), end='', flush=True)
+    if result.get('simulator_commands_completed') is not True:
+        raise SystemExit('Simulator diagnostic completion is uncertain; later simulator actions stay blocked')
+    pending.unlink()
+    if 'GITHUB_OUTPUT' in os.environ:
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('simulator_safe=true\n')
 
 
 if __name__ == '__main__':

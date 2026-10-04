@@ -7,6 +7,8 @@ import ColorPaletteLegacy
 struct VisionColorWindow: View {
     @ObservedObject var library: PaletteLibrary
     @StateObject private var session = ImageSession()
+    @ScaledMetric(relativeTo: .body) private var paletteValueWidth: CGFloat = 84
+    private var paletteColumnMinimum: CGFloat { max(240, paletteValueWidth + 48) }
     @State private var photo: PhotosPickerItem?
     @State private var importing = false
     @State private var privacy = false
@@ -20,26 +22,13 @@ struct VisionColorWindow: View {
             List {
                 HStack { Text("Palette"); Spacer(); Text("\(library.colors.count)").accessibilityIdentifier("palette.count") }
                 ForEach(Array(library.colors.enumerated()), id: \.offset) { index, color in
-                    HStack {
-                        Color(red: Double(color.red)/255, green: Double(color.green)/255, blue: Double(color.blue)/255)
-                            .frame(width: 36, height: 36).accessibilityHidden(true)
-                        VStack(alignment: .leading) {
-                            Text(color.hex).monospaced()
-                            Text(color.rgbDescription).font(.caption.monospacedDigit())
-                        }
-                        Spacer()
-                        Menu {
-                            Button("Copy") { library.copy(color) }.accessibilityIdentifier("palette.copy.\(index)")
-                            Button("Delete", role: .destructive) { library.remove(at: index) }
-                                .accessibilityIdentifier("palette.delete.\(index)")
-                        } label: { Image(systemName: "ellipsis.circle") }
-                            .accessibilityLabel(Text("Actions for color \(index + 1)"))
-                            .accessibilityIdentifier("palette.actions.\(index)")
-                    }
+                    VisionPaletteRow(color: color, index: index,
+                                     copy: { library.copy(color) }, remove: { library.remove(at: index) })
                 }
                 Button("Export Palette…") { preparePaletteExport() }.disabled(library.colors.isEmpty)
                     .accessibilityIdentifier("palette.export")
-            }.navigationTitle("Palette").navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
+            }.navigationTitle("Palette").navigationSplitViewColumnWidth(min: paletteColumnMinimum,
+                ideal: max(260, paletteColumnMinimum), max: max(320, paletteColumnMinimum))
         } detail: {
             VStack(spacing: 12) {
                 if session.raster != nil {
@@ -126,6 +115,55 @@ struct VisionColorWindow: View {
             case .failure(let error): session.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+/// Keep complete numeric values at the user's chosen text size. A narrow row
+/// reflows vertically instead of splitting a hex value or shrinking its font.
+private struct VisionPaletteRow: View {
+    let color: ColorDomain.RGBColor
+    let index: Int
+    let copy: () -> Void
+    let remove: () -> Void
+    private var swatch: some View {
+        Color(red: Double(color.red)/255, green: Double(color.green)/255, blue: Double(color.blue)/255)
+            .frame(width: 36, height: 36).accessibilityHidden(true)
+    }
+    private var hexadecimal: some View {
+        Text(color.hex).monospaced().fixedSize(horizontal: true, vertical: true)
+            .accessibilityIdentifier("palette.hex.\(index)")
+    }
+    private var actions: some View {
+        Menu {
+            Button("Copy", action: copy).accessibilityIdentifier("palette.copy.\(index)")
+            Button("Delete", role: .destructive, action: remove).accessibilityIdentifier("palette.delete.\(index)")
+        } label: { Image(systemName: "ellipsis.circle") }
+            .accessibilityLabel(Text("Actions for color \(index + 1)"))
+            .accessibilityIdentifier("palette.actions.\(index)")
+    }
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                swatch
+                VStack(alignment: .leading) {
+                    hexadecimal
+                    Text(color.rgbDescription).font(.caption.monospacedDigit())
+                        .fixedSize(horizontal: true, vertical: true)
+                        .accessibilityIdentifier("palette.rgb.\(index)")
+                }
+                Spacer(minLength: 8)
+                actions
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { swatch; Spacer(); actions }
+                hexadecimal
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: "R \(color.red)").accessibilityIdentifier("palette.red.\(index)")
+                    Text(verbatim: "G \(color.green)").accessibilityIdentifier("palette.green.\(index)")
+                    Text(verbatim: "B \(color.blue)").accessibilityIdentifier("palette.blue.\(index)")
+                }.font(.caption.monospacedDigit()).fixedSize(horizontal: true, vertical: true)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("palette.row.\(index)")
     }
 }
 

@@ -4,6 +4,10 @@ import subprocess
 import tempfile
 import time
 import unittest
+import os
+import sys
+from unittest.mock import patch
+import uikit_runtime_diagnostics as diagnostics
 
 from uikit_runtime_diagnostics import collect, framed_record, owned_crashes, service_rows, validate_identity
 
@@ -84,6 +88,63 @@ class UIKitRuntimeDiagnosticsTests(unittest.TestCase):
         self.assertLessEqual(len(line.encode('utf-8')) + 128, 32768)
         self.assertIn('metadata exceeded', line)
         self.assertNotIn('界', line)
+
+    def test_host_client_cleanup_does_not_claim_simulator_exit(self):
+        def timeout(command, **options):
+            error = subprocess.TimeoutExpired(command, options['timeout'])
+            error.cleanup_confirmed = True
+            raise error
+        with tempfile.TemporaryDirectory() as home:
+            value = collect(self.identity, home, timeout)
+        self.assertFalse(value['simulator_commands_completed'])
+        self.assertTrue(value['host_client_cleanup_confirmed'])
+
+    def test_pending_barrier_survives_unknown_exit_and_blocks_another_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous = Path.cwd(); os.chdir(directory)
+            try:
+                Path('build').mkdir()
+                Path('build/iPadMini-simulator.json').write_text(json.dumps(self.identity))
+                marker = Path('build/iPadMini-runtime-command-uncertain')
+                value = dict(family='iPadMini', deviceId=self.identity['udid'], simulator_commands_completed=False)
+                with patch.object(sys, 'argv', ['diagnostic', 'iPadMini']), patch.object(diagnostics, 'collect', return_value=value), patch('builtins.print'):
+                    with self.assertRaises(SystemExit): diagnostics.main()
+                self.assertTrue(marker.is_file())
+                original = marker.read_bytes()
+                value['simulator_commands_completed'] = True
+                with patch.object(sys, 'argv', ['diagnostic', 'iPadMini']), patch.object(diagnostics, 'collect', return_value=value) as mocked, patch('builtins.print'):
+                    with self.assertRaises(SystemExit): diagnostics.main()
+                    mocked.assert_not_called()
+                self.assertEqual(marker.read_bytes(), original)
+            finally:
+                os.chdir(previous)
+
+    def test_naturally_completed_first_inventory_clears_only_its_own_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous = Path.cwd(); os.chdir(directory)
+            try:
+                Path('build').mkdir()
+                Path('build/iPadMini-simulator.json').write_text(json.dumps(self.identity))
+                marker = Path('build/iPadMini-runtime-command-uncertain')
+                value = dict(family='iPadMini', deviceId=self.identity['udid'], simulator_commands_completed=True)
+                with patch.object(sys, 'argv', ['diagnostic', 'iPadMini']), patch.object(diagnostics, 'collect', return_value=value), patch.dict(os.environ, {'GITHUB_OUTPUT': str(Path(directory)/'output')}), patch('builtins.print'):
+                    diagnostics.main()
+                self.assertFalse(marker.exists())
+                self.assertEqual(Path('output').read_text(), 'simulator_safe=true\n')
+            finally:
+                os.chdir(previous)
+
+    def test_simulator_driver_refuses_shutdown_before_any_command_when_exit_unknown(self):
+        script = Path(__file__).with_name('test_simulators.sh').resolve()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); (root/'build').mkdir(); (root/'build/iPadMini-runtime-command-uncertain').write_text('unknown')
+            tools=root/'tools'; tools.mkdir(); fake=tools/'xcrun'
+            fake.write_text('#!/bin/sh\ntouch "'+str(root/'command-ran')+'"\n'); fake.chmod(0o755)
+            result=subprocess.run(['bash',str(script),'iPadMini','shutdown'],cwd=root,
+                env=dict(os.environ,PATH=str(tools)+os.pathsep+os.environ['PATH']),capture_output=True,text=True,timeout=3)
+            self.assertEqual(result.returncode,3)
+            self.assertFalse((root/'command-ran').exists())
+
 
 
 if __name__ == '__main__':

@@ -45,8 +45,8 @@ jobs:
         working-directory: scripts
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair
-          python3 -O -m unittest -v test_native_content_size test_simulator_content_size test_atomic_json
+          python3 -m unittest -v test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair
+          python3 -O -m unittest -v test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json
           python3 test_evidence_guard.py
           bash -n test_simulators.sh
       - name: Execute shared package tests
@@ -387,6 +387,10 @@ jobs:
             xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
             xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
           fi
+          if test -d build/watch-public-trait.xcresult; then
+            xcrun xcresulttool get test-results summary --path build/watch-public-trait.xcresult | tee build/evidence/watch-public-trait-summary.json || true
+            xcrun xcresulttool export attachments --path build/watch-public-trait.xcresult --output-path build/evidence/watch-public-trait-screenshots || true
+          fi
           for platform in vision watch; do
             if test -d "build/$platform-largest-text.xcresult"; then
               xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
@@ -402,6 +406,7 @@ jobs:
               cp "build/$platform-runtime/runtime.json" "build/evidence/$platform-runtime.json"
             fi
           done
+          python3 scripts/vision_photos_evidence.py build/evidence
           python3 - <<'PY'
           import json,os
           from pathlib import Path

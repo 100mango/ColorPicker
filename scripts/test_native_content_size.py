@@ -7,12 +7,13 @@ import sys
 import threading
 import time
 import json
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, verify_summary
+from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, verify_summary, permits_public_trait_fallback, run_public_trait_fallback
 from simulator_content_size import LARGEST, probe
 import test_simulator_content_size as core_tests
 DEVICE=core_tests.DEVICE
@@ -125,6 +126,37 @@ class NativeContentSizeTests(unittest.TestCase):
         for key,value in [('restore_verified',False),('ui_executed',False),('ui_exit',2),('status','help_action_unavailable'),('verified_results',{}),('cleanup_unconfirmed',True)]:
             self.assertFalse(qualified(dict(valid,**{key:value})))
 
+    def unsupported(self):
+        return {'device':DEVICE,'status':'original_value_not_recognized','original_raw':'unsupported','ui_executed':False,'requested_largest':None,
+                'operations':[{'label':'read_original','output':'unsupported\n','operation':{'command':['xcrun','simctl','ui',DEVICE,'content_size'],'exit':0,'cleanup_confirmed':True}}]}
+
+    def test_public_trait_requires_exact_observed_unsupported_and_every_cleanup_proof(self):
+        runner=TouchSizeRunner(Mock()); valid=self.unsupported()
+        self.assertTrue(permits_public_trait_fallback(valid,DEVICE,runner));self.assertFalse(qualified(valid))
+        for key,value in [('device','other'),('status','device_read_rejected'),('original_raw','unknown'),('ui_executed',True),('requested_largest',LARGEST),('cleanup_unconfirmed',True)]:
+            self.assertFalse(permits_public_trait_fallback(dict(valid,**{key:value}),DEVICE,runner))
+        for key,value in [('exit',2),('cleanup_confirmed',False),('command',['xcrun','simctl','ui','other','content_size'])]:
+            changed=copy.deepcopy(valid);changed['operations'][0]['operation'][key]=value
+            self.assertFalse(permits_public_trait_fallback(changed,DEVICE,runner))
+        runner.cleanup_unconfirmed=True
+        self.assertFalse(permits_public_trait_fallback(valid,DEVICE,runner))
+
+    def test_public_trait_exact_command_and_summary_do_not_qualify_system_propagation(self):
+        fixture=core_tests.SimulatorContentSizeTests()
+        with tempfile.TemporaryDirectory() as folder:
+            contract,command=fixture.ui_fixture(folder)
+            contract.update(test_bundle='TouchColorWatchUITests',platform='watchOS Simulator')
+            command[command.index('-destination')+1]='platform=watchOS Simulator,id='+DEVICE
+            command=[part if not part.startswith('-only-testing:') else '-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave' for part in command]
+            ui=Mock(return_value=(0,'',{'process_group_gone':True,'capture_reader_finished':True}))
+            summary=Mock(return_value=subprocess.CompletedProcess(['summary'],0,json.dumps(self.summary(1)),''))
+            result=run_public_trait_fallback(self.unsupported(),DEVICE,command,contract,TouchSizeRunner(ui,summary))
+            self.assertEqual(result['status'],'public_trait_ui_passed');self.assertFalse(result['system_propagation_verified']);self.assertFalse(qualified(result))
+            self.assertEqual(ui.call_args.args[1],300)
+            ui=Mock(return_value=(0,'',{'process_group_gone':True,'capture_reader_finished':False}));summary.reset_mock()
+            result=run_public_trait_fallback(self.unsupported(),DEVICE,command,contract,TouchSizeRunner(ui,summary))
+            self.assertTrue(result['cleanup_unconfirmed']);summary.assert_not_called()
+
     def test_only_existing_small_subset_runs_after_normal_scope_with_same_caps(self):
         root=Path(__file__).resolve().parents[1]
         source=(root/'scripts/test_extra_platforms.py').read_text()
@@ -176,7 +208,7 @@ class NativeContentSizeTests(unittest.TestCase):
         from bounded_process import stop_group
         source=Path(__file__).with_name('test_extra_platforms.py').read_text()
         function=next(node for node in ast.parse(source).body if isinstance(node,ast.FunctionDef) and node.name=='run')
-        namespace=dict(Path=Path,datetime=datetime,time=time,json=json,re=re,threading=threading,
+        namespace=dict(Path=Path,datetime=datetime,time=time,json=json,re=re,threading=threading,os=os,
                        subprocess=subprocess,stop_group=stop_group,print=lambda *a,**k:None,
                        kind='vision',device={'udid':DEVICE},out=Path(folder),capture_checkpoint=capture,
                        fail_cached_capture=lambda *a: {'success':False},

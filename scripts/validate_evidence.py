@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed final upload guard, independent from xcresult export/attachment trimming."""
-import json, os, re, stat, sys
+import hashlib, json, os, re, stat, sys
+from vision_photos_evidence import METHOD as PHOTOS_METHOD, PREFIX as PHOTOS_PREFIX, source_kind, MAX_TEXT, MAX_TOTAL
 from pathlib import Path
 root = Path(sys.argv[1] if len(sys.argv) > 1 else 'build/evidence')
 maximum_total = int(sys.argv[2]) if len(sys.argv) > 2 else 8000000
@@ -15,12 +16,15 @@ allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vis
 allowed_dirs.add('modal-probe-screenshots')
 allowed_root.update({'vision-largest-text-summary.json','watch-largest-text-summary.json'})
 allowed_dirs.update({'vision-largest-text-screenshots','watch-largest-text-screenshots'})
+allowed_root.add('watch-public-trait-summary.json')
+allowed_dirs.add('watch-public-trait-screenshots')
 allowed_dirs.update({'paired-phone-screenshots','paired-watch-screenshots'})
 allowed_root.update({'paired-runtime.json','paired-phone-summary.json','paired-watch-summary.json'})
 total = 0
 count = 0
 text_files = set()
 approved_text_files = set()
+photos_text_count = photos_text_bytes = 0
 for folder, dirs, files in os.walk(root, followlinks=False):
     directory = Path(folder)
     for name in dirs:
@@ -56,7 +60,21 @@ for folder, dirs, files in os.walk(root, followlinks=False):
                     if not (directory / exported).is_file():
                         raise RuntimeError('Manifest references missing evidence')
                     if exported.endswith('.txt'):
-                        if not item.get('suggestedHumanReadableName', '').startswith('Native Mac accessibility issue'):
+                        title=item.get('suggestedHumanReadableName','')
+                        if title.startswith(PHOTOS_PREFIX):
+                            facts=item.get('boundedText',{})
+                            actual=directory/exported
+                            if directory.name!='vision-ui-screenshots' or group.get('testIdentifier')!=PHOTOS_METHOD or source_kind(item.get('originalSuggestedHumanReadableName','')) is None:
+                                raise RuntimeError('Unexpected automatic Photos diagnostic provenance')
+                            text_info=actual.lstat()
+                            if not stat.S_ISREG(text_info.st_mode) or text_info.st_nlink!=1:raise RuntimeError('Unsafe Photos diagnostic file')
+                            if text_info.st_size>MAX_TEXT or facts.get('retainedBytes')!=text_info.st_size or hashlib.sha256(actual.read_bytes()).hexdigest()!=facts.get('retainedSHA256'):
+                                raise RuntimeError('Photos diagnostic retained bytes/hash mismatch')
+                            if not re.fullmatch('[0-9a-f]{64}',facts.get('sourceSHA256','')) or type(facts.get('sourceBytes')) is not int or not 0<=facts['sourceBytes']<=5000000 or type(facts.get('truncated')) is not bool:
+                                raise RuntimeError('Invalid Photos diagnostic source record')
+                            photos_text_count+=1;photos_text_bytes+=actual.stat().st_size
+                            if photos_text_count>3 or photos_text_bytes>MAX_TOTAL:raise RuntimeError('Photos diagnostic aggregate exceeded')
+                        elif not title.startswith('Native Mac accessibility issue'):
                             raise RuntimeError('Unexpected text attachment provenance')
                         approved_text_files.add(directory / exported)
                     if not item.get('suggestedHumanReadableName', '').startswith(('Native Mac', 'Native Vision', 'Native Watch', 'Native TV', 'touchcolor-paired-phone')):

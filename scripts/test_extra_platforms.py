@@ -2,13 +2,13 @@
 """One native platform per invocation on the existing standard runner; bounded real builds/tests."""
 import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,time,uuid
 from pathlib import Path
-from capture_simulator_checkpoint import capture as capture_checkpoint, fail_cached_capture
+from capture_simulator_checkpoint import capture as capture_checkpoint, fail_cached_capture, prime_container
 from watch_profiles import select_profile
 from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device, activate_owned_pair
 from bounded_process import run_captured, check_output, stop_group
 from vision_suites import CASES as VISION_CASES, needs_photo_seed
 from native_resources import snapshot as resource_snapshot
-from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified
+from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, permits_public_trait_fallback, run_public_trait_fallback
 kind=sys.argv[1]; assert kind in ('vision','watch','tv')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
@@ -33,24 +33,33 @@ def run(command,timeout,required=True):
     def read_output():
         for line in p.stdout:
             print(line,end='',flush=True)
+            ready=re.search(r'TOUCHCOLOR_PHOTOS_RUNNER_READY ([0-9A-F-]{36})',line)
+            if ready and kind=='vision' and os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos' and device:
+                try:
+                    if report.get('cleanup_unconfirmed'): raise RuntimeError('Prior owned process cleanup is unconfirmed')
+                    report['runner_container_cache']=prime_container(device['udid'],report['ui_runner_identifier'],ready.group(1))
+                except Exception as error:
+                    report['runner_container_cache']={'success':False,'error':type(error).__name__,'detail':str(error)[:500]}
+                    if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
+                print('VISION_RUNNER_CONTAINER_CACHE',json.dumps(report['runner_container_cache']),flush=True)
             checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
             if checkpoint and kind=='vision' and device and len(report['captures'])<16:
                 try:
                     if report.get('cleanup_unconfirmed'):
-                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started')
+                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started',require_primed=os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos')
                     else:
-                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots',may_start=lambda: not report.get('cleanup_unconfirmed'))
+                        result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots',may_start=lambda: not report.get('cleanup_unconfirmed'),require_primed=os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos')
                     if report.get('text_size_phase')=='largest': result['system_text_size']='accessibility-extra-extra-extra-large'
                     if result.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
                     report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
                 except Exception as error:
-                    failure=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error))
+                    failure=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error),require_primed=os.environ.get('TOUCHCOLOR_VISION_CASE')=='photos')
                     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
                     report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
     def output():
         try:
-            read_output()
+            with p.stdout: read_output()
             reader_complete.set()
         except Exception as error:
             reader_errors.append(type(error).__name__)
@@ -130,6 +139,7 @@ try:
     text=check_output(['strings',str(binary)],text=True,timeout=30)
     assert 'TOUCHCOLOR_PAIRED_E2E' not in text and 'TOUCHCOLOR_TEST_DEFAULTS' not in text and '--ui-test-reset' not in text, 'Debug seam leaked into Release'
     assert 'WATCH_EDITOR' not in text and 'com.mango.touchColor.WatchDiagnostics' not in text, 'Debug Watch lifecycle diagnostics leaked into Release'
+    assert 'TOUCHCOLOR_TEST_LARGEST_TRAIT' not in text and 'TOUCHCOLOR_TEST_TRAIT_PROOF' not in text, 'Debug public-trait seam leaked into Release'
     run(common+['-configuration','Debug','-destination','generic/platform='+platform+' Simulator','-derivedDataPath','build/'+kind+'-tests','ARCHS=arm64','build-for-testing'],420)
     if kind=='vision':
         runner_info=Path('build/vision-tests/Build/Products/Debug-xrsimulator/TouchColorVisionUITests-Runner.app/Info.plist')
@@ -138,6 +148,8 @@ try:
     devices=json.loads(check_output(['xcrun','simctl','list','devices','available','-j'],timeout=30))['devices']
     candidates=[(runtime,d) for runtime,rows in devices.items() if runtime.endswith(runtime_suffix) for d in rows if d.get('isAvailable')]
     if not candidates:raise RuntimeError('No installed available '+runtime_suffix+' device')
+    if kind=='vision':
+        report['vision_initial_booted_devices']=[{'runtime':r,'udid':d['udid'],'name':d['name']} for r,rows in devices.items() for d in rows if d.get('state')=='Booted']
     if kind=='watch':
         size=os.environ.get('TOUCHCOLOR_WATCH_PROFILE','largest')
         runtime,device,inventory=select_profile(devices,runtime_suffix,size)
@@ -238,6 +250,14 @@ try:
         if photo_seed_failed:
             skip=['-skip-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPhotosImport']
         case=os.environ['TOUCHCOLOR_VISION_CASE']
+        if case=='photos':
+            inventory=json.loads(check_output(['xcrun','simctl','list','devices','available','-j'],timeout=15))['devices']
+            booted=[{'runtime':r,'udid':d['udid'],'name':d['name']} for r,rows in inventory.items() for d in rows if d.get('state')=='Booted']
+            if len(booted)>64: raise RuntimeError('Unexpected booted-device inventory size')
+            report['vision_before_photos_booted_devices']=booted
+            print('VISION_PHOTOS_BOOTED_INVENTORY',json.dumps(booted),flush=True)
+            if len(booted)!=1 or booted[0]['udid']!=device['udid'] or booted[0]['runtime']!=runtime:
+                raise RuntimeError('Photos row requires only its exact selected Vision device booted; no other device was changed')
         assert case in VISION_CASES, 'Unknown isolated Vision case'
         method,budget=VISION_CASES[case]
         assert int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])==budget, 'Vision evidence allocation differs from exact inventory'
@@ -256,7 +276,8 @@ try:
         # outer25-minute job and per-case120/240s allowances are unchanged.
         report['xctest_summary_scope']='hosted tests only; watch-ui-summary.json contains the separate UI result'
         run(test_common+test_arguments+['-resultBundlePath','build/watch-tests.xcresult','-only-testing:TouchColorWatchTests'],480)
-        run(test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests'],840)
+        run(test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
+            '-skip-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave'],840)
     else:
         run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
     report['tests']='passed'
@@ -282,6 +303,14 @@ try:
             if setting.get('cleanup_unconfirmed') or size_runner.cleanup_unconfirmed:
                 report['cleanup_unconfirmed']=True
             if not qualified(setting):
+                if kind=='watch' and permits_public_trait_fallback(setting,device['udid'],size_runner):
+                    fallback=test_common+test_arguments+['-resultBundlePath','build/watch-public-trait.xcresult',
+                        '-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
+                    report['public_trait_layout']=run_public_trait_fallback(setting,device['udid'],fallback,contract,size_runner)
+                    print('NATIVE_PUBLIC_TRAIT_LAYOUT',json.dumps(report['public_trait_layout']),flush=True)
+                    if report['public_trait_layout'].get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
+                # A successful forced-layout test does not turn an unsupported
+                # actual system-setting route into a qualified propagation gate.
                 raise RuntimeError('Required system-largest-text gate: '+setting['status'])
         finally:
             if size_runner.cleanup_unconfirmed: report['cleanup_unconfirmed']=True

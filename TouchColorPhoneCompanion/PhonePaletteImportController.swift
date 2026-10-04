@@ -20,6 +20,25 @@ import ColorPaletteLegacy
     private var textSizeObservation: NSObjectProtocol?
     init(defaults: UserDefaults = .standard) { self.defaults = defaults; super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+#if DEBUG
+    // Read-only observations for the failing import cases. No data, object
+    // addresses or accessibility mutations; absent from Release and audits.
+    private func tracePresentation(_ event: String) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-test-palette-lifecycle") else { return }
+        func typeName(_ value: UIViewController?) -> String { value.map { String(describing: type(of: $0)) } ?? "none" }
+        let navigation = navigationController
+        let fields: [String: Any] = ["event": event, "controller": typeName(self),
+            "presenter": typeName(presentingViewController), "presented": typeName(presentedViewController),
+            "navigationPresenter": typeName(navigation?.presentingViewController),
+            "navigationPresented": typeName(navigation?.presentedViewController),
+            "visible": viewIfLoaded?.window != nil, "dismissing": isBeingDismissed,
+            "navigationDismissing": navigation?.isBeingDismissed ?? false,
+            "transition": transitionCoordinator != nil, "busy": busy, "finished": finished]
+        if let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
+           let text = String(data: data, encoding: .utf8) { NSLog("PALETTE_LIFECYCLE %@", text) }
+    }
+    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); tracePresentation("appeared") }
+#endif
     @objc class func present(from owner: UIViewController, completion: @escaping () -> Void) {
         let content = PhonePaletteImportController(); content.completion = completion
         let navigation = UINavigationController(rootViewController: content); navigation.modalPresentationStyle = .fullScreen
@@ -58,7 +77,13 @@ import ColorPaletteLegacy
     func chooseFile() {
         _ = begin()
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json], asCopy: false)
-        picker.allowsMultipleSelection = false; picker.delegate = self; present(picker, animated: true)
+        picker.allowsMultipleSelection = false; picker.delegate = self
+#if DEBUG
+        tracePresentation("file-present-requested")
+        present(picker, animated: true) { [weak self] in self?.tracePresentation("file-present-completed") }
+#else
+        present(picker, animated: true)
+#endif
     }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard urls.count == 1, let url = urls.first else { return }
@@ -96,14 +121,30 @@ import ColorPaletteLegacy
         LegacyPalette(defaults: defaults).append(selection.colors)
         close()
     }
-    @objc private func close() { dismiss(animated: true) { self.finish() } }
+    @objc private func close() {
+#if DEBUG
+        tracePresentation("close-action-received")
+#endif
+        dismiss(animated: true) {
+#if DEBUG
+            self.tracePresentation("close-dismiss-completed")
+#endif
+            self.finish()
+        }
+    }
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { finish() }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+#if DEBUG
+        tracePresentation("disappeared")
+#endif
         if isBeingDismissed || navigationController?.isBeingDismissed == true { finish() }
     }
     private func finish() {
         guard !finished else { return }; finished = true
+#if DEBUG
+        tracePresentation("finished")
+#endif
         gate.invalidate(); queue.cancelAllOperations(); providerProgress?.cancel()
         let callback = completion; completion = nil; callback?()
     }

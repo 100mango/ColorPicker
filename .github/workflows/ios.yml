@@ -50,6 +50,7 @@ jobs:
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
+          python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
           python3 -m unittest discover -s scripts -p test_uikit_runtime_diagnostics.py
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
@@ -230,15 +231,16 @@ jobs:
         timeout-minutes: 16
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
       - name: Read bounded Files-service metadata after a functional failure
+        id: runtime-diagnostics
         if: ${{ !cancelled() && steps.functional-tests.outcome == 'failure' }}
         timeout-minutes: 2
         run: python3 scripts/uikit_runtime_diagnostics.py "$TC_TEST_FAMILY"
       - name: Official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
       - name: Shut down simulator
-        if: ${{ always() && steps.warm-device.outcome != 'skipped' }}
+        if: ${{ always() && steps.warm-device.outcome != 'skipped' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
       - name: Export bounded device evidence

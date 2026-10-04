@@ -15,12 +15,14 @@ import sys
 ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 2, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
 MAX_IMAGE_BYTES = 500 * 1024
 MAX_RUN_LOG_BYTES = 20_000_000
-MAX_EXPORT_DIAGNOSTIC_BYTES = 16 * 1024
+MAX_EXPORT_DIAGNOSTIC_BYTES = 4 * 1024
+MAX_ISSUE_DESCRIPTION_LOG_BYTES = 24 * 1024  # Reallocated from child diagnostics; includes framing.
+MAX_ISSUE_SOURCE_BYTES = 8 * 1024
 MAX_EXPORTS_PER_DEVICE = 2  # Functional and accessibility result bundles.
 MAX_RUNTIME_DIAGNOSTIC_BYTES = 32 * 1024  # One framed metadata record per device.
 RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * (4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024)
                       + len(ALLOCATIONS) * (MAX_EXPORTS_PER_DEVICE * (MAX_EXPORT_DIAGNOSTIC_BYTES + 512)
-                                            + MAX_RUNTIME_DIAGNOSTIC_BYTES))
+                                            + MAX_ISSUE_DESCRIPTION_LOG_BYTES + MAX_RUNTIME_DIAGNOSTIC_BYTES))
 assert RESERVED_LOG_BYTES <= MAX_RUN_LOG_BYTES
 family = os.environ['TC_TEST_FAMILY']
 assert family in ALLOCATIONS
@@ -31,15 +33,93 @@ print('EVIDENCE_BUDGET:' + json.dumps({'family': family, 'allocations': ALLOCATI
 exports = {}
 
 
-def records(value):
+def records(value, test_identifier=None):
     if isinstance(value, dict):
+        test_identifier = value.get('testIdentifier', test_identifier)
         if 'exportedFileName' in value:
-            yield value
+            yield dict(value, _testIdentifier=test_identifier)
         for child in value.values():
-            yield from records(child)
+            yield from records(child, test_identifier)
     elif isinstance(value, list):
         for child in value:
-            yield from records(child)
+            yield from records(child, test_identifier)
+
+
+def attachment_path(destination, record):
+    name = record['exportedFileName']
+    if not isinstance(name, str) or pathlib.Path(name).name != name:
+        raise ValueError('Attachment filename must be local to its export')
+    path = destination / name
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(destination.resolve()):
+        raise ValueError('Attachment must be an ordinary file inside its export')
+    return path
+
+
+def emit_issue_descriptions(destination, attachments):
+    remaining = MAX_ISSUE_DESCRIPTION_LOG_BYTES - 512  # Final count/framing reserve.
+    manifest_digest = hashlib.sha256((destination / 'manifest.json').read_bytes()).hexdigest()
+    selected = [item for item in attachments
+                if item.get('isAssociatedWithFailure') is True
+                and item.get('suggestedHumanReadableName') == 'Complete Issue Description.txt'
+                and (item.get('_testIdentifier') or '').startswith('TouchColorAccessibilityUITests/')]
+    if not selected:
+        print('AUDIT_ISSUE_DESCRIPTION_SUMMARY:{"selected":0,"emitted":0,"omitted_by_limit":0}', flush=True)
+        return
+    commit = os.environ.get('GITHUB_SHA', '')
+    if not re.fullmatch('[0-9a-f]{40}', commit):
+        raise ValueError('Exact tested source SHA is required for issue evidence')
+    emitted = 0
+    for item in selected[:8]:
+        path = attachment_path(destination, item)
+        before = path.stat()
+        with path.open('rb') as handle:
+            raw = handle.read(MAX_ISSUE_SOURCE_BYTES)
+        after = path.stat()
+        if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns) or not raw:
+            raise ValueError('Generated issue attachment was empty or changed during its bounded read')
+        original_size = before.st_size
+        text = raw.decode('utf-8', errors='replace')
+        while True:
+            encoded_text = text.encode('utf-8')
+            payload = {'family': family, 'suite': 'AccessibilityAudits', 'test': item['_testIdentifier'],
+                'attachment': path.name, 'tested_commit': commit, 'manifest_sha256': manifest_digest,
+                'source_bytes': original_size, 'captured_prefix_bytes': len(raw),
+                'captured_prefix_sha256': hashlib.sha256(raw).hexdigest(),
+                'text_sha256': hashlib.sha256(encoded_text).hexdigest(),
+                'truncated': original_size > len(raw) or text != raw.decode('utf-8', errors='replace'),
+                'utf8_replaced': raw.decode('utf-8', errors='replace').encode('utf-8') != raw,
+                'text': text}
+            # Keep textual diagnostics from accidentally resembling an image envelope.
+            line = 'AUDIT_ISSUE_DESCRIPTION:' + json.dumps(payload, ensure_ascii=False, sort_keys=True).replace('SCREENSHOT_', 'SCREENSHOT\\u005f') + '\n'
+            cost = len(line.encode('utf-8')) + 128  # Actions timestamp/line framing.
+            if cost <= min(remaining, 8 * 1024):
+                print(line, end='', flush=True); remaining -= cost; emitted += 1
+                break
+            if len(text) < 128:
+                break
+            text = text[:len(text) // 2]
+    print('AUDIT_ISSUE_DESCRIPTION_SUMMARY:' + json.dumps({'selected': len(selected), 'emitted': emitted,
+        'omitted_by_limit': len(selected)-emitted, 'byte_budget_including_framing': MAX_ISSUE_DESCRIPTION_LOG_BYTES}, sort_keys=True), flush=True)
+
+
+def paired_issue_image(record, attachments, destination):
+    test = record.get('_testIdentifier')
+    if not test or not test.startswith('TouchColorAccessibilityUITests/'):
+        return None
+    matches = [item for item in attachments if item.get('_testIdentifier') == test
+               and item.get('isAssociatedWithFailure') is True
+               and (item.get('suggestedHumanReadableName') or '').startswith('App Screenshot')]
+    if len(matches) != 1:
+        return None
+    path = attachment_path(destination, matches[0])
+    # Preserve the generated issue pixels losslessly. Fall back to the existing
+    # bounded JPEG if its original PNG cannot fit this same image slot.
+    if path.stat().st_size > MAX_IMAGE_BYTES:
+        return None
+    data = path.read_bytes()
+    if data.startswith(b'\x89PNG\r\n\x1a\n') and data.endswith(b'\x00\x00\x00\x00IEND\xaeB`\x82'):
+        return data
+    return None
 
 
 def export_named(suite, names, limit):
@@ -63,6 +143,8 @@ def export_named(suite, names, limit):
                 print(f'EXPORT_DIAGNOSTICS_TRUNCATED original_bytes={len(diagnostics)} limit={MAX_EXPORT_DIAGNOSTIC_BYTES}', flush=True)
         exported.check_returncode()
         exports[suite] = destination, list(records(json.loads((destination / 'manifest.json').read_text())))
+        if suite == 'AccessibilityAudits':
+            emit_issue_descriptions(*exports[suite])
     destination, attachments = exports[suite]
     count = 0
     for name in names:
@@ -73,10 +155,16 @@ def export_named(suite, names, limit):
         if not matches:
             continue
         assert len(matches) == 1, f'Expected one {name}, found {len(matches)}'
-        path = (destination / matches[0]['exportedFileName']).resolve()
-        assert path.is_relative_to(destination.resolve())
+        path = attachment_path(destination, matches[0])
+        if path.stat().st_size > MAX_IMAGE_BYTES:
+            raise ValueError('Screenshot exceeds the existing image size cap')
         data = path.read_bytes()
         assert data.startswith(b'\xff\xd8') and len(data) <= MAX_IMAGE_BYTES
+        if name.startswith('touchcolor-audit-failure-'):
+            generated = paired_issue_image(matches[0], attachments, destination)
+            if generated is not None:
+                data = generated
+                name += '-xctest-issue'
         encoded = base64.b64encode(data).decode('ascii')
         print('SCREENSHOT_META:' + json.dumps({'name':family+'-'+name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()},sort_keys=True))
         print(f'SCREENSHOT_BEGIN:{family}-{name}')

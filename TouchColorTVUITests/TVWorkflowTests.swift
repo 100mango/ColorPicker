@@ -17,6 +17,7 @@ final class TVWorkflowTests: XCTestCase {
         }
         continueAfterFailure = false
         app = XCUIApplication(); app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.tv-ui.\(UUID())"
+        if name.contains("Chinese") { app.launchEnvironment["TOUCHCOLOR_TEST_TRAIT_PROOF"] = "1" }
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]; app.launch()
     }
     override func tearDownWithError() throws {
@@ -134,14 +135,41 @@ final class TVWorkflowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["tv.palette.count"].waitForExistence(timeout: 10)); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
         XCTAssertTrue(app.buttons["tv.palette.0"].label.contains("#ff00ff"))
     }
-    func testChineseRemoteColorEditor() {
+    @MainActor func testChineseRemoteColorEditor() throws {
         let editor = app.buttons["tv.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 10)); XCTAssertEqual(editor.label, "创建颜色")
-        select(editor); select(app.buttons["tv.red.down"])
+        select(editor)
+        let hex = app.staticTexts["tv.editor.hex"]
+        let baseline = try traitMetric(hex, largest: false)
+        let baselineFrame = hex.frame, viewport = app.frame
+        select(app.buttons["tv.red.down"])
         XCTAssertEqual(app.staticTexts["tv.editor.hex"].label, "#fe0000")
         XCTAssertEqual(app.buttons["tv.editor.save"].label, "保存颜色")
         select(app.buttons["tv.editor.save"]); capture("Native TV Chinese remote color editor")
         remote.press(.menu)
+        app.terminate(); app.launchArguments = ["-AppleLanguages", "(zh-Hans)"]
+        app.launchEnvironment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] = "1"; app.launch()
+        XCTAssertEqual(app.frame, viewport)
+        select(app.buttons["tv.editor"])
+        let largest = try traitMetric(hex, largest: true)
+        XCTAssertGreaterThan(largest, baseline)
+        XCTAssertGreaterThan(hex.frame.height, baselineFrame.height)
+        XCTAssertTrue(viewport.contains(hex.frame)); XCTAssertGreaterThan(hex.frame.width / hex.frame.height, 2.5)
+        select(app.buttons["tv.red.down"]); XCTAssertEqual(hex.label, "#fe0000")
+        XCTAssertEqual(app.staticTexts["tv.editor.rgb"].label, "R 254   G 0   B 0")
+        XCTAssertTrue(viewport.contains(app.staticTexts["tv.editor.rgb"].frame))
+        XCTAssertTrue(viewport.contains(app.buttons["tv.editor.save"].frame))
+        try audit("largest public trait Chinese RGB editor; system propagation unverified")
+        select(app.buttons["tv.editor.save"])
+        capture("Native TV largest public trait Chinese editor")
+        remote.press(.menu); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "2")
+        print("TV_PUBLIC_TRAIT_PROOF: accessibility5; baselineMetric=\(baseline); largestMetric=\(largest); viewport=\(viewport); systemPropagation=unverified")
+    }
+    private func traitMetric(_ element: XCUIElement, largest: Bool) throws -> Double {
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        let proof = try XCTUnwrap(element.value as? String)
+        XCTAssertTrue(proof.hasPrefix("largest=\(largest);metric="), proof)
+        return try XCTUnwrap(Double(proof.components(separatedBy: "metric=").last ?? ""))
     }
     func testRemoteColorEditorAndMenuReturn() {
         select(app.buttons["tv.editor"])

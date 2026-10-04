@@ -428,16 +428,28 @@ import AVFoundation
             print("MAC_ACCESSIBILITY_OWNERSHIP_UNAVAILABLE: \(error)")
         }
     }
-    private func retainModalAuditFailure(_ state: String) -> Error? {
-        // Keep the raw audit failure, but obtain the same-window after-dismissal
-        // measurement before rethrowing it. All action assertions stay fail-fast.
+    private func retainAuditFailure(_ state: String) -> Error? {
+        // Keep every raw before/modal/after audit failure, then finish the
+        // same-window comparison before rethrowing. Action assertions stay fail-fast.
         let previous = continueAfterFailure
         continueAfterFailure = true
         defer { continueAfterFailure = previous }
-        do { try audit(state); return nil } catch { return error }
+        do { try audit(state); return nil } catch {
+            // More than one phase can throw an API error. Keep each payload now,
+            // before the final aggregate rethrows its first retained error.
+            let raw = String(reflecting: error)
+            let native = error as NSError
+            let details = "Phase: \(state)\nDomain: \(native.domain)\nCode: \(native.code)\nError: \(String(raw.prefix(4000)))"
+                + (raw.count > 4000 ? "\n[Error payload truncated after 4000 characters]" : "")
+            print("MAC_ACCESSIBILITY_PHASE_API_ERROR: \(details)"); fflush(stdout)
+            let attachment = XCTAttachment(string: details)
+            attachment.name = "Native Mac accessibility issue raw API error \(state)"
+            attachment.lifetime = .keepAlways; add(attachment)
+            return error
+        }
     }
     private func finishStandardModal(_ sheet: XCUIElement, action: XCUIElement, window: XCUIElement,
-                                     originalFrame: CGRect, state: String, modalError: Error?) throws {
+                                     originalFrame: CGRect, state: String, priorAuditErrors: [Error]) throws {
         XCTAssertTrue(action.exists && action.isEnabled && action.isHittable, app.debugDescription)
         XCTAssertTrue(sheet.frame.contains(action.frame), app.debugDescription)
         action.click()
@@ -445,8 +457,10 @@ import AVFoundation
         XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed, app.debugDescription)
         XCTAssertEqual(app.windows.count, 1); XCTAssertEqual(window.frame, originalFrame)
         XCTAssertTrue(window.buttons["probe.standard.sheet"].isHittable)
-        try audit(state + " after dismissal")
-        if let modalError { throw modalError }
+        let afterError = retainAuditFailure(state + " after dismissal")
+        let errors = priorAuditErrors + [afterError].compactMap { $0 }
+        print("NATIVE_STANDARD_MODAL_THREE_PHASES_MEASURED: \(state); retained audit errors=\(errors.count)"); fflush(stdout)
+        if let error = errors.first { throw error }
     }
     private func launchStandardModalProbe() {
         app.terminate()
@@ -459,7 +473,8 @@ import AVFoundation
         launchStandardModalProbe()
         XCTAssertEqual(app.windows.count, 1)
         let window = app.windows.element(boundBy: 0); let originalFrame = window.frame
-        try audit("diagnostic standard AppKit sheet before presentation")
+        let beforeError = retainAuditFailure("diagnostic standard AppKit sheet before presentation")
+        XCTAssertTrue(app.buttons["probe.standard.sheet"].isEnabled && app.buttons["probe.standard.sheet"].isHittable)
         app.buttons["probe.standard.sheet"].click()
         let sheet = window.sheets.element(boundBy: 0)
         XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
@@ -471,15 +486,16 @@ import AVFoundation
         print("NATIVE_STANDARD_SHEET_AX: \(app.debugDescription)"); fflush(stdout)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Mac standard AppKit sheet diagnostic"; image.lifetime = .keepAlways; add(image)
-        let modalError = retainModalAuditFailure("diagnostic standard AppKit sheet")
+        let modalError = retainAuditFailure("diagnostic standard AppKit sheet")
         try finishStandardModal(sheet, action: done, window: window, originalFrame: originalFrame,
-                                state: "diagnostic standard AppKit sheet", modalError: modalError)
+                                state: "diagnostic standard AppKit sheet", priorAuditErrors: [beforeError, modalError].compactMap { $0 })
     }
     @MainActor func testDiagnosticStandardAppKitAlertAudit() throws {
         launchStandardModalProbe()
         XCTAssertEqual(app.windows.count, 1)
         let window = app.windows.element(boundBy: 0); let originalFrame = window.frame
-        try audit("diagnostic standard AppKit alert before presentation")
+        let beforeError = retainAuditFailure("diagnostic standard AppKit alert before presentation")
+        XCTAssertTrue(app.buttons["probe.standard.alert"].isEnabled && app.buttons["probe.standard.alert"].isHittable)
         app.buttons["probe.standard.alert"].click()
         let sheet = window.sheets.element(boundBy: 0)
         XCTAssertTrue(sheet.waitForExistence(timeout: 5), app.debugDescription)
@@ -492,9 +508,9 @@ import AVFoundation
         print("NATIVE_STANDARD_ALERT_AX: \(app.debugDescription)"); fflush(stdout)
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Mac standard AppKit alert diagnostic"; image.lifetime = .keepAlways; add(image)
-        let modalError = retainModalAuditFailure("diagnostic standard AppKit alert")
+        let modalError = retainAuditFailure("diagnostic standard AppKit alert")
         try finishStandardModal(sheet, action: done, window: window, originalFrame: originalFrame,
-                                state: "diagnostic standard AppKit alert", modalError: modalError)
+                                state: "diagnostic standard AppKit alert", priorAuditErrors: [beforeError, modalError].compactMap { $0 })
     }
     @MainActor private func nativeSliderValue(_ slider: XCUIElement) -> Double? {
         let value = slider.value
