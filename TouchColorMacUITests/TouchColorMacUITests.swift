@@ -464,7 +464,7 @@ import ApplicationServices
             if state == "full image and palette", target.identifier == "palette.actions.0", target.elementType == .menuButton {
                 expectedRole = kAXMenuButtonRole as String
             } else if state == "offline privacy", target.identifier == "mailto:100mango@gmail.com", target.elementType == .link {
-                expectedRole = kAXLinkRole as String
+                expectedRole = NSAccessibility.Role.link.rawValue
             } else { return }
             let frame = target.frame
             guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,

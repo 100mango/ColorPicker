@@ -32,6 +32,8 @@ class MacActionDiagnosticContracts(unittest.TestCase):
         self.assertIn('children(root, kAXWindowsAttribute, limit: 4)', self.helper)
 
     def test_target_has_exact_identifier_role_and_finite_matching_geometry(self):
+        self.assertIn('expectedRole = NSAccessibility.Role.link.rawValue', self.helper)
+        self.assertNotIn('kAXLinkRole', self.helper)
         for required in ('target.identifier == "palette.actions.0"', 'target.elementType == .menuButton',
                          'target.identifier == "mailto:100mango@gmail.com"', 'target.elementType == .link',
                          'frame.width > 0, frame.height > 0', '.allSatisfy({ $0.isFinite })',
