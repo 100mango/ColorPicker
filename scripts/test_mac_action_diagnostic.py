@@ -35,7 +35,8 @@ class MacActionDiagnosticContracts(unittest.TestCase):
         self.assertIn('expectedRole = NSAccessibility.Role.link.rawValue', self.helper)
         self.assertNotIn('kAXLinkRole', self.helper)
         for required in ('target.identifier == "palette.actions.0"', 'target.elementType == .menuButton',
-                         'target.identifier == "mailto:100mango@gmail.com"', 'target.elementType == .link',
+                         'target.identifier == "mailto:100mango@gmail.com"', 'target.identifier == "privacy.contact"',
+                         'target.elementType == .link',
                          'frame.width > 0, frame.height > 0', '.allSatisfy({ $0.isFinite })',
                          'identifier == target.identifier, role == expectedRole',
                          'abs(bounds.minX - frame.minX) <= 0.5', 'abs(bounds.minY - frame.minY) <= 0.5',

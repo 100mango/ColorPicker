@@ -16,7 +16,7 @@ struct CameraSheet: View {
             Picker("Camera", selection: $camera.selectedDeviceID) {
                 if camera.devices.isEmpty { Text("No camera").tag("") }
                 ForEach(camera.devices) { device in Text(device.name).tag(device.id) }
-            }.disabled(camera.preparing || camera.running).accessibilityIdentifier("camera.device")
+            }.disabled(camera.devices.isEmpty || camera.preparing || camera.running).accessibilityIdentifier("camera.device")
             Text(camera.status).multilineTextAlignment(.center).lineLimit(4).frame(maxWidth: .infinity)
                 .accessibilityIdentifier("camera.status")
             HStack {

@@ -11,12 +11,13 @@ private final class FakeCameraDriver: CameraDriving {
     var available = [CameraDevice(id: "synthetic", name: "Synthetic test camera")]
     var permission = AVAuthorizationStatus.authorized
     var permissionReply: ((Bool) -> Void)?
+    var permissionRequestCount = 0
     var starts: [(UInt64, (CameraEvent) -> Void)] = []
     var freezeReplies: [(Result<Data, Error>) -> Void] = []
     var stopCount = 0
     func devices() -> [CameraDevice] { available }
     func authorization() -> AVAuthorizationStatus { permission }
-    func requestAccess(_ completion: @escaping (Bool) -> Void) { permissionReply = completion }
+    func requestAccess(_ completion: @escaping (Bool) -> Void) { permissionRequestCount += 1; permissionReply = completion }
     func start(deviceID: String, token: UInt64, epoch: CaptureEpoch, receive: @escaping (CameraEvent) -> Void) { starts.append((token, receive)) }
     func stop() { stopCount += 1 }
     func freeze(token: UInt64, epoch: CaptureEpoch, completion: @escaping (Result<Data, Error>) -> Void) { freezeReplies.append(completion) }
@@ -24,6 +25,28 @@ private final class FakeCameraDriver: CameraDriving {
 
 @MainActor final class CameraTests: XCTestCase {
     private func settle() async { try? await Task.sleep(nanoseconds: 30_000_000) }
+    func testNoDeviceNeverRequestsPermissionOrStartsCapture() {
+        let driver = FakeCameraDriver(); driver.available = []; driver.permission = .notDetermined
+        let model = CameraModel(driver: driver, applicationIsActive: { true })
+        XCTAssertTrue(model.devices.isEmpty); XCTAssertEqual(model.selectedDeviceID, "")
+        model.start(); model.start()
+        XCTAssertEqual(driver.permissionRequestCount, 0); XCTAssertNil(driver.permissionReply)
+        XCTAssertTrue(driver.starts.isEmpty)
+        XCTAssertFalse(model.preparing); XCTAssertFalse(model.running)
+    }
+    func testAvailableSelectionSurvivesRefreshWithoutRequestingPermission() {
+        let first = CameraDevice(id: "first", name: "First test camera")
+        let second = CameraDevice(id: "second", name: "Second test camera")
+        let driver = FakeCameraDriver(); driver.available = [first, second]; driver.permission = .notDetermined
+        let model = CameraModel(driver: driver, applicationIsActive: { true })
+        XCTAssertEqual(model.selectedDeviceID, first.id)
+        model.selectedDeviceID = second.id
+        driver.available = [second, first]; model.refreshDevices()
+        XCTAssertEqual(model.selectedDeviceID, second.id)
+        XCTAssertEqual(model.devices.map(\.id), [second.id, first.id])
+        XCTAssertEqual(driver.permissionRequestCount, 0); XCTAssertTrue(driver.starts.isEmpty)
+        XCTAssertFalse(model.preparing); XCTAssertFalse(model.running)
+    }
     func testPermissionCancelDeniedNoDeviceAndRepeatedStart() async {
         let driver = FakeCameraDriver(); driver.permission = .notDetermined
         let model = CameraModel(driver: driver, applicationIsActive: { true })

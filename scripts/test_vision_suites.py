@@ -30,7 +30,7 @@ class VisionSuiteTests(unittest.TestCase):
             self.assertEqual(int(budget), CASES[case][1])
         self.assertEqual(sum(budget for _, budget in CASES.values()), 8_000_000)
         self.assertEqual(sum(map(int, re.findall(r'evidence_bytes: (\d+)', workflow))), 20_000_000)
-        self.assertIn('max-parallel: 1', workflow)
+        self.assertIn('max-parallel: 2', workflow)
         self.assertIn('retention-days: 1', workflow)
         self.assertNotIn('TOUCHCOLOR_VISION_SUITE', workflow)
 

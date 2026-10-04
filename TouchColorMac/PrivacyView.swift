@@ -16,6 +16,8 @@ struct PrivacyView: View {
                     Text("Celluloid, QRCatcher, and TouchColor process photos, camera images, QR codes, or color data locally on your device. The developer does not collect or upload this data. Actions you choose to take, such as sharing or opening links, and system services such as iCloud sync are handled by the respective services. For privacy questions, contact 100mango@gmail.com. Local data can be deleted through the relevant app or system, and permissions can be revoked in system settings.")
                     Link("Published privacy policy", destination: URL(string: "https://100mango.github.io/app-privacy/")!)
                     Link("100mango@gmail.com", destination: URL(string: "mailto:100mango@gmail.com")!)
+                        .accessibilityLabel("Contact the developer about privacy")
+                        .accessibilityIdentifier("privacy.contact")
                 }.textSelection(.enabled)
             }
         }.padding(24).frame(width: 600, height: 540)

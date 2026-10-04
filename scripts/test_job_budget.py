@@ -47,7 +47,7 @@ class JobBudgetTests(unittest.TestCase):
             if platform=='watch':watch_rows+=1;self.assertIn('evidence_bytes: 2000000',body)
         self.assertEqual(watch_rows,2)
         self.assertIn("--label 'Native watchOS executable and real simulator workflows' --seconds 2520",source)
-        self.assertIn('max-parallel: 1',source)
+        self.assertIn('max-parallel: 2',source)
 
     def test_work_clock_does_not_use_wall_clock_adjustments(self):
         c,b=self.budget();before=b.remaining();c.wall += 3600

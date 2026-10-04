@@ -364,6 +364,10 @@ import ApplicationServices
             let status = app.staticTexts["camera.status"]
             XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue((status.value as? String ?? status.label).contains("No camera is available"))
+            let picker = app.popUpButtons["camera.device"]
+            XCTAssertTrue(picker.exists, app.debugDescription)
+            XCTAssertFalse(picker.isEnabled, app.debugDescription)
+            XCTAssertEqual(picker.value as? String, "No camera")
             XCTAssertFalse(app.buttons["camera.start"].isEnabled)
             XCTAssertFalse(app.buttons["camera.freeze"].isEnabled)
             XCTAssertFalse(app.buttons["camera.save"].isEnabled)
@@ -371,11 +375,34 @@ import ApplicationServices
             shot.name = "Native Mac actual no-camera status"; shot.lifetime = .keepAlways; add(shot)
             app.buttons["camera.close"].click()
             XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 5))
+            XCTAssertEqual(AVCaptureDevice.authorizationStatus(for: .video), permission)
         }
         XCTAssertEqual(AVCaptureDevice.authorizationStatus(for: .video), permission)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try Data(contentsOf: fixture), forType: .png)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
+    }
+
+    func testExplicitPrivacyContactHasLocalizedLinkSemanticsWithoutOpeningMail() {
+        for (language, locale, label) in [("en", "en_US", "Contact the developer about privacy"),
+                                           ("zh-Hans", "zh_CN", "联系开发者咨询隐私问题")] {
+            app.terminate()
+            app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+            app.launch()
+            XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 10), app.debugDescription)
+            app.buttons["privacy.open"].click()
+            XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5), app.debugDescription)
+            let contacts = app.links.matching(identifier: "privacy.contact")
+            XCTAssertEqual(contacts.count, 1, app.debugDescription)
+            let contact = contacts.element(boundBy: 0)
+            XCTAssertEqual(contact.elementType, .link)
+            XCTAssertEqual(contact.label, label)
+            XCTAssertTrue(contact.isEnabled, app.debugDescription)
+            XCTAssertTrue(contact.isHittable, app.debugDescription)
+            // Inspect semantics only. Activating mailto is outside this test.
+            app.buttons["privacy.close"].click()
+            XCTAssertTrue(app.buttons["image.open.empty"].waitForExistence(timeout: 5), app.debugDescription)
+        }
     }
 
     @MainActor private func audit(_ state: String) throws {
@@ -463,7 +490,8 @@ import ApplicationServices
             let expectedRole: String
             if state == "full image and palette", target.identifier == "palette.actions.0", target.elementType == .menuButton {
                 expectedRole = kAXMenuButtonRole as String
-            } else if state == "offline privacy", target.identifier == "mailto:100mango@gmail.com", target.elementType == .link {
+            } else if state == "offline privacy",
+                      (target.identifier == "mailto:100mango@gmail.com" || target.identifier == "privacy.contact"), target.elementType == .link {
                 expectedRole = NSAccessibility.Role.link.rawValue
             } else { return }
             let frame = target.frame
