@@ -42,7 +42,7 @@ testrefs.append(ref('TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swif
 testresources=[ref('ColorPickerTests/Fixtures/photo-over-100mp.b64','text')]
 bridgeref=ref('ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h','sourcecode.c.h')
 package=add('ColorCorePackage','XCLocalSwiftPackageReference',relativePath='Packages/ColorCore')
-uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m','TouchColorAccessibilityUITests.m','TCPaletteUIHelpers.m']]
+uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m','TouchColorAccessibilityUITests.m','TCPaletteUIHelpers.m','TCModalVoiceOverUITests.m']]
 uiheaders=[ref('TouchColorUITests/TCPaletteUIHelpers.h','sourcecode.c.h')]
 products=[]
 projectid=uid('Project')

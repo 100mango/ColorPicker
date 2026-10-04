@@ -1,0 +1,102 @@
+name: Inspect UIKit modal VoiceOver containment
+on:
+  push:
+    branches: [codex/uikit-voiceover-diagnostics]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-modal-voiceover-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  modal-voiceover:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      TC_TEST_FAMILY: iPadMini
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out exact diagnostic source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - name: Verify exact tested commit and unchanged production
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/uikit-voiceover-diagnostics
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 024a7c970923e87e1ddc2642031f8bc2e92e167f
+          git diff --exit-code HEAD --
+          git diff --exit-code HEAD^ HEAD -- ColorPicker TouchColorPhoneCompanion Packages TestFixtures ColorPickerTests scripts/test_simulators.sh
+          echo "Tested commit: $(git rev-parse HEAD)"
+          echo "Tested tree: $(git rev-parse 'HEAD^{tree}')"
+          shasum -a 256 .github/workflows/modal-voiceover.yml
+      - name: Record stable toolchain and VoiceOver API headers
+        timeout-minutes: 3
+        run: |
+          sw_vers
+          xcodebuild -version > /tmp/touchcolor-voiceover-xcode.txt
+          cat /tmp/touchcolor-voiceover-xcode.txt
+          grep -F 'Xcode 27.0' /tmp/touchcolor-voiceover-xcode.txt
+          grep -F '27A266a' /tmp/touchcolor-voiceover-xcode.txt
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          python3 - <<'PY'
+          import os,pathlib
+          root=pathlib.Path(os.environ['DEVELOPER_DIR'])
+          headers=sorted(root.glob('Platforms/iPhoneSimulator.platform/Developer/Library/**/XCUIVoiceOver*.h'))
+          for path in headers:
+              print('VOICEOVER_PUBLIC_HEADER',path)
+              print(path.read_text())
+          print('VOICEOVER_HEADER_COUNT',len(headers))
+          PY
+      - name: Validate project and build diagnostic simulator products
+        id: build
+        timeout-minutes: 8
+        run: |
+          python3 scripts/generate_project.py
+          git diff --exit-code -- TouchColor.xcodeproj
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator build-for-testing
+          xcodebuild -project TestFixtures/PaletteFixtures.xcodeproj -scheme PaletteFixtures -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/palette-fixtures CODE_SIGNING_ALLOWED=NO build
+      - name: Prepare the actual iPad mini
+        id: warm
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh iPadMini prepare
+      - name: Reproduce both original strict modal audits
+        if: ${{ !cancelled() && steps.warm.outcome == 'success' }}
+        timeout-minutes: 5
+        run: bash scripts/test_modal_voiceover.sh audits
+      - name: Inspect actual VoiceOver modal traversal
+        if: ${{ !cancelled() && steps.warm.outcome == 'success' }}
+        timeout-minutes: 8
+        run: bash scripts/test_modal_voiceover.sh voiceover
+      - name: Stop disposable simulator and assistive service
+        if: ${{ always() && steps.warm.outcome != 'skipped' }}
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh iPadMini shutdown
+      - name: Export bounded original audit pixels
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/export_audit_failures.py
+      - name: Record diagnostic result summaries
+        if: always()
+        run: find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
+      - name: Verify tested source stayed unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          echo "Final tested tree: $(git rev-parse 'HEAD^{tree}')"
+          shasum -a 256 .github/workflows/modal-voiceover.yml
