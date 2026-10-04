@@ -1,9 +1,14 @@
 #ifndef TC_FILES_PICKER_ROUTE_H
 #define TC_FILES_PICKER_ROUTE_H
 #include <string.h>
+#include <math.h>
 
 typedef enum { TCFilesNodeOther, TCFilesNodeCell, TCFilesNodeButton, TCFilesNodeStaticText } TCFilesNodeKind;
 typedef enum { TCFilesRouteNone, TCFilesRouteLocalProvider, TCFilesRouteLocationCell, TCFilesRouteBrowse, TCFilesRouteFixtureFile } TCFilesRoute;
+
+static inline int TCFilesRouteFrameIsUsable(double x, double y, double width, double height) {
+    return isfinite(x) && isfinite(y) && isfinite(width) && isfinite(height) && width > 0 && height > 0;
+}
 
 static inline int TCFilesNameEquals(const char *value, const char *expected) {
     return value && expected && strcmp(value,expected)==0;

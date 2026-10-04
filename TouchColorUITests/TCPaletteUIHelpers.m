@@ -2,13 +2,17 @@
 #import <UIKit/UIKit.h>
 #import "TCFilesPickerRoute.h"
 
-static TCFilesRoute TCFilesRouteForElement(XCUIElement *element, NSString *location) {
+static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NSString *location) {
+    if (!snapshot) return TCFilesRouteNone;
+    CGRect frame=snapshot.frame;
+    if (!TCFilesRouteFrameIsUsable(frame.origin.x,frame.origin.y,frame.size.width,frame.size.height)) return TCFilesRouteNone;
+    XCUIElementType type=snapshot.elementType;
     TCFilesNodeKind kind=TCFilesNodeOther;
-    if (element.elementType==XCUIElementTypeCell) kind=TCFilesNodeCell;
-    else if (element.elementType==XCUIElementTypeButton) kind=TCFilesNodeButton;
-    else if (element.elementType==XCUIElementTypeStaticText) kind=TCFilesNodeStaticText;
-    else if (element.elementType!=XCUIElementTypeOther) return TCFilesRouteNone;
-    return TCClassifyFilesRoute(kind,element.identifier.UTF8String,element.label.UTF8String,location.UTF8String);
+    if (type==XCUIElementTypeCell) kind=TCFilesNodeCell;
+    else if (type==XCUIElementTypeButton) kind=TCFilesNodeButton;
+    else if (type==XCUIElementTypeStaticText) kind=TCFilesNodeStaticText;
+    else if (type!=XCUIElementTypeOther) return TCFilesRouteNone;
+    return TCClassifyFilesRoute(kind,snapshot.identifier.UTF8String,snapshot.label.UTF8String,location.UTF8String);
 }
 
 @implementation XCTestCase (TCPaletteUIHelpers)
@@ -244,10 +248,15 @@ static TCFilesRoute TCFilesRouteForElement(XCUIElement *element, NSString *locat
             // On My iPhone/iPad navigation title must never enter this query.
             XCUIElement *route=[[app descendantsMatchingType:XCUIElementTypeAny] matchingPredicate:[NSCompoundPredicate orPredicateWithSubpredicates:@[localType,browseType,fileType]]].firstMatch;
             if (![self waitForReadyPaletteElement:route timeout:5]) return;
-            TCFilesRoute kind=TCFilesRouteForElement(route,location);
+            NSError *routeSnapshotError=nil;
+            id<XCUIElementSnapshot> routeSnapshot=[route snapshotWithError:&routeSnapshotError];
+            XCTAssertNotNil(routeSnapshot,@"Files route snapshot must be available: %@",routeSnapshotError);
+            XCTAssertNil(routeSnapshotError);
+            if (!routeSnapshot || routeSnapshotError) return;
+            TCFilesRoute kind=TCFilesRouteForSnapshot(routeSnapshot,location);
             XCTAssertTrue(kind==TCFilesRouteBrowse || kind==TCFilesRouteLocationCell || kind==TCFilesRouteFixtureFile,@"Only a classified Files action may be tapped");
             if (kind!=TCFilesRouteBrowse && kind!=TCFilesRouteLocationCell && kind!=TCFilesRouteFixtureFile) return;
-            NSLog(@"FILE_PICKER_ROUTE kind=%d label=%@ identifier=%@ frame=%@",kind,route.label,route.identifier,NSStringFromCGRect(route.frame));
+            NSLog(@"FILE_PICKER_ROUTE kind=%d label=%@ identifier=%@ frame=%@",kind,routeSnapshot.label,routeSnapshot.identifier,NSStringFromCGRect(routeSnapshot.frame));
             if (kind==TCFilesRouteFixtureFile) needsFolder=NO;
             else {
                 [route tap];
@@ -260,7 +269,15 @@ static TCFilesRoute TCFilesRouteForElement(XCUIElement *element, NSString *locat
                     BOOL appeared=[state waitForExistenceWithTimeout:10];
                     XCTAssertTrue(appeared,@"Browse must expose the local provider or a location cell");
                     if (!appeared) return;
-                    TCFilesRoute destination=TCFilesRouteForElement(state,location);
+                    // One immutable snapshot avoids six separate remote
+                    // resolutions observed to consume the last2.3s of this
+                    // deadline. It classifies state, never action readiness.
+                    NSError *destinationSnapshotError=nil;
+                    id<XCUIElementSnapshot> destinationSnapshot=[state snapshotWithError:&destinationSnapshotError];
+                    XCTAssertNotNil(destinationSnapshot,@"Files destination snapshot must be available: %@",destinationSnapshotError);
+                    XCTAssertNil(destinationSnapshotError);
+                    if (!destinationSnapshot || destinationSnapshotError) return;
+                    TCFilesRoute destination=TCFilesRouteForSnapshot(destinationSnapshot,location);
                     XCTAssertTrue(destination==TCFilesRouteLocalProvider || destination==TCFilesRouteLocationCell,@"A Files title is not a location action");
                     if (destination!=TCFilesRouteLocalProvider && destination!=TCFilesRouteLocationCell) return;
                     NSLog(@"FILE_PICKER_DESTINATION kind=%d folderBudgetRemaining=%.3f",destination,folderDeadline-NSProcessInfo.processInfo.systemUptime);

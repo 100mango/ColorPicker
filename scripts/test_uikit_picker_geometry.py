@@ -190,6 +190,40 @@ assert(TCClassifyFilesRoute(TCFilesNodeOther,"DOC.browsingRoot Source: com.apple
 assert(TCClassifyFilesRoute(TCFilesNodeStaticText,"","TouchColor-Ordered-Colors.json","On My iPhone")==TCFilesRouteFixtureFile);
 ''')
 
+    def test_files_snapshot_geometry_is_finite_nonempty_without_fallback(self):
+        self.run_helper('''
+assert(TCFilesRouteFrameIsUsable(0,62,440,894));
+assert(TCFilesRouteFrameIsUsable(259,877,94,54));
+assert(!TCFilesRouteFrameIsUsable(NAN,0,440,894));
+assert(!TCFilesRouteFrameIsUsable(0,INFINITY,440,894));
+assert(!TCFilesRouteFrameIsUsable(0,62,0,894));
+assert(!TCFilesRouteFrameIsUsable(0,62,440,-1));
+assert(!TCFilesRouteFrameIsUsable(0,62,INFINITY,894));
+assert(!TCFilesRouteFrameIsUsable(0,62,440,NAN));
+''')
+
+    def test_files_route_classification_uses_one_snapshot_and_preserves_live_guards(self):
+        source = (ROOT/'TouchColorUITests/TCPaletteUIHelpers.m').read_text()
+        classifier = source.split('static TCFilesRoute TCFilesRouteForSnapshot', 1)[1].split('@implementation', 1)[0]
+        self.assertNotIn('TCFilesRouteForElement', source)
+        self.assertEqual(classifier.count('snapshot.elementType'), 1)
+        self.assertIn('TCFilesRouteFrameIsUsable', classifier)
+        self.assertNotIn('element.elementType', classifier)
+        self.assertNotIn('snapshot.enabled', source)
+        self.assertNotIn('snapshot.hittable', source)
+        flow = source.split('- (void)selectSyntheticPaletteFile:', 1)[1].split('    XCTAssertTrue([file waitForExistenceWithTimeout:10]', 1)[0]
+        self.assertEqual(flow.count('snapshotWithError:'), 2)
+        self.assertIn('if (!routeSnapshot || routeSnapshotError) return;', flow)
+        self.assertIn('if (!destinationSnapshot || destinationSnapshotError) return;', flow)
+        self.assertIn('routeSnapshot.label,routeSnapshot.identifier,NSStringFromCGRect(routeSnapshot.frame)', flow)
+        self.assertIn('waitForReadyPaletteElement:route timeout:5', flow)
+        self.assertIn('waitForReadyPaletteElement:state timeout:readiness', flow)
+        self.assertIn('folderDeadline=NSProcessInfo.processInfo.systemUptime+10;', flow)
+        self.assertIn('XCTAssertGreaterThan(remaining,0,', flow)
+        self.assertIn('if (remaining<=0) return;', flow)
+        self.assertIn('NSProcessInfo.processInfo.systemUptime<=folderDeadline', flow)
+        self.assertIn('if (!found || !withinBudget) return;', flow)
+
     def test_geometry_rejects_invalid_or_unsafe_regions(self):
         self.run_helper('''
 CGRect w=CGRectMake(0,0,375,514);CGPoint p;
