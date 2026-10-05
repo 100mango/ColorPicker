@@ -47,6 +47,9 @@ struct CameraSheet: View {
                 Button("Done") { camera.stop(); dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("camera.close")
             }
         }.padding(20).frame(width: 560)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Camera")
+            .accessibilityIdentifier("camera.content")
             .onDisappear { camera.stop() }
     }
 }

@@ -828,7 +828,7 @@ elif args[:2]==['simctl','addmedia']:
     def test_workflow_registers_seed_regressions_and_keeps_step_envelopes(self):
         workflow = (Path(warmup.__file__).parent.parent / '.github/workflows/ios.yml').read_text()
         self.assertIn('python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup', workflow)
-        for name, minutes in [('Seed synthetic photo', 10), ('Shut down simulator', 2)]:
+        for name, minutes in [('Prepare Files fixture and seed synthetic photo', 10), ('Shut down simulator', 2)]:
             section = workflow.split('      - name: ' + name + '\n', 1)[1].split('      - name:', 1)[0]
             self.assertIn('timeout-minutes: ' + str(minutes), section)
         source = Path(warmup.__file__).read_text()

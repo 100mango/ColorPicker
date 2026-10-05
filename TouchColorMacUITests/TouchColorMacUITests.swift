@@ -14,6 +14,11 @@ import ApplicationServices
     private var suite = ""
     private var expectedUID: Int?
     private var expectsSandbox = false
+    private var lifecycleToken: String?
+    private var lifecycleStarted = 0.0
+    private let lifecycleCases = ["testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail",
+        "testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail",
+        "testNativeFileSamplingZoomPalettePersistenceAndPrivacy", "testSimplifiedChineseNativeSamplingFlowAndScreenshot"]
     private var actionDiagnosticKeys = Set<String>()
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -62,6 +67,9 @@ import ApplicationServices
         } else if name.contains("testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail") {
             app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         }
+        lifecycleToken = lifecycleCases.contains(where: { name == "-[TouchColorMacUITests \($0)]" }) ? UUID().uuidString : nil
+        if let lifecycleToken { app.launchEnvironment["TOUCHCOLOR_MAC_LIFECYCLE"] = lifecycleToken }
+        lifecycleStarted = Date().timeIntervalSince1970
         app.launch()
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
         XCTAssertEqual(running.count, 1)
@@ -72,8 +80,51 @@ import ApplicationServices
         let debugDylib = applicationURL.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
         let logicDigest = SHA256.hash(data: try Data(contentsOf: debugDylib)).map { String(format: "%02x", $0) }.joined()
         print("NATIVE_UI_LOGIC_SHA256: \(logicDigest)")
+        lifecycleReceipt(actual: actual, applicationURL: applicationURL, executable: executable,
+                         digest: digest, logicDigest: logicDigest, ordinal: 1)
         XCTAssertTrue(app.menuBars.menuBarItems["TouchColor"].waitForExistence(timeout: 5), app.debugDescription)
         print("NATIVE_UI_RUNNING_APP path=\(actual.bundleURL?.path ?? "") executable=\(executable.path) sha256=\(digest)")
+    }
+    // Receipt only: no AX query, wait, activation or launch is added.
+    private func lifecycleReceipt(actual: NSRunningApplication, applicationURL: URL, executable: URL,
+                                  digest: String, logicDigest: String, ordinal: Int) {
+        guard let token = lifecycleToken else { return }
+        let row: [String: Any] = ["v": 1, "token": token, "pid": actual.processIdentifier,
+            "test": name, "ordinal": ordinal, "started": lifecycleStarted, "captured": Date().timeIntervalSince1970,
+            "args": app.launchArguments, "sandbox": expectsSandbox,
+            "bundle": actual.bundleIdentifier ?? "", "applicationPath": actual.bundleURL?.path ?? "",
+            "expectedPath": applicationURL.path, "executable": executable.path,
+            "executableSHA256": digest, "logicSHA256": logicDigest,
+            "xctestPID": NSNull(), "xctestPIDReason": "No public PID query; correlate retained failure hierarchy independently"]
+        guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]), data.count <= 4096,
+              let text = String(data: data, encoding: .utf8) else { return }
+        let attachment = XCTAttachment(string: text)
+        attachment.name = "Native Mac accessibility issue lifecycle identity \(token) \(ordinal)"
+        attachment.lifetime = .keepAlways; add(attachment)
+    }
+    private func lifecycleRelaunchReceipt() {
+        guard lifecycleToken != nil else { return }
+        // This is the already-existing Chinese relaunch. Observe its new PID and exact product once.
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
+        guard running.count == 1, let actual = running.first, let url = actual.bundleURL,
+              let executable = actual.executableURL else { return }
+        var products = Bundle(for: Self.self).bundleURL
+        for _ in 0..<4 { products.deleteLastPathComponent() }
+        let expected = products.appendingPathComponent("TouchColor.app")
+        guard url.resolvingSymlinksInPath() == expected.resolvingSymlinksInPath() else { return }
+        let logic = expected.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
+        func boundedDigest(_ path: URL) -> String? {
+            guard let properties = try? path.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
+                  properties.isRegularFile == true, properties.isSymbolicLink == false,
+                  let size = properties.fileSize, size > 0, size <= 16 * 1024 * 1024,
+                  let handle = try? FileHandle(forReadingFrom: path) else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: 16 * 1024 * 1024 + 1), data.count == size else { return nil }
+            return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        guard let digest = boundedDigest(executable), let logicDigest = boundedDigest(logic) else { return }
+        lifecycleReceipt(actual: actual, applicationURL: expected, executable: executable,
+                         digest: digest, logicDigest: logicDigest, ordinal: 2)
     }
     override func tearDownWithError() throws {
         defer {
@@ -111,15 +162,37 @@ import ApplicationServices
         let outcome = XCTWaiter.wait(for: [expectedValue], timeout: 8)
         XCTAssertEqual(outcome, .completed, "Expected \(expected), actual value \(String(describing: value.value)), label \(value.label). \(app.debugDescription)")
     }
+    private func assertSelectedColorSwatch(label: String, hex: String, rgb: String) {
+        let swatches = app.images.matching(identifier: "sample.swatch")
+        let swatch = swatches.element
+        XCTAssertTrue(swatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(swatches.count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "sample.swatch").count, 1)
+        XCTAssertEqual(swatch.elementType, .image)
+        XCTAssertEqual(swatch.label, label)
+        let expected = "\(hex), \(rgb)"
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", expected), object: swatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 5), .completed, swatch.debugDescription)
+        XCTAssertEqual(swatch.value as? String, expected)
+        XCTAssertEqual(swatch.frame.width, 38, accuracy: 0.5)
+        XCTAssertEqual(swatch.frame.height, 38, accuracy: 0.5)
+        let visibleRGB = app.staticTexts["sample.rgb"]
+        XCTAssertEqual(visibleRGB.value as? String ?? visibleRGB.label, rgb)
+    }
     func testNativeFileSamplingZoomPalettePersistenceAndPrivacy() {
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sample.swatch").element.exists)
         openFile(fixture)
         assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         let canvas = app.images["image.canvas"]
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).click()
         assertHex("#ff0000")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff0000", rgb: "R 255   G 0   B 0")
         app.typeKey(.rightArrow, modifierFlags: []); assertHex("#00ff00")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#00ff00", rgb: "R 0   G 255   B 0")
         app.typeKey(.leftArrow, modifierFlags: []); assertHex("#ff0000")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff0000", rgb: "R 255   G 0   B 0")
         app.buttons["sample.save"].click(); app.buttons["sample.save"].click()
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
         app.buttons["sample.copy"].click()
@@ -129,17 +202,68 @@ import ApplicationServices
         XCTAssertGreaterThan(canvas.frame.width, unzoomedFrame.width * 1.5)
         XCTAssertTrue(app.staticTexts["sample.zoom.value"].exists)
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         let window = app.windows.firstMatch
         let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
         edge.click(forDuration: 0.2, thenDragTo: edge.withOffset(CGVector(dx: -120, dy: -60)))
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
+        _ = assertPaletteActionButtons(index: 0, copyLabel: "Copy color 1", deleteLabel: "Delete color 1")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Mac sampled source and ordered palette"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+        let privacyContent = app.groups.matching(identifier: "privacy.content")
+        XCTAssertEqual(privacyContent.count, 1)
+        XCTAssertEqual(privacyContent.element.label, "Privacy Policy / 应用隐私政策")
+        XCTAssertTrue(privacyContent.element.buttons["privacy.close"].exists)
+        XCTAssertTrue(privacyContent.element.links["privacy.contact"].exists)
+        assertSelectablePrivacyParagraphs()
         app.buttons["privacy.close"].click()
         app.terminate(); app.launchArguments = []; app.launch()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
+    }
+    private func assertSelectablePrivacyParagraphs() {
+        let paragraphs = [("privacy.policy.zh-Hans", "Privacy policy in Simplified Chinese", "Celluloid、QRCatcher 和 TouchColor 在设备本地处理照片、相机画面、二维码或颜色数据，开发者不收集或上传这些数据。用户主动分享、打开链接，以及系统 iCloud 同步等行为由相应服务处理。如有隐私问题，请联系 100mango@gmail.com。本地数据可通过相应应用或系统删除，权限可在系统设置中撤回。"),
+                          ("privacy.policy.en", "Privacy policy in English", "Celluloid, QRCatcher, and TouchColor process photos, camera images, QR codes, or color data locally on your device. The developer does not collect or upload this data. Actions you choose to take, such as sharing or opening links, and system services such as iCloud sync are handled by the respective services. For privacy questions, contact 100mango@gmail.com. Local data can be deleted through the relevant app or system, and permissions can be revoked in system settings.")]
+        for (identifier, label, expected) in paragraphs {
+            let texts = app.textViews.matching(identifier: identifier)
+            XCTAssertEqual(texts.count, 1, app.debugDescription)
+            let paragraph = texts.element
+            XCTAssertEqual(paragraph.elementType, .textView)
+            XCTAssertEqual(paragraph.label, label)
+            XCTAssertEqual(paragraph.value as? String, expected)
+        }
+        XCTAssertEqual(app.links.count, 2, "Only the explicit published policy and contact Links remain")
+        XCTAssertEqual(app.links.matching(identifier: "privacy.contact").count, 1)
+        XCTAssertFalse(app.links.matching(identifier: "mailto:100mango@gmail.com").element.exists)
+        let chinese = app.textViews["privacy.policy.zh-Hans"]
+        XCTAssertTrue(chinese.isHittable, app.debugDescription)
+        chinese.click()
+        chinese.typeKey("a", modifierFlags: [.command])
+        NSPasteboard.general.clearContents()
+        XCTAssertTrue(NSPasteboard.general.setString("TouchColor privacy Copy regression sentinel", forType: .string))
+        chinese.typeKey("c", modifierFlags: [.command])
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), paragraphs[0].2)
+        XCTAssertEqual(chinese.value as? String, paragraphs[0].2)
+        XCTAssertTrue(app.buttons["privacy.close"].isEnabled)
+    }
+    private func assertPaletteActionButtons(index: Int, copyLabel: String, deleteLabel: String) -> (XCUIElement, XCUIElement) {
+        let sidebar = app.groups["workspace.palette"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5), app.debugDescription)
+        let copies = app.buttons.matching(identifier: "palette.copy.\(index)")
+        let deletes = app.buttons.matching(identifier: "palette.delete.\(index)")
+        XCTAssertEqual(copies.count, 1); XCTAssertEqual(deletes.count, 1)
+        let copy = copies.element, delete = deletes.element
+        for (button, label) in [(copy, copyLabel), (delete, deleteLabel)] {
+            XCTAssertEqual(button.elementType, .button)
+            XCTAssertEqual(button.label, label)
+            XCTAssertTrue(button.isEnabled); XCTAssertTrue(button.isHittable, app.debugDescription)
+            XCTAssertGreaterThan(button.frame.width, 0); XCTAssertGreaterThan(button.frame.height, 0)
+            XCTAssertTrue(sidebar.frame.contains(button.frame), app.debugDescription)
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(button.frame), app.debugDescription)
+        }
+        return (copy, delete)
     }
     private func makePhotosFixture(at url: URL) throws {
         let colors: [[UInt8]] = [[255,0,0,255], [0,255,0,255], [0,0,255,255],
@@ -307,8 +431,15 @@ import ApplicationServices
         let count = app.staticTexts["palette.count"]
         expectation(for: NSPredicate(format: "value == '4' OR label == '4'"), evaluatedWith: count)
         waitForExpectations(timeout: 5)
-        app.menuButtons["palette.actions.1"].click()
-        app.menuItems["palette.delete.1"].click()
+        let (copy, delete) = assertPaletteActionButtons(index: 1, copyLabel: "Copy color 2", deleteLabel: "Delete color 2")
+        _ = assertPaletteActionButtons(index: 3, copyLabel: "Copy color 4", deleteLabel: "Delete color 4")
+        XCTAssertTrue(app.buttons["palette.export"].isHittable, app.debugDescription)
+        NSPasteboard.general.clearContents()
+        XCTAssertTrue(NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string))
+        copy.click()
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "#ff00ff")
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "4")
+        delete.click()
         XCTAssertEqual(count.value as? String ?? count.label, "3")
         app.buttons["image.export"].click(); saveFile(imageURL)
         expectation(for: NSPredicate { _,_ in FileManager.default.fileExists(atPath: imageURL.path) }, evaluatedWith: nil)
@@ -329,17 +460,22 @@ import ApplicationServices
     func testSimplifiedChineseNativeSamplingFlowAndScreenshot() {
         app.terminate()
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        lifecycleStarted = Date().timeIntervalSince1970
         app.launch()
+        lifecycleRelaunchReceipt()
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
         XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "所选颜色", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         app.buttons["sample.save"].click()
         XCTAssertTrue(app.staticTexts["调色板"].exists)
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
+        _ = assertPaletteActionButtons(index: 0, copyLabel: "复制第 1 个颜色", deleteLabel: "删除第 1 个颜色")
         XCTAssertTrue(app.windows.firstMatch.frame.contains(app.buttons["sample.above"].frame), app.debugDescription)
         XCTAssertTrue(app.buttons["sample.above"].isHittable, app.debugDescription)
         app.buttons["sample.above"].click(); assertHex("#00ff00")
+        assertSelectedColorSwatch(label: "所选颜色", hex: "#00ff00", rgb: "R 0   G 255   B 0")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "Native Mac Simplified Chinese sampling and palette"
         shot.lifetime = .keepAlways; add(shot)
@@ -370,6 +506,12 @@ import ApplicationServices
             app.buttons["camera.open"].click()
             let status = app.staticTexts["camera.status"]
             XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
+            let cameraContent = app.groups.matching(identifier: "camera.content")
+            XCTAssertEqual(cameraContent.count, 1)
+            XCTAssertEqual(cameraContent.element.label, "Camera")
+            XCTAssertTrue(cameraContent.element.buttons["camera.close"].exists)
+            XCTAssertTrue(cameraContent.element.buttons["camera.start"].exists)
+            XCTAssertTrue(cameraContent.element.staticTexts["camera.no-device"].exists)
             XCTAssertTrue((status.value as? String ?? status.label).contains("No camera is available"))
             let unavailable = app.staticTexts["camera.no-device"]
             XCTAssertTrue(unavailable.exists, app.debugDescription)

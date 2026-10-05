@@ -1,0 +1,185 @@
+{
+  "schema": 1,
+  "kind": "Exact 1410 normal-Watch touch precondition failure evidence; no descendant hittability or successful drag was observed",
+  "observed_source_commit": "1410ed01f0d153be79cbd688c3385320670d7367",
+  "proposal_base_commit": "e9805ac4f497f19fb7ab4002d5a1aeaaf04ee700",
+  "proposal_base_tree": "ef1f72f98d01cc59a2cdc54e22a89df89474bf61",
+  "cases": [
+    {
+      "watch_mm": 40,
+      "job_id": 111596149429,
+      "job_url": "https://github.com/100mango/ColorPicker/actions/runs/37255908930/job/111596149429",
+      "source_log": "watch-touch-111596149429.log",
+      "source_log_sha256": "eaa08910f2147a0e74671aa880c3251af678409677918186b72ec987096101f2",
+      "artifact_id": 11324518289,
+      "artifact_url": "https://github.com/100mango/ColorPicker/actions/runs/37255908930/artifacts/11324518289",
+      "artifact_sha256": "0aee4d80215f1b0b10cb4d4a2cd3bb0cfe76118e90d004f0d288c3d4103fc675",
+      "summary_sha256": "2fff3d6defbd508b1c61bf58a9d727d27f69470251d58b808dd77037625bffd4",
+      "screenshot_file": "B8FCECC4-814D-425C-A9AF-1F8FA4DD532B.png",
+      "screenshot_sha256": "be61a7245515ec0a4e422c40d222e8d6e5378d93789173aae5481424f11d98ed",
+      "observed_failure": "XCTAssertTrue(list.isHittable) at WatchWorkflowTests.swift:355 before any bounded List drag",
+      "failure_seconds": 10.63,
+      "collection_view_hittable": false,
+      "viewport": [
+        0.0,
+        0.0,
+        162.0,
+        197.0
+      ],
+      "collection_view": [
+        0.0,
+        0.0,
+        162.0,
+        197.0
+      ],
+      "navigation": [
+        0.0,
+        0.0,
+        162.0,
+        47.5
+      ],
+      "target_identifier": "watch.color.0",
+      "target_in_snapshot": false,
+      "rows": [
+        {
+          "type": "Button",
+          "frame": [
+            2.0,
+            47.5,
+            158.0,
+            44.0
+          ],
+          "identifier": "watch.editor",
+          "index": -1,
+          "live_hittable": null
+        },
+        {
+          "type": "Button",
+          "frame": [
+            2.0,
+            95.5,
+            158.0,
+            47.0
+          ],
+          "identifier": "watch.photo",
+          "index": -1,
+          "live_hittable": null
+        },
+        {
+          "type": "StaticText",
+          "frame": [
+            2.0,
+            181.0,
+            158.0,
+            44.0
+          ],
+          "identifier": "watch.count",
+          "index": -1,
+          "live_hittable": null
+        }
+      ],
+      "expected_plan": {
+        "direction": "later",
+        "start": [
+          81,
+          138.25
+        ],
+        "end": [
+          81,
+          106.25
+        ]
+      },
+      "geometric_anchor_identifier": "watch.photo",
+      "descendant_hittability_observed": false,
+      "failure_ax_excerpt": "WATCH_FAILURE_AX: Optional(Attributes: Application, 0x1073997c0, pid: 28789, label: 'TouchColor'\nElement subtree:\n \u2192Application, 0x1073997c0, pid: 28789, label: 'TouchColor'\n    Window, 0x107398780, {{0.0, 0.0}, {162.0, 197.0}}\n      Other, 0x10739b5c0, {{0.0, 0.0}, {162.0, 197.0}}\n        Other, 0x10739af80, {{0.0, 0.0}, {162.0, 197.0}}\n          Other, 0x107399f40, {{0.0, 0.0}, {162.0, 197.0}}\n            Other, 0x107398b40, {{0.0, 0.0}, {162.0, 197.0}}\n              NavigationBar, 0x107398140, {{0.0, 0.0}, {162.0, 47.5}}, identifier: 'TouchColor'\n                StaticText, 0x10739a300, {{9.5, 16.0}, {120.5, 30.0}}, label: 'TouchColor'\n              Other, 0x107399540, {{0.0, 0.0}, {162.0, 197.0}}\n                Other, 0x10739a1c0, {{0.0, 0.0}, {162.0, 197.0}}\n                  Other, 0x1072d21c0, {{0.0, 0.0}, {162.0, 197.0}}\n                    Other, 0x107388a00, {{0.0, 0.0}, {162.0, 197.0}}\n                      CollectionView, 0x10732cb40, {{0.0, 0.0}, {162.0, 197.0}}\n                        Other, 0x10732c500, {{0.0, 0.0}, {162.0, 197.0}}\n                          Other, 0x10732c780, {{0.0, 0.0}, {162.0, 74.5}}\n                        Other, 0x10732fe80, {{0.0, 0.0}, {162.0, 197.0}}\n                        Cell, 0x10732f340, {{2.0, 47.5}, {158.0, 44.0}}, label: 'Create Color'\n                          Other, 0x10732e800, {{2.0, 47.5}, {158.0, 44.0}}\n                            Other, 0x10732e580, {{2.0, 47.5}, {158.0, 44.0}}\n                          Other, 0x107393700, {{2.0, 47.5}, {158.0, 44.0}}\n                            Other, 0x107390280, {{2.0, 47.5}, {158.0, 44.0}}\n                              Other, 0x107393ac0, {{2.0, 47.5}, {158.0, 44.0}}\n                                Button, 0x107393c00, {{2.0, 47.5}, {158.0, 44.0}}, identifier: 'watch.editor', label: 'Create Color'\n                        Cell, 0x107390000, {{2.0, 95.5}, {158.0, 47.0}}, label: 'Sample Photo Preview'\n                          Other, 0x107392940, {{2.0, 95.5}, {158.0, 47.0}}\n                            Other, 0x107392440, {{2.0, 95.5}, {158.0, 47.0}}\n                          Other, 0x1073930c0, {{2.0, 95.5}, {158.0, 47.0}}\n                            Other, 0x107392580, {{2.0, 95.5}, {158.0, 47.0}}\n                              Other, 0x107392800, {{2.0, 95.5}, {158.0, 47.0}}\n                                Button, 0x107391900, {{2.0, 95.5}, {158.0, 47.0}}, identifier: 'watch.photo', label: 'Sample Photo Preview'\n                        Other, 0x107390140, {{0.0, 163.5}, {162.0, 17.5}}\n                          Other, 0x1073921c0, {{0.0, 163.5}, {162.0, 17.5}}\n                            Other, 0x107392bc0, {{0.0, 163.5}, {162.0, 17.5}}\n                              StaticText, 0x107391cc0, {{9.5, 163.5}, {45.0, 16.0}}, label: 'Palette'\n                        Cell, 0x107390500, {{2.0, 181.0}, {158.0, 44.0}}, label: '2'\n                          Other, 0x107390780, {{14.6, 181.0}, {132.9, 37.0}}\n                            Other, 0x1073908c0, {{14.6, 181.0}, {132.9, 37.0}}\n                          Other, 0x107390a00, {{14.6, 181.0}, {132.9, 37.0}}\n                            Other, 0x107392e40, {{14.6, 181.0}, {132.9, 37.0}}\n                              Other, 0x107390b40, {{14.6, 181.0}, {132.9, 37.0}}\n                                StaticText, 0x107390c80, {{2.0, 181.0}, {158.0, 44.0}}, identifier: 'watch.count', label: '2'\n    Window (Main), 0x107390dc0, {{154.0, 33.5}, {6.0, 32.0}}\n    Window, 0x107391040, {{0.0, 0.0}, {162.0, 197.0}}\n      StatusBar, 0x107391180, {{0.0, 0.0}, {162.0, 28.0}}\n        Other, 0x107392f80, {{0.0, 0.0}, {162.0, 28.0}}\n        Other, 0x1073912c0, {{0.0, 0.0}, {162.0, 28.0}}\n"
+    },
+    {
+      "watch_mm": 49,
+      "job_id": 111596149454,
+      "job_url": "https://github.com/100mango/ColorPicker/actions/runs/37255908930/job/111596149454",
+      "source_log": "watch-touch-111596149454.log",
+      "source_log_sha256": "e623d5d8be074785d254608ecc3c9f63f6d653aad1bf183d0c95b933cf586b93",
+      "artifact_id": 11324284355,
+      "artifact_url": "https://github.com/100mango/ColorPicker/actions/runs/37255908930/artifacts/11324284355",
+      "artifact_sha256": "51d5f9351a9c359482071d32ff189733f306b2e7215ef595215e75b6ae80c3b6",
+      "summary_sha256": "26fc8c90ca33bc50d671150dedab5d4172dc4d54b16ec3420c06974a16d2d102",
+      "screenshot_file": "C7B5EABC-C9A2-4E8E-8E02-3D7FD21632B7.png",
+      "screenshot_sha256": "81ef58bc56b21d36edb5f17f574e28bbb10d7d326ece6d10c9eaca8643829261",
+      "observed_failure": "XCTAssertTrue(list.isHittable) at WatchWorkflowTests.swift:355 before any bounded List drag",
+      "failure_seconds": 9.4,
+      "collection_view_hittable": false,
+      "viewport": [
+        0.0,
+        0.0,
+        211.0,
+        257.0
+      ],
+      "collection_view": [
+        0.0,
+        0.0,
+        211.0,
+        257.0
+      ],
+      "navigation": [
+        0.0,
+        0.0,
+        211.0,
+        66.0
+      ],
+      "target_identifier": "watch.color.0",
+      "target_in_snapshot": false,
+      "rows": [
+        {
+          "type": "Button",
+          "frame": [
+            2.0,
+            66.0,
+            207.0,
+            59.0
+          ],
+          "identifier": "watch.editor",
+          "index": -1,
+          "live_hittable": null
+        },
+        {
+          "type": "Button",
+          "frame": [
+            2.0,
+            130.0,
+            207.0,
+            59.0
+          ],
+          "identifier": "watch.photo",
+          "index": -1,
+          "live_hittable": null
+        },
+        {
+          "type": "StaticText",
+          "frame": [
+            2.0,
+            229.5,
+            207.0,
+            59.0
+          ],
+          "identifier": "watch.count",
+          "index": -1,
+          "live_hittable": null
+        }
+      ],
+      "expected_plan": {
+        "direction": "later",
+        "start": [
+          105.5,
+          177.5
+        ],
+        "end": [
+          105.5,
+          145.5
+        ]
+      },
+      "geometric_anchor_identifier": "watch.photo",
+      "descendant_hittability_observed": false,
+      "failure_ax_excerpt": "WATCH_FAILURE_AX: Optional(Attributes: Application, 0x10b045900, pid: 47120, label: 'TouchColor'\nElement subtree:\n \u2192Application, 0x10b045900, pid: 47120, label: 'TouchColor'\n    Window, 0x10b046440, {{0.0, 0.0}, {211.0, 257.0}}\n      Other, 0x10b047e80, {{0.0, 0.0}, {211.0, 257.0}}\n        Other, 0x10b047480, {{0.0, 0.0}, {211.0, 257.0}}\n          Other, 0x10b046bc0, {{0.0, 0.0}, {211.0, 257.0}}\n            Other, 0x10b045b80, {{0.0, 0.0}, {211.0, 257.0}}\n              NavigationBar, 0x10b047700, {{0.0, 0.0}, {211.0, 66.0}}, identifier: 'TouchColor'\n                StaticText, 0x10b03d680, {{16.5, 29.0}, {125.0, 31.5}}, label: 'TouchColor'\n              Other, 0x10b036e40, {{0.0, 0.0}, {211.0, 257.0}}\n                Other, 0x10aab4c80, {{0.0, 0.0}, {211.0, 257.0}}\n                  Other, 0x10aab5540, {{0.0, 0.0}, {211.0, 257.0}}\n                    Other, 0x10b02f5c0, {{0.0, 0.0}, {211.0, 257.0}}\n                      CollectionView, 0x10b02f980, {{0.0, 0.0}, {211.0, 257.0}}\n                        Other, 0x10b02c280, {{0.0, 0.0}, {211.0, 257.0}}\n                          Other, 0x10b02fe80, {{0.0, 0.0}, {211.0, 88.5}}\n                        Other, 0x10b02f340, {{0.0, 0.0}, {211.0, 257.0}}\n                        Cell, 0x10b02ea80, {{2.0, 66.0}, {207.0, 59.0}}, label: 'Create Color'\n                          Other, 0x10b02cc80, {{2.0, 66.0}, {207.0, 59.0}}\n                            Other, 0x10b02d2c0, {{2.0, 66.0}, {207.0, 59.0}}\n                          Other, 0x10b02ee40, {{2.0, 66.0}, {207.0, 59.0}}\n                            Other, 0x10b02fac0, {{2.0, 66.0}, {207.0, 59.0}}\n                              Other, 0x10b02f840, {{2.0, 66.0}, {207.0, 59.0}}\n                                Button, 0x10b02f700, {{2.0, 66.0}, {207.0, 59.0}}, identifier: 'watch.editor', label: 'Create Color'\n                        Cell, 0x10b02d540, {{2.0, 130.0}, {207.0, 59.0}}, label: 'Sample Photo Preview'\n                          Other, 0x10b02d680, {{2.0, 130.0}, {207.0, 59.0}}\n                            Other, 0x10b02fc00, {{2.0, 130.0}, {207.0, 59.0}}\n                          Other, 0x10b02d400, {{2.0, 130.0}, {207.0, 59.0}}\n                            Other, 0x10b02d180, {{2.0, 130.0}, {207.0, 59.0}}\n                              Other, 0x10b02c140, {{2.0, 130.0}, {207.0, 59.0}}\n                                Button, 0x10b02c500, {{2.0, 130.0}, {207.0, 59.0}}, identifier: 'watch.photo', label: 'Sample Photo Preview'\n                        Other, 0x10b02da40, {{0.0, 211.0}, {211.0, 18.5}}\n                          Other, 0x10b02dcc0, {{0.0, 211.0}, {211.0, 18.5}}\n                            Other, 0x10b02e080, {{0.0, 211.0}, {211.0, 18.5}}\n                              StaticText, 0x10b02c3c0, {{16.5, 211.0}, {48.0, 17.0}}, label: 'Palette'\n                        Cell, 0x10b02df40, {{2.0, 229.5}, {207.0, 59.0}}, label: '2'\n                          Other, 0x10b02db80, {{21.4, 229.5}, {168.2, 47.9}}\n                            Other, 0x10b02e300, {{21.4, 229.5}, {168.2, 47.9}}\n                          Other, 0x10b02ef80, {{21.4, 229.5}, {168.2, 47.9}}\n                            Other, 0x10b02e800, {{21.4, 229.5}, {168.2, 47.9}}\n                              Other, 0x10b02f200, {{21.4, 229.5}, {168.2, 47.9}}\n                                StaticText, 0x10b02ed00, {{2.0, 229.5}, {207.0, 59.0}}, identifier: 'watch.count', label: '2'\n    Window (Main), 0x10b02cf00, {{203.0, 61.5}, {6.0, 48.0}}\n    Window, 0x10b02d900, {{0.0, 0.0}, {211.0, 257.0}}\n      StatusBar, 0x10b02de00, {{0.0, 0.0}, {211.0, 40.0}}\n        Other, 0x10b02e440, {{0.0, 0.0}, {211.0, 40.0}}\n        Other, 0x10b02c780, {{0.0, 0.0}, {211.0, 40.0}}\n"
+    }
+  ]
+}

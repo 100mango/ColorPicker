@@ -51,7 +51,7 @@ jobs:
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_palette_readiness
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
         timeout-minutes: 6
@@ -211,25 +211,26 @@ jobs:
           xcodebuild -project TestFixtures/PaletteFixtures.xcodeproj -scheme PaletteFixtures -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/palette-fixtures \
             CODE_SIGNING_ALLOWED=NO build
-      - name: Warm up required simulator
+      - name: Configure fresh owned simulator destination
         id: warm-device
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' && steps.build-fixture.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" prepare
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" configure
       - name: Unit and constrained-window layout tests
+        id: hosted-tests
         if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorTests
-      - name: Seed synthetic photo
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-hosted
+      - name: Prepare Files fixture and seed synthetic photo
         id: seed-device
-        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.hosted-tests.outcome == 'success' }}
         timeout-minutes: 10
-        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" seed
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" fixture-seed
       - name: Functional UI tests
         id: functional-tests
         if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 20
-        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-functional
       - name: Read bounded app and Files-service metadata after a functional failure
         id: runtime-diagnostics
         if: ${{ !cancelled() && steps.functional-tests.outcome == 'failure' }}
@@ -238,11 +239,11 @@ jobs:
       - name: Official XCTest accessibility audits
         if: ${{ !cancelled() && steps.seed-device.outcome == 'success' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
         timeout-minutes: 12
-        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-audits
       - name: Shut down simulator
         if: ${{ always() && steps.warm-device.outcome != 'skipped' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
         timeout-minutes: 2
-        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-shutdown
       - name: Export bounded device evidence
         if: always()
         timeout-minutes: 3

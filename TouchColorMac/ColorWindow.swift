@@ -119,7 +119,12 @@ private struct SamplingControls: View {
             HStack(spacing: 14) {
                 if let color = session.selectedColor {
                     Color(red: Double(color.red) / 255, green: Double(color.green) / 255, blue: Double(color.blue) / 255)
-                        .frame(width: 38, height: 38).border(.gray.opacity(0.6)).accessibilityHidden(true)
+                        .frame(width: 38, height: 38).border(.gray.opacity(0.6))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityAddTraits(.isImage)
+                        .accessibilityLabel("Selected color")
+                        .accessibilityValue(Text(verbatim: "\(color.hex), \(color.rgbDescription)"))
+                        .accessibilityIdentifier("sample.swatch")
                     VStack(alignment: .leading) {
                         Text(color.hex).font(.title2.monospaced()).accessibilityIdentifier("sample.hex")
                         Text(color.rgbDescription).font(.callout.monospacedDigit()).accessibilityIdentifier("sample.rgb")

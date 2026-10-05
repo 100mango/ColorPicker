@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "source": "a6558c8ffa1cf86b499bcfa00f02f8d7bcb1de2b",
+  "run": 37338286671,
+  "job": 111860840406,
+  "artifact": 11359060869,
+  "artifact_sha256": "ab4a74cac911b9ee416cb96c188325469a1d3b55ded378022a745363270e98c7",
+  "source_log_sha256": "33dbd17f0fbd9e06822027274e3a07f4880117ca5007e26dbafeb7a0f52c6f8d",
+  "watch_mm": 40,
+  "target_identifier": "watch.color.1",
+  "operation": "first saved-color tap before edit/copy/delete",
+  "operation_basis": "Exact case source plus all12 logged plans target color.1; failure AX still has two #fe0000 saved rows. It is not Privacy and is not the later tap:false observation.",
+  "viewport": [
+    0,
+    0,
+    162,
+    197
+  ],
+  "list": [
+    0,
+    0,
+    162,
+    197
+  ],
+  "navigation": [
+    0,
+    0,
+    162,
+    47.5
+  ],
+  "last_logged_plan_target": [
+    2,
+    157,
+    158,
+    44
+  ],
+  "failure_ax_target": [
+    2,
+    155,
+    158,
+    44
+  ],
+  "last_plan_line": "2026-10-05T16:30:42.2332340Z WATCH_TOUCH_ANCHOR_PLAN case=-[WatchWorkflowTests testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder] reason=admitted attempt=11 target=watch.color.1 targetFrame=Optional((2.0, 157.0, 158.0, 44.0)) mode=original anchor=watch.color.0:XCUIElementType(rawValue: 9):(2.0, 109.0, 158.0, 44.0) viewport=(0.0, 0.0, 162.0, 197.0) list=(0.0, 0.0, 162.0, 197.0) navigation=(0.0, 0.0, 162.0, 47.5) originalStart=(81.0,128.25) originalEnd=(81.0,116.25) start=(81.0,128.25) end=(81.0,116.25) validationMilliseconds=1913 live=id=watch.color.0;matches=1;hittable=true;frame=(2.0, 109.0, 158.0, 44.0) rows=watch.color.1=(2.0, 157.0, 158.0, 44.0);watch.color.0=(2.0, 109.0, 158.0, 44.0);watch.count=(2.0, 61.0, 158.0, 44.0);watch.photo=(2.0, -24.5, 158.0, 47.0)",
+  "failure_target_line": "2026-10-05T16:30:44.0371690Z                                 Button, 0x10aedcf00, {{2.0, 155.0}, {158.0, 44.0}}, identifier: 'watch.color.1', label: '#fe0000'",
+  "actual_target_hittability": null,
+  "actual_tap_delivery": null,
+  "gesture_dispatches_observed": 12,
+  "scope": "Retained geometry only; synthetic live true/false tests do not turn this historical failure into a pass."
+}

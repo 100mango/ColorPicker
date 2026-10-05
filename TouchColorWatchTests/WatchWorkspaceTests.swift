@@ -35,6 +35,21 @@ import ColorPaletteLegacy
             XCTAssertEqual(decision, TCWatchListAmbiguous)
             let clipped = TCWatchListRect(x: 2, y: height - 20, width: width - 4, height: 44)
             XCTAssertEqual(TCWatchListPlan(viewport, viewport, navigation, 0, 1, clipped, nil, 0, &plan), TCWatchListLater)
+            var point = TCWatchListPoint()
+            XCTAssertEqual(TCWatchListPartialTapPoint(plan.content, clipped, &point), 0)
+            let borderOnly = TCWatchListRect(x: 2, y: height - 42, width: width - 4, height: 44)
+            XCTAssertEqual(TCWatchListPartialTapPoint(plan.content, borderOnly, &point), 1)
+            XCTAssertEqual(point.x, width * 0.5); XCTAssertEqual(point.y, height - 20)
+            let leaves = [borderOnly]
+            XCTAssertEqual(leaves.withUnsafeBufferPointer {
+                TCWatchListPartialTapReady(plan.content, borderOnly, borderOnly,
+                    $0.baseAddress, $0.count, 1, 1, 1, 1, point)
+            }, 1)
+            XCTAssertEqual(leaves.withUnsafeBufferPointer {
+                TCWatchListPartialTapReady(plan.content, borderOnly, borderOnly,
+                    $0.baseAddress, $0.count, 1, 1, 0, 1, point)
+            }, 0)
+
             XCTAssertEqual(TCWatchListPlan(viewport, viewport, navigation, 0, 1, header.frame, nil, 0, &plan), TCWatchListReady)
             let invalid = TCWatchListRect(x: .nan, y: 0, width: width, height: height)
             XCTAssertEqual(TCWatchListPlan(invalid, viewport, navigation, 0, 0, TCWatchListRect(), nil, 0, &plan), TCWatchListAmbiguous)

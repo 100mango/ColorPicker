@@ -1,12 +1,11 @@
-name: Native Apple platform milestone
+name: Targeted Mac and Watch repair evidence
 on:
   push:
-    branches: [codex/platform-integration]
-  workflow_dispatch:
+    branches: [codex/mac-watch-repair]
 permissions:
   contents: read
 concurrency:
-  group: touchcolor-platforms-${{ github.ref }}
+  group: touchcolor-platforms-refs/heads/codex/platform-integration
   cancel-in-progress: false
 jobs:
   native-prerequisites:
@@ -26,7 +25,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          test "$GITHUB_REF" = refs/heads/codex/mac-watch-repair
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           sw_vers -buildVersion | grep -Fx 26A428
@@ -101,108 +102,9 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - platform: tv
-            minutes: 25
-            evidence_bytes: 2000000
           - platform: mac
             minutes: 40
             evidence_bytes: 3000000
-          - platform: vision
-            lane: vision-chinese
-            vision_case: chinese
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 950000
-          - platform: vision
-            lane: vision-corrupt-audit
-            vision_case: corrupt-audit
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 650000
-          - platform: vision
-            lane: vision-canvas-audit
-            vision_case: canvas-audit
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 650000
-          - platform: vision
-            lane: vision-paste-relaunch
-            vision_case: paste-relaunch
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 1300000
-          - platform: vision
-            lane: vision-png-export
-            vision_case: png-export
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 900000
-          - platform: vision
-            lane: vision-json-export
-            vision_case: json-export
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 900000
-          - platform: vision
-            lane: vision-photos
-            vision_case: photos
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 950000
-          - platform: vision
-            lane: vision-cancel
-            vision_case: cancel
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 750000
-          - platform: vision
-            lane: vision-files-select
-            vision_case: files-select
-            text_phase: normal
-            minutes: 25
-            evidence_bytes: 950000
-          - platform: vision
-            lane: vision-chinese-system-largest
-            vision_case: chinese
-            text_phase: system-largest
-            minutes: 25
-            evidence_bytes: 700000
-          - platform: vision
-            lane: vision-canvas-audit-system-largest
-            vision_case: canvas-audit
-            text_phase: system-largest
-            minutes: 25
-            evidence_bytes: 700000
-          - platform: ios
-            minutes: 20
-            evidence_bytes: 1000000
-          - platform: watch
-            lane: watch-smallest
-            watch_profile: smallest
-            text_phase: normal
-            minutes: 45
-            evidence_bytes: 1200000
-          - platform: watch
-            lane: watch-largest
-            watch_profile: largest
-            text_phase: normal
-            minutes: 45
-            evidence_bytes: 1200000
-          - platform: watch
-            lane: watch-smallest-system-largest
-            watch_profile: smallest
-            text_phase: system-largest
-            minutes: 45
-            evidence_bytes: 600000
-          - platform: watch
-            lane: watch-largest-system-largest
-            watch_profile: largest
-            text_phase: system-largest
-            minutes: 45
-            evidence_bytes: 600000
-          - platform: paired
-            minutes: 45
-            evidence_bytes: 1000000
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
@@ -239,7 +141,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          test "$GITHUB_REF" = refs/heads/codex/mac-watch-repair
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           sw_vers
@@ -535,6 +439,7 @@ jobs:
                           print('RETAINED_MAC_ACCESSIBILITY_DIAGNOSTIC',text[:12000],flush=True)
           PY
           python3 scripts/compress_vision_evidence.py build/evidence
+          python3 scripts/mac_passive_lifecycle.py
           python3 scripts/retain_mac_evidence.py build/evidence
           python3 scripts/native_text_evidence.py retain build/evidence
           python3 - <<'PY'

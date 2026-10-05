@@ -1,0 +1,317 @@
+"""Portable closed-route, absolute-clock and real owned-process regressions."""
+import contextlib
+import copy
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import uikit_managed_tests as m
+from palette_lifecycle_diagnostics import CaptureStopped
+
+ROOT = Path(__file__).resolve().parents[1]
+DEVICE = '7EBB1450-0922-41FE-984D-B2B14D1C34C3'
+IDENTITY = {'family': 'iPadMini', 'udid': DEVICE, 'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', 'started': 1}
+SETUP = {'schema': 1, 'binding': {'identity': IDENTITY, 'context': {'sha': 'a'*40}},
+         'products': {'tree_sha256': 'b'*64, 'files': 1, 'bytes': 1, 'claim': 'built_product_bytes_only'}}
+
+
+def summary(family='iPadMini', suite='TouchColorTests', failures=0):
+    total = {'TouchColorTests': 53, 'TouchColorUITests': 15 if family.startswith('iPad') else 17,
+             'AccessibilityAudits': 7}[suite]
+    skips = int(suite == 'TouchColorTests' and family.startswith('iPhone'))
+    fields = {'totalTestCount': total, 'passedTests': total-skips-failures, 'failedTests': failures,
+              'skippedTests': skips, 'expectedFailures': 0}
+    return {**fields, 'result': 'Failed' if failures else 'Passed', 'startTime': 1000.1, 'finishTime': 1000.9,
+            'devicesAndConfigurations': [{**{k:v for k,v in fields.items() if k!='totalTestCount'},
+                'device': {'deviceId': DEVICE, 'platform': 'iOS Simulator', 'osVersion': '27.0'}}]}
+
+
+class SummaryTests(unittest.TestCase):
+    def check(self, value, family='iPadMini', suite='TouchColorTests', code=0):
+        return m.summary_fields(json.dumps(value), family, suite, IDENTITY, 1000, 1001, code)
+    def test_all_full_inventories(self):
+        for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge'):
+            for suite in m.STEPS:
+                with self.subTest(family=family,suite=suite):
+                    self.assertTrue(self.check(summary(family,suite),family,suite)['qualified'])
+    def test_known_failed_remains_failed(self):
+        value=self.check(summary(failures=1),code=65)
+        self.assertFalse(value['qualified']); self.assertEqual(value['failedTests'],1)
+    def test_destination_and_clock_adversaries(self):
+        mutations=[lambda s:s.update(startTime=999.999),lambda s:s.update(finishTime=1001.001),
+            lambda s:s.update(startTime=float('nan')),lambda s:s['devicesAndConfigurations'].append(copy.deepcopy(s['devicesAndConfigurations'][0])),
+            lambda s:s['devicesAndConfigurations'][0]['device'].update(deviceId='A'*36),
+            lambda s:s['devicesAndConfigurations'][0]['device'].update(platform='iOS'),
+            lambda s:s['devicesAndConfigurations'][0]['device'].update(osVersion='26.0')]
+        for mutate in mutations:
+            value=summary();mutate(value)
+            with self.subTest(mutate=mutate), self.assertRaises(ValueError):self.check(value)
+    def test_count_skip_outcome_adversaries(self):
+        mutations=[lambda s:s.update(totalTestCount=1),lambda s:s.update(passedTests=52),
+            lambda s:s.update(failedTests=True),lambda s:s.update(skippedTests=1,passedTests=52),
+            lambda s:s.update(expectedFailures=1),lambda s:s.update(result='Failed'),
+            lambda s:s['devicesAndConfigurations'][0].update(passedTests=0)]
+        for mutate in mutations:
+            value=summary();mutate(value)
+            with self.subTest(mutate=mutate),self.assertRaises(ValueError):self.check(value)
+        with self.assertRaises(ValueError):self.check(summary(),code=65)
+        with self.assertRaises(ValueError):self.check(summary(failures=1),code=0)
+    def test_phone_capability_skip_not_inherited_by_ipad(self):
+        with self.assertRaises(ValueError):self.check(summary('iPhoneCompact'))
+    def test_duplicates_fail(self):
+        raw=json.dumps(summary()).replace('"passedTests": 53','"passedTests": 53, "passedTests": 53',1)
+        with self.assertRaises(ValueError):m.summary_fields(raw,'iPadMini','TouchColorTests',IDENTITY,1000,1001,0)
+
+
+class RunTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.old=Path.cwd();os.chdir(self.tmp.name)
+        self.tick=0.;self.calls=[];self.reader_calls=[];self.inject=None;self.read_inject=None
+        self.stack=contextlib.ExitStack()
+        self.stack.enter_context(patch.object(m,'load_setup',return_value=copy.deepcopy(SETUP)))
+        self.stack.enter_context(patch.object(m,'read_binding',return_value=copy.deepcopy(SETUP['binding'])))
+        self.stack.enter_context(patch.object(m,'verify_source'))
+        self.stack.enter_context(patch.object(m,'require_hosted'))
+        self.stack.enter_context(patch.object(m,'require_fixtures'))
+        self.stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+    def tearDown(self):
+        self.stack.close();os.chdir(self.old);self.tmp.cleanup()
+    def runner(self,command,deadline):
+        self.calls.append((command,deadline));self.tick+=1
+        value={'status':'timely_exit','exit_code':0,'host_cleanup_confirmed':True,'simulator_completion':'xcode_command_returned_only'}
+        if self.inject:self.inject(value,deadline)
+        return value
+    def reader(self,command,**kw):
+        self.reader_calls.append((command,kw))
+        if self.read_inject:self.read_inject(kw)
+        return subprocess.CompletedProcess(command,0,json.dumps(summary()).encode(),b'')
+    def run_case(self,**kwargs):
+        return m.run_suite('iPadMini','TouchColorTests',started=0,clock=lambda:self.tick,
+            wall=lambda:1000+self.tick,runner=self.runner,reader=self.reader,
+            products=lambda:copy.deepcopy(SETUP['products']),**kwargs)
+    def record(self):return json.loads(m.record_path('iPadMini','TouchColorTests').read_text())
+    def pending(self):return Path('build/iPadMini-runtime-command-uncertain').exists()
+    def test_exact_success(self):
+        self.assertEqual(self.run_case(),0);self.assertFalse(self.pending());self.assertTrue(self.record()['qualified'])
+        self.assertEqual(self.calls[0][1],500)
+        self.assertEqual(self.reader_calls[0][1],{'seconds':20,'cap':1048576,'cleanup_grace':10})
+    def test_39_seconds_entry_fits(self):
+        self.tick=39
+        # Make summary dates correspond to this injected entry time.
+        def read(command,**kw):
+            value=summary();value.update(startTime=1039.1,finishTime=1039.9)
+            return subprocess.CompletedProcess(command,0,json.dumps(value).encode(),b'')
+        self.reader=read
+        self.assertEqual(self.run_case(),0);self.assertEqual(self.calls[0][1],539)
+    def test_exact_40_seconds_entry_refuses_full_admission(self):
+        self.tick=40;self.assertEqual(self.run_case(),3);self.assertEqual(self.calls,[])
+    def test_persist_overhead_cannot_start_expired_grant(self):
+        original=m.write_json
+        def delayed(*args,**kw):
+            original(*args,**kw);self.tick=41
+        with patch.object(m,'write_json',side_effect=delayed):self.assertEqual(self.run_case(),3)
+        self.assertEqual(self.calls,[]);self.assertTrue(self.pending())
+    def test_late_xctest_retains_fence_and_early_outcome(self):
+        self.inject=lambda value,deadline:setattr(self,'tick',deadline)
+        self.assertEqual(self.run_case(),3);self.assertTrue(self.pending());self.assertEqual(self.reader_calls,[])
+        self.assertEqual(self.record()['command']['status'],'timely_exit')
+        self.assertFalse(self.record()['qualified'])
+    def test_timeout_unknown_or_cancel_cannot_start_reader(self):
+        for status in ('incomplete','not_started'):
+            self.inject=lambda value,deadline:value.update(status=status,host_cleanup_confirmed=False)
+            self.assertEqual(self.run_case(),3);self.assertTrue(self.pending());self.assertEqual(self.reader_calls,[])
+            Path('build/iPadMini-runtime-command-uncertain').unlink();m.record_path('iPadMini','TouchColorTests').unlink()
+    def test_late_summary_keeps_fence(self):
+        self.read_inject=lambda kw:setattr(self,'tick',1+kw['seconds'])
+        self.assertEqual(self.run_case(),3);self.assertTrue(self.pending());self.assertFalse(self.record()['qualified'])
+    def test_summary_persistence_cost_is_subtracted_before_capture(self):
+        original=m.write_json;calls=[0]
+        def delayed(*args,**kwargs):
+            original(*args,**kwargs);calls[0]+=1
+            if calls[0]==3:self.tick+=19
+        with patch.object(m,'write_json',side_effect=delayed):self.assertEqual(self.run_case(),0)
+        self.assertEqual(self.reader_calls[0][1]['seconds'],1)
+    def test_expired_summary_persistence_never_dispatches_reader(self):
+        original=m.write_json;calls=[0]
+        def delayed(*args,**kwargs):
+            original(*args,**kwargs);calls[0]+=1
+            if calls[0]==3:self.tick+=20
+        with patch.object(m,'write_json',side_effect=delayed):self.assertEqual(self.run_case(),3)
+        self.assertEqual(self.reader_calls,[]);self.assertTrue(self.pending())
+    def test_summary_unknown_cleanup_keeps_fence(self):
+        def fail(kw):raise CaptureStopped('duration-limit',False)
+        self.read_inject=fail
+        self.assertEqual(self.run_case(),3);self.assertTrue(self.pending());self.assertFalse(self.record()['qualified'])
+        self.assertIs(self.record()['summary']['host_cleanup_confirmed'],False)
+    def test_known_failed_suite_retains_complete_failed_result(self):
+        self.inject=lambda value,deadline:value.update(exit_code=65)
+        self.reader=lambda command,**kw:subprocess.CompletedProcess(command,0,json.dumps(summary(failures=1)).encode(),b'')
+        self.assertEqual(self.run_case(),65);self.assertFalse(self.pending())
+        self.assertEqual(self.record()['summary']['status'],'complete');self.assertFalse(self.record()['qualified'])
+    def test_prepare_marker_overhead_cannot_reset_nominal_cap(self):
+        calls=[]
+        w=m.ManagedWarmup('iPadMini',started=0,clock=lambda:self.tick,
+            host_runner=lambda command,timeout:(calls.append(timeout) or subprocess.CompletedProcess(command,0,'','')))
+        original=Path.open
+        class DelayedMarker:
+            def __init__(self,stream):self.stream=stream
+            def __enter__(self):self.tick=0;return self
+            def write(inner,data):self.tick=31;return inner.stream.write(data)
+            def __exit__(inner,*args):inner.stream.close()
+        def opening(path,*args,**kwargs):
+            stream=original(path,*args,**kwargs)
+            return DelayedMarker(stream) if str(path).endswith('-runtime-command-uncertain') else stream
+        with patch.object(Path,'open',new=opening):
+            with self.assertRaises(ValueError):w.command(['host-only-proof'],30,simulator=False)
+        self.assertEqual(calls,[]);self.assertTrue(self.pending())
+    def test_all_managed_finalizers_stop_at_existing_uncertainty(self):
+        Path('build').mkdir();Path('build/iPadMini-runtime-command-uncertain').write_text('old')
+        with patch.object(m,'read_managed_device') as inventory,patch.object(m,'setup_capture') as capture:
+            with self.assertRaises(Exception):m.fixture_seed('iPadMini',started=0)
+            with patch.object(sys,'argv',['tool','iPadMini','managed-shutdown']):
+                with self.assertRaises(Exception):m.main()
+            inventory.assert_not_called();capture.assert_not_called()
+    def test_known_reader_nonzero_preserves_command_and_no_false_uncertainty(self):
+        self.reader=lambda command,**kw:subprocess.CompletedProcess(command,1,b'',b'error')
+        self.assertEqual(self.run_case(),3);self.assertFalse(self.pending());self.assertEqual(self.record()['command']['exit_code'],0)
+    def test_changed_product_stops_before_summary(self):
+        with patch.object(m,'read_binding',return_value={}):self.assertEqual(self.run_case(),3)
+        self.assertEqual(self.reader_calls,[]);self.assertTrue(self.pending())
+    def test_repeated_result_refused(self):
+        self.assertEqual(self.run_case(),0)
+        with self.assertRaises(ValueError):self.run_case()
+        self.assertEqual(len(self.calls),1)
+    def test_existing_uncertainty_blocks_all_calls(self):
+        Path('build').mkdir();Path('build/iPadMini-runtime-command-uncertain').write_text('old')
+        with self.assertRaises(Exception):self.run_case()
+        self.assertEqual(self.calls,[]);self.assertEqual(self.reader_calls,[])
+    def test_pre_capture_setup_deadline_clamp(self):
+        calls=[];self.tick=579
+        w=m.ManagedWarmup('iPadMini',started=0,clock=lambda:self.tick,
+            host_runner=lambda command,timeout:(calls.append(timeout) or subprocess.CompletedProcess(command,0,'','')))
+        w.command(['host-only-proof'],30,simulator=False)
+        self.assertEqual(calls,[1])
+        self.tick=580
+        with self.assertRaises(Exception):w.command(['host-only-proof'],30,simulator=False)
+        self.assertEqual(calls,[1])
+    def test_late_setup_result_rejected(self):
+        def late(command,timeout):self.tick+=timeout;return subprocess.CompletedProcess(command,0,'','')
+        w=m.ManagedWarmup('iPadMini',started=0,clock=lambda:self.tick,host_runner=late)
+        with self.assertRaises(ValueError):w.command(['host-only-proof'],30,simulator=False)
+        self.assertTrue(self.pending())
+
+
+class ReceiptTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.old=Path.cwd();os.chdir(self.tmp.name);Path('build').mkdir()
+    def tearDown(self):os.chdir(self.old);self.tmp.cleanup()
+    def hosted(self):
+        fields=m.summary_fields(json.dumps(summary()),'iPadMini','TouchColorTests',IDENTITY,1000,1001,0)
+        return {'schema':1,'suite':'TouchColorTests','setup':SETUP,'qualified':True,
+                'command':{'status':'timely_exit','exit_code':0,'host_cleanup_confirmed':True},
+                'summary':{'status':'complete','fields':fields}}
+    def test_full_hosted_receipt_required(self):
+        value=self.hosted();m.write_json(m.record_path('iPadMini','TouchColorTests'),value)
+        self.assertEqual(m.require_hosted('iPadMini',SETUP),value)
+    def test_flags_alone_cannot_hide_failed_or_missing_counts(self):
+        changes=[lambda v:v['summary'].update(status='pending'),lambda v:v['summary'].update(fields={}),
+            lambda v:v['summary']['fields'].update(totalTestCount=1),lambda v:v['summary']['fields'].update(failedTests=1),
+            lambda v:v['summary']['fields'].update(device='foreign'),lambda v:v.update(error='late'),
+            lambda v:v.update(schema=True),lambda v:v['command'].update(host_cleanup_confirmed=False)]
+        for change in changes:
+            value=self.hosted();change(value);m.write_json(m.record_path('iPadMini','TouchColorTests'),value)
+            with self.subTest(change=change),self.assertRaises(ValueError):m.require_hosted('iPadMini',SETUP)
+    def test_fixture_receipt_and_seed_both_bound(self):
+        m.write_json(m.record_path('iPadMini','fixtures'),{'schema':1,'setup':SETUP,'complete':True})
+        m.write_json(Path('build/iPadMini-fixture-seeded'),IDENTITY)
+        m.require_fixtures('iPadMini',SETUP)
+        value={**IDENTITY,'udid':'foreign'};m.write_json(Path('build/iPadMini-fixture-seeded'),value)
+        with self.assertRaises(ValueError):m.require_fixtures('iPadMini',SETUP)
+    def test_trusted_file_rejects_links_and_bounded_oversize(self):
+        path=Path('build/plain');path.write_bytes(b'123')
+        self.assertEqual(m.read_regular(path,3),b'123')
+        with self.assertRaises(ValueError):m.read_regular(path,2)
+        link=Path('build/link');link.symlink_to('plain')
+        with self.assertRaises(ValueError):m.read_regular(link,3)
+    def test_setup_capture_uses_existing_bounded_reader(self):
+        with patch.object(m,'capture',return_value=subprocess.CompletedProcess([],0,b'ok',b'')) as capture:
+            result=m.setup_capture(['host-only-proof'],3)
+        capture.assert_called_once_with(['host-only-proof'],seconds=3,cap=1000000,cleanup_grace=10)
+        self.assertEqual(result.stdout,'ok')
+
+
+class ProcessTests(unittest.TestCase):
+    def test_actual_host_exit(self):
+        value=m.invoke([sys.executable,'-c','pass'],m.time.monotonic()+3)
+        self.assertEqual(value['status'],'timely_exit');self.assertTrue(value['host_cleanup_confirmed'])
+    def test_actual_host_failure(self):
+        value=m.invoke([sys.executable,'-c','raise SystemExit(65)'],m.time.monotonic()+3)
+        self.assertEqual(value['exit_code'],65);self.assertEqual(value['status'],'timely_exit')
+    def test_actual_timeout_owned_cleanup(self):
+        value=m.invoke([sys.executable,'-c','import time;time.sleep(10)'],m.time.monotonic()+.05)
+        self.assertEqual(value['status'],'incomplete');self.assertTrue(value['host_cleanup_confirmed'])
+    def test_expired_entry_does_not_spawn(self):
+        calls=[]
+        value=m.invoke(['unused'],0,clock=lambda:1,popen=lambda *a,**k:calls.append(a))
+        self.assertEqual(calls,[]);self.assertEqual(value['status'],'incomplete')
+
+
+class SourceTests(unittest.TestCase):
+    def test_original_case_and_target_arguments(self):
+        for family in ('iPhoneCompact','iPhoneLarge','iPadMini','iPadLarge'):
+            for suite in m.STEPS:
+                argv=m.test_argv(family,suite,DEVICE)
+                self.assertEqual(argv.count('test-without-building'),1)
+                self.assertEqual(argv[argv.index('-default-test-execution-time-allowance')+1],'180')
+                self.assertEqual(argv[argv.index('-maximum-test-execution-time-allowance')+1],'240')
+                self.assertNotIn('-test-iterations',argv);self.assertFalse(any('retry' in a for a in argv))
+                self.assertIn('platform=iOS Simulator,id='+DEVICE,argv)
+    def test_source_inventory_matches_complete_counts(self):
+        import re
+        files=['ColorPickerTests/'+n for n in ('ColorPickerTests.m','TCAdaptiveLayoutTests.m','TCWorkspaceTests.m',
+             'TCPhotoImportLifecycleTests.m','ColorCoreEquivalenceTests.swift','TCPhotoImportTests.swift')]
+        files+=['TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift']
+        count=sum(len(re.findall(r'(?:-\s*\(void\)\s*|func\s+)(test\w+)\b', (ROOT/p).read_text())) for p in files)
+        self.assertEqual(count,53)
+        for name,count in [('TouchColorUITests',17),('TouchColorIPadUITests',15),('TouchColorAccessibilityUITests',7)]:
+            text=(ROOT/'TouchColorUITests'/(name+'.m')).read_text()
+            self.assertEqual(len(re.findall(r'-\s*\(void\)\s*(test\w+)\s*\{',text)),count)
+    def test_closed_workflow_budgets_and_gates(self):
+        import re
+        text=(ROOT/'.github/workflows/ios.yml').read_text()
+        job=text.split('  compatibility:\n',1)[1]
+        self.assertIn('    timeout-minutes: 60\n',job)
+        self.assertEqual(re.findall(r'^      max-parallel: (\d+)$',job,re.M),['1'])
+        def step(name):return job.split('      - name: '+name+'\n',1)[1].split('      - name:',1)[0]
+        hosted=step('Unit and constrained-window layout tests')
+        functional=step('Functional UI tests')
+        seeded=step('Prepare Files fixture and seed synthetic photo')
+        self.assertIn("steps.hosted-tests.outcome == 'success'",seeded)
+        self.assertIn('timeout-minutes: 10',hosted);self.assertIn('timeout-minutes: 20',functional)
+        self.assertIn('timeout-minutes: 10',seeded)
+    def test_live_phone_pipe_and_legacy_paths_preserved(self):
+        text=(ROOT/'scripts/test_simulators.sh').read_text()
+        self.assertIn('set -euo pipefail',text)
+        self.assertIn('"$suite" == managed-functional',text)
+        self.assertIn('palette_lifecycle_diagnostics.py" retain "$family"',text)
+        self.assertIn('run_test_suite()',text);self.assertIn('uikit_warmup.py" "$family" "$suite"',text)
+    def test_no_standalone_touchcolor_launch_or_manual_boot(self):
+        import inspect
+        text=inspect.getsource(m.configure)+inspect.getsource(m.fixture_seed)
+        self.assertNotIn("'boot'",text);self.assertNotIn("'bootstatus'",text)
+        self.assertNotIn("device, 'com.mango.touchColor'",text)
+        self.assertIn('warmup.fixture(container)',text);self.assertIn('warmup.seed(device)',text)
+    def test_finite_schedule_arithmetic(self):
+        for step,command,_ in m.STEPS.values():
+            self.assertEqual(step-command-2*m.CLEANUP-m.SUMMARY,40)
+
+
+if __name__=='__main__':unittest.main()

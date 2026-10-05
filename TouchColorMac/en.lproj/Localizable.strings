@@ -12,3 +12,14 @@
 "Contact the developer about privacy" = "Contact the developer about privacy";
 
 "No camera" = "No camera";
+
+"Selected color" = "Selected color";
+
+// Selectable offline policy paragraphs.
+"Privacy policy in Simplified Chinese" = "Privacy policy in Simplified Chinese";
+"Privacy policy in English" = "Privacy policy in English";
+
+// Direct saved-color actions.
+"Delete" = "Delete";
+"Copy color %lld" = "Copy color %lld";
+"Delete color %lld" = "Delete color %lld";

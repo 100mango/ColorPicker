@@ -1,0 +1,357 @@
+{
+  "status": "Source fixture; proposed coordinates are calculated expectations, not runtime-qualified.",
+  "baseline_commit": "da9570f2a162f0e05f59b41a1ec578f8ce47af73",
+  "design_rule": "Gap-only unique nearest reviewed row midpoint; preserve original x, signed distance, direction, content and twelve-gesture cap. Live revalidation required.",
+  "cases": [
+    {
+      "watch_mm": 40,
+      "job_id": 111646725030,
+      "run_id": 37269817004,
+      "job_url": "https://github.com/100mango/ColorPicker/actions/runs/37269817004/job/111646725030",
+      "source_commit": "da9570f2a162f0e05f59b41a1ec578f8ce47af73",
+      "direct_prior_dispatch": {
+        "line_number": 2096,
+        "log_line": "2026-10-05T07:03:55.8511180Z     t =    16.32s Press CollectionView at {{0.0, 0.0}, {162.0, 197.0}}[0.00, 0.00] -> (81.0, 138.2) for 0.0 seconds, then drag to CollectionView at {{0.0, 0.0}, {162.0, 197.0}}[0.00, 0.00] -> (81.0, 106.2) with velocity of 250.00 pixels per second, and then hold for 0.1 seconds ",
+        "exact_source_plan": {
+          "direction": "later",
+          "start": [
+            81,
+            138.25
+          ],
+          "end": [
+            81,
+            106.25
+          ]
+        },
+        "same_case_initial_row_frames_retained": false,
+        "omitted_exported_ui_snapshot": "08B918F8-B1A0-406B-AD66-234CA850DC8A"
+      },
+      "direct_rejection": {
+        "line_number": 2112,
+        "log_line": "2026-10-05T07:03:57.7356100Z WATCH_TOUCH_ANCHOR_REJECT reason=missing-clipped-or-ambiguous-start attempt=1 target=watch.color.1 viewport=(0.0, 0.0, 162.0, 197.0) list=(0.0, 0.0, 162.0, 197.0) navigation=(0.0, 0.0, 162.0, 47.5) start=(81.0,138.25) end=(81.0,106.25) live=not-queried rows=watch.count=(2.0, 159.0, 158.0, 44.0);watch.photo=(2.0, 73.5, 158.0, 47.0);watch.editor=(2.0, 25.5, 158.0, 44.0)",
+        "attempt": 1,
+        "target_identifier": "watch.color.1",
+        "target_in_snapshot": false,
+        "live_anchor_state": "not-queried",
+        "viewport": [
+          0.0,
+          0.0,
+          162.0,
+          197.0
+        ],
+        "collection_view": [
+          0.0,
+          0.0,
+          162.0,
+          197.0
+        ],
+        "navigation": [
+          0.0,
+          0.0,
+          162.0,
+          47.5
+        ],
+        "original_start": [
+          81.0,
+          138.25
+        ],
+        "original_end": [
+          81.0,
+          106.25
+        ],
+        "rows": [
+          {
+            "identifier": "watch.editor",
+            "type": "Button",
+            "frame": [
+              2.0,
+              25.5,
+              158.0,
+              44.0
+            ],
+            "live_hittable": null
+          },
+          {
+            "identifier": "watch.photo",
+            "type": "Button",
+            "frame": [
+              2.0,
+              73.5,
+              158.0,
+              47.0
+            ],
+            "live_hittable": null
+          },
+          {
+            "identifier": "watch.count",
+            "type": "StaticText",
+            "frame": [
+              2.0,
+              159.0,
+              158.0,
+              44.0
+            ],
+            "live_hittable": null
+          }
+        ]
+      },
+      "expected_proposal": {
+        "status": "calculated; never dispatched",
+        "mode": "gap",
+        "anchor_identifier": "watch.photo",
+        "direction": "later",
+        "start": [
+          81.0,
+          97.0
+        ],
+        "end": [
+          81.0,
+          65.0
+        ],
+        "signed_distance": -32,
+        "requires_new_live_validation": true
+      },
+      "historical_initial_geometry_reference": {
+        "source_commit": "1410ed01f0d153be79cbd688c3385320670d7367",
+        "fixture_path": "TouchColorWatchUITests/Fixtures/home-list-1410-touch-anchor.json",
+        "fixture_sha256": "ca58743a9cfaf4e92e26f4d86476dd804489b5dc5aead57575cbc20ce85ded66",
+        "rows": [
+          {
+            "type": "Button",
+            "frame": [
+              2.0,
+              47.5,
+              158.0,
+              44.0
+            ],
+            "identifier": "watch.editor",
+            "index": -1,
+            "live_hittable": null
+          },
+          {
+            "type": "Button",
+            "frame": [
+              2.0,
+              95.5,
+              158.0,
+              47.0
+            ],
+            "identifier": "watch.photo",
+            "index": -1,
+            "live_hittable": null
+          },
+          {
+            "type": "StaticText",
+            "frame": [
+              2.0,
+              181.0,
+              158.0,
+              44.0
+            ],
+            "identifier": "watch.count",
+            "index": -1,
+            "live_hittable": null
+          }
+        ],
+        "relationship": "separate historic observation; not same-case pre-drag frame or measured displacement"
+      },
+      "failure_ax_excerpt": "2026-10-05T07:03:58.0404850Z WATCH_FAILURE_AX: Optional(Attributes: Application, 0x109357200, pid: 85812, label: 'TouchColor'\n2026-10-05T07:03:58.0742770Z Element subtree:\n2026-10-05T07:03:58.0845300Z  \u2192Application, 0x109357200, pid: 85812, label: 'TouchColor'\n2026-10-05T07:03:58.0851180Z     Window, 0x109357340, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.0853890Z       Other, 0x109356440, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2550660Z         Other, 0x1093575c0, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2898430Z           Other, 0x109356e40, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2916350Z             Other, 0x109357d40, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2924680Z               NavigationBar, 0x109357e80, {{0.0, 0.0}, {162.0, 47.5}}, identifier: 'TouchColor'\n2026-10-05T07:03:58.2925790Z                 StaticText, 0x109344a00, {{68.0, 25.0}, {84.5, 19.5}}, label: 'TouchColor'\n2026-10-05T07:03:58.2928540Z               Other, 0x109343840, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2929300Z                 Other, 0x109350140, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2930710Z                   Other, 0x1093503c0, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2935700Z                     Other, 0x1093521c0, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2936260Z                       CollectionView, 0x109352440, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2940580Z                         Other, 0x109352580, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2941330Z                           Other, 0x1093526c0, {{0.0, 0.0}, {162.0, 74.5}}\n2026-10-05T07:03:58.2942300Z                         Other, 0x109352800, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.2942880Z                           Other, 0x109352940, {{0.0, 0.0}, {162.0, 74.5}}\n2026-10-05T07:03:58.2943430Z                         Cell, 0x109352a80, {{2.0, 25.5}, {158.0, 44.0}}, label: 'Create Color'\n2026-10-05T07:03:58.2944100Z                           Other, 0x109352bc0, {{2.0, 25.5}, {158.0, 44.0}}\n2026-10-05T07:03:58.2944690Z                             Other, 0x109352d00, {{2.0, 25.5}, {158.0, 44.0}}\n2026-10-05T07:03:58.2945240Z                           Other, 0x109352e40, {{2.0, 25.5}, {158.0, 44.0}}\n2026-10-05T07:03:58.2946160Z                             Other, 0x109353ac0, {{2.0, 25.5}, {158.0, 44.0}}\n2026-10-05T07:03:58.2946730Z                               Other, 0x109351e00, {{2.0, 25.5}, {158.0, 44.0}}\n2026-10-05T07:03:58.2947620Z                                 Button, 0x109353d40, {{2.0, 25.5}, {158.0, 44.0}}, identifier: 'watch.editor', label: 'Create Color'\n2026-10-05T07:03:58.2948520Z                         Cell, 0x109353e80, {{2.0, 73.5}, {158.0, 47.0}}, label: 'Sample Photo Preview'\n2026-10-05T07:03:58.2949330Z                           Other, 0x109351b80, {{2.0, 73.5}, {158.0, 47.0}}\n2026-10-05T07:03:58.2949820Z                             Other, 0x109351cc0, {{2.0, 73.5}, {158.0, 47.0}}\n2026-10-05T07:03:58.2950370Z                           Other, 0x109351400, {{2.0, 73.5}, {158.0, 47.0}}\n2026-10-05T07:03:58.2950950Z                             Other, 0x109352080, {{2.0, 73.5}, {158.0, 47.0}}\n2026-10-05T07:03:58.2954660Z                               Other, 0x109351680, {{2.0, 73.5}, {158.0, 47.0}}\n2026-10-05T07:03:58.2967130Z                                 Button, 0x109351540, {{2.0, 73.5}, {158.0, 47.0}}, identifier: 'watch.photo', label: 'Sample Photo Preview'\n2026-10-05T07:03:58.2968550Z                         Other, 0x109351900, {{0.0, 141.5}, {162.0, 17.5}}\n2026-10-05T07:03:58.2969530Z                           Other, 0x109353c00, {{0.0, 141.5}, {162.0, 17.5}}\n2026-10-05T07:03:58.2970110Z                             Other, 0x109353980, {{0.0, 141.5}, {162.0, 17.5}}\n2026-10-05T07:03:58.2970800Z                               StaticText, 0x1093517c0, {{9.5, 141.5}, {45.0, 16.0}}, label: 'Palette'\n2026-10-05T07:03:58.2971440Z                         Cell, 0x109351a40, {{2.0, 159.0}, {158.0, 44.0}}, label: '2'\n2026-10-05T07:03:58.3018140Z                           Other, 0x10933ed00, {{3.5, 159.0}, {155.0, 43.2}}\n2026-10-05T07:03:58.3060910Z                             Other, 0x10934f480, {{3.5, 159.0}, {155.0, 43.2}}\n2026-10-05T07:03:58.3061520Z                           Other, 0x10934ea80, {{3.5, 159.0}, {155.0, 43.2}}\n2026-10-05T07:03:58.3062080Z                             Other, 0x10934f5c0, {{3.5, 159.0}, {155.0, 43.2}}\n2026-10-05T07:03:58.3062680Z                               Other, 0x10934f700, {{3.5, 159.0}, {155.0, 43.2}}\n2026-10-05T07:03:58.3063610Z                                 StaticText, 0x10934f840, {{2.0, 159.0}, {158.0, 44.0}}, identifier: 'watch.count', label: '2'\n2026-10-05T07:03:58.3064970Z     Window (Main), 0x10934ed00, {{154.0, 33.5}, {6.0, 32.0}}\n2026-10-05T07:03:58.3067550Z     Window, 0x10934e440, {{0.0, 0.0}, {162.0, 197.0}}\n2026-10-05T07:03:58.3068110Z       StatusBar, 0x10934e300, {{0.0, 0.0}, {162.0, 28.0}}\n2026-10-05T07:03:58.3068600Z         Other, 0x10934f980, {{0.0, 0.0}, {162.0, 28.0}}\n2026-10-05T07:03:58.3069140Z         Other, 0x10934e580, {{0.0, 0.0}, {162.0, 28.0}}\n2026-10-05T07:03:58.3259510Z Path to element:\n2026-10-05T07:03:58.3343100Z  \u2192Application, 0x109357200, pid: 85812, label: 'TouchColor'\n2026-10-05T07:03:58.3344210Z Query chain:\n2026-10-05T07:03:58.3344900Z  \u2192Find: Target Application 'com.mango.touchColor.watchkitapp'\n2026-10-05T07:03:58.3345510Z   Output: {\n2026-10-05T07:03:58.3345800Z     Application, 0x109357480, pid: 85812, label: 'TouchColor'\n2026-10-05T07:03:58.3346180Z   }\n2026-10-05T07:03:58.3346350Z )",
+      "evidence": {
+        "log": {
+          "path": "watch-small-da9570-job111646725030.log",
+          "sha256": "334f333b58bb3b0a3f2e1152dbe709a1275f35a015c05547f8b13614ad5eb30d"
+        },
+        "runtime": {
+          "path": "watch-small-da9570-evidence/watch-runtime.json",
+          "sha256": "b5e7cda1952cec3831d5179e8c2fae1698b6a08d825d9e60dee6688d66b54f34"
+        },
+        "ui_summary": {
+          "path": "watch-small-da9570-evidence/watch-ui-summary.json",
+          "sha256": "8b472a0dcd8679990d24cf9a28149abd82771b83232dc657c466ba43189e3d8a"
+        },
+        "failure_screenshot": {
+          "path": "watch-small-da9570-evidence/watch-ui-screenshots/F8E17601-0F45-4756-94DE-CD6CF61F2FA6.png",
+          "sha256": "1e4acfb9746d319b12069d5932d384896476ee81cc1d9cba6834a78eba0f4b67"
+        }
+      },
+      "screenshot_visually_inspected": true,
+      "uploaded_artifact_sha256": "0ed68092ddc1a4b10c29f31289fd09fecf9145c0069497eb0461093d0d66dc16",
+      "artifact_id": 11329169788
+    },
+    {
+      "watch_mm": 49,
+      "job_id": 111646725051,
+      "run_id": 37269817004,
+      "job_url": "https://github.com/100mango/ColorPicker/actions/runs/37269817004/job/111646725051",
+      "source_commit": "da9570f2a162f0e05f59b41a1ec578f8ce47af73",
+      "direct_prior_dispatch": {
+        "line_number": 1927,
+        "log_line": "2026-10-05T07:26:19.3415750Z     t =    11.16s Press CollectionView at {{0.0, 0.0}, {211.0, 257.0}}[0.00, 0.00] -> (105.5, 177.5) for 0.0 seconds, then drag to CollectionView at {{0.0, 0.0}, {211.0, 257.0}}[0.00, 0.00] -> (105.5, 145.5) with velocity of 250.00 pixels per second, and then hold for 0.1 seconds ",
+        "exact_source_plan": {
+          "direction": "later",
+          "start": [
+            105.5,
+            177.5
+          ],
+          "end": [
+            105.5,
+            145.5
+          ]
+        },
+        "same_case_initial_row_frames_retained": false,
+        "omitted_exported_ui_snapshot": "F1331B88-5FE6-4382-9A88-89EFB35BCDAB"
+      },
+      "direct_rejection": {
+        "line_number": 1943,
+        "log_line": "2026-10-05T07:26:20.3923000Z WATCH_TOUCH_ANCHOR_REJECT reason=missing-clipped-or-ambiguous-start attempt=1 target=watch.color.1 viewport=(0.0, 0.0, 211.0, 257.0) list=(0.0, 0.0, 211.0, 257.0) navigation=(0.0, 0.0, 211.0, 66.0) start=(105.5,177.5) end=(105.5,145.5) live=not-queried rows=watch.count=(2.0, 207.5, 207.0, 59.0);watch.photo=(2.0, 108.0, 207.0, 59.0);watch.editor=(2.0, 44.0, 207.0, 59.0)",
+        "attempt": 1,
+        "target_identifier": "watch.color.1",
+        "target_in_snapshot": false,
+        "live_anchor_state": "not-queried",
+        "viewport": [
+          0.0,
+          0.0,
+          211.0,
+          257.0
+        ],
+        "collection_view": [
+          0.0,
+          0.0,
+          211.0,
+          257.0
+        ],
+        "navigation": [
+          0.0,
+          0.0,
+          211.0,
+          66.0
+        ],
+        "original_start": [
+          105.5,
+          177.5
+        ],
+        "original_end": [
+          105.5,
+          145.5
+        ],
+        "rows": [
+          {
+            "identifier": "watch.editor",
+            "type": "Button",
+            "frame": [
+              2.0,
+              44.0,
+              207.0,
+              59.0
+            ],
+            "live_hittable": null
+          },
+          {
+            "identifier": "watch.photo",
+            "type": "Button",
+            "frame": [
+              2.0,
+              108.0,
+              207.0,
+              59.0
+            ],
+            "live_hittable": null
+          },
+          {
+            "identifier": "watch.count",
+            "type": "StaticText",
+            "frame": [
+              2.0,
+              207.5,
+              207.0,
+              59.0
+            ],
+            "live_hittable": null
+          }
+        ]
+      },
+      "expected_proposal": {
+        "status": "calculated; never dispatched",
+        "mode": "gap",
+        "anchor_identifier": "watch.photo",
+        "direction": "later",
+        "start": [
+          105.5,
+          137.5
+        ],
+        "end": [
+          105.5,
+          105.5
+        ],
+        "signed_distance": -32,
+        "requires_new_live_validation": true
+      },
+      "historical_initial_geometry_reference": {
+        "source_commit": "1410ed01f0d153be79cbd688c3385320670d7367",
+        "fixture_path": "TouchColorWatchUITests/Fixtures/home-list-1410-touch-anchor.json",
+        "fixture_sha256": "ca58743a9cfaf4e92e26f4d86476dd804489b5dc5aead57575cbc20ce85ded66",
+        "rows": [
+          {
+            "type": "Button",
+            "frame": [
+              2.0,
+              66.0,
+              207.0,
+              59.0
+            ],
+            "identifier": "watch.editor",
+            "index": -1,
+            "live_hittable": null
+          },
+          {
+            "type": "Button",
+            "frame": [
+              2.0,
+              130.0,
+              207.0,
+              59.0
+            ],
+            "identifier": "watch.photo",
+            "index": -1,
+            "live_hittable": null
+          },
+          {
+            "type": "StaticText",
+            "frame": [
+              2.0,
+              229.5,
+              207.0,
+              59.0
+            ],
+            "identifier": "watch.count",
+            "index": -1,
+            "live_hittable": null
+          }
+        ],
+        "relationship": "separate historic observation; not same-case pre-drag frame or measured displacement"
+      },
+      "failure_ax_excerpt": "2026-10-05T07:26:20.5975050Z WATCH_FAILURE_AX: Optional(Attributes: Application, 0x106aebd40, pid: 33209, label: 'TouchColor'\n2026-10-05T07:26:20.7326920Z Element subtree:\n2026-10-05T07:26:20.7864870Z  \u2192Application, 0x106aebd40, pid: 33209, label: 'TouchColor'\n2026-10-05T07:26:20.8501310Z     Window, 0x106aeb700, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.8722170Z       Other, 0x106aeb980, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9232000Z         Other, 0x106aeb480, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9263920Z           Other, 0x106add900, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9266580Z             Other, 0x106adee40, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9267240Z               NavigationBar, 0x106adcf00, {{0.0, 0.0}, {211.0, 66.0}}, identifier: 'TouchColor'\n2026-10-05T07:26:20.9268050Z                 StaticText, 0x106aded00, {{105.0, 38.0}, {89.5, 20.5}}, label: 'TouchColor'\n2026-10-05T07:26:20.9268520Z               Other, 0x106add680, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9268950Z                 Other, 0x106ade1c0, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9269320Z                   Other, 0x106addf40, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9269960Z                     Other, 0x106aed400, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9270430Z                       CollectionView, 0x106aee800, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9270850Z                         Other, 0x106af2440, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9271290Z                           Other, 0x106af2080, {{0.0, 0.0}, {211.0, 88.5}}\n2026-10-05T07:26:20.9271880Z                         Other, 0x106af2580, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9272280Z                           Other, 0x106af26c0, {{0.0, 0.0}, {211.0, 88.5}}\n2026-10-05T07:26:20.9272840Z                         Cell, 0x106af2800, {{2.0, 44.0}, {207.0, 59.0}}, label: 'Create Color'\n2026-10-05T07:26:20.9273270Z                           Other, 0x106af2940, {{2.0, 44.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9273870Z                             Other, 0x106af2a80, {{2.0, 44.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9274280Z                           Other, 0x106af3200, {{2.0, 44.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9274730Z                             Other, 0x106af3340, {{2.0, 44.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9278970Z                               Other, 0x106af3480, {{2.0, 44.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9280890Z                                 Button, 0x106af35c0, {{2.0, 44.0}, {207.0, 59.0}}, identifier: 'watch.editor', label: 'Create Color'\n2026-10-05T07:26:20.9282700Z                         Cell, 0x106af3700, {{2.0, 108.0}, {207.0, 59.0}}, label: 'Sample Photo Preview'\n2026-10-05T07:26:20.9284170Z                           Other, 0x106af3840, {{2.0, 108.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9288420Z                             Other, 0x106af3980, {{2.0, 108.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9291230Z                           Other, 0x106af3ac0, {{2.0, 108.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9292770Z                             Other, 0x106af3c00, {{2.0, 108.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9295850Z                               Other, 0x106af2d00, {{2.0, 108.0}, {207.0, 59.0}}\n2026-10-05T07:26:20.9297180Z                                 Button, 0x106af2f80, {{2.0, 108.0}, {207.0, 59.0}}, identifier: 'watch.photo', label: 'Sample Photo Preview'\n2026-10-05T07:26:20.9458940Z                         Other, 0x106af3d40, {{0.0, 189.0}, {211.0, 18.5}}\n2026-10-05T07:26:20.9464160Z                           Other, 0x106af3e80, {{0.0, 189.0}, {211.0, 18.5}}\n2026-10-05T07:26:20.9465260Z                             Other, 0x106af2e40, {{0.0, 189.0}, {211.0, 18.5}}\n2026-10-05T07:26:20.9465730Z                               StaticText, 0x106af12c0, {{16.5, 189.0}, {48.0, 17.0}}, label: 'Palette'\n2026-10-05T07:26:20.9466220Z                         Cell, 0x106af8000, {{2.0, 207.5}, {207.0, 59.0}}, label: '2'\n2026-10-05T07:26:20.9466640Z                           Other, 0x106af8140, {{8.4, 207.5}, {194.1, 55.3}}\n2026-10-05T07:26:20.9467780Z                             Other, 0x106af8280, {{8.4, 207.5}, {194.1, 55.3}}\n2026-10-05T07:26:20.9471190Z                           Other, 0x106af83c0, {{8.4, 207.5}, {194.1, 55.3}}\n2026-10-05T07:26:20.9471580Z                             Other, 0x106af8500, {{8.4, 207.5}, {194.1, 55.3}}\n2026-10-05T07:26:20.9472050Z                               Other, 0x106af8640, {{8.4, 207.5}, {194.1, 55.3}}\n2026-10-05T07:26:20.9472780Z                                 StaticText, 0x106af8780, {{2.0, 207.5}, {207.0, 59.0}}, identifier: 'watch.count', label: '2'\n2026-10-05T07:26:20.9473300Z     Window (Main), 0x106af88c0, {{203.0, 61.5}, {6.0, 48.0}}\n2026-10-05T07:26:20.9473660Z     Window, 0x106af8a00, {{0.0, 0.0}, {211.0, 257.0}}\n2026-10-05T07:26:20.9474430Z       StatusBar, 0x106af8b40, {{0.0, 0.0}, {211.0, 40.0}}\n2026-10-05T07:26:20.9482570Z         Other, 0x106af8c80, {{0.0, 0.0}, {211.0, 40.0}}\n2026-10-05T07:26:20.9488150Z         Other, 0x106af8dc0, {{0.0, 0.0}, {211.0, 40.0}}\n2026-10-05T07:26:20.9488610Z Path to element:\n2026-10-05T07:26:20.9489290Z  \u2192Application, 0x106aebd40, pid: 33209, label: 'TouchColor'\n2026-10-05T07:26:20.9490060Z Query chain:\n2026-10-05T07:26:20.9490500Z  \u2192Find: Target Application 'com.mango.touchColor.watchkitapp'\n2026-10-05T07:26:20.9491040Z   Output: {\n2026-10-05T07:26:20.9492550Z     Application, 0x106af9040, pid: 33209, label: 'TouchColor'\n2026-10-05T07:26:20.9493140Z   }\n2026-10-05T07:26:20.9493490Z )",
+      "evidence": {
+        "log": {
+          "path": "watch-large-da9570-job111646725051.log",
+          "sha256": "78c02c3cadc9737cd35603671ef6920242aed70b60a54447ddd1cef444bbe977"
+        },
+        "runtime": {
+          "path": "watch-large-da9570-evidence/watch-runtime.json",
+          "sha256": "0fda37a46b682aa78e262bb86363a02097e0c26dc5aae062e88932d57e845b67"
+        },
+        "ui_summary": {
+          "path": "watch-large-da9570-evidence/watch-ui-summary.json",
+          "sha256": "617d46e7f8aa3579126086c4553ae13d76d5d643fe3b7419b6beb076c4fc537d"
+        },
+        "failure_screenshot": {
+          "path": "watch-large-da9570-evidence/watch-ui-screenshots/F2F30734-3B87-47C2-B564-443FCE053B20.png",
+          "sha256": "9e32cd0969d1fb5ce9954b673ba1f8d4a600b0be6b3de009bc8e15530b3a32fc"
+        }
+      },
+      "screenshot_visually_inspected": true,
+      "uploaded_artifact_sha256": "5c0dd7691fd5c0d61bfb7ce9bedd83e0d2531e8b50005c5a4c68ecf5e67bef77",
+      "artifact_id": 11331515070
+    }
+  ]
+}

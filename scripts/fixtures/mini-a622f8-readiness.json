@@ -1,0 +1,17 @@
+{
+  "source": "a622f8ad1ed799bc4d3f350b602c8e5d39aa2d7d",
+  "run": "37349069236",
+  "stdout_sha256": "58ecf2f5b3db2f80e2cb3088db01bd2a59b2213f699db2a2386ac9b99f790fa8",
+  "stdout_bytes": 27144,
+  "case": "TouchColorIPadUITests/testPalettePasteReviewAcceptAndRelaunch",
+  "original_total_seconds": 5,
+  "gate_start_test_seconds": 86.74,
+  "existence_elapsed_seconds": 2.813,
+  "enabled_find_start_test_seconds": 89.55,
+  "hittable_find_start_test_seconds": 93.13,
+  "failure_attachment_test_seconds": 99.69,
+  "completion_interval_note": "Ready predicate completed after its second Find began and before the failure screenshot attachment; this is an interval, not a captured exact completion timestamp. Printed test times have0.01s precision.",
+  "retained_hierarchy_has_accept_and_445566": true,
+  "case_completed": false,
+  "historical_outcome": "readiness deadline failure; later termination and command timeouts; no acceptance"
+}
