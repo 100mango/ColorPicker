@@ -1,0 +1,78 @@
+# INACTIVE REVIEW MATERIAL. This extension/path cannot register a GitHub workflow.
+# It is deliberately fail-closed until a dedicated bounded driver and 25-minute
+# budget identity receive independent review and separate run authorization.
+name: Proposed one-profile Watch Crown comparison
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-watch-crown-control-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  watch-crown-control-smallest:
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_WATCH_PROFILE: smallest
+      TOUCHCOLOR_JOB_PLATFORM: watch-crown-control
+      TOUCHCOLOR_JOB_LANE: watch-crown-control-smallest
+      TOUCHCOLOR_JOB_MINUTES: 25
+      TOUCHCOLOR_MAX_EVIDENCE_BYTES: 1200000
+    steps:
+      - name: Stamp original absolute budget before checkout
+        run: |
+          python3 - <<'PY_CLOCK'
+          import os, time
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('TOUCHCOLOR_JOB_STARTED_EPOCH=' + str(time.time()) + '\n')
+              f.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC=' + str(time.monotonic()) + '\n')
+          PY_CLOCK
+      - name: Exact source checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Proposal safety stop
+        run: |
+          echo 'NOT ADMITTED: reviewed dedicated 25-minute driver and budget binding are required.'
+          exit 1
+# Driver contract, not runnable commands in this proposal:
+# - Start the monotonic source-bound clock before setup; preserve reserves from
+#   watch-crown-control-budget-proposal.json and current job_budget.RESERVES.
+# - Verify exact commit/tree/workflow hash, clean checkout, Xcode 27.0/27A266a,
+#   macOS 26A428 and arm64. Regenerate both Watch projects and compare bytes.
+# - Build only TouchColorWatch + TouchColorWatchCrownControl Debug projects.
+# - Create/own one pair using the existing pair lifecycle, choose the observed
+#   smallest watchOS 27 profile, normal text, no TouchColor phone app launch.
+# - Run the three exact method identifiers in methods below sequentially,
+#   test-without-building, parallel-testing-enabled NO, retries disabled,
+#   execution allowance 120, separate result bundles and preserved exits.
+#   Each method phase reserves at least 180 seconds: 120 execution + 60 launch.
+# - Confirm app/runner termination before moving between control families;
+#   same owned Watch UDID and same installed toolchain for every method.
+# - Retain raw test summaries and exact method status, actual cold frames,
+#   scoped Home OSLog with timestamps/PID, static geometry/result markers,
+#   source inventory, pair/toolchain/profile identities, cleanup proof.
+# - Reserve 130/180/60/60/20 seconds for cleanup/evidence/validation/upload/
+#   overhead plus 30 seconds startup margin. No borrowing from those tails.
+# - Existing actual cold assertion remains mandatory and independently failed
+#   if Privacy is not reached. Static/touch results cannot alias its status.
+# - Neither new control success nor this focused job completes broader gates.
+# methods:
+#   actual_cold:
+#     project: TouchColorWatch.xcodeproj
+#     scheme: TouchColorWatch
+#     only-testing: TouchColorWatchUITests/WatchWorkflowTests/testHomeListDigitalCrownFromColdLaunch
+#     result-bundle: build/watch-crown-actual-cold.xcresult
+#   isolated_static:
+#     project: TouchColorWatchCrownControl.xcodeproj
+#     scheme: TouchColorWatchCrownControl
+#     only-testing: TouchColorWatchCrownControlUITests/WatchStaticCrownControlTests/testStaticListDigitalCrownThreeRotations
+#     result-bundle: build/watch-crown-static-control.xcresult
+#   rgb_positive:
+#     project: TouchColorWatch.xcodeproj
+#     scheme: TouchColorWatch
+#     only-testing: TouchColorWatchUITests/WatchWorkflowTests/testRealDigitalCrownChangesRGBComponent
+#     result-bundle: build/watch-crown-rgb-positive.xcresult

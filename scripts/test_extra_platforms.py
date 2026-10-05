@@ -11,6 +11,7 @@ from native_resources import snapshot as resource_snapshot, require_responsive
 from job_budget import enabled_budget, fail_record, BudgetExhausted, EXPECTED_MINUTES
 from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, permits_public_trait_fallback, run_public_trait_fallback
 from watch_diagnostics import ListFrameDiagnostics, summarize_editor_lifecycle, log_lookback
+from watch_home_diagnostics import summarize_home_notifications
 from watch_failure_continuation import (BUNDLE as WATCH_UI_BUNDLE, WatchCaseLifecycle,
     checkpoint as watch_checkpoint, record_failure, require_no_failures)
 from vision_offline_result import pending as vision_summary_pending, confirm_shutdown as confirm_vision_shutdown, prepare_hosted as prepare_vision_hosted, prepare_normal as prepare_vision_normal
@@ -433,6 +434,8 @@ finally:
                 '--predicate','subsystem == "com.mango.touchColor.WatchDiagnostics"'],text=True,timeout=15)
             report['watch_editor_lifecycle']={'exit':lifecycle.returncode,'lookback':lookback,**summarize_editor_lifecycle(lifecycle.stdout)}
             print('WATCH_EDITOR_LIFECYCLE',json.dumps(report['watch_editor_lifecycle']),flush=True)
+            report['watch_home_notifications']={'exit':lifecycle.returncode,'lookback':lookback,**summarize_home_notifications(lifecycle.stdout)}
+            print('WATCH_HOME_NOTIFICATIONS',json.dumps(report['watch_home_notifications'],separators=(',', ':')),flush=True)
         except Exception as error:
             report['watch_editor_lifecycle']={'error':type(error).__name__}
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True

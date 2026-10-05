@@ -1,0 +1,62 @@
+# Watch Crown diagnostic: complete local runnable-source packet
+
+Status: LOCAL source implementation and portable verification. No publication, CI dispatch/push, Mac allocation, native compilation or native result is claimed. Root exact-source review and separate capacity admission remain mandatory before any external action.
+
+## Exact composition and superseded wording
+
+This candidate starts from every file/mode in the exact canonical e9805ac4f497f19fb7ab4002d5a1aeaaf04ee700 source inventory, reconstructed as tree ef1f72f98d01cc59a2cdc54e22a89df89474bf61. Its local baseline commit is synthetic, because the available source copy has an older Git HEAD; the baseline tree, not that synthetic commit, establishes equality with e980. No frozen/base directory was changed.
+
+The source-admitted Crown component is tree 85649c1c98fd941c1b193bdf0e26d246561b1a05 on original base 914d82a9b8e8f10a86c495c1547eb4b2f55f1b9a. Its production DEBUG observer, isolated static app/UI target, generator and original evidence remain unchanged. Shared scripts/test_extra_platforms.py is an explicit three-line integration on the e980 version: import summarize_home_notifications and retain/print its result after the existing Watch OSLog capture. Every Vision/Mac change is retained. Canonical apple-platforms.yml and ios.yml are byte-identical to e980; the complete original WatchWorkflowTests.swift remains byte-identical.
+
+The two old Crown documents have a historical banner referring here. Their proposal-only driver/budget wording is superseded. The preserved APPLE-PLATFORMS.md historical fc-era paragraph mentioning a 25-minute Watch VM is historical, superseded by its later 45-minute canonical Watch source and this document. The full Watch identity remains 45 minutes. Only the separate watch-crown-control identity is 25 minutes. The historical proposal JSON and inactive .yml.proposal remain intact as inputs, not execution instructions.
+
+Two portable invariant changes are explicit: the pinned canonical apple workflow hash now matches e980, and the old prohibition on any active Crown workflow/job-budget byte hash is replaced by assertions for the exact narrow workflow plus unchanged old budget identities/reserves. No original XCTest assertion or product Release behavior is modified.
+
+## Narrow execution/source contract
+
+The new .github/workflows/watch-crown-control.yml listens only to push on codex/watch-crown-diagnostic. This is disjoint from canonical push branches and does not invoke their workflows. There is one standard xcode-27 job, no matrix, no retry and no runner upgrade. The branch must only be published after exact root source/capacity admission. This trigger uses the existing connector-supported push route, without relying on an unavailable workflow-dispatch API or additional tree/hash inputs.
+
+Driver admission requires repository 100mango/ColorPicker, that exact diagnostic branch, a push event, exact GITHUB_SHA == GITHUB_WORKFLOW_SHA, the dedicated lane/platform/minutes, smallest profile, normal text, standard workflow runner plus ARM64, and the unchanged 1,200,000-byte cap. A clean checkout's exact SHA/tree/workflow hash is retained before/after; wrong source/ref/toolchain/profile fails closed. Native preflight requires Xcode 27.0 / 27A266a, macOS build 26A428 and arm64, then regenerates both Watch projects without drift.
+
+Exactly three methods run sequentially using test-without-building, one destination, parallel testing NO, one iteration, 120-second XCTest execution allowance and a full 180-second command allowance:
+
+1. Original TouchColorWatchUITests/WatchWorkflowTests/testHomeListDigitalCrownFromColdLaunch.
+2. Isolated TouchColorWatchCrownControlUITests/WatchStaticCrownControlTests/testStaticListDigitalCrownThreeRotations.
+3. Original TouchColorWatchUITests/WatchWorkflowTests/testRealDigitalCrownChangesRGBComponent.
+
+Each has a distinct result bundle and cannot reuse an existing bundle. Genuine exit 65 with exactly one finalized failed case remains failed. Other controls may continue only after structured summary/lifecycle checks, no timeout evidence, confirmed owned process cleanup, exact app/runner termination and owned-device service absence readback. Timeout, partial lifecycle, live app/runner, missing summary or unconfirmed cleanup stops new UI. There is no negative-to-positive reinterpretation, skip, extra profile, focus forcing or acceptance alias.
+
+## Budget and ownership
+
+The first workflow step stamps wall and monotonic clocks before checkout. JobBudget reuses those original clocks; no phase or subprocess resets them. Existing reserves remain cleanup130/evidence180/validation60/upload60/overhead20 seconds plus startup30. The 25-minute identity has at most 1,020 work seconds.
+
+The six work ceilings are preflight30, both Debug builds240, owned-pair setup120, actual cold240, isolated static180 and RGB180, totaling990. Thirty seconds remain unallocated. Builds individually have 110-second command caps; their aggregate phase also includes bounded product fingerprints. Setup uses existing observed-profile and owned-pair helpers, creates one fresh iOS27 phone and one smallest40mm watchOS27 Watch, verifies and activates the exact new pair, then boots/readies both. No TouchColor phone app launches. Individual create/pair/read/boot operations share ONE120-second setup deadline and require their complete declared caps before starting. They cannot each receive a fresh120 seconds.
+
+Every test receives full120 execution +60 launch allowance. Each operation uses one absolute deadline bounded by its enclosing phase; process startup and durable receipt writes consume that same allowance before wait. Only the first command can establish a phase start. A timed-out termination latches unknown simulator-daemon completion and prevents any later inventory query or UI. Slow-spawn/write and terminate-timeout regressions cover these boundaries. Method summaries and app/runner cleanup must fit the method's remaining whole-phase time after the test returns. Therefore simultaneous worst-case operation maxima do not fit all phase ceilings; a late test or slow native setup is incomplete rather than extended. The schedule is an admission ceiling, not a promise of native feasibility. No required test allowance is silently shortened. Bounded process-group TERM/KILL cleanup is latched; unknown descendant/reader cleanup prohibits all subsequent processes. A timeout's cleanup may consume the dedicated cleanup tail, never permit new work.
+
+Final cleanup shuts down only the newly owned device IDs, verifies shutdown, unpairs only the newly owned pair, deletes the two owned IDs and retains exact raw inventories proving absence. A creation whose identity cannot be safely established cannot justify deleting an unknown device; the run remains incomplete and disposable VM teardown is authoritative. Targeted between-case service inventory is public simulator tooling, not an app readiness surrogate; actual XCTest installation/launch still establishes readiness.
+
+## Retained evidence and independent verdict
+
+Receipts bind exact argv, phase, start/end wall+monotonic clocks, original budget, raw exits, timeout, owned process/reader cleanup, test source SHA/tree/workflow, run ID/attempt, profile/runtime/device IDs, pair inventory, compiled runner identities and unchanged built-product fingerprints. Each case retains raw summary, raw test tree, original lifecycle lines and bounded console failures, plus exact app/runner cleanup inventory. Final device/pair inventories are raw command output, hash-linked to their command stages.
+
+Original cold List frame observations are retained separately. New Home and static observations each have16KiB, combined32KiB inside the unchanged1.2MB overall cap. The Home trace remains explicitly lower-bound, with PID/uptime/case, counters and omission information; it cannot prove no transient notification or event. The static control retains exact three negative0.1 rotations/six geometry snapshots and separately labeled optional single native touch drag. Touch never changes Crown acceptance. Source-admitted standalone isolation and DEBUG/Release source invariants remain unchanged; no extra foreground or scene hook was necessary.
+
+The independent watch_crown_result.py reads authenticated bounded files without running tests. It reconciles exact command/case, summary counts/device/timing, one exact method in the raw test tree, lifecycle, extraction stage hashes and cleanup. Result can be passed/failed/incomplete, but acceptance is ALWAYS false. A genuine failed case is retained as failed even if a later case is incomplete; complete is separately false. Timeout/unstarted/skipped/unknown or missing mandatory evidence cannot become passed. Actual failure text and original exit remain in the packet. The workflow keeps a failed diagnostic red and still uploads its safe bounded evidence after an independent cap/reserve guard. Artifact upload is explicitly limited to one minute.
+
+## Portable validation and native limitations
+
+Portable checks are recorded in the sibling watch-crown-runnable-checks directory and final manifest. Canonical normal/optimized aggregate suites passed537/334 tests. Focused Crown/budget/runtime/driver/validator checks passed158 tests normally and158 under python3 -O, including23 bounded-driver tests and19 independent validator/adversarial tests. Six generators show no drift; evidence-boundary tests, Python AST, shell syntax and native localization coverage run. Full source manifest and binary delta patch replay reconstruct the exact candidate tree from the exact e980 baseline tree.
+
+This Linux environment has no Swift or Xcode. Native Swift/API/actor compilation, standalone control installation, actual runner bundle naming, actual launchctl absence-readback behavior, runtime XCTest tree shape, native timing feasibility, accessibility geometry, Crown/touch delivery and Release binary exclusion remain unrun. Source-level validation cannot establish those results. These are explicit native proof risks, not permission to retry, enlarge budgets, swap runners, broaden profiles or declare the Crown regression fixed.
+
+
+## Successor correction after independent review
+
+The first local runnable packet, tree0251f83cc64639ed9268263e88a5d00883ff475c, is preserved unchanged and is not admitted. Its independent adversarial review reproduced two continuation gaps. This separate v2 successor changes only the controller, its exact contract helper, their portable tests and this report.
+
+1. The old controller checked summary totals before continuing but did not reconcile summary outcome/device/lifetime with the just-finished command. It could schedule a later control after exit65/failed lifecycle paired with a contradictory Passed summary from another device or stale timestamps. The controller now independently verifies exact command and source SHA, one unskipped case, genuine exit and matching lifecycle/result, exact target/failure method, Watch device/runtime/architecture/configuration, command lifetime and case duration before any next control. The final evidence validator remains separate; it cannot retroactively authorize scheduling. Genuine failedcold/failedstatic followed by passedRGB still retains those exact statuses with acceptancefalse.
+
+2. The old controller checked its absolute deadline after the leader wait but before descendant/reader cleanup. A leader exiting at1s with cleanup finishing at5s under a3s command cap could start another operation. Deadline is now checked after group and reader cleanup too. Expiry records timed_outtrue/exit124 while retaining genuine rawexit and actual cleanup proof, then latches further work. Confirmed cleanup stays distinct from unknown cleanup. Only the reserved cleanup/evidence path remains available; unknown cleanup still prohibits all subprocesses. No test rerun or allowance extension is introduced.
+
+New regressions cover twelve summary contradictions plus lifecycle/source/command mismatches; required and optional post-cleanup expiry; blocked later work; and preserved reserved cleanup after confirmed expiry. The unchanged external independent reproducer now raises the expected block in both branches, executed separately so the first exception does not hide the second. Its raw run stops at the first contradictory-summary exception, as intended. Canonical budgets, full workflows, original XCTest assertions, Crown component and evidence caps are unchanged.

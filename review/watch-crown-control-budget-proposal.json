@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "status": "proposal_only_not_admitted_not_run",
+  "source_base_public_commit": "1410ed01f0d153be79cbd688c3385320670d7367",
+  "source_base_tree": "914d82a9b8e8f10a86c495c1547eb4b2f55f1b9a",
+  "job_identity": "watch-crown-control-smallest",
+  "runner": "xcode-27",
+  "runner_class": "existing_standard_VM_only",
+  "job_timeout_minutes": 25,
+  "profiles": [
+    "smallest"
+  ],
+  "runtime_suffix": "watchOS-27-0",
+  "text_phase": "normal",
+  "largest_text_run": false,
+  "startup_margin_seconds": 30,
+  "reserves_seconds": {
+    "cleanup": 130,
+    "evidence": 180,
+    "validation": 60,
+    "upload": 60,
+    "overhead": 20
+  },
+  "maximum_work_seconds": 1020,
+  "sequential_work_plan_seconds": {
+    "source_toolchain_and_preflight": 30,
+    "both_debug_builds": 240,
+    "owned_pair_creation_boot_and_readiness": 120,
+    "actual_cold_test_including_install_launch": 240,
+    "isolated_static_control_including_install_launch": 180,
+    "unchanged_rgb_positive_control_including_launch": 180
+  },
+  "work_plan_seconds": 990,
+  "unallocated_work_seconds": 30,
+  "test_execution_allowance_seconds": 120,
+  "retries": 0,
+  "new_structured_observation_bytes": 32768,
+  "home_observation_bytes": 16384,
+  "static_control_observation_bytes": 16384,
+  "evidence_cap_bytes": 1200000,
+  "stopping_conditions": [
+    "No publication or dispatch until separately authorized and exact source admitted",
+    "Require dedicated 25-minute budget registration; unchanged full Watch job_budget row is 45 minutes and must not be reused or reduced",
+    "Fail closed if source, toolchain, selected profile, ownership or budgets do not match",
+    "No operation begins without full phase allowance and existing cleanup tail",
+    "Stop new operations if owned process cleanup is unconfirmed",
+    "Ordinary XCTest assertion failure remains failed, but collect other independent controls if cleanup and remaining budget permit",
+    "Unstarted, timed-out, skipped, omitted or over-budget evidence is incomplete, never passed",
+    "No automatic retry, larger runner, extra profile or all-platform rerun"
+  ],
+  "test_launch_allowance_seconds": 60,
+  "minimum_test_phase_seconds": 180
+}

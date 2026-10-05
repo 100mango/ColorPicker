@@ -31,6 +31,13 @@ struct WatchHome: View {
                 NavigationLink("Privacy") { WatchPrivacy() }.accessibilityIdentifier("watch.privacy")
             }.navigationTitle("TouchColor")
         }
+        #if DEBUG
+        // Passive public publishers only: no observed state, layout or focus writes.
+        .onAppear { WatchHomeDiagnostics.record(.appear) }
+        .onDisappear { WatchHomeDiagnostics.record(.disappear) }
+        .onReceive(palette.objectWillChange) { _ in WatchHomeDiagnostics.record(.palette) }
+        .onReceive(transfer.objectWillChange) { _ in WatchHomeDiagnostics.record(.transfer) }
+        #endif
     }
 }
 struct WatchSwatch: View {

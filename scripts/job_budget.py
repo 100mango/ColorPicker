@@ -10,7 +10,7 @@ import re
 import time
 from atomic_json import write_json as write_json_atomic
 
-EXPECTED_MINUTES = {'vision': 25, 'watch': 45, 'tv': 25, 'mac': 40, 'ios': 20, 'paired': 45}
+EXPECTED_MINUTES = {'vision': 25, 'watch': 45, 'tv': 25, 'mac': 40, 'ios': 20, 'paired': 45, 'watch-crown-control': 25}
 # Work stops early enough for owned process/capture cleanup, bounded extraction,
 # validation and a real artifact upload. The runner's cancellation grace is not work time.
 RESERVES = {'cleanup': 130, 'evidence': 180, 'validation': 60, 'upload': 60, 'overhead': 20}

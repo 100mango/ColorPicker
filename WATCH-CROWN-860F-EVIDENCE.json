@@ -1,0 +1,212 @@
+[
+  {
+    "job": 111573318605,
+    "cases": {
+      "-[WatchWorkflowTests testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder]": {
+        "frames": 24,
+        "phases": [
+          "return.watch.color.1.0.before",
+          "return.watch.color.1.0.after",
+          "return.watch.color.1.1.before",
+          "return.watch.color.1.1.after",
+          "return.watch.color.1.2.before",
+          "return.watch.color.1.2.after",
+          "return.watch.color.1.3.before",
+          "return.watch.color.1.3.after",
+          "return.watch.color.1.4.before",
+          "return.watch.color.1.4.after",
+          "return.watch.color.1.5.before",
+          "return.watch.color.1.5.after",
+          "return.watch.color.1.6.before",
+          "return.watch.color.1.6.after",
+          "return.watch.color.1.7.before",
+          "return.watch.color.1.7.after",
+          "return.watch.color.1.8.before",
+          "return.watch.color.1.8.after",
+          "return.watch.color.1.9.before",
+          "return.watch.color.1.9.after",
+          "return.watch.color.1.10.before",
+          "return.watch.color.1.10.after",
+          "return.watch.color.1.11.before",
+          "return.watch.color.1.11.after"
+        ],
+        "geometries": [
+          "{\"viewport\":[0,0,162,197],\"rows\":[{\"frame\":[2,181,158,44],\"id\":\"watch.count\"},{\"frame\":[2,95.5,158,47],\"id\":\"watch.photo\"},{\"frame\":[2,47.5,158,44],\"id\":\"watch.editor\"}]}"
+        ]
+      },
+      "-[WatchWorkflowTests testHomeListDigitalCrownFromColdLaunch]": {
+        "frames": 24,
+        "phases": [
+          "cold.0.before",
+          "cold.0.after",
+          "cold.1.before",
+          "cold.1.after",
+          "cold.2.before",
+          "cold.2.after",
+          "cold.3.before",
+          "cold.3.after",
+          "cold.4.before",
+          "cold.4.after",
+          "cold.5.before",
+          "cold.5.after",
+          "cold.6.before",
+          "cold.6.after",
+          "cold.7.before",
+          "cold.7.after",
+          "cold.8.before",
+          "cold.8.after",
+          "cold.9.before",
+          "cold.9.after",
+          "cold.10.before",
+          "cold.10.after",
+          "cold.11.before",
+          "cold.11.after"
+        ],
+        "geometries": [
+          "{\"viewport\":[0,0,162,197],\"rows\":[{\"frame\":[2,181,158,44],\"id\":\"watch.count\"},{\"frame\":[2,95.5,158,47],\"id\":\"watch.photo\"},{\"frame\":[2,47.5,158,44],\"id\":\"watch.editor\"}]}"
+        ]
+      }
+    },
+    "lifecycle": {
+      "exit": 0,
+      "truncated": true,
+      "overflow_process_events": 0,
+      "rows": [
+        {
+          "case": "__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_",
+          "pid": 80384,
+          "events": 19,
+          "dropped": 71,
+          "omitted": 0,
+          "nonfocus": [
+            "2026-10-05 02:16:05.346 Df TouchColor[80384:2f776] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR appear case=__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=2EFFEDAB-27C6-490A-A1E5-54427ADEC9BC visible=true active=1 dropped=0",
+            "2026-10-05 02:16:06.185 Df TouchColor[80384:2f776] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR component_changed case=__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=2EFFEDAB-27C6-490A-A1E5-54427ADEC9BC visible=true active=1 dropped=0",
+            "2026-10-05 02:16:09.601 Df TouchColor[80384:2f776] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR disappear case=__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=2EFFEDAB-27C6-490A-A1E5-54427ADEC9BC visible=false active=0 dropped=71"
+          ],
+          "hiddenfocus": []
+        },
+        {
+          "case": "__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_",
+          "pid": 92013,
+          "events": 20,
+          "dropped": 75,
+          "omitted": 0,
+          "nonfocus": [
+            "2026-10-05 02:21:52.024 Df TouchColor[92013:3704f] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR appear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=7D72431F-DC2F-458C-8BAA-143CEB7AEA20 visible=true active=1 dropped=0",
+            "2026-10-05 02:21:52.938 Df TouchColor[92013:3704f] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR component_changed case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=7D72431F-DC2F-458C-8BAA-143CEB7AEA20 visible=true active=1 dropped=0",
+            "2026-10-05 02:21:56.022 Df TouchColor[92013:3704f] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR disappear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=7D72431F-DC2F-458C-8BAA-143CEB7AEA20 visible=false active=0 dropped=75",
+            "2026-10-05 02:21:59.318 Df TouchColor[92013:3704f] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR appear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=93E79E19-FB20-44C3-A83B-1DA46B5B47F5 visible=true active=1 dropped=75"
+          ],
+          "hiddenfocus": []
+        }
+      ]
+    },
+    "coldEditorMentions": 0
+  },
+  {
+    "job": 111573318716,
+    "cases": {
+      "-[WatchWorkflowTests testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder]": {
+        "frames": 24,
+        "phases": [
+          "return.watch.color.1.0.before",
+          "return.watch.color.1.0.after",
+          "return.watch.color.1.1.before",
+          "return.watch.color.1.1.after",
+          "return.watch.color.1.2.before",
+          "return.watch.color.1.2.after",
+          "return.watch.color.1.3.before",
+          "return.watch.color.1.3.after",
+          "return.watch.color.1.4.before",
+          "return.watch.color.1.4.after",
+          "return.watch.color.1.5.before",
+          "return.watch.color.1.5.after",
+          "return.watch.color.1.6.before",
+          "return.watch.color.1.6.after",
+          "return.watch.color.1.7.before",
+          "return.watch.color.1.7.after",
+          "return.watch.color.1.8.before",
+          "return.watch.color.1.8.after",
+          "return.watch.color.1.9.before",
+          "return.watch.color.1.9.after",
+          "return.watch.color.1.10.before",
+          "return.watch.color.1.10.after",
+          "return.watch.color.1.11.before",
+          "return.watch.color.1.11.after"
+        ],
+        "geometries": [
+          "{\"viewport\":[0,0,211,257],\"rows\":[{\"frame\":[2,229.5,207,59],\"id\":\"watch.count\"},{\"frame\":[2,130,207,59],\"id\":\"watch.photo\"},{\"frame\":[2,66,207,59],\"id\":\"watch.editor\"}]}"
+        ]
+      },
+      "-[WatchWorkflowTests testHomeListDigitalCrownFromColdLaunch]": {
+        "frames": 24,
+        "phases": [
+          "cold.0.before",
+          "cold.0.after",
+          "cold.1.before",
+          "cold.1.after",
+          "cold.2.before",
+          "cold.2.after",
+          "cold.3.before",
+          "cold.3.after",
+          "cold.4.before",
+          "cold.4.after",
+          "cold.5.before",
+          "cold.5.after",
+          "cold.6.before",
+          "cold.6.after",
+          "cold.7.before",
+          "cold.7.after",
+          "cold.8.before",
+          "cold.8.after",
+          "cold.9.before",
+          "cold.9.after",
+          "cold.10.before",
+          "cold.10.after",
+          "cold.11.before",
+          "cold.11.after"
+        ],
+        "geometries": [
+          "{\"viewport\":[0,0,211,257],\"rows\":[{\"frame\":[2,229.5,207,59],\"id\":\"watch.count\"},{\"frame\":[2,130,207,59],\"id\":\"watch.photo\"},{\"frame\":[2,66,207,59],\"id\":\"watch.editor\"}]}"
+        ]
+      }
+    },
+    "lifecycle": {
+      "exit": 0,
+      "truncated": true,
+      "overflow_process_events": 0,
+      "rows": [
+        {
+          "case": "__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_",
+          "pid": 30103,
+          "events": 19,
+          "dropped": 85,
+          "omitted": 0,
+          "nonfocus": [
+            "2026-10-05 02:18:17.266 Df TouchColor[30103:147b2] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR appear case=__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=4F143019-64A3-402C-89D8-1E8DE045932B visible=true active=1 dropped=0",
+            "2026-10-05 02:18:18.096 Df TouchColor[30103:147b2] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR component_changed case=__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=4F143019-64A3-402C-89D8-1E8DE045932B visible=true active=1 dropped=0",
+            "2026-10-05 02:18:22.177 Df TouchColor[30103:147b2] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR disappear case=__WatchWorkflowTests_testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=4F143019-64A3-402C-89D8-1E8DE045932B visible=false active=0 dropped=85"
+          ],
+          "hiddenfocus": []
+        },
+        {
+          "case": "__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_",
+          "pid": 43095,
+          "events": 22,
+          "dropped": 178,
+          "omitted": 0,
+          "nonfocus": [
+            "2026-10-05 02:25:16.048 Df TouchColor[43095:1ce78] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR appear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=090E204A-4410-45A3-B6B0-7FBE0544F8E4 visible=true active=1 dropped=0",
+            "2026-10-05 02:25:17.120 Df TouchColor[43095:1ce78] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR component_changed case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=090E204A-4410-45A3-B6B0-7FBE0544F8E4 visible=true active=1 dropped=0",
+            "2026-10-05 02:25:21.339 Df TouchColor[43095:1ce78] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR disappear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=090E204A-4410-45A3-B6B0-7FBE0544F8E4 visible=false active=0 dropped=67",
+            "2026-10-05 02:25:24.955 Df TouchColor[43095:1ce78] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR appear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=F08C6F7A-3303-408F-9AD3-1D1C0E6F515D visible=true active=1 dropped=67",
+            "2026-10-05 02:26:09.376 Df TouchColor[43095:1ce78] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR component_changed case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=F08C6F7A-3303-408F-9AD3-1D1C0E6F515D visible=true active=1 dropped=68",
+            "2026-10-05 02:26:12.206 Df TouchColor[43095:1ce78] [com.mango.touchColor.WatchDiagnostics:editor] WATCH_EDITOR disappear case=__WatchWorkflowTests_testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder_ id=F08C6F7A-3303-408F-9AD3-1D1C0E6F515D visible=false active=0 dropped=178"
+          ],
+          "hiddenfocus": []
+        }
+      ]
+    },
+    "coldEditorMentions": 0
+  }
+]

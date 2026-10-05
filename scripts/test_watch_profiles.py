@@ -28,6 +28,13 @@ def load_tests(loader, tests, pattern):
     tests.addTests(loader.loadTestsFromTestCase(WatchDiagnosticsTests))
     from test_watch_touch_drag import WatchTouchDragTests
     tests.addTests(loader.loadTestsFromTestCase(WatchTouchDragTests))
+    from test_watch_home_diagnostics import HomeDiagnosticsTests
+    tests.addTests(loader.loadTestsFromTestCase(HomeDiagnosticsTests))
+    from test_watch_crown_packet_invariants import WatchCrownPacketInvariantTests
+    tests.addTests(loader.loadTestsFromTestCase(WatchCrownPacketInvariantTests))
+    from test_watch_crown_control_target import StaticCrownGeometryTests, StaticCrownProjectTests
+    tests.addTests(loader.loadTestsFromTestCase(StaticCrownGeometryTests))
+    tests.addTests(loader.loadTestsFromTestCase(StaticCrownProjectTests))
     return tests
 
 
