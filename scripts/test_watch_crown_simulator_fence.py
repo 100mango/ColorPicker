@@ -370,7 +370,7 @@ class SetupAllowanceTests(FenceTestCase):
         with self.assertRaises(BudgetExhausted):
             with self.d.phase('actual_cold',240):self.fail('Later UI must not start without full phase')
         self.assertEqual(PHASES['actual_cold'],240);self.assertEqual(PHASES['isolated_static'],180);self.assertEqual(PHASES['rgb_positive'],180)
-        self.assertEqual(sum(PHASES.values()),1320)
+        self.assertEqual(sum(PHASES.values()),1470)
 
 
 class IndependentFenceVerdictTests(unittest.TestCase):

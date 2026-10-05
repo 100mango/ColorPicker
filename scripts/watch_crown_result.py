@@ -20,7 +20,7 @@ MAX_EVIDENCE_BYTES = 1_200_000
 MAX_RECEIPT_BYTES = 300_000
 MAX_OBSERVATION_BYTES = 16_384
 RESERVES = {'cleanup': 130, 'evidence': 180, 'validation': 60, 'upload': 60, 'overhead': 20}
-PHASE_LIMITS = {'preflight': 30, 'builds': 240, 'setup': 450,
+PHASE_LIMITS = {'preflight': 30, 'builds': 240, 'setup': 600,
                 'actual_cold': 240, 'isolated_static': 180, 'rgb_positive': 180}
 CASE_NAMES = ('actual_cold', 'isolated_static', 'rgb_positive')
 CASES = {

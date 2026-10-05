@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One owned, source-bound Watch diagnostic. No retries and never product acceptance.
 
-Phase ceilings share the ORIGINAL job clock. The 450s setup ceiling shares the same1020s work pool;
+Phase ceilings share the ORIGINAL job clock. The 600s setup ceiling shares the same1020s work pool;
 no phase resets that original clock or reserves all later worst-case ceilings. Every subprocess owns a bounded process group.
 """
 import contextlib

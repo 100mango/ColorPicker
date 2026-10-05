@@ -28,6 +28,7 @@ PRELUDE=[1.146,.244,.385,.245,.240,.248,.283]
 E107_BOOT=[13.327,77.943,56.080,91.770]
 CANONICAL_BOOT=[6.637,123.119,99.743,189.882]
 FINAL_READ=19.237
+SETUP=600
 
 
 class SetupReplayTests(unittest.TestCase):
@@ -88,12 +89,12 @@ class SetupReplayTests(unittest.TestCase):
         self.assertTrue(observed[3][3].startswith('TouchColor-Crown-watch-'));observed[3][3]='<watch-name>'
         self.assertEqual(observed,self.expected_commands(activate))
         stages=self.d.report['stages'];phase=self.d.report['phases'][0]
-        self.assertTrue(phase['completed']);self.assertLess(phase['finished_monotonic']-phase['started_monotonic'],450)
+        self.assertTrue(phase['completed']);self.assertLess(phase['finished_monotonic']-phase['started_monotonic'],SETUP)
         for stage in stages:
             self.assertEqual(stage['setup_command_cap_seconds'],CAPS[stage['command'][2]])
-            remaining=phase['started_monotonic']+450-stage['started_monotonic']
+            remaining=phase['started_monotonic']+SETUP-stage['started_monotonic']
             self.assertAlmostEqual(stage['timeout_seconds'],min(CAPS[stage['command'][2]],remaining))
-            self.assertLessEqual(stage['deadline_monotonic'],phase['started_monotonic']+450)
+            self.assertLessEqual(stage['deadline_monotonic'],phase['started_monotonic']+SETUP)
             self.assertLessEqual(stage['deadline_monotonic'],self.d.budget.record['started_monotonic']+1020)
         self.assertEqual({r['udid'] for r in self.d.report['setup_readback']},{PHONE,WATCH})
         self.assertTrue(all(r['state']=='Booted' for r in self.d.report['setup_readback']))
@@ -107,7 +108,7 @@ class SetupReplayTests(unittest.TestCase):
     def test_full_canonical419_second_setup_clips_all_caps_and_preserves_readback(self):
         self.install(CANONICAL_BOOT)
         with patch.object(driver,'stop_group',return_value=True):self.d.setup()
-        self.assert_full_setup();self.assertGreater(self.allowances[-1],FINAL_READ);self.assertLess(self.allowances[-1],30)
+        self.assert_full_setup();self.assertGreater(self.allowances[-1],FINAL_READ);self.assertEqual(self.allowances[-1],30)
         self.assertAlmostEqual(self.clock.mono-100,sum(PRELUDE)+419.381+FINAL_READ)
         self.assertEqual(self.d.budget.record['started_monotonic'],100)
     def test_conditional_pair_activation_keeps_same_order_and60_second_cap(self):
@@ -126,17 +127,17 @@ class SetupReplayTests(unittest.TestCase):
         before=len(self.commands);self.d.cleanup();self.d.evidence()
         with self.assertRaises(ValueError):self.d.run(['git','rev-parse','HEAD'],3)
         self.assertEqual(len(self.commands),before)
-    def test_final_read_clipped_by450_ceiling_cannot_borrow_reserves(self):
-        self.install([6.637,123.119,99.743,210.000])
+    def test_final_read_clipped_by_setup_ceiling_cannot_borrow_reserves(self):
+        self.install([6.637,123.119,99.743,SETUP-240.000])
         with patch.object(driver,'stop_group',return_value=True):
             with self.assertRaises(RuntimeError):self.d.setup()
         last=self.d.report['stages'][-1]
         self.assertEqual(last['command'],['xcrun','simctl','list','devices','available','-j'])
         self.assertLess(last['timeout_seconds'],FINAL_READ);self.assertTrue(self.d.simulator_uncertain)
-        self.assertAlmostEqual(last['deadline_monotonic'],100+450)
+        self.assertAlmostEqual(last['deadline_monotonic'],100+SETUP)
     def test_final_read_with_subsecond_remainder_never_starts(self):
         pre=sum(PRELUDE)+6.637+123.119+99.743
-        self.install([6.637,123.119,99.743,449.5-pre])
+        self.install([6.637,123.119,99.743,SETUP-.5-pre])
         with patch.object(driver,'stop_group',return_value=True):
             with self.assertRaises(ValueError):self.d.setup()
         self.assertEqual(len(self.commands),11);self.assertFalse(self.d.simulator_uncertain)
