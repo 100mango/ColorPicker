@@ -1,5 +1,6 @@
 """Portable source contracts; AppKit/SwiftUI behavior still requires native tests."""
 import hashlib
+import json
 from pathlib import Path
 import re
 import unittest
@@ -8,12 +9,37 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTACT_LABEL = "Contact the developer about privacy"
 
 
+def privacy_platform_source(mac: bool) -> str:
+    """Project the shared file's closed, balanced macOS conditional blocks."""
+    source = (ROOT / 'TouchColorMac/PrivacyView.swift').read_text()
+    result, stack, active = [], [], True
+    for line in source.splitlines(keepends=True):
+        directive = line.strip()
+        if directive == '#if os(macOS)':
+            stack.append((active, False))
+            active = active and mac
+        elif directive == '#else':
+            if not stack or stack[-1][1]: raise AssertionError('Unmatched or duplicate #else')
+            parent, _ = stack[-1]
+            stack[-1] = (parent, True)
+            active = parent and not mac
+        elif directive == '#endif':
+            if not stack: raise AssertionError('Unmatched #endif')
+            active, _ = stack.pop()
+        elif directive.startswith('#'):
+            raise AssertionError('Unexpected shared privacy compiler directive: ' + directive)
+        elif active:
+            result.append(line)
+    if stack: raise AssertionError('Unclosed shared privacy compiler directive')
+    return ''.join(result)
+
+
 class MacAccessibilitySemanticsContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.window = (ROOT / "TouchColorMac/ColorWindow.swift").read_text()
         cls.camera = (ROOT / "TouchColorMac/CameraSheet.swift").read_text()
-        cls.privacy = (ROOT / "TouchColorMac/PrivacyView.swift").read_text()
+        cls.privacy = privacy_platform_source(mac=True)
         cls.hosted = (ROOT / "TouchColorMacTests/CameraTests.swift").read_text()
         cls.ui = (ROOT / "TouchColorMacUITests/TouchColorMacUITests.swift").read_text()
 
@@ -243,7 +269,7 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
 class MacSelectablePrivacyTextContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.privacy = (ROOT / 'TouchColorMac/PrivacyView.swift').read_text()
+        cls.privacy = privacy_platform_source(mac=True)
         cls.native = (ROOT / 'TouchColorMacTests/PrivacyTextTests.swift').read_text()
         cls.ui = (ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
 
@@ -344,6 +370,72 @@ class MacSelectablePrivacyTextContracts(unittest.TestCase):
             self.assertEqual(len(entries), len(dict(entries)), language)
             for key, value in zip(expected['en'], labels): self.assertEqual(dict(entries).get(key), value)
         self.assertIn('NSLocalizedString(text, bundle: bundle, comment: ""), text', self.native)
+
+
+class SharedPrivacyPlatformContracts(unittest.TestCase):
+    def test_actual_project_source_membership_is_exactly_mac_and_vision(self):
+        consumers = []
+        shared_path = 'TouchColorMac/PrivacyView.swift'
+        for project in sorted(ROOT.rglob('project.pbxproj')):
+            raw = project.read_text()
+            objects = dict(re.findall(r'^\t\t"([A-F0-9]{24})" = \{\n(.*?)^\t\t\};$', raw, re.M | re.S))
+            def field(body, name):
+                found = re.search(r'"' + name + r'" = (.*?);', body, re.S)
+                return found.group(1) if found else ''
+            refs = {key for key, body in objects.items() if field(body, 'isa') == '"PBXFileReference"'
+                    and field(body, 'path') == json.dumps(shared_path)}
+            if shared_path in raw: self.assertTrue(refs, 'Shared-file reference must use parsed project objects')
+            if not refs: continue
+            builds = {key for key, body in objects.items() if field(body, 'isa') == '"PBXBuildFile"'
+                      and field(body, 'fileRef').strip('"') in refs}
+            phases = {key: sum(item in builds for item in re.findall(r'"([A-F0-9]{24})"', field(body, 'files')))
+                      for key, body in objects.items() if field(body, 'isa') == '"PBXSourcesBuildPhase"'}
+            for _, body in objects.items():
+                if field(body, 'isa') != '"PBXNativeTarget"': continue
+                count = sum(phases.get(key, 0) for key in re.findall(r'"([A-F0-9]{24})"', field(body, 'buildPhases')))
+                if count:
+                    consumers.append((str(project.parent.relative_to(ROOT)), json.loads(field(body, 'name')), count))
+        self.assertEqual(consumers, [('TouchColorMac.xcodeproj', 'TouchColorMac', 1),
+                                     ('TouchColorVision.xcodeproj', 'TouchColorVision', 1)])
+        vision = (ROOT / 'scripts/generate_vision_project.py').read_text()
+        self.assertIn("'TouchColorMac/PrivacyView.swift'", vision)
+        mac = (ROOT / 'scripts/generate_mac_project.py').read_text()
+        self.assertIn("apprefs=sources('TouchColorMac')", mac)
+        tv = (ROOT / 'TouchColorTV.xcodeproj/project.pbxproj').read_text()
+        self.assertIn('"path" = "TouchColorTV/PrivacyView.swift";', tv)
+        self.assertNotIn('"path" = "TouchColorMac/PrivacyView.swift";', tv)
+
+    def test_mac_projection_is_exact_previously_compiled_388af_source(self):
+        mac = privacy_platform_source(mac=True)
+        self.assertEqual(hashlib.sha256(mac.encode()).hexdigest(), '92791f2face98ae50430f008ce1ea0c413f0b48fd8ba19328ca67c6ab2e1812a')
+        for required in ['import AppKit', 'struct SelectablePrivacyText: NSViewRepresentable',
+                         'isEditable = false', 'isSelectable = true', 'container.widthTracksTextView = true',
+                         '.accessibilityElement(children: .contain)', '.accessibilityIdentifier("privacy.content")']:
+            self.assertIn(required, mac)
+
+    def test_non_mac_projection_is_exact_original_selectable_swiftui_policy(self):
+        shared = privacy_platform_source(mac=False)
+        self.assertEqual(hashlib.sha256(shared.encode()).hexdigest(), '08240fce405f34cad6a5ee2452934858ebc06dff01c3652d4439f61fa8ef915e')
+        for forbidden in ['import AppKit', 'PrivacyPolicyCopy', 'SelectablePrivacyText', 'NSViewRepresentable',
+                          'NSTextView', 'NSLayoutManager', 'privacy.content', '.accessibilityElement(children: .contain)']:
+            self.assertNotIn(forbidden, shared)
+        self.assertEqual(len([line for line in shared.splitlines() if line.strip().startswith('Text("Celluloid')]), 2)
+        self.assertIn('.textSelection(.enabled)', shared)
+        self.assertIn('Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)', shared)
+        self.assertEqual(shared.count('Link('), 2)
+        self.assertIn('.accessibilityIdentifier("privacy.contact")', shared)
+
+    def test_all_mac_only_source_is_inside_closed_platform_guards(self):
+        raw = (ROOT / 'TouchColorMac/PrivacyView.swift').read_text()
+        self.assertEqual(raw.count('#if os(macOS)'), 4)
+        self.assertEqual(raw.count('#else'), 1)
+        self.assertEqual(raw.count('#endif'), 4)
+        self.assertEqual(raw.count('import AppKit'), 1)
+        self.assertNotIn('#if DEBUG', raw)
+        self.assertNotIn('canImport(AppKit)', raw)
+        # Both balanced projections must complete; unsupported directives fail closed.
+        self.assertTrue(privacy_platform_source(mac=True))
+        self.assertTrue(privacy_platform_source(mac=False))
 
 
 if __name__ == '__main__':

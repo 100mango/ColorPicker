@@ -2,8 +2,9 @@
 from pathlib import Path
 import hashlib
 import unittest
+from test_mac_accessibility_semantics import privacy_platform_source
 ROOT=Path(__file__).resolve().parents[1]
-# Inverse-baseline UI hash remains admitted bridge 8c4034; PrivacyView additionally pins the root-admitted explicit type spellings.
+# Inverse-baseline UI hash remains admitted bridge 8c4034; PrivacyView pins the admitted Mac-active source projection, with explicit type spellings.
 # Camera/palette remain exact collector baseline; all original group/menu assertions are retained.
 CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d2a5fc53ca68123008ebdac46d4e741af',
                                      [('        }.padding(20).frame(width: 560)\n'
@@ -96,14 +97,14 @@ CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d
 class GroupMenuSemantics(unittest.TestCase):
     def test_all_other_product_and_test_bytes_match_admitted_bridge_baseline(self):
         for path,(expected,edits) in CHANGES.items():
-            source=(ROOT/path).read_text()
+            source=privacy_platform_source(mac=True) if path == "TouchColorMac/PrivacyView.swift" else (ROOT/path).read_text()
             for old,new in edits:
                 self.assertEqual(source.count(new),1,path)
                 source=source.replace(new,old,1)
             self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),expected,path)
     def test_named_groups_contain_children_without_hiding_or_combining(self):
         for path,label,identifier in [('CameraSheet.swift','Camera','camera.content'),('PrivacyView.swift','Privacy Policy / 应用隐私政策','privacy.content')]:
-            text=(ROOT/'TouchColorMac'/path).read_text()
+            text=privacy_platform_source(mac=True) if path == 'PrivacyView.swift' else (ROOT/'TouchColorMac'/path).read_text()
             self.assertIn('.accessibilityElement(children: .contain)',text)
             self.assertIn('.accessibilityLabel("'+label+'")',text)
             self.assertIn('.accessibilityIdentifier("'+identifier+'")',text)
@@ -133,7 +134,7 @@ class GroupMenuSemantics(unittest.TestCase):
         self.assertLess(section.index('NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string)'), section.index('actions.click()'))
         self.assertIn('XCTAssertTrue(NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string))', section)
     def test_policy_selectability_and_explicit_contact_route_are_preserved(self):
-        policy=(ROOT/'TouchColorMac/PrivacyView.swift').read_text()
+        policy=privacy_platform_source(mac=True)
         self.assertIn('.textSelection(.enabled)',policy)
         self.assertEqual(policy.count('100mango@gmail.com'),4)
         self.assertIn('.accessibilityIdentifier("privacy.contact")',policy)
