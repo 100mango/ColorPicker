@@ -47,6 +47,8 @@ struct CameraSheet: View {
                 Button("Done") { camera.stop(); dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("camera.close")
             }
         }.padding(20).frame(width: 560)
+            .background(OwnedSheetContentAccessibility(label: NSLocalizedString("Camera", comment: "Camera presentation accessibility"),
+                                                       identifier: "camera.presentation").frame(width: 0, height: 0))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Camera")
             .accessibilityIdentifier("camera.content")

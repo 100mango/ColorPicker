@@ -405,9 +405,9 @@ class SharedPrivacyPlatformContracts(unittest.TestCase):
         self.assertIn('"path" = "TouchColorTV/PrivacyView.swift";', tv)
         self.assertNotIn('"path" = "TouchColorMac/PrivacyView.swift";', tv)
 
-    def test_mac_projection_is_exact_previously_compiled_388af_source(self):
+    def test_mac_projection_pins_admitted_owned_sheet_marker_source(self):
         mac = privacy_platform_source(mac=True)
-        self.assertEqual(hashlib.sha256(mac.encode()).hexdigest(), '92791f2face98ae50430f008ce1ea0c413f0b48fd8ba19328ca67c6ab2e1812a')
+        self.assertEqual(hashlib.sha256(mac.encode()).hexdigest(), 'f55cad52bed4607831b219915bb08b6540dcf07eb089bd304c5570eb92d68ee1')
         for required in ['import AppKit', 'struct SelectablePrivacyText: NSViewRepresentable',
                          'isEditable = false', 'isSelectable = true', 'container.widthTracksTextView = true',
                          '.accessibilityElement(children: .contain)', '.accessibilityIdentifier("privacy.content")']:
@@ -436,6 +436,86 @@ class SharedPrivacyPlatformContracts(unittest.TestCase):
         # Both balanced projections must complete; unsupported directives fail closed.
         self.assertTrue(privacy_platform_source(mac=True))
         self.assertTrue(privacy_platform_source(mac=False))
+
+
+class OwnedSheetDirectActionContracts(unittest.TestCase):
+    def test_marker_uses_only_owned_content_view_label_and_identifier_setters(self):
+        source = privacy_platform_source(mac=True)
+        marker = source.split('struct OwnedSheetContentAccessibility: NSViewRepresentable', 1)[1]
+        for required in ['guard let window, window.sheetParent != nil, let content = window.contentView',
+                         'self !== content, isDescendant(of: content) else { return }', 'var presentationIdentifier: String',
+                         'content.setAccessibilityLabel(label)', 'content.setAccessibilityIdentifier(presentationIdentifier)',
+                         'viewDidMoveToWindow()', 'viewDidMoveToSuperview()', 'override func layout()']:
+            self.assertIn(required, marker)
+        for forbidden in ['setAccessibilityRole', 'setAccessibilityElement', 'setAccessibilityChildren',
+                          'setAccessibilityEnabled', 'setAccessibilityHidden', 'accessibilityAction',
+                          'AXUIElement', 'NSApp', 'Timer', 'DispatchQueue', 'makeFirstResponder', 'activate(',
+                          'contentView =', 'setFrame', 'setBounds', 'beginSheet', 'orderFront', 'makeKey']:
+            self.assertNotIn(forbidden, marker)
+        camera = (ROOT / 'TouchColorMac/CameraSheet.swift').read_text()
+        self.assertIn('identifier: "camera.presentation"', camera)
+        self.assertIn('identifier: "privacy.presentation"', source)
+        self.assertNotIn('OwnedSheetContentAccessibility', privacy_platform_source(mac=False))
+
+    def test_existing_hosted_label_case_checks_real_sheet_and_main_window_preservation(self):
+        native = (ROOT / 'TouchColorMacTests/PrivacyTextTests.swift').read_text()
+        self.assertEqual(len(re.findall(r'func test\w+\(', native)), 5)
+        self.assertIn('try assertOnlyOwnedSheetContentIsRelabeled()', native)
+        for required in ['XCTAssertNil(parent.sheetParent)', 'parent.beginSheet(sheet, completionHandler: nil)',
+                         'XCTAssertTrue(sheet.sheetParent === parent)', 'XCTAssertTrue(marker.isDescendant(of: content))',
+                         'XCTAssertEqual(content.accessibilityRole(), role)', 'XCTAssertEqual(content.isAccessibilityElement(), element)',
+                         'XCTAssertEqual(content.frame, frame)', 'XCTAssertEqual(content.bounds, bounds)',
+                         'XCTAssertTrue(sheet.firstResponder === focus)', 'XCTAssertEqual(content.subviews.map(ObjectIdentifier.init), subviews)',
+                         'XCTAssertEqual(button.action, action)', 'XCTAssertTrue(button.target === receiver)',
+                         'XCTAssertEqual(receiver.count, 1)', 'XCTAssertEqual(receiver.count, 2)',
+                         'XCTAssertFalse(outside.isDescendant(of: content))']:
+            self.assertIn(required, native)
+
+    def test_direct_palette_buttons_keep_model_actions_and_natural_control_dimensions(self):
+        source = (ROOT / 'TouchColorMac/PaletteSidebar.swift').read_text()
+        actions = source.split('VStack(spacing: 4)', 1)[1].split('}.padding(.vertical, 4)', 1)[0]
+        for required in ['Button("Copy") { library.copy(color) }', 'Button("Delete", role: .destructive) { library.remove(at: index) }',
+                         '.accessibilityLabel("Copy color', '.accessibilityLabel("Delete color',
+                         'palette.copy.', 'palette.delete.', '.buttonStyle(.bordered)']:
+            self.assertIn(required, actions)
+        for forbidden in ['Menu {', '.frame(', '.font(', '.accessibilityAction', 'onTapGesture', 'Button {}']:
+            self.assertNotIn(forbidden, actions)
+        for language, values in [('en', ['Delete', 'Copy color %lld', 'Delete color %lld']),
+                                 ('zh-Hans', ['删除', '复制第 %lld 个颜色', '删除第 %lld 个颜色'])]:
+            resources = (ROOT / 'TouchColorMac' / (language + '.lproj') / 'Localizable.strings').read_text()
+            for key, value in zip(['Delete', 'Copy color %lld', 'Delete color %lld'], values):
+                self.assertIn('"' + key + '" = "' + value + '";', resources)
+
+    def test_existing_ui_flows_check_bilingual_roles_reachability_and_real_copy_delete(self):
+        ui = (ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
+        self.assertEqual(len(re.findall(r'func test\w+\(', ui)), 14)
+        for required in ['copyLabel: "Copy color 2", deleteLabel: "Delete color 2"',
+                         'copyLabel: "Copy color 4", deleteLabel: "Delete color 4"',
+                         'copyLabel: "复制第 1 个颜色", deleteLabel: "删除第 1 个颜色"',
+                         'XCTAssertEqual(button.elementType, .button)', 'XCTAssertEqual(button.label, label)',
+                         'XCTAssertTrue(sidebar.frame.contains(button.frame)', 'XCTAssertTrue(button.isEnabled)',
+                         'XCTAssertTrue(button.isHittable', 'TouchColor palette Copy regression sentinel',
+                         'copy.click()', 'delete.click()', 'NSPasteboard.general.string(forType: .string), "#ff00ff"',
+                         'assertOwnedSheetPresentation(identifier: "camera.presentation"',
+                         'assertOwnedSheetPresentation(identifier: "privacy.presentation"']:
+            self.assertIn(required, ui)
+        self.assertNotIn('app.menuButtons["palette.actions.1"].click()', ui)
+        self.assertNotIn('app.menuItems["palette.delete.1"].click()', ui)
+
+    def test_did_finish_launch_emits_only_the_closed_scalar_in_the_debug_producer(self):
+        app = (ROOT / 'TouchColorMac/TouchColorMacApp.swift').read_text()
+        start = app.index('private final class MacPassiveLifecycle') if 'private final class MacPassiveLifecycle' in app else app.index('final class MacPassiveLifecycle')
+        producer = app[start:]
+        self.assertIn('note.userInfo?[NSApplication.launchIsDefaultUserInfoKey]', producer)
+        self.assertEqual(producer.count('note.userInfo'), 1)
+        self.assertIn('observed === own else { return }', producer)
+        self.assertIn('if event == "didFinishLaunching"', producer)
+        self.assertIn('CFGetTypeID(flag) == CFBooleanGetTypeID()', producer)
+        for required in ['"missing"', '"reportedTrue"', '"reportedFalse"', '"unexpectedType"',
+                         'if event == "didFinishLaunching", let launchIsDefault { row["launchIsDefault"] = launchIsDefault }']:
+            self.assertIn(required, producer)
+        self.assertNotIn('row["userInfo"]', producer)
+        self.assertNotIn('String(describing: raw)', producer)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 #if DEBUG
+import CoreFoundation
 import OSLog
 #endif
 
@@ -216,7 +217,15 @@ final class PaneAccessibilityView: NSView {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 MainActor.assumeIsolated {
                     guard let own = NSApp, let observed = note.object as? NSApplication, observed === own else { return }
-                    self?.record(event)
+                    if event == "didFinishLaunching" {
+                        let scalar: String
+                        if let raw = note.userInfo?[NSApplication.launchIsDefaultUserInfoKey] {
+                            if let flag = raw as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() {
+                                scalar = flag.boolValue ? "reportedTrue" : "reportedFalse"
+                            } else { scalar = "unexpectedType" }
+                        } else { scalar = "missing" }
+                        self?.record(event, launchIsDefault: scalar)
+                    } else { self?.record(event) }
                 }
             })
         }
@@ -265,7 +274,7 @@ final class PaneAccessibilityView: NSView {
                             "sheet": window.attachedSheet != nil, "workspace": window === workspace]
                 }]
     }
-    private func record(_ event: String, header: Bool = false, final: Bool = false) {
+    private func record(_ event: String, header: Bool = false, final: Bool = false, launchIsDefault: String? = nil) {
         guard !stopped else { return }
         let elapsed = ProcessInfo.processInfo.systemUptime - started
         // Delayed callbacks never extend observation. The final record reports omission honestly.
@@ -275,6 +284,7 @@ final class PaneAccessibilityView: NSView {
             "pid": ProcessInfo.processInfo.processIdentifier, "epoch": Date().timeIntervalSince1970,
             "elapsed": elapsed, "sequence": sequence + 1, "event": event,
             "omittedRecords": omitted, "late": elapsed > 10]
+        if event == "didFinishLaunching", let launchIsDefault { row["launchIsDefault"] = launchIsDefault }
         if elapsed <= 10 { row["app"] = census() }
         if header {
             let info = ProcessInfo.processInfo; let arguments = info.arguments

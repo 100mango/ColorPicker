@@ -98,3 +98,8 @@
 // Selectable offline policy paragraphs.
 "Privacy policy in Simplified Chinese" = "简体中文隐私政策";
 "Privacy policy in English" = "英文隐私政策";
+
+// Direct saved-color actions.
+"Delete" = "删除";
+"Copy color %lld" = "复制第 %lld 个颜色";
+"Delete color %lld" = "删除第 %lld 个颜色";

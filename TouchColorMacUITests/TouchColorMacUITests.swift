@@ -208,6 +208,7 @@ import ApplicationServices
         edge.click(forDuration: 0.2, thenDragTo: edge.withOffset(CGVector(dx: -120, dy: -60)))
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
         assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
+        _ = assertPaletteActionButtons(index: 0, copyLabel: "Copy color 1", deleteLabel: "Delete color 1")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Mac sampled source and ordered palette"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
@@ -216,6 +217,7 @@ import ApplicationServices
         XCTAssertEqual(privacyContent.element.label, "Privacy Policy / 应用隐私政策")
         XCTAssertTrue(privacyContent.element.buttons["privacy.close"].exists)
         XCTAssertTrue(privacyContent.element.links["privacy.contact"].exists)
+        assertOwnedSheetPresentation(identifier: "privacy.presentation", label: "Privacy Policy / 应用隐私政策", inner: "privacy.content")
         assertSelectablePrivacyParagraphs()
         app.buttons["privacy.close"].click()
         app.terminate(); app.launchArguments = []; app.launch()
@@ -246,6 +248,31 @@ import ApplicationServices
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), paragraphs[0].2)
         XCTAssertEqual(chinese.value as? String, paragraphs[0].2)
         XCTAssertTrue(app.buttons["privacy.close"].isEnabled)
+    }
+    private func assertPaletteActionButtons(index: Int, copyLabel: String, deleteLabel: String) -> (XCUIElement, XCUIElement) {
+        let sidebar = app.groups["workspace.palette"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5), app.debugDescription)
+        let copies = app.buttons.matching(identifier: "palette.copy.\(index)")
+        let deletes = app.buttons.matching(identifier: "palette.delete.\(index)")
+        XCTAssertEqual(copies.count, 1); XCTAssertEqual(deletes.count, 1)
+        let copy = copies.element, delete = deletes.element
+        for (button, label) in [(copy, copyLabel), (delete, deleteLabel)] {
+            XCTAssertEqual(button.elementType, .button)
+            XCTAssertEqual(button.label, label)
+            XCTAssertTrue(button.isEnabled); XCTAssertTrue(button.isHittable, app.debugDescription)
+            XCTAssertGreaterThan(button.frame.width, 0); XCTAssertGreaterThan(button.frame.height, 0)
+            XCTAssertTrue(sidebar.frame.contains(button.frame), app.debugDescription)
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(button.frame), app.debugDescription)
+        }
+        return (copy, delete)
+    }
+    private func assertOwnedSheetPresentation(identifier: String, label: String, inner: String) {
+        let presentations = app.groups.matching(identifier: identifier)
+        XCTAssertEqual(presentations.count, 1, app.debugDescription)
+        let presentation = presentations.element
+        XCTAssertEqual(presentation.label, label)
+        XCTAssertEqual(presentation.descendants(matching: .any).matching(identifier: inner).count, 1)
+        XCTAssertGreaterThan(presentation.frame.width, 0); XCTAssertGreaterThan(presentation.frame.height, 0)
     }
     private func makePhotosFixture(at url: URL) throws {
         let colors: [[UInt8]] = [[255,0,0,255], [0,255,0,255], [0,0,255,255],
@@ -413,18 +440,15 @@ import ApplicationServices
         let count = app.staticTexts["palette.count"]
         expectation(for: NSPredicate(format: "value == '4' OR label == '4'"), evaluatedWith: count)
         waitForExpectations(timeout: 5)
-        let actions = app.menuButtons["palette.actions.1"]
-        XCTAssertTrue(actions.isEnabled); XCTAssertTrue(actions.isHittable)
+        let (copy, delete) = assertPaletteActionButtons(index: 1, copyLabel: "Copy color 2", deleteLabel: "Delete color 2")
+        _ = assertPaletteActionButtons(index: 3, copyLabel: "Copy color 4", deleteLabel: "Delete color 4")
+        XCTAssertTrue(app.buttons["palette.export"].isHittable, app.debugDescription)
         NSPasteboard.general.clearContents()
         XCTAssertTrue(NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string))
-        actions.click()
-        let copy = app.menuItems["Copy Color"]
-        XCTAssertTrue(copy.exists); XCTAssertTrue(copy.isEnabled)
         copy.click()
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), "#ff00ff")
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "4")
-        actions.click()
-        app.menuItems["palette.delete.1"].click()
+        delete.click()
         XCTAssertEqual(count.value as? String ?? count.label, "3")
         app.buttons["image.export"].click(); saveFile(imageURL)
         expectation(for: NSPredicate { _,_ in FileManager.default.fileExists(atPath: imageURL.path) }, evaluatedWith: nil)
@@ -456,6 +480,7 @@ import ApplicationServices
         app.buttons["sample.save"].click()
         XCTAssertTrue(app.staticTexts["调色板"].exists)
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
+        _ = assertPaletteActionButtons(index: 0, copyLabel: "复制第 1 个颜色", deleteLabel: "删除第 1 个颜色")
         XCTAssertTrue(app.windows.firstMatch.frame.contains(app.buttons["sample.above"].frame), app.debugDescription)
         XCTAssertTrue(app.buttons["sample.above"].isHittable, app.debugDescription)
         app.buttons["sample.above"].click(); assertHex("#00ff00")
@@ -496,6 +521,7 @@ import ApplicationServices
             XCTAssertTrue(cameraContent.element.buttons["camera.close"].exists)
             XCTAssertTrue(cameraContent.element.buttons["camera.start"].exists)
             XCTAssertTrue(cameraContent.element.staticTexts["camera.no-device"].exists)
+            assertOwnedSheetPresentation(identifier: "camera.presentation", label: "Camera", inner: "camera.content")
             XCTAssertTrue((status.value as? String ?? status.label).contains("No camera is available"))
             let unavailable = app.staticTexts["camera.no-device"]
             XCTAssertTrue(unavailable.exists, app.debugDescription)

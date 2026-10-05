@@ -98,6 +98,53 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(observe.launch_args(observe.CASES[2],1),['--ui-test-reset'])
 
 class ProjectionTests(unittest.TestCase):
+    def test_default_launch_scalar_accepts_only_closed_did_finish_values_and_keeps_legacy_unknown(self):
+        for scalar in ['missing', 'reportedTrue', 'reportedFalse', 'unexpectedType', None]:
+            with self.subTest(scalar=scalar):
+                finish = event(event='didFinishLaunching', sequence=2, epoch=100.2, elapsed=.2)
+                finish.pop('product')
+                if scalar is not None: finish['launchIsDefault'] = scalar
+                identity = bound()
+                identity['receipt_file'] = 'screenshots/22222222-2222-3333-4444-555555555555.txt'
+                raw = observe.encode([envelope(event()), envelope(finish)])
+                rows = observe.project(raw, [identity])
+                projection = projection_fixture()
+                commands = completed_commands()
+                commands[-1]['stdout_bytes'] = len(raw)
+                projection.update(status='observation-only', records=rows, commands=commands,
+                                  host_cleanup_confirmed=True, raw_bytes=len(raw),
+                                  reason='missing-records-and-restoration-notifications-are-not-proof-of-window-cause')
+                self.assertEqual(observe.validate_projection(observe.encode(projection), SOURCE)['records'], rows)
+                self.assertFalse(projection['acceptance'])
+                self.assertTrue(rows[0]['absence_is_not_proof'])
+                if scalar is None: self.assertNotIn('launchIsDefault', rows[0]['events'][1])
+                else: self.assertEqual(rows[0]['events'][1]['launchIsDefault'], scalar)
+                self.assertNotIn('restoration_proved', rows[0])
+
+    def test_default_launch_scalar_wrong_event_type_value_and_unknown_fields_reject(self):
+        for scalar in [True, False, 0, 1, None, {}, [], 'true', 'false', 'restoration', 'unknown', 'x' * 1000]:
+            with self.subTest(scalar=scalar):
+                finish = event(event='didFinishLaunching', sequence=2, epoch=100.2, elapsed=.2, launchIsDefault=scalar)
+                finish.pop('product')
+                with self.assertRaisesRegex(ValueError, 'invalid default-launch scalar'):
+                    observe.project(observe.encode([envelope(event()), envelope(finish)]), [bound()])
+        for name in sorted(observe.EVENTS - {'didFinishLaunching'}):
+            with self.subTest(event=name):
+                row = event(event=name, launchIsDefault='reportedFalse')
+                with self.assertRaisesRegex(ValueError, 'invalid default-launch scalar'):
+                    observe.project(observe.encode([envelope(row)]), [bound()])
+        row = event(defaultLaunch='reportedFalse')
+        with self.assertRaisesRegex(ValueError, 'unapproved record fields'):
+            observe.project(observe.encode([envelope(row)]), [bound()])
+
+    def test_legacy_default_launch_absence_is_not_filled_or_used_as_acceptance(self):
+        rows = observe.project(observe.encode([envelope(event())]), [bound()])
+        self.assertNotIn('launchIsDefault', rows[0]['events'][0])
+        self.assertTrue(rows[0]['absence_is_not_proof'])
+        self.assertEqual(observe.SECONDS, 30)
+        self.assertEqual(observe.RAW_LIMIT, 512 * 1024)
+        self.assertEqual(observe.OUTPUT_LIMIT, 128 * 1024)
+
     def project(self,values):return observe.project(json.dumps(values).encode(),[bound()])
     def test_real_record_and_silent_gap_have_no_acceptance(self):
         rows=self.project([envelope(event())]);self.assertTrue(rows[0]['app_header_observed']);self.assertFalse(rows[0]['final_observed'])
@@ -278,7 +325,7 @@ class GuardIntegrationTests(unittest.TestCase):
 class SourceTests(unittest.TestCase):
     def test_debug_only_hooks_and_no_focus_activation_mutations(self):
         source=(ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text();helper=source.split('@MainActor final class MacPassiveLifecycle',1)[1]
-        self.assertTrue(helper.rstrip().endswith('#endif'));self.assertIn('#if DEBUG\nimport OSLog\n#endif',source)
+        self.assertTrue(helper.rstrip().endswith('#endif'));self.assertIn('#if DEBUG\nimport CoreFoundation\nimport OSLog\n#endif',source)
         for forbidden in ['NSApplication.shared','activate(','.unhide(','.orderFront(','.makeKeyAndOrderFront(','.close(','.openWindow(','.setFrame(','.restorationClass =','UserDefaults']:
             self.assertNotIn(forbidden,helper)
         for bound in ['sequence < 23','data.count + 22 <= 4096','final ? 12288 : 8192','windows.prefix(4)','identities.count < 16','[1.0, 5.0, 10.0]']:

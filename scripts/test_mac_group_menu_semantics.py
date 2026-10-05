@@ -4,38 +4,71 @@ import hashlib
 import unittest
 from test_mac_accessibility_semantics import privacy_platform_source
 ROOT=Path(__file__).resolve().parents[1]
-# Inverse-baseline UI hash remains admitted bridge 8c4034; PrivacyView pins the admitted Mac-active source projection, with explicit type spellings.
+# Inverse baselines include the root-admitted owned-sheet marker and direct-action UI probes; exact original inner-group checks and Copy sentinel remain locked.
 # Camera/palette remain exact collector baseline; all original group/menu assertions are retained.
 CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d2a5fc53ca68123008ebdac46d4e741af',
                                      [('        }.padding(20).frame(width: 560)\n'
                                        '            .onDisappear { camera.stop() }\n',
                                        '        }.padding(20).frame(width: 560)\n'
+                                       '            .background(OwnedSheetContentAccessibility(label: '
+                                       'NSLocalizedString("Camera", comment: "Camera presentation accessibility"),\n'
+                                       '                                                       identifier: '
+                                       '"camera.presentation").frame(width: 0, height: 0))\n'
                                        '            .accessibilityElement(children: .contain)\n'
                                        '            .accessibilityLabel("Camera")\n'
                                        '            .accessibilityIdentifier("camera.content")\n'
                                        '            .onDisappear { camera.stop() }\n')]),
- 'TouchColorMac/PrivacyView.swift': ('6d43689e9cd6fe21605aa77905b9386d08012b7d472918494753316c3bfea427',
-                                     [('        }.padding(24).frame(width: 600, height: 540)\n    }\n',
+ 'TouchColorMac/PrivacyView.swift': ('dc2a38fce8c8c504f33904562d6ec8277686e3eb7216961097914816de7d96de',
+                                     [('        }.padding(24).frame(width: 600, height: 540)\n'
+                                       '            .background(OwnedSheetContentAccessibility(label: '
+                                       'NSLocalizedString("Privacy Policy / 应用隐私政策", comment: "Privacy presentation '
+                                       'accessibility"),\n'
+                                       '                                                       identifier: '
+                                       '"privacy.presentation").frame(width: 0, height: 0))\n'
+                                       '    }\n',
                                        '        }.padding(24).frame(width: 600, height: 540)\n'
+                                       '            .background(OwnedSheetContentAccessibility(label: '
+                                       'NSLocalizedString("Privacy Policy / 应用隐私政策", comment: "Privacy presentation '
+                                       'accessibility"),\n'
+                                       '                                                       identifier: '
+                                       '"privacy.presentation").frame(width: 0, height: 0))\n'
                                        '            .accessibilityElement(children: .contain)\n'
                                        '            .accessibilityLabel("Privacy Policy / 应用隐私政策")\n'
                                        '            .accessibilityIdentifier("privacy.content")\n'
                                        '    }\n')]),
  'TouchColorMac/PaletteSidebar.swift': ('0ad3b0cab70a6c2e9ac7b91cca6a94729447f669ac69fe54e0fcab96cde27b38',
-                                        [('                        } label: { Label("Actions for color \\(index + 1)", '
+                                        [('                        Menu {\n'
+                                          '                            Button("Copy Color") { library.copy(color) }\n'
+                                          '                            Button("Delete Color", role: .destructive) { '
+                                          'library.remove(at: index) '
+                                          '}.accessibilityIdentifier("palette.delete.\\(index)")\n'
+                                          '                        } label: { Label("Actions for color \\(index + 1)", '
                                           'systemImage: "ellipsis.circle").labelStyle(.iconOnly) }\n'
                                           '                            .menuStyle(.borderlessButton).frame(width: 24)\n'
                                           '                            .accessibilityLabel("Actions for color \\(index '
-                                          '+ 1)")\n',
-                                          '                        } label: { Label("Actions for color \\(index + 1)", '
-                                          'systemImage: "ellipsis.circle").labelStyle(.iconOnly) }\n'
-                                          '                            .menuStyle(.button).buttonStyle(.bordered)\n'
-                                          '                            .accessibilityLabel("Actions for color \\(index '
-                                          '+ 1)")\n')]),
- 'TouchColorMacUITests/TouchColorMacUITests.swift': ('e7b3f7c2fbfdb4b6fcca3d2e863375fe9673f7278beb76b23197673a521e1267',
+                                          '+ 1)")\n'
+                                          '                            '
+                                          '.accessibilityIdentifier("palette.actions.\\(index)")\n',
+                                          '                        VStack(spacing: 4) {\n'
+                                          '                            Button("Copy") { library.copy(color) }\n'
+                                          '                                .accessibilityLabel("Copy color \\(index + '
+                                          '1)")\n'
+                                          '                                '
+                                          '.accessibilityIdentifier("palette.copy.\\(index)")\n'
+                                          '                            Button("Delete", role: .destructive) { '
+                                          'library.remove(at: index) }\n'
+                                          '                                .accessibilityLabel("Delete color \\(index '
+                                          '+ 1)")\n'
+                                          '                                '
+                                          '.accessibilityIdentifier("palette.delete.\\(index)")\n'
+                                          '                        }.buttonStyle(.bordered)\n')]),
+ 'TouchColorMacUITests/TouchColorMacUITests.swift': ('726efde214ea43089fdce44e56a78426968f94f0574124b1d3ed33560044b6a8',
                                                      [('        '
                                                        'XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: '
                                                        '5))\n'
+                                                       '        assertOwnedSheetPresentation(identifier: '
+                                                       '"privacy.presentation", label: "Privacy Policy / 应用隐私政策", '
+                                                       'inner: "privacy.content")\n'
                                                        '        assertSelectablePrivacyParagraphs()\n'
                                                        '        app.buttons["privacy.close"].click()\n',
                                                        '        '
@@ -50,32 +83,37 @@ CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d
                                                        'XCTAssertTrue(privacyContent.element.buttons["privacy.close"].exists)\n'
                                                        '        '
                                                        'XCTAssertTrue(privacyContent.element.links["privacy.contact"].exists)\n'
+                                                       '        assertOwnedSheetPresentation(identifier: '
+                                                       '"privacy.presentation", label: "Privacy Policy / 应用隐私政策", '
+                                                       'inner: "privacy.content")\n'
                                                        '        assertSelectablePrivacyParagraphs()\n'
                                                        '        app.buttons["privacy.close"].click()\n'),
                                                       ('        waitForExpectations(timeout: 5)\n'
                                                        '        app.menuButtons["palette.actions.1"].click()\n'
                                                        '        app.menuItems["palette.delete.1"].click()\n',
                                                        '        waitForExpectations(timeout: 5)\n'
-                                                       '        let actions = app.menuButtons["palette.actions.1"]\n'
-                                                       '        XCTAssertTrue(actions.isEnabled); '
-                                                       'XCTAssertTrue(actions.isHittable)\n'
+                                                       '        let (copy, delete) = assertPaletteActionButtons(index: '
+                                                       '1, copyLabel: "Copy color 2", deleteLabel: "Delete color 2")\n'
+                                                       '        _ = assertPaletteActionButtons(index: 3, copyLabel: '
+                                                       '"Copy color 4", deleteLabel: "Delete color 4")\n'
+                                                       '        '
+                                                       'XCTAssertTrue(app.buttons["palette.export"].isHittable, '
+                                                       'app.debugDescription)\n'
                                                        '        NSPasteboard.general.clearContents()\n'
                                                        '        '
                                                        'XCTAssertTrue(NSPasteboard.general.setString("TouchColor '
                                                        'palette Copy regression sentinel", forType: .string))\n'
-                                                       '        actions.click()\n'
-                                                       '        let copy = app.menuItems["Copy Color"]\n'
-                                                       '        XCTAssertTrue(copy.exists); '
-                                                       'XCTAssertTrue(copy.isEnabled)\n'
                                                        '        copy.click()\n'
                                                        '        XCTAssertEqual(NSPasteboard.general.string(forType: '
                                                        '.string), "#ff00ff")\n'
                                                        '        XCTAssertEqual(app.staticTexts["palette.count"].value '
                                                        'as? String ?? app.staticTexts["palette.count"].label, "4")\n'
-                                                       '        actions.click()\n'
-                                                       '        app.menuItems["palette.delete.1"].click()\n'),
+                                                       '        delete.click()\n'),
                                                       ('            XCTAssertTrue(status.waitForExistence(timeout: 5), '
                                                        'app.debugDescription)\n'
+                                                       '            assertOwnedSheetPresentation(identifier: '
+                                                       '"camera.presentation", label: "Camera", inner: '
+                                                       '"camera.content")\n'
                                                        '            XCTAssertTrue((status.value as? String ?? '
                                                        'status.label).contains("No camera is available"))\n',
                                                        '            XCTAssertTrue(status.waitForExistence(timeout: 5), '
@@ -91,6 +129,9 @@ CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d
                                                        'XCTAssertTrue(cameraContent.element.buttons["camera.start"].exists)\n'
                                                        '            '
                                                        'XCTAssertTrue(cameraContent.element.staticTexts["camera.no-device"].exists)\n'
+                                                       '            assertOwnedSheetPresentation(identifier: '
+                                                       '"camera.presentation", label: "Camera", inner: '
+                                                       '"camera.content")\n'
                                                        '            XCTAssertTrue((status.value as? String ?? '
                                                        'status.label).contains("No camera is available"))\n')])}
 
@@ -109,13 +150,17 @@ class GroupMenuSemantics(unittest.TestCase):
             self.assertIn('.accessibilityLabel("'+label+'")',text)
             self.assertIn('.accessibilityIdentifier("'+identifier+'")',text)
             self.assertNotIn('children: .ignore',text);self.assertNotIn('children: .combine',text)
-    def test_standard_menu_keeps_real_actions_and_localized_name(self):
+    def test_direct_buttons_keep_real_actions_and_localized_names(self):
         text=(ROOT/'TouchColorMac/PaletteSidebar.swift').read_text()
-        self.assertIn('.menuStyle(.button).buttonStyle(.bordered)',text)
-        self.assertNotIn('.menuStyle(.borderlessButton)',text)
-        self.assertIn('Button("Copy Color") { library.copy(color) }',text)
-        self.assertIn('Button("Delete Color", role: .destructive) { library.remove(at: index) }',text)
-        self.assertIn(r'.accessibilityLabel("Actions for color \(index + 1)")',text)
+        self.assertNotIn('Menu {', text)
+        self.assertIn('VStack(spacing: 4)', text)
+        self.assertIn('Button("Copy") { library.copy(color) }', text)
+        self.assertIn('Button("Delete", role: .destructive) { library.remove(at: index) }', text)
+        self.assertIn('.buttonStyle(.bordered)', text)
+        for identifier in ['palette.copy.', 'palette.delete.']:
+            self.assertIn(identifier, text)
+        for label in ['Copy color', 'Delete color']:
+            self.assertIn('.accessibilityLabel("' + label, text)
         self.assertNotIn('.accessibilityAction',text)
     def test_existing_ui_cases_verify_containment_and_copy_without_count_change(self):
         ui=(ROOT/'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
@@ -124,14 +169,14 @@ class GroupMenuSemantics(unittest.TestCase):
             self.assertIn('.element.label, "'+label+'")',ui)
         for item in ['cameraContent.element.buttons["camera.close"].exists','cameraContent.element.buttons["camera.start"].exists',
             'cameraContent.element.staticTexts["camera.no-device"].exists','privacyContent.element.buttons["privacy.close"].exists',
-            'privacyContent.element.links["privacy.contact"].exists','XCTAssertTrue(copy.exists); XCTAssertTrue(copy.isEnabled)',
+            'privacyContent.element.links["privacy.contact"].exists','XCTAssertEqual(button.elementType, .button)',
             'XCTAssertEqual(NSPasteboard.general.string(forType: .string), "#ff00ff")']:
             self.assertIn(item,ui)
-        section=ui.split('let actions = app.menuButtons["palette.actions.1"]',1)[1].split('app.buttons["image.export"]',1)[0]
+        section=ui.split('let (copy, delete) = assertPaletteActionButtons(index: 1',1)[1].split('app.buttons["image.export"]',1)[0]
         self.assertIn('"4")',section);self.assertIn('"3")',section)
-        self.assertLess(section.index('copy.click()'),section.index('palette.delete.1'))
-        self.assertLess(section.index('NSPasteboard.general.clearContents()'), section.index('actions.click()'))
-        self.assertLess(section.index('NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string)'), section.index('actions.click()'))
+        self.assertLess(section.index('copy.click()'),section.index('delete.click()'))
+        self.assertLess(section.index('NSPasteboard.general.clearContents()'), section.index('copy.click()'))
+        self.assertLess(section.index('NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string)'), section.index('copy.click()'))
         self.assertIn('XCTAssertTrue(NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string))', section)
     def test_policy_selectability_and_explicit_contact_route_are_preserved(self):
         policy=privacy_platform_source(mac=True)

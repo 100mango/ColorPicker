@@ -18,3 +18,8 @@
 // Selectable offline policy paragraphs.
 "Privacy policy in Simplified Chinese" = "Privacy policy in Simplified Chinese";
 "Privacy policy in English" = "Privacy policy in English";
+
+// Direct saved-color actions.
+"Delete" = "Delete";
+"Copy color %lld" = "Copy color %lld";
+"Delete color %lld" = "Delete color %lld";

@@ -20,13 +20,14 @@ struct PaletteSidebar: View {
                             Text(color.rgbDescription).font(.caption2.monospacedDigit()).foregroundStyle(.primary)
                         }
                         Spacer(minLength: 0)
-                        Menu {
-                            Button("Copy Color") { library.copy(color) }
-                            Button("Delete Color", role: .destructive) { library.remove(at: index) }.accessibilityIdentifier("palette.delete.\(index)")
-                        } label: { Label("Actions for color \(index + 1)", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
-                            .menuStyle(.button).buttonStyle(.bordered)
-                            .accessibilityLabel("Actions for color \(index + 1)")
-                            .accessibilityIdentifier("palette.actions.\(index)")
+                        VStack(spacing: 4) {
+                            Button("Copy") { library.copy(color) }
+                                .accessibilityLabel("Copy color \(index + 1)")
+                                .accessibilityIdentifier("palette.copy.\(index)")
+                            Button("Delete", role: .destructive) { library.remove(at: index) }
+                                .accessibilityLabel("Delete color \(index + 1)")
+                                .accessibilityIdentifier("palette.delete.\(index)")
+                        }.buttonStyle(.bordered)
                     }.padding(.vertical, 4)
                 }
             }

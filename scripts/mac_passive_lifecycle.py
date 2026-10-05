@@ -143,11 +143,14 @@ def project(raw, receipts):
         message=record.get('eventMessage');require(isinstance(message,str) and message.startswith(PREFIX),'redacted or foreign message')
         value=strict_json(message[len(PREFIX):]);require(isinstance(value,dict),'bad embedded object')
         common={'v','token','launch','pid','epoch','elapsed','sequence','event','omittedRecords','late'}
-        require(common<=set(value)<=common|{'app','product'},'unapproved record fields')
+        require(common<=set(value)<=common|{'app','product','launchIsDefault'},'unapproved record fields')
         require(type(value['v']) is int and value['v']==1 and integer(value['pid'],1) and valid_uuid(value['token']) and valid_uuid(value['launch']),'bad record identity')
         key=(value['pid'],value['token']);require(key in by_key,'foreign PID/token');receipt=by_key[key]
         require(record['processID']==value['pid'] and record.get('processImagePath')==receipt['executable'],'foreign process image')
         require(value['event'] in EVENTS and integer(value['sequence'],1,24) and integer(value['omittedRecords']) and type(value['late']) is bool,'bad event fields')
+        if 'launchIsDefault' in value:
+            require(value['event']=='didFinishLaunching' and type(value['launchIsDefault']) is str
+                    and value['launchIsDefault'] in {'missing','reportedTrue','reportedFalse','unexpectedType'},'invalid default-launch scalar')
         require(number(value['epoch']) and receipt['started']<=value['epoch']<=receipt['result_end'] and number(value['elapsed']) and value['elapsed']>=0,'out-of-window event')
         require(value['late']==(value['elapsed']>10) and (not value['late'] or value['event']=='final'),'late event is not a final omission')
         require(('app' in value)==(not value['late']),'missing or invented census')

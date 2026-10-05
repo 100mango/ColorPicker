@@ -115,5 +115,73 @@ import AppKit
             XCTAssertEqual(NSLocalizedString("Privacy policy in English", bundle: bundle, comment: ""), englishLabel)
             for text in paragraphs { XCTAssertEqual(NSLocalizedString(text, bundle: bundle, comment: ""), text) }
         }
+        try assertOnlyOwnedSheetContentIsRelabeled()
     }
+    private func assertOnlyOwnedSheetContentIsRelabeled() throws {
+        let parent = NSWindow(contentRect: NSRect(x: 120, y: 120, width: 400, height: 260),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let main = NSView(frame: .zero)
+        parent.contentView = main
+        main.setAccessibilityLabel("Existing main content")
+        main.setAccessibilityIdentifier("fixture.main")
+        let mainMarker = OwnedSheetContentAccessibility.Marker(label: "Must not label main", identifier: "fixture.invalid-main")
+        main.addSubview(mainMarker); mainMarker.labelOwnedSheet()
+        XCTAssertNil(parent.sheetParent)
+        XCTAssertEqual(main.accessibilityLabel(), "Existing main content")
+        XCTAssertEqual(main.accessibilityIdentifier(), "fixture.main")
+
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 180),
+                             styleMask: [.titled], backing: .buffered, defer: false)
+        let content = NSView(frame: .zero)
+        sheet.contentView = content
+        content.setAccessibilityElement(true); content.setAccessibilityRole(.group)
+        let receiver = SheetActionReceiver()
+        let button = NSButton(title: "Real fixture action", target: receiver, action: #selector(SheetActionReceiver.pressed(_:)))
+        button.frame = NSRect(x: 12, y: 12, width: 160, height: 30)
+        content.addSubview(button)
+        content.setAccessibilityChildren([button])
+        let marker = OwnedSheetContentAccessibility.Marker(label: "Owned sheet content", identifier: "fixture.sheet")
+        content.addSubview(marker)
+        parent.orderFront(nil)
+        parent.beginSheet(sheet, completionHandler: nil)
+        defer {
+            parent.endSheet(sheet); sheet.orderOut(nil); parent.orderOut(nil)
+            sheet.contentView = nil; parent.contentView = nil
+        }
+        XCTAssertTrue(sheet.sheetParent === parent)
+        XCTAssertTrue(marker.isDescendant(of: content))
+        content.setAccessibilityLabel("Before owned label")
+        content.setAccessibilityIdentifier("fixture.before")
+        let role = content.accessibilityRole(), element = content.isAccessibilityElement()
+        let frame = content.frame, bounds = content.bounds, focus = sheet.firstResponder
+        let children = try XCTUnwrap(content.accessibilityChildren() as? [NSView]).map(ObjectIdentifier.init)
+        let subviews = content.subviews.map(ObjectIdentifier.init)
+        let buttonFrame = button.frame, action = button.action, enabled = button.isEnabled
+        marker.labelOwnedSheet(); marker.labelOwnedSheet()
+        XCTAssertEqual(content.accessibilityLabel(), "Owned sheet content")
+        XCTAssertEqual(content.accessibilityIdentifier(), "fixture.sheet")
+        XCTAssertEqual(content.accessibilityRole(), role); XCTAssertEqual(content.isAccessibilityElement(), element)
+        XCTAssertEqual(content.frame, frame); XCTAssertEqual(content.bounds, bounds)
+        XCTAssertTrue(sheet.firstResponder === focus)
+        XCTAssertEqual(try XCTUnwrap(content.accessibilityChildren() as? [NSView]).map(ObjectIdentifier.init), children)
+        XCTAssertEqual(content.subviews.map(ObjectIdentifier.init), subviews)
+        XCTAssertEqual(button.frame, buttonFrame); XCTAssertEqual(button.action, action)
+        XCTAssertEqual(button.isEnabled, enabled); XCTAssertTrue(button.target === receiver)
+        button.performClick(nil); XCTAssertEqual(receiver.count, 1)
+        marker.labelOwnedSheet()
+        button.performClick(nil); XCTAssertEqual(receiver.count, 2)
+        let chrome = try XCTUnwrap(content.superview)
+        let outside = OwnedSheetContentAccessibility.Marker(label: "Must not label outside", identifier: "fixture.invalid-outside")
+        chrome.addSubview(outside)
+        XCTAssertTrue(outside.window === sheet); XCTAssertFalse(outside.isDescendant(of: content))
+        outside.labelOwnedSheet()
+        XCTAssertEqual(content.accessibilityLabel(), "Owned sheet content")
+        XCTAssertEqual(content.accessibilityIdentifier(), "fixture.sheet")
+        outside.removeFromSuperview()
+    }
+}
+
+@MainActor private final class SheetActionReceiver: NSObject {
+    var count = 0
+    @objc func pressed(_ sender: NSButton) { count += 1 }
 }

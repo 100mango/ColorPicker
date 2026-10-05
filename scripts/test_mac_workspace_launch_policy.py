@@ -4,7 +4,7 @@ import hashlib
 import unittest
 ROOT=Path(__file__).resolve().parents[1]
 HELPER='/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.\nprivate extension Scene {\n    func workspaceDefaultLaunchPolicy() -> some Scene {\n        var scene = SceneBuilder.buildLimitedAvailability(self)\n        if #available(macOS 15.0, *) {\n            scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))\n        }\n        return SceneBuilder.buildOptional(scene)\n    }\n}\n\n'
-BASE_HASH='659b63b9802f317ec8f8d2f472a243053cfa4512c0dbf3b8908131d304fe6f26'
+BASE_HASH='5f94bbdcbc97a3ff45632c437acff34c8e3d183a07089d614b86c0cf099fd4c4'
 
 class WorkspaceLaunchPolicy(unittest.TestCase):
     def setUp(self):self.source=(ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text()

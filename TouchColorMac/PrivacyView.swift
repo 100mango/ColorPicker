@@ -39,6 +39,8 @@ struct PrivacyView: View {
             }
         }.padding(24).frame(width: 600, height: 540)
             #if os(macOS)
+            .background(OwnedSheetContentAccessibility(label: NSLocalizedString("Privacy Policy / 应用隐私政策", comment: "Privacy presentation accessibility"),
+                                                       identifier: "privacy.presentation").frame(width: 0, height: 0))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Privacy Policy / 应用隐私政策")
             .accessibilityIdentifier("privacy.content")
@@ -122,6 +124,38 @@ struct SelectablePrivacyText: NSViewRepresentable {
                                   manager.defaultLineHeight(for: font)))
             guard height.isFinite, height > 0 else { return nil }
             return CGSize(width: width, height: height)
+        }
+    }
+}
+
+/// Label only the actual content root containing this marker in an owned AppKit sheet.
+/// Preserve the existing role, children, actions, focus, enabled state and geometry.
+struct OwnedSheetContentAccessibility: NSViewRepresentable {
+    let label: String
+    let identifier: String
+    func makeNSView(context: Context) -> Marker { Marker(label: label, identifier: identifier) }
+    func updateNSView(_ view: Marker, context: Context) {
+        view.label = label
+        view.presentationIdentifier = identifier
+        view.labelOwnedSheet()
+    }
+    final class Marker: NSView {
+        var label: String
+        var presentationIdentifier: String
+        init(label: String, identifier: String) {
+            self.label = label
+            self.presentationIdentifier = identifier
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); labelOwnedSheet() }
+        override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); labelOwnedSheet() }
+        override func layout() { super.layout(); labelOwnedSheet() }
+        func labelOwnedSheet() {
+            guard let window, window.sheetParent != nil, let content = window.contentView,
+                  self !== content, isDescendant(of: content) else { return }
+            if content.accessibilityLabel() != label { content.setAccessibilityLabel(label) }
+            if content.accessibilityIdentifier() != presentationIdentifier { content.setAccessibilityIdentifier(presentationIdentifier) }
         }
     }
 }
