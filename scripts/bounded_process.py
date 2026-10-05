@@ -72,8 +72,9 @@ def run_captured(command, timeout, *, text=True, stderr=subprocess.PIPE, checkpo
             fail_record('Bounded command timeout: '+' '.join(str(v) for v in command[:3]),
                         phase=budget.phase, cleanup_unconfirmed=not getattr(error, 'cleanup_confirmed', False))
         raise
-    except BaseException:
+    except BaseException as error:
         confirmed = stop_group(process, checkpoint=checkpoint)
+        error.cleanup_confirmed = confirmed
         if budget is not None:
             fail_record('Bounded command interrupted', phase=budget.phase, cleanup_unconfirmed=not confirmed)
         raise

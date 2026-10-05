@@ -15,6 +15,7 @@ from watch_failure_continuation import (BUNDLE as WATCH_UI_BUNDLE, WatchCaseLife
     checkpoint as watch_checkpoint, record_failure, require_no_failures)
 from vision_offline_result import pending as vision_summary_pending, confirm_shutdown as confirm_vision_shutdown, prepare_hosted as prepare_vision_hosted, prepare_normal as prepare_vision_normal
 from vision_capture_format import verify_generated as verify_capture_format
+from vision_diagnostic_result import begin_largest_execution, prepare_failed_largest
 from native_text_rows import from_environment as text_row_from_environment, vision_roles
 kind=sys.argv[1]
 if kind not in ('vision','watch','tv'): raise ValueError('Unknown native platform')
@@ -362,8 +363,11 @@ try:
         # This independent fresh-VM row never executes or reuses the normal UI phase.
         # Only the unchanged existing Chinese/layout methods run at the OS setting.
         def size_ui_runner(command,seconds):
+            origin = begin_largest_execution(command,contract,largest_cases,report['sha'],device['udid'],runtime,
+                                             row_binding=text_row) if kind=='vision' else None
             code=run(command,seconds,required=False)
             stage=report['stages'][-1]
+            if origin is not None: stage['vision_result_origin']=origin
             return code,'',dict(stage,process_group_gone=stage.get('process_group_gone') is True and not report.get('cleanup_unconfirmed'))
         size_runner=TouchSizeRunner(size_ui_runner)
         contract={'root':str(Path.cwd()),'project':project,'scheme':name,
@@ -384,6 +388,12 @@ try:
             if kind=='vision' and vision_summary_pending(setting):
                 pending_vision_result=setting
             elif not qualified(setting):
+                if kind=='vision' and setting.get('ui_executed') is True and not report.get('cleanup_unconfirmed'):
+                    try:
+                        prepare_failed_largest(setting,command,contract,largest_cases,report['sha'],device['udid'],runtime,
+                                               report['stages'][-1],row_binding=text_row)
+                    except Exception as binding_error:
+                        setting['diagnostic_binding_error']=str(binding_error)[:1000]
                 if kind=='watch' and permits_public_trait_fallback(setting,device['udid'],size_runner):
                     fallback=test_common+test_arguments+['-resultBundlePath','build/watch-public-trait.xcresult',
                         '-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
@@ -411,6 +421,10 @@ except Exception as error:
         record_failure(report,'platform',error)
     print('NATIVE_PLATFORM_FAILURE',str(error),flush=True)
 finally:
+    vision_diagnostic = report.get('largest_system_text',{})
+    if not vision_diagnostic.get('diagnostic_result'): vision_diagnostic=None
+    vision_offline_records = tuple(value for value in (pending_vision_hosted,pending_vision_normal,pending_vision_result,vision_diagnostic)
+                                   if value is not None)
     if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
     if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed'):
         try:
@@ -443,15 +457,15 @@ finally:
             if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
     elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
         run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
-        if pending_vision_result is not None or pending_vision_hosted is not None or pending_vision_normal is not None:
+        if vision_offline_records:
             report['vision_offline_shutdown']=report['stages'][-1]
-    if pending_vision_result is not None or pending_vision_hosted is not None or pending_vision_normal is not None:
+    if vision_offline_records:
         def no_offline_ui(*args): raise RuntimeError('Shutdown proof cannot launch UI tests')
-        shutdown_runner=size_runner if pending_vision_result is not None else TouchSizeRunner(no_offline_ui)
+        shutdown_runner=size_runner if pending_vision_result is not None or vision_diagnostic is not None else TouchSizeRunner(no_offline_ui)
         try:
             confirm_vision_shutdown(report,report.get('vision_offline_shutdown'),device=device['udid'],
                 runtime=runtime,runner=shutdown_runner,cleanup_unconfirmed=report.get('cleanup_unconfirmed',False))
-            for pending_result in (pending_vision_hosted,pending_vision_normal,pending_vision_result):
+            for pending_result in vision_offline_records:
                 if pending_result is not None: pending_result['offline_shutdown_verified']=report['offline_shutdown_verified']
         except Exception as error:
             report['result']='failed';report.setdefault('error',str(error))
@@ -461,7 +475,8 @@ finally:
                 fail_record('Vision shutdown readback cleanup unconfirmed',phase='cleanup',cleanup_unconfirmed=True)
         # Persist the pending ticket and shutdown proof, never mark a test pass
         # from console output. Evidence180 owns each expected30s summary once.
-        if pending_vision_result is not None: (out/'largest-text.json').write_text(json.dumps(pending_vision_result,indent=2)+'\n')
+        if pending_vision_result is not None or vision_diagnostic is not None:
+            (out/'largest-text.json').write_text(json.dumps(pending_vision_result or vision_diagnostic,indent=2)+'\n')
     if report.get('budget_incomplete') or Path('build/job-budget-phase-cleanup.json').exists():
         report['result']='failed'
         report['cleanup_budget_status']='At least one mandatory command could not finish within the reserved lifecycle budget'

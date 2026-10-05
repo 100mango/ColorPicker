@@ -1,12 +1,14 @@
-"""One Vision largest-text result qualification, after confirmed device shutdown.
+"""Bounded Vision result reads after confirmed shutdown.
 
-Execution/restoration stay live. Only this immutable result's structured summary
-is deferred; no UI rerun, summary retry, timeout expansion, or stdout-only pass.
+All summary and attachment readers share one byte-verified private input per
+role. Original bundles stay immutable; failed-run diagnostics remain failed.
+No UI rerun, reader retry, filename exception, or evidence-budget expansion.
 """
 import argparse
+import contextlib
+import signal
 import datetime
 import hashlib
-import shutil
 import json
 import math
 import os
@@ -26,6 +28,12 @@ HOSTED_BUNDLE = 'build/vision-tests.xcresult'
 NORMAL_BUNDLE = 'build/vision-ui.xcresult'
 BUNDLES = {'hosted': HOSTED_BUNDLE, 'normal': NORMAL_BUNDLE, 'largest': BUNDLE}
 REPORT_KEYS = {'hosted': 'vision_hosted_result', 'normal': 'vision_normal_result', 'largest': 'largest_system_text'}
+DEVELOPER_DIR = '/Applications/Xcode_27.app/Contents/Developer'
+XCODE_VERSION = 'Xcode 27.0\nBuild version 27A266a'
+ATTACHMENT_NAMES = {'hosted':'vision-screenshots', 'normal':'vision-ui-screenshots', 'largest':'vision-largest-text-screenshots'}
+# These are inside the existing evidence180 envelope, never an extra tail.
+FINAL_RESERVE = 15 + 5 + 5  # original byte guard, scratch deletion, durable metadata
+PROCESS_RESERVE = 20  # bounded_process's two ten-second group-stop intervals
 SUMMARY_NAMES = {'hosted': 'vision-summary.json', 'normal': 'vision-ui-summary.json', 'largest': 'vision-largest-text-summary.json'}
 HOSTED_COUNT = 42
 CASES = ('testChinesePasteAndPrecisionControls', 'testOfficialAccessibilityEmptyAndPastedCanvas')
@@ -70,55 +78,14 @@ def validate_contract(command, contract, cases, sha, device, *, role="largest"):
 
 
 def bundle_identity(root, bundle=BUNDLE, *, clock=time.monotonic, inventory=None):
-    """Bound an immutable completed bundle to original bytes and filesystem node."""
+    """Bound every original byte and file/directory identity, including empty dirs."""
+    from vision_result_snapshot import source_binding
     if inventory is not None:
-        inventory.clear()
-        inventory.update(walk_complete=False, observed_files=0, omitted_files=0, records=[])
-    root = Path(root); path = root / bundle
-    require(path.resolve().is_relative_to(root.resolve()) and path.resolve() == path, 'Result path left the exact source root')
-    require(path.is_dir() and not path.is_symlink() and (path/'Info.plist').is_file(), 'Missing completed Vision result bundle')
+        inventory.clear(); inventory.update(walk_complete=False,observed_files=0,omitted_files=0,records=[])
     limit = 15
     budget = enabled_budget()
-    if budget is not None: limit = budget.admit('Bind exact Vision result bytes', limit, minimum=1, cleanup=0)
-    started = clock(); directory = path.stat(); digest = hashlib.sha256(); count = size = directories = 0
-    for folder, dirs, files in os.walk(path, followlinks=False):
-        directories += 1
-        require(directories <= 8192 and directories+count <= 16384 and clock()-started < limit, 'Result directory traversal exceeded finite bound')
-        require(not any((Path(folder)/name).is_symlink() for name in dirs), 'Result bundle contains a symlink directory')
-        dirs.sort()
-        for name in sorted(files):
-            file = Path(folder)/name; before = file.lstat(); count += 1
-            require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, 'Unsafe result bundle file')
-            size += before.st_size
-            require(count <= 8192 and size <= 256*1024*1024 and clock()-started < limit, 'Result identity exceeds finite bound')
-            relative = file.relative_to(path).as_posix()
-            digest.update(relative.encode() + b'\0' + str(before.st_size).encode() + b'\0')
-            file_digest = hashlib.sha256() if inventory is not None else None
-            with file.open('rb') as stream:
-                while chunk := stream.read(65536):
-                    require(clock()-started < limit, 'Result identity exceeded finite deadline')
-                    digest.update(chunk)
-                    if file_digest is not None: file_digest.update(chunk)
-            after = file.lstat()
-            require((before.st_ino, before.st_size, before.st_mtime_ns) == (after.st_ino, after.st_size, after.st_mtime_ns),
-                    'Result bundle changed during identity read')
-            digest.update(b'\0')
-            if inventory is not None:
-                inventory['observed_files'] += 1
-                # Observation only: no extra reads, wider deadline, or changed gate.
-                if len(inventory['records']) < 256 and len(relative.encode()) <= 512:
-                    inventory['records'].append({'path': relative, 'bytes': before.st_size,
-                        'sha256': file_digest.hexdigest(), 'inode': before.st_ino,
-                        'mtime_ns': str(before.st_mtime_ns)})
-                else: inventory['omitted_files'] += 1
-    require(count > 0 and clock()-started < limit, 'Empty result bundle or identity deadline exceeded')
-    require((path.stat().st_dev, path.stat().st_ino) == (directory.st_dev, directory.st_ino), 'Result directory replaced')
-    result = {'path': str(path), 'device': directory.st_dev, 'inode': directory.st_ino,
-              'sha256': digest.hexdigest(), 'files': count, 'directories': directories, 'bytes': size}
-    if inventory is not None:
-        inventory['walk_complete'] = True
-        inventory['identity'] = {key:value for key,value in result.items() if key != 'path'}
-    return result
+    if budget is not None: limit = budget.admit('Bind exact Vision result bytes',limit,minimum=1,cleanup=0)
+    return source_binding(root,bundle,deadline=clock()+limit,clock=clock,inventory=inventory)
 
 def bundle_change_provenance(before, after):
     """Bounded per-file observations; never substitute for the full identity gate."""
@@ -303,18 +270,110 @@ def verify_offline_summary(summary, binding, device, role='largest'):
     return verify_summary(summary, device, 'visionOS Simulator', count)
 
 
-def qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runner, cleanup_unconfirmed=False, persist=None, summary_path=None, summary_runner=run_captured, role='largest'):
-    """Only offline metadata reads, once, after clean shutdown and state readback."""
+def evidence_deadline():
+    """One controller-owned absolute deadline, inherited by every role."""
+    now = time.monotonic()
+    if os.environ.get('TOUCHCOLOR_BUDGET_PHASE') != 'evidence':
+        return now + RESERVES['evidence']  # Portable tests only; workflow requires evidence.
+    deadline = float(os.environ.get('TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC', 'nan'))
+    require(finite(deadline) and 0 < deadline <= now + RESERVES['evidence'],
+            'Missing or invalid shared evidence deadline')
+    return deadline
+
+
+def admit_read(label, seconds, deadline, reserve=FINAL_RESERVE + PROCESS_RESERVE):
+    require(finite(deadline), 'Missing absolute evidence deadline')
+    if deadline - time.monotonic() < seconds + reserve:
+        raise BudgetExhausted('Shared evidence deadline cannot reserve '+label+' and final cleanup')
+    budget = enabled_budget()
+    if budget is not None:
+        budget.admit(label, seconds, minimum=seconds, cleanup=reserve)
+    return seconds
+
+
+class OfflineInterrupted(BaseException):
+    pass
+
+
+@contextlib.contextmanager
+def owned_interrupts():
+    """Unwind through existing owned-process cleanup, including actual TERM/INT."""
+    previous = {}; interrupted = []
+    def stop(signum, frame):
+        interrupted.append(signum)
+        if len(interrupted) == 1:
+            raise OfflineInterrupted('Offline Vision interrupted by '+signal.Signals(signum).name)
+        # A second signal cannot interrupt the already-bounded final cleanup.
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        previous[signum] = signal.signal(signum, stop)
+    try: yield
+    finally:
+        for signum, handler in previous.items(): signal.signal(signum, handler)
+
+
+def selected_reader(read):
+    """Use the selected toolchain's documented xcrun lookup, not project XML."""
+    require(os.environ.get('DEVELOPER_DIR') == DEVELOPER_DIR, 'Selected developer directory changed')
+    version = read('confirm_reader_version', ['xcodebuild', '-version'], 5, 4096).strip()
+    require(version == XCODE_VERSION, 'Selected Xcode version/build changed')
+    tool = read('resolve_reader', ['xcrun', '--find', 'xcresulttool'], 5, 4096).strip()
+    path = Path(tool)
+    require(path.is_absolute() and path == path.resolve(strict=True)
+            and path.is_relative_to(Path(DEVELOPER_DIR)) and path.name == 'xcresulttool'
+            and path.is_file() and os.access(path, os.X_OK), 'Reader is outside the selected toolchain')
+    return {'developer_dir': DEVELOPER_DIR, 'version_command':['xcodebuild','-version'],
+            'xcode_version':version, 'selection_command':['xcrun','--find','xcresulttool'], 'path':tool}
+
+
+def qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runner,
+            cleanup_unconfirmed=False, persist=None, summary_path=None, summary_runner=run_captured,
+            attachment_runner=run_captured, role='largest', deadline=None, diagnostic=False):
+    with owned_interrupts():
+        return _qualify(report, report_path, shutdown_stage, sha=sha, device=device, runtime=runtime,
+            runner=runner, cleanup_unconfirmed=cleanup_unconfirmed, persist=persist,
+            summary_path=summary_path, summary_runner=summary_runner, attachment_runner=attachment_runner,
+            role=role, deadline=deadline, diagnostic=diagnostic)
+
+
+def _qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runner,
+             cleanup_unconfirmed, persist, summary_path, summary_runner, attachment_runner, role, deadline, diagnostic):
+    """One verified disposable input for every xcresult read; originals stay closed."""
+    from vision_result_snapshot import create
     before_files = after_files = None
+    snapshot = source = root = binding = verified = None
+    succeeded = False
+    evidence_collected = False
+    isolation = None
+    def flush():
+        write_json(report_path, report, limit=48*1024)
+        if persist is not None: persist()
+    def fail(error):
+        if diagnostic:
+            report['diagnostic_status']='incomplete'
+            report.setdefault('diagnostic_error',str(error) or type(error).__name__)
+        else:
+            report['status'] = role+'_result_unqualified' if role in ('hosted','normal') else 'largest_ui_result_unqualified'
+            report.setdefault('summary_error', str(error) or type(error).__name__)
+        if isinstance(error, (OfflineInterrupted, KeyboardInterrupt, SystemExit)):
+            runner.interrupted = True
+            report['interrupted'] = True
     try:
         shutdown_proven(shutdown_stage, device, cleanup_unconfirmed or runner.cleanup_unconfirmed)
+        require(not getattr(runner,'interrupted',False), 'Prior offline operation was interrupted')
+        require(not report.get('cleanup_unconfirmed'), 'Current result cleanup is unconfirmed')
         require(role in BUNDLES, 'Unknown offline result role')
-        eligible = (report.get('status') == role+'_result_deferred' and isinstance(report.get('deferred_result'),dict)
-                    and report['deferred_result'].get('attempted') is False) if role in ('hosted', 'normal') else pending(report)
-        require(eligible, 'No eligible unattempted deferred Vision result')
+        if diagnostic:
+            from vision_diagnostic_result import validate_diagnostic
+            binding=validate_diagnostic(report,sha=sha,device=device,runtime=runtime,role=role)
+            require(binding.get('attempted') is False and 'deferred_result' not in report,
+                    'Diagnostic attempt is consumed or overlaps a deferred result')
+        else:
+            eligible = (report.get('status') == role+'_result_deferred' and isinstance(report.get('deferred_result'),dict)
+                        and report['deferred_result'].get('attempted') is False) if role in ('hosted','normal') else pending(report)
+            require(eligible, 'No eligible unattempted deferred Vision result')
+            binding = report['deferred_result']
         require(report.get('offline_shutdown_verified') == {'device':device,'runtime':runtime,'state':'Shutdown'},
                 'Driver never confirmed exact shutdown; no offline command')
-        binding = report['deferred_result']
         from native_text_rows import validate, vision_roles
         row_binding = validate(binding.get('native_text_row'), sha=sha)
         require(binding.get('role') == role and role in vision_roles(row_binding), 'Deferred role/phase binding changed')
@@ -327,70 +386,171 @@ def qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runner
         if role == 'hosted':
             require(type(binding.get('count')) is int and binding['count'] == HOSTED_COUNT, 'Hosted count contract changed')
             root = validate_hosted(binding['command'],binding['root'],sha,device)
-        else: root = validate_contract(binding['command'], binding['contract'], binding['cases'], sha, device, role=role)
+        else: root = validate_contract(binding['command'],binding['contract'],binding['cases'],sha,device,role=role)
         bundle = BUNDLES[role]
-        # Consume before any command. A failure or timeout must never retry.
         binding['attempted'] = True
-        if persist is not None: persist() # Consume durably before any command, including on outer timeout.
-        else: write_json(report_path, report, limit=48*1024)
+        isolation = report['read_isolation'] = {'schema':1, 'source_sha':sha, 'device':device, 'runtime':runtime,
+            'role':role, 'purpose':'attachments_only' if diagnostic else 'qualification',
+            'native_text_row':dict(row_binding), 'original':dict(binding['bundle']),
+            'original_postguard_confirmed':False, 'completed':False, 'started_at':time.monotonic()}
+        flush()  # Durable consumption before every possible offline operation.
+        deadline = evidence_deadline() if deadline is None else deadline
+        isolation['evidence_deadline_monotonic'] = deadline
         def read(label, command, seconds, limit=500_000):
             require(not runner.cleanup_unconfirmed, 'Prior owned metadata cleanup is unconfirmed')
-            code, text, operation = runner(command, seconds, output_limit=limit, tail_limit=limit)
-            report.setdefault('offline_operations', []).append({'label': label, 'operation': operation})
+            admit_read(label, seconds, deadline)
+            operation = {'command':command, 'timeout_seconds':seconds, 'cleanup_confirmed':False, 'state':'running'}
+            report.setdefault('offline_operations', []).append({'label':label, 'operation':operation})
+            flush()
+            try:
+                code, text, result = runner(command, seconds, output_limit=limit, tail_limit=limit)
+            except BaseException as error:
+                confirmed = getattr(error,'cleanup_confirmed',False) is True
+                runner.cleanup_unconfirmed = not confirmed
+                operation.update(cleanup_confirmed=confirmed, state='interrupted')
+                raise
+            operation.update(result)
             require(operation.get('cleanup_confirmed') is True and not runner.cleanup_unconfirmed,
                     'Offline metadata process cleanup is unconfirmed')
-            require(code == 0 and operation.get('output_limit_exceeded') is not True, label + ' failed')
+            require(code == 0 and operation.get('output_limit_exceeded') is not True, label+' failed')
             return text
-        inventory = strict_json(read('confirm_shutdown', ['xcrun', 'simctl', 'list', 'devices', 'available', '-j'], 15))
-        matches = [(r, value) for r, values in inventory['devices'].items() for value in values if value.get('udid') == device]
+        inventory = strict_json(read('confirm_shutdown',['xcrun','simctl','list','devices','available','-j'],15))
+        matches = [(r,v) for r,values in inventory['devices'].items() for v in values if v.get('udid') == device]
         require(len(matches) == 1 and matches[0][0] == runtime and matches[0][1].get('state') == 'Shutdown'
                 and matches[0][1].get('isAvailable') is True, 'Exact owned Vision device is not confirmed Shutdown')
-        report['offline_shutdown_verified'] = {'device': device, 'runtime': runtime, 'state': 'Shutdown'}
-        observed_sha = read('confirm_source', ['git', '-C', str(root), 'rev-parse', 'HEAD'], 10, 4096).strip()
+        observed_sha = read('confirm_source',['git','-C',str(root),'rev-parse','HEAD'],10,4096).strip()
         require(observed_sha == sha, 'Tested source HEAD changed before offline qualification')
-        read('confirm_unchanged_source', ['git', '-C', str(root), 'diff', '--exit-code', 'HEAD', '--'], 10, 4096)
-        before_files = {}
+        read('confirm_unchanged_source',['git','-C',str(root),'diff','--exit-code','HEAD','--'],10,4096)
+        isolation['reader'] = selected_reader(read)
+        admit_read('Original result preguard',15,deadline,FINAL_RESERVE)
+        before_files = {"walk_complete":False,"observed_files":0,"omitted_files":0,"records":[]}
         require(bundle_identity(root,bundle,inventory=before_files) == binding['bundle'], 'Completed result bundle changed before offline qualification')
-        command = ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(root/bundle)]
-        summary_seconds = 20 if role == 'normal' else 30
-        operation = {'command': command, 'timeout_seconds': summary_seconds, 'cleanup_confirmed': False}
-        report['summary_operation'] = operation
-        runner.cleanup_unconfirmed = True
-        try:
-            value = summary_runner(command, timeout=summary_seconds, text=False)
-            # run_captured returns only after its entire owned group exits.
-            runner.cleanup_unconfirmed = False
-            operation.update(exit=value.returncode, cleanup_confirmed=True, state='completed')
-        except (subprocess.TimeoutExpired, BudgetExhausted) as error:
-            confirmed = getattr(error, 'cleanup_confirmed', False) is True
-            runner.cleanup_unconfirmed = not confirmed
-            operation.update(exit=124, cleanup_confirmed=confirmed, state='timeout' if isinstance(error, subprocess.TimeoutExpired) else 'not_started_budget')
-            raise
-        raw = value.stdout
-        require(isinstance(raw, bytes) and len(raw) <= 500_000, 'Summary bytes are incomplete or unexpected')
-        report['summary_sha256'] = hashlib.sha256(raw).hexdigest()
-        if summary_path is not None: Path(summary_path).write_bytes(raw)
-        if value.stderr:
-            report['summary_stderr'] = value.stderr[-4096:].decode('utf-8', errors='replace') if isinstance(value.stderr,bytes) else str(value.stderr)[-4096:]
-        require(not value.stderr, 'Summary command returned unexpected diagnostics')
-        require(value.returncode == 0, 'Offline largest summary command failed')
-        verified = verify_offline_summary(strict_json(raw), binding, device, role)
-        if role in ('hosted', 'normal'): require(report.get('execution_exit') == 0, 'Original '+role+' execution failed')
-        after_files = {}
-        require(bundle_identity(root,bundle,inventory=after_files) == binding['bundle'], 'Result bundle changed during summary qualification')
-        report['verified_results'] = verified
-        report['status'] = role+'_result_passed' if role in ('hosted', 'normal') else 'largest_ui_passed'
-    except Exception as error:
-        report['status'] = role+'_result_unqualified' if role in ('hosted', 'normal') else 'largest_ui_result_unqualified'
-        report.setdefault('summary_error', str(error))
-        if runner.cleanup_unconfirmed or cleanup_unconfirmed:
-            report['cleanup_unconfirmed'] = True
-            if os.environ.get('TOUCHCOLOR_BUDGET_PHASE') in ('work','cleanup','evidence'):
-                fail_record('Offline Vision metadata cleanup is unconfirmed', phase=os.environ['TOUCHCOLOR_BUDGET_PHASE'], cleanup_unconfirmed=True)
+        admit_read('Verified result snapshot',15,deadline,FINAL_RESERVE)
+        snapshot = create(root,bundle,binding['bundle'],isolation,min(deadline-FINAL_RESERVE,time.monotonic()+15))
+        source = snapshot.input_binding
+        isolation['snapshot_input_binding'] = source
+        flush()
+        def extract(name, command, seconds, invoke):
+            require(not runner.cleanup_unconfirmed, 'Prior reader cleanup is unconfirmed')
+            admit_read('Private input safety guard',15,deadline,FINAL_RESERVE+PROCESS_RESERVE+seconds)
+            snapshot.verify(min(deadline-FINAL_RESERVE-PROCESS_RESERVE-seconds,time.monotonic()+15),require_input=diagnostic or name=='summary_operation')
+            operation = {'command':command, 'timeout_seconds':seconds, 'cleanup_confirmed':False, 'state':'not_started',
+                         'input_guard':dict(isolation['snapshot']['reader_input_guard'])}
+            report[name] = operation
+            started=False
+            try:
+                admit_read(name,seconds,deadline,FINAL_RESERVE+PROCESS_RESERVE+(20 if name=='summary_operation' else 0))
+                operation.update(state='running',started_at=time.monotonic()); flush()
+                started=True
+                runner.cleanup_unconfirmed = True
+                value = invoke(command,timeout=seconds,text=False)
+                runner.cleanup_unconfirmed = False
+                operation.update(exit=value.returncode,cleanup_confirmed=True,state='completed',finished_at=time.monotonic())
+                return value
+            except BaseException as error:
+                confirmed = not started or getattr(error,'cleanup_confirmed',False) is True
+                runner.cleanup_unconfirmed = not confirmed
+                operation.update(command_started=started,exit=124 if isinstance(error,(subprocess.TimeoutExpired,BudgetExhausted)) else 1,
+                    cleanup_confirmed=confirmed,state='not_started_budget' if isinstance(error,BudgetExhausted) else
+                    'timeout' if isinstance(error,subprocess.TimeoutExpired) else 'interrupted' if isinstance(error,BaseException) and not isinstance(error,Exception) else 'failed')
+                raise
+        tool = isolation['reader']['path']
+        summary_valid=False
+        if not diagnostic:
+            command = [tool,'get','test-results','summary','--path',str(snapshot.path)]
+            try:
+                value = extract('summary_operation',command,20 if role=='normal' else 30,summary_runner)
+                raw = value.stdout
+                require(isinstance(raw,bytes) and len(raw)<=500_000, 'Summary bytes are incomplete or unexpected')
+                report['summary_sha256']=hashlib.sha256(raw).hexdigest()
+                expected_summary = root/('build/vision-runtime/'+role+'-summary.json')
+                require(summary_path is not None and Path(summary_path).resolve() == expected_summary,
+                        'Summary output differs from exact role cache')
+                require(not expected_summary.exists() and not expected_summary.is_symlink(), 'Summary output is stale or unsafe')
+                with expected_summary.open('xb') as stream: stream.write(raw)
+                isolation['summary_output']={'path':str(expected_summary),'sha256':report['summary_sha256'],'bytes':len(raw)}
+                if value.stderr:
+                    report['summary_stderr']=value.stderr[-4096:].decode('utf-8',errors='replace') if isinstance(value.stderr,bytes) else str(value.stderr)[-4096:]
+                require(not value.stderr, 'Summary command returned unexpected diagnostics')
+                require(value.returncode==0, 'Offline largest summary command failed')
+                verified=verify_offline_summary(strict_json(raw),binding,device,role)
+                summary_valid=True
+            except BaseException as error:
+                fail(error)
+            require(not runner.cleanup_unconfirmed and not getattr(runner,'interrupted',False)
+                    and report.get('summary_operation',{}).get('input_guard',{}).get('input_byte_equivalent') is True,
+                    'Summary input safety, reader cleanup or interruption blocks attachment export')
+        output=root/'build/evidence'/ATTACHMENT_NAMES[role]
+        output.parent.mkdir(parents=True,exist_ok=True)
+        require(output.parent.resolve()==output.parent and not output.exists() and not output.is_symlink(),
+                'Attachment output is stale or outside the exact evidence root')
+        isolation['attachment_output']={'path':str(output)}
+        value=extract('attachment_operation',[tool,'export','attachments','--path',str(snapshot.path),'--output-path',str(output)],20,attachment_runner)
+        require(value.returncode==0, 'Offline attachment export failed')
+        require(isinstance(value.stdout,bytes) and len(value.stdout)<=500_000 and isinstance(value.stderr,bytes)
+                and len(value.stderr)<=500_000, 'Attachment diagnostics exceeded bound')
+        if value.stderr: report['attachment_stderr']=value.stderr[-4096:].decode('utf-8',errors='replace')
+        require(output.is_dir() and not output.is_symlink() and (output/'manifest.json').is_file()
+                and not (output/'manifest.json').is_symlink(), 'Missing safe attachment export manifest')
+        evidence_collected=True
+        if not diagnostic:
+            if role in ('hosted','normal'): require(report.get('execution_exit')==0, 'Original '+role+' execution failed')
+            require(summary_valid, 'Summary qualification failed; retained attachments are diagnostic only')
+        succeeded=True
+    except BaseException as error:
+        fail(error)
     finally:
+        # Even a failed reader/copy must prove the untouched original and delete
+        # only this invocation's owned scratch, never a guessed or stale path.
         if before_files is not None:
-            report['bundle_change_provenance'] = bundle_change_provenance(before_files,after_files)
-        write_json(report_path, report, limit=48*1024)
+            try:
+                admit_read('Final original result guard',15,deadline,10 if snapshot is not None else 5)
+                after_files={"walk_complete":False,"observed_files":0,"omitted_files":0,"records":[]}
+                original=bundle_identity(root,BUNDLES[role],inventory=after_files)
+                require(original==binding['bundle'], 'Result bundle changed during summary qualification (isolated summary/attachments)')
+                isolation['original_postguard']=original
+                isolation['original_postguard_confirmed']=True
+                isolation['original_postguard_finished_at']=time.monotonic()
+            except BaseException as error:
+                succeeded=False; evidence_collected=False; fail(error)
+        if snapshot is not None:
+            try:
+                require(not runner.cleanup_unconfirmed, 'Reader cleanup unknown; scratch deletion is unsafe')
+                require(snapshot.cleanup(min(deadline-5,time.monotonic()+5)) is True, 'Owned snapshot deletion unconfirmed')
+            except BaseException as error:
+                succeeded=False; evidence_collected=False; runner.cleanup_unconfirmed=True; fail(error)
+        if isolation is not None and isolation.get('snapshot',{}).get('cleanup',{}).get('confirmed') is False:
+            runner.cleanup_unconfirmed=True
+        if runner.cleanup_unconfirmed or cleanup_unconfirmed:
+            report['cleanup_unconfirmed']=True
+        if before_files is not None:
+            try:
+                report['bundle_change_provenance']=bundle_change_provenance(before_files,after_files)
+            except BaseException as error:
+                succeeded=False; evidence_collected=False; fail(error)
+                report['bundle_change_provenance_error']=(str(error) or type(error).__name__)[:240]
+        if succeeded and time.monotonic()>=deadline:
+            succeeded=False; evidence_collected=False; fail(BudgetExhausted('Qualification exceeded shared evidence deadline'))
+        if isolation is not None:
+            isolation['lifecycle_finished']=True
+            isolation['evidence_collected']=evidence_collected
+        if succeeded:
+            isolation['completed']=True
+            if diagnostic:
+                isolation['diagnostic_completed_at']=time.monotonic()
+                report['diagnostic_status']='retained'
+            else:
+                isolation['qualified_at']=time.monotonic()
+                report['verified_results']=verified
+                report['status']=role+'_result_passed' if role in ('hosted','normal') else 'largest_ui_passed'
+        if not succeeded and os.environ.get('TOUCHCOLOR_BUDGET_PHASE') in ('work','cleanup','evidence') and (
+                report.get('cleanup_unconfirmed') or report.get('interrupted') or (not evidence_collected and 'attachment_operation' in report)):
+            try: fail_record(report.get('diagnostic_error' if diagnostic else 'summary_error','Offline Vision incomplete'),phase=os.environ['TOUCHCOLOR_BUDGET_PHASE'],
+                             cleanup_unconfirmed=bool(report.get('cleanup_unconfirmed')))
+            except BaseException as error:
+                report['failure_record_error']=str(error)[:240]
+                if isinstance(error,(OfflineInterrupted,KeyboardInterrupt,SystemExit)): fail(error)
+        flush()
     return report
 
 
@@ -424,6 +584,12 @@ def expected_roles(report):
     for role, key in REPORT_KEYS.items():
         setting = report.get(key, {})
         ticket = setting.get('deferred_result')
+        diagnostic=setting.get('diagnostic_result')
+        if diagnostic is not None:
+            from vision_diagnostic_result import validate_diagnostic
+            require(ticket is None,'Diagnostic and deferred routes overlap')
+            require(diagnostic.get('native_text_row')==binding,'Diagnostic result differs from runtime row')
+            validate_diagnostic(setting,sha=report['sha'],device=report['device']['udid'],runtime=report['runtime'],role=role)
         require(role in roles or not setting, 'Foreign Vision phase result cannot satisfy current row')
         if isinstance(ticket, dict):
             require(ticket.get('native_text_row') == binding and ticket.get('role') == role,
@@ -433,10 +599,42 @@ def expected_roles(report):
     return roles
 
 
+def has_unconfirmed_reads(setting):
+    operations=[item.get('operation',{}) for item in setting.get('offline_operations',[])]
+    operations += [setting[key] for key in ('summary_operation','attachment_operation') if key in setting]
+    if any(value.get('state')=='running' or value.get('cleanup_confirmed') is False
+           for value in operations): return True
+    proof=setting.get('read_isolation',{});snapshot=proof.get('snapshot',{})
+    return bool((proof and not proof.get('lifecycle_finished') and not proof.get('completed')) or
+                ((snapshot.get('owned_root') or snapshot.get('creation_attempted'))
+                 and snapshot.get('cleanup',{}).get('confirmed') is not True))
+
+
+def fence_incomplete_reads(root=Path('.')):
+    """Controller-side fence if a killed qualifier cannot finish its own finally.
+
+    This never adopts/deletes persisted scratch or signals an unowned PID. The
+    source-bound pending operation is retained and all later commands are barred.
+    """
+    path=Path(root)/'build/vision-runtime/runtime.json'
+    if not path.is_file(): return False
+    require(not path.is_symlink() and path.stat().st_size<=256*1024, 'Unsafe interrupted runtime receipt')
+    report=strict_json(path.read_bytes());unclean=False
+    for key in REPORT_KEYS.values():
+        setting=report.get(key,{})
+        if has_unconfirmed_reads(setting):
+            setting['cleanup_unconfirmed']=True;unclean=True
+    if unclean:
+        report['cleanup_unconfirmed']=True;report['result']='failed'
+        report.setdefault('error','Offline Vision operation interrupted before confirmed cleanup')
+        write_json(path,report,limit=256*1024)
+    return unclean
+
+
 def qualify_for_evidence(root=Path('.')):
     """Both reads share evidence180; neither extends the driver's cleanup130."""
     from native_content_size import TouchSizeRunner, qualified
-    root = Path(root); runtime_path = root/'build/vision-runtime/runtime.json'
+    root = Path(root).resolve(); runtime_path = root/'build/vision-runtime/runtime.json'
     if not runtime_path.is_file(): return
     runtime_report = strict_json(runtime_path.read_bytes())
     roles = expected_roles(runtime_report)
@@ -445,19 +643,30 @@ def qualify_for_evidence(root=Path('.')):
     records = {role: runtime_report.get(key, {}) for role, key in REPORT_KEYS.items()}
     def no_ui(*args): raise RuntimeError('Offline qualification cannot launch UI tests')
     runner = TouchSizeRunner(no_ui)
+    if any(has_unconfirmed_reads(setting) for setting in records.values()):
+        runtime_report['cleanup_unconfirmed']=True
+        runner.cleanup_unconfirmed=True
     def persist(): write_json(runtime_path, runtime_report, limit=256*1024)
     results = {}; attempted = {}
+    deadline = evidence_deadline()
     for role in roles:
         setting = records[role]
         write_json(root/('build/vision-runtime/'+role+'-offline-handled.json'),
                    {'source_sha':runtime_report['sha'],'bundle':BUNDLES[role]}, limit=4096)
-        if 'deferred_result' in setting and setting['deferred_result'].get('attempted') is False:
+        if 'deferred_result' in setting and setting['deferred_result'].get('attempted') is False and not getattr(runner,'interrupted',False):
             qualify(setting, root/('build/vision-runtime/'+role+'-offline-result.json'),
                     runtime_report.get('vision_offline_shutdown',runtime_report.get('vision_largest_shutdown')),
                     sha=runtime_report['sha'], device=runtime_report['device']['udid'], runtime=runtime_report['runtime'], runner=runner,
                     cleanup_unconfirmed=runtime_report.get('cleanup_unconfirmed',False), persist=persist,
-                    summary_path=root/('build/vision-runtime/'+role+'-summary.json'), role=role)
+                    summary_path=root/('build/vision-runtime/'+role+'-summary.json'), role=role, deadline=deadline)
+        elif 'deferred_result' not in setting and isinstance(setting.get('diagnostic_result'),dict) and setting['diagnostic_result'].get('attempted') is False and not getattr(runner,'interrupted',False):
+            qualify(setting, root/('build/vision-runtime/'+role+'-offline-result.json'),
+                    runtime_report.get('vision_offline_shutdown',runtime_report.get('vision_largest_shutdown')),
+                    sha=runtime_report['sha'], device=runtime_report['device']['udid'], runtime=runtime_report['runtime'],runner=runner,
+                    cleanup_unconfirmed=runtime_report.get('cleanup_unconfirmed',False),persist=persist,
+                    role=role,deadline=deadline,diagnostic=True)
         if runner.cleanup_unconfirmed: runtime_report['cleanup_unconfirmed'] = True
+        if getattr(runner,'interrupted',False): runtime_report['interrupted'] = True
         results[role] = role_qualified(setting, role) and not runtime_report.get('cleanup_unconfirmed')
         attempted[role] = setting.get('deferred_result',{}).get('attempted') is True
         if role == 'hosted':
@@ -475,8 +684,134 @@ def qualify_for_evidence(root=Path('.')):
     persist()
 
 
+def verify_bundle_proof(proof, *, original=False):
+    keys={'path','device','inode','sha256','files','directories','bytes','full_tree_sha256','node_identity_sha256'}
+    require(isinstance(proof,dict) and set(proof)==keys|({'source_root'} if original else set()),
+            'Missing complete bundle identity proof')
+    require(isinstance(proof['path'],str) and Path(proof['path']).is_absolute()
+            and str(Path(proof['path']))==os.path.normpath(proof['path']), 'Noncanonical bundle proof path')
+    require(type(proof['device']) is int and proof['device']>=0
+            and type(proof['inode']) is int and proof['inode']>0, 'Missing exact bundle filesystem identity')
+    require(all(type(proof[key]) is int and 0<proof[key]<=8192 for key in ('files','directories'))
+            and type(proof['bytes']) is int and 0<=proof['bytes']<=256*1024*1024, 'Invalid bounded bundle counts')
+    require(all(isinstance(proof[key],str) and re.fullmatch('[0-9a-f]{64}',proof[key])
+                for key in ('sha256','full_tree_sha256','node_identity_sha256')), 'Missing complete bundle digests')
+    if original:
+        source=proof['source_root']
+        require(isinstance(source,dict) and set(source)=={'path','device','inode'}
+                and isinstance(source['path'],str) and Path(source['path']).is_absolute()
+                and str(Path(source['path']))==os.path.normpath(source['path'])
+                and type(source['device']) is int and source['device']>=0
+                and type(source['inode']) is int and source['inode']>0, 'Missing exact source-root identity')
+
+
+def verify_isolation(setting, binding, role, runtime, *, diagnostic=False):
+    """Independent portable receipt binding, before any success/cache acceptance."""
+    if diagnostic:
+        from vision_diagnostic_result import validate_diagnostic
+        require(validate_diagnostic(setting,sha=binding['source_sha'],device=binding['device'],runtime=runtime,role=role)==binding
+                and binding.get('attempted') is True and setting.get('diagnostic_status')=='retained'
+                and not role_qualified(setting,role), 'Invalid diagnostic-only result or qualification claim')
+    original=binding['bundle']; verify_bundle_proof(original,original=True)
+    root=Path(original['source_root']['path'])
+    require(original['path']==str(root/BUNDLES[role]) and root.is_absolute(), 'Original source path changed')
+    proof=setting.get('read_isolation',{})
+    require(setting.get('device')==binding['device'] and setting.get('runtime')==runtime, 'Result device/runtime changed')
+    require(proof.get('schema')==1 and proof.get('source_sha')==binding['source_sha']
+            and proof.get('device')==binding['device'] and proof.get('runtime')==runtime and proof.get('role')==role
+            and proof.get('native_text_row')==binding['native_text_row'] and proof.get('original')==original
+            and proof.get('original_postguard')==original and proof.get('original_postguard_confirmed') is True
+            and proof.get('completed') is True and proof.get('lifecycle_finished') is True and proof.get('evidence_collected') is True
+            and proof.get('purpose')==('attachments_only' if diagnostic else 'qualification'),
+            'Missing exact isolated original pre/post proof')
+    reader=proof.get('reader',{}); tool=reader.get('path')
+    require(isinstance(tool,str) and Path(tool).is_absolute() and str(Path(tool))==os.path.normpath(tool)
+            and Path(tool).is_relative_to(Path(DEVELOPER_DIR)) and Path(tool).name=='xcresulttool'
+            and reader=={'developer_dir':DEVELOPER_DIR,'xcode_version':XCODE_VERSION,
+                         'version_command':['xcodebuild','-version'],'selection_command':['xcrun','--find','xcresulttool'],'path':tool},
+            'Reader differs from the selected source-owned toolchain')
+    snapshot=proof.get('snapshot',{}); owned=snapshot.get('owned_root',{}); private=snapshot.get('input_binding',{})
+    verify_bundle_proof(private)
+    path=private.get('path'); owner=owned.get('path')
+    require(snapshot.get('schema')==1 and snapshot.get('state')=='ready' and snapshot.get('verified') is True
+            and snapshot.get('copy_limit_seconds')==15 and snapshot.get('cleanup_limit_seconds')==5
+            and snapshot.get('original_binding')==original and proof.get('snapshot_input_binding')==private,
+            'Missing complete verified snapshot input binding')
+    require(isinstance(path,str) and isinstance(owner,str) and Path(owner).is_absolute()
+            and str(Path(owner))==os.path.normpath(owner) and re.fullmatch('touchcolor-vision-result-[0-9a-f]{32}',Path(owner).name)
+            and not Path(owner).is_relative_to(root) and path==str(Path(owner)/Path(BUNDLES[role]).name)
+            and set(owned)=={'path','mode','device','inode'} and owned.get('mode')=='0700'
+            and type(owned.get('device')) is int and owned['device']>=0
+            and type(owned.get('inode')) is int and owned['inode']>0
+            and owned['device']==private['device'] and owned['inode']!=private['inode']
+            and (owned['device'],owned['inode']) not in ((original['device'],original['inode']),
+                (original['source_root']['device'],original['source_root']['inode']))
+            and private['node_identity_sha256']!=original['node_identity_sha256']
+            and (private.get('device'),private.get('inode'))!=(original.get('device'),original.get('inode'))
+            and all(private.get(key)==original.get(key) for key in ('sha256','files','directories','bytes','full_tree_sha256'))
+            and isinstance(private.get('node_identity_sha256'),str) and re.fullmatch('[0-9a-f]{64}',private['node_identity_sha256']),
+            'Snapshot path, identity or byte equivalence changed')
+    require(snapshot.get('equivalence')=={'verified':True,'ordinary_byte_copy':True,'independent_readback':True,
+            'file_identities_disjoint':True,'full_tree_sha256':original['full_tree_sha256']}, 'Snapshot equivalence proof changed')
+    guard=snapshot.get('original_guard',{})
+    require(guard.get('verified') is True and guard.get('identity')==original, 'Copy changed the original binding')
+    cleanup=snapshot.get('cleanup',{})
+    require(cleanup.get('confirmed') is True and cleanup.get('deleted') is True and not cleanup.get('error'),
+            'Snapshot cleanup was not confirmed before qualification')
+    deadline=proof.get('evidence_deadline_monotonic');started=proof.get('started_at')
+    require(finite(deadline) and finite(started) and started<deadline<=started+180, 'Evidence window exceeds its unchanged180s cap')
+    for operation,cap in ((snapshot,15),(cleanup,5)):
+        start,end,limit=operation.get('started_at'),operation.get('finished_at'),operation.get('deadline')
+        require(all(finite(value) for value in (start,end,limit,deadline)) and start<=end<=limit<=deadline
+                and limit-start<=cap+0.001, 'Isolated copy/cleanup exceeded the shared deadline')
+    summary=setting.get('summary_operation',{}); attachment=setting.get('attachment_operation',{})
+    output=root/'build/evidence'/ATTACHMENT_NAMES[role]
+    operations=[(attachment,[tool,'export','attachments','--path',path,'--output-path',str(output)],20)]
+    if not diagnostic:operations.insert(0,(summary,[tool,'get','test-results','summary','--path',path],20 if role=='normal' else 30))
+    for operation,command,seconds in operations:
+        input_guard=operation.get('input_guard',{})
+        require(input_guard.get('verified') is True and all(type(input_guard.get(key)) is int and 0<input_guard[key]<=8192
+                for key in ('files','directories')) and type(input_guard.get('bytes')) is int and 0<=input_guard['bytes']<=256*1024*1024
+                and all(finite(input_guard.get(key)) for key in ('started_at','finished_at','deadline'))
+                and input_guard['started_at']<=input_guard['finished_at']<=input_guard['deadline']<=deadline
+                and input_guard['deadline']-input_guard['started_at']<=15.001
+                and input_guard['finished_at']<=operation.get('started_at',0), 'Missing safe bounded private input guard')
+        require(all(finite(operation.get(key)) for key in ('started_at','finished_at'))
+                and operation['started_at']<=operation['finished_at']<=deadline
+                and operation['finished_at']-operation['started_at']<=seconds+PROCESS_RESERVE,
+                'Reader operation lifetime exceeds the shared envelope')
+        require(operation.get('command')==command and operation.get('timeout_seconds')==seconds
+                and operation.get('cleanup_confirmed') is True and type(operation.get('exit')) is int and operation['exit']==0
+                and operation.get('state')=='completed', 'Missing successful bounded exact-snapshot reader operation')
+    first=attachment if diagnostic else summary
+    require(first.get('input_guard',{}).get('input_byte_equivalent') is True
+            and first['input_guard'].get('input_binding')==private,
+            'Missing strict initial byte-equivalent reader guard')
+    require(finite(guard.get('finished_at')) and snapshot['started_at']<=guard['finished_at']<=snapshot['finished_at'],
+            'Missing bounded original copy guard lifetime')
+    require(snapshot.get('reader_input_guard')==attachment['input_guard']
+            and snapshot['finished_at']<=first['input_guard']['started_at'], 'Private input guard stage order changed')
+    if not diagnostic:
+        require(attachment.get('input_guard',{}).get('input_byte_equivalent') is False
+                and summary['finished_at']<=attachment['input_guard']['started_at'], 'Reader stage order changed')
+    final_key='diagnostic_completed_at' if diagnostic else 'qualified_at'
+    require(all(finite(proof.get(key)) for key in ('original_postguard_finished_at',final_key))
+            and attachment['finished_at']<=proof['original_postguard_finished_at']<=cleanup['started_at']
+            and cleanup['finished_at']<=proof[final_key]<=deadline, 'Reader/final-guard/cleanup stage order changed')
+    require(proof.get('attachment_output')=={'path':str(output)}, 'Attachment output differs from exact role')
+    if diagnostic:
+        require(not summary and not proof.get('summary_output') and 'verified_results' not in setting
+                and 'qualified_at' not in proof, 'Diagnostic-only result acquired qualification data')
+        return proof
+    cache=proof.get('summary_output',{})
+    require(cache.get('path')==str(root/('build/vision-runtime/'+role+'-summary.json'))
+            and cache.get('sha256')==setting.get('summary_sha256') and type(cache.get('bytes')) is int
+            and 0<cache['bytes']<=500_000, 'Raw summary output binding changed')
+    return proof
+
+
 def copy_cached_summary(root=Path('.'), role='largest'):
-    root = Path(root); runtime_path = root/'build/vision-runtime/runtime.json'
+    root = Path(root).resolve(); runtime_path = root/'build/vision-runtime/runtime.json'
     if not runtime_path.is_file(): return
     runtime_report = strict_json(runtime_path.read_bytes())
     require(role in BUNDLES, 'Unknown cached result role')
@@ -486,6 +821,9 @@ def copy_cached_summary(root=Path('.'), role='largest'):
     require('deferred_result' in setting, 'Cached summary requires its exact deferred result')
     require(not path.is_symlink() and path.stat().st_size <= 500_000, 'Unsafe cached summary')
     raw = path.read_bytes()
+    cache=setting.get('read_isolation',{}).get('summary_output',{})
+    require(cache=={'path':str(path.resolve()),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}, 'Cached summary output binding changed')
+    if role_qualified(setting,role): verify_isolation(setting,setting['deferred_result'],role,runtime_report['runtime'])
     require(hashlib.sha256(raw).hexdigest() == setting.get('summary_sha256'), 'Cached summary identity changed')
     destination = SUMMARY_NAMES[role]
     (root/'build/evidence'/destination).write_bytes(raw)
@@ -565,10 +903,13 @@ def evidence_complete(root):
     sha = report.get('sha')
     require(isinstance(sha,str) and re.fullmatch('[0-9a-f]{40}',sha)
             and (not os.environ.get('GITHUB_SHA') or sha == os.environ['GITHUB_SHA']), 'Deferred evidence source changed')
-    proven = {}
+    proven = {}; shared_deadline = None
     for role in roles:
         setting = records[role]; binding = setting.get('deferred_result')
-        if not isinstance(binding,dict): proven[role] = False; continue
+        if not isinstance(binding,dict):
+            if setting.get('diagnostic_status')=='retained':
+                verify_isolation(setting,setting['diagnostic_result'],role,report['runtime'],diagnostic=True)
+            proven[role] = False; continue
         require(sha == binding.get('source_sha') and report['device']['udid'] == binding.get('device'), 'Deferred source/device changed')
         bundle_name = BUNDLES[role]
         bound_root = binding.get('root') if role=='hosted' else binding.get('contract',{}).get('root')
@@ -584,11 +925,9 @@ def evidence_complete(root):
         shutdown_proven(report.get('vision_offline_shutdown',report.get('vision_largest_shutdown')),binding['device'],report.get('cleanup_unconfirmed',False))
         require(setting.get('offline_shutdown_verified') == {'device':binding['device'],'runtime':report['runtime'],'state':'Shutdown'}
                 and binding.get('attempted') is True, 'Missing confirmed shutdown or consumed qualification attempt')
-        operation = setting.get('summary_operation',{})
-        require(operation.get('cleanup_confirmed') is True and type(operation.get('exit')) is int and operation['exit'] == 0
-                and operation.get('timeout_seconds') == (20 if role == 'normal' else 30) and operation.get('state') == 'completed'
-                and operation.get('command') == ['xcrun','xcresulttool','get','test-results','summary','--path',str(Path(bound_root)/bundle_name)],
-                'Missing successful bounded exact-result summary operation')
+        isolation=verify_isolation(setting,binding,role,report['runtime'])
+        if shared_deadline is None: shared_deadline=isolation['evidence_deadline_monotonic']
+        require(shared_deadline==isolation['evidence_deadline_monotonic'], 'Vision roles did not share one evidence deadline')
         summary_path = root/SUMMARY_NAMES[role]
         if not summary_path.exists() and not summary_path.is_symlink(): return verified_metadata_only_fallback(root,runtime_raw,sha)
         raw = summary_path.read_bytes()

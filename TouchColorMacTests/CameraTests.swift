@@ -28,8 +28,12 @@ private final class FakeCameraDriver: CameraDriving {
     func testNoDeviceNeverRequestsPermissionOrStartsCapture() {
         let driver = FakeCameraDriver(); driver.available = []; driver.permission = .notDetermined
         let model = CameraModel(driver: driver, applicationIsActive: { true })
+        let unavailable = NSLocalizedString("No camera is available. Connect a camera, or import an image instead.", comment: "Camera status")
         XCTAssertTrue(model.devices.isEmpty); XCTAssertEqual(model.selectedDeviceID, "")
+        XCTAssertEqual(model.status, unavailable)
         model.start(); model.start()
+        XCTAssertTrue(model.devices.isEmpty); XCTAssertEqual(model.selectedDeviceID, "")
+        XCTAssertEqual(model.status, unavailable)
         XCTAssertEqual(driver.permissionRequestCount, 0); XCTAssertNil(driver.permissionReply)
         XCTAssertTrue(driver.starts.isEmpty)
         XCTAssertFalse(model.preparing); XCTAssertFalse(model.running)
@@ -44,6 +48,11 @@ private final class FakeCameraDriver: CameraDriving {
         driver.available = [second, first]; model.refreshDevices()
         XCTAssertEqual(model.selectedDeviceID, second.id)
         XCTAssertEqual(model.devices.map(\.id), [second.id, first.id])
+        driver.available = []; model.refreshDevices()
+        XCTAssertTrue(model.devices.isEmpty); XCTAssertEqual(model.selectedDeviceID, "")
+        driver.available = [first, second]; model.refreshDevices()
+        XCTAssertEqual(model.selectedDeviceID, first.id)
+        XCTAssertEqual(model.devices.map(\.id), [first.id, second.id])
         XCTAssertEqual(driver.permissionRequestCount, 0); XCTAssertTrue(driver.starts.isEmpty)
         XCTAssertFalse(model.preparing); XCTAssertFalse(model.running)
     }

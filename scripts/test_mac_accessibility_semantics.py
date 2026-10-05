@@ -27,12 +27,29 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
         for command in commands:
             self.assertEqual(command.count('test_mac_accessibility_semantics'), 1)
 
-    def test_empty_camera_picker_keeps_existing_busy_guards_and_device_binding(self):
-        picker = self.camera.split('Picker("Camera", selection: $camera.selectedDeviceID)', 1)[1].split(
-            '.accessibilityIdentifier("camera.device")', 1)[0]
-        self.assertIn('if camera.devices.isEmpty { Text("No camera").tag("") }', picker)
-        self.assertIn('ForEach(camera.devices) { device in Text(device.name).tag(device.id) }', picker)
-        self.assertIn('.disabled(camera.devices.isEmpty || camera.preparing || camera.running)', picker)
+    def test_empty_camera_is_static_status_and_nonempty_picker_keeps_busy_guards_and_binding(self):
+        selection = self.camera.split('            if camera.devices.isEmpty {', 1)[1].split(
+            '            Text(camera.status)', 1)[0]
+        empty, available = selection.split('            } else {', 1)
+        self.assertIn('Text("No camera").accessibilityIdentifier("camera.no-device")', empty)
+        for forbidden in ('Picker(', 'Button(', '.tag(', '.onTapGesture', '.accessibilityAction'):
+            self.assertNotIn(forbidden, empty)
+        self.assertIn('Picker("Camera", selection: $camera.selectedDeviceID)', available)
+        self.assertIn('ForEach(camera.devices) { device in Text(device.name).tag(device.id) }', available)
+        self.assertIn('.disabled(camera.preparing || camera.running).accessibilityIdentifier("camera.device")', available)
+        self.assertNotIn('Text("No camera")', available)
+        self.assertEqual(self.camera.count('Picker('), 1)
+
+    def test_empty_camera_status_is_localized_and_keeps_start_and_dismiss_guards(self):
+        for language, expected in [('en', 'No camera'), ('zh-Hans', '无可用相机')]:
+            source = (ROOT / 'TouchColorMac' / (language + '.lproj') / 'Localizable.strings').read_text()
+            entries = re.findall(r'^"((?:\\.|[^"\\])*)"\s*=\s*"((?:\\.|[^"\\])*)";', source, re.M)
+            self.assertEqual(len(entries), len(dict(entries)), language)
+            self.assertEqual(dict(entries).get('No camera'), expected)
+        self.assertIn('Button("Start Camera") { camera.start() }', self.camera)
+        self.assertIn('.disabled(camera.running || camera.preparing || camera.devices.isEmpty).accessibilityIdentifier("camera.start")', self.camera)
+        self.assertIn('Button("Done") { camera.stop(); dismiss() }', self.camera)
+        self.assertIn('.onDisappear { camera.stop() }', self.camera)
 
     def test_hosted_no_device_regression_observes_permission_requests_directly(self):
         test = self.hosted.split('func testNoDeviceNeverRequestsPermissionOrStartsCapture()', 1)[1].split(
@@ -40,8 +57,11 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
         for required in ('driver.available = []', 'driver.permission = .notDetermined',
                          'model.start(); model.start()', 'XCTAssertEqual(driver.permissionRequestCount, 0)',
                          'XCTAssertNil(driver.permissionReply)', 'XCTAssertTrue(driver.starts.isEmpty)',
-                         'XCTAssertFalse(model.preparing)', 'XCTAssertFalse(model.running)'):
+                         'XCTAssertFalse(model.preparing)', 'XCTAssertFalse(model.running)',
+                         'NSLocalizedString("No camera is available. Connect a camera, or import an image instead."'):
             self.assertIn(required, test)
+        self.assertEqual(test.count('XCTAssertEqual(model.status, unavailable)'), 2)
+        self.assertEqual(test.count('XCTAssertTrue(model.devices.isEmpty); XCTAssertEqual(model.selectedDeviceID, "")'), 2)
         self.assertIn('permissionRequestCount += 1; permissionReply = completion', self.hosted)
 
     def test_hosted_available_selection_regression_preserves_selected_id(self):
@@ -51,15 +71,27 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
         self.assertIn('driver.available = [second, first]; model.refreshDevices()', test)
         self.assertIn('XCTAssertEqual(model.selectedDeviceID, second.id)', test)
         self.assertIn('XCTAssertEqual(driver.permissionRequestCount, 0)', test)
+        self.assertIn('driver.available = []; model.refreshDevices()', test)
+        self.assertIn('XCTAssertTrue(model.devices.isEmpty); XCTAssertEqual(model.selectedDeviceID, "")', test)
+        self.assertIn('driver.available = [first, second]; model.refreshDevices()', test)
+        self.assertIn('XCTAssertEqual(model.devices.map(\\.id), [first.id, second.id])', test)
 
-    def test_actual_empty_device_ui_checks_native_popup_on_repeated_presentations(self):
+    def test_actual_empty_device_ui_checks_static_status_on_repeated_presentations(self):
         test = self.ui.split('func testActualNoCameraRouteDismissesWithoutRequestingPermission()', 1)[1].split(
-            'func testExplicitPrivacyContactHasLocalizedLinkSemanticsWithoutOpeningMail()', 1)[0]
-        for required in ('for _ in 0..<2', 'let picker = app.popUpButtons["camera.device"]',
-                         'XCTAssertTrue(picker.exists', 'XCTAssertFalse(picker.isEnabled',
-                         'XCTAssertEqual(picker.value as? String, "No camera")',
-                         'XCTAssertEqual(AVCaptureDevice.authorizationStatus(for: .video), permission)'):
+            'func testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail()', 1)[0]
+        for required in ('for _ in 0..<2', 'let unavailable = app.staticTexts["camera.no-device"]',
+                         'XCTAssertTrue(unavailable.exists',
+                         'XCTAssertEqual(unavailable.elementType, .staticText)',
+                         'XCTAssertEqual(unavailable.value as? String ?? unavailable.label, "No camera")',
+                         'XCTAssertFalse(app.popUpButtons["camera.device"].exists',
+                         'XCTAssertFalse(app.buttons["camera.start"].isEnabled)',
+                         'XCTAssertFalse(app.buttons["camera.freeze"].isEnabled)',
+                         'XCTAssertFalse(app.buttons["camera.save"].isEnabled)',
+                         'app.buttons["camera.close"].click()',
+                         'XCTAssertEqual(AVCaptureDevice.authorizationStatus(for: .video), permission)',
+                         'app.buttons["image.paste"].click(); assertHex("#ff00ff")'):
             self.assertIn(required, test)
+        self.assertNotIn('unavailable.click()', test)
         self.assertNotIn('picker.click()', test)
 
     def test_contact_keeps_native_link_visible_address_and_exact_mailto(self):
@@ -85,18 +117,43 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
             self.assertEqual(len(entries), len(dict(entries)), language)
             self.assertEqual(dict(entries).get(CONTACT_LABEL), expected)
 
-    def test_contact_ui_regression_checks_both_locales_without_dispatching_mail(self):
-        test = self.ui.split('func testExplicitPrivacyContactHasLocalizedLinkSemanticsWithoutOpeningMail()', 1)[1].split(
+    def test_contact_locales_are_independent_cases_selected_before_single_exact_product_launch(self):
+        setup = self.ui.split('override func setUpWithError()', 1)[1].split('override func tearDownWithError()', 1)[0]
+        cases = [('English', 'en', 'en_US', CONTACT_LABEL),
+                 ('SimplifiedChinese', 'zh-Hans', 'zh_CN', '联系开发者咨询隐私问题')]
+        self.assertEqual(setup.count('app.launch()'), 1)
+        self.assertIn('app = XCUIApplication(url: applicationURL)', setup)
+        self.assertIn('app.launchArguments = ["--ui-test-reset"]', setup)
+        self.assertIn('XCTAssertEqual(actual.bundleURL?.resolvingSymlinksInPath(), applicationURL.resolvingSymlinksInPath())', setup)
+        self.assertIn('NATIVE_UI_LOGIC_SHA256:', setup)
+        for suffix, language, locale, label in cases:
+            name = 'testExplicitPrivacyContactHas' + suffix + 'LinkSemanticsWithoutOpeningMail'
+            dispatch = 'name.contains("' + name + '")'
+            arguments = 'app.launchArguments += ["-AppleLanguages", "(' + language + ')", "-AppleLocale", "' + locale + '"]'
+            self.assertIn(dispatch, setup)
+            branch = setup.split(dispatch + ' {', 1)[1].split('}', 1)[0]
+            self.assertIn(arguments, branch)
+            self.assertLess(setup.index(arguments), setup.index('app.launch()'))
+            case = self.ui.split('func ' + name + '()', 1)[1].split('\n    }', 1)[0]
+            self.assertIn('assertPrivacyContact(label: "' + label + '")', case)
+            self.assertNotIn('app.launch', case)
+            self.assertNotIn('app.terminate', case)
+        methods = re.findall(r'func (testExplicitPrivacyContact\w+)\(', self.ui)
+        self.assertEqual(len(methods), 2)
+
+    def test_contact_ui_regression_keeps_semantics_and_timeouts_without_relaunch_or_mail(self):
+        test = self.ui.split('private func assertPrivacyContact(label: String)', 1)[1].split(
             '@MainActor private func audit(', 1)[0]
-        for required in ('("en", "en_US", "' + CONTACT_LABEL + '")',
-                         '("zh-Hans", "zh_CN", "联系开发者咨询隐私问题")',
+        for required in ('app.buttons["privacy.open"].waitForExistence(timeout: 10)',
+                         'app.buttons["privacy.close"].waitForExistence(timeout: 5)',
                          'app.links.matching(identifier: "privacy.contact")',
                          'XCTAssertEqual(contacts.count, 1', 'XCTAssertEqual(contact.elementType, .link)',
                          'XCTAssertEqual(contact.label, label)', 'XCTAssertTrue(contact.isEnabled',
-                         'XCTAssertTrue(contact.isHittable'):
+                         'XCTAssertTrue(contact.isHittable', 'app.buttons["privacy.close"].click()',
+                         'app.buttons["image.open.empty"].waitForExistence(timeout: 5)'):
             self.assertIn(required, test)
-        self.assertNotIn('contact.click()', test)
-        self.assertNotIn('contact.tap()', test)
+        for forbidden in ('contact.click()', 'contact.tap()', 'app.launch', 'app.terminate', 'for '):
+            self.assertNotIn(forbidden, test)
 
 
 if __name__ == '__main__':

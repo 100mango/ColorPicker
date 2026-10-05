@@ -65,6 +65,19 @@ def hosted_fixture(root, summary, shutdown, row_binding=ROW):
     return report,hosted
 
 
+def synthetic_reader():
+    # Portable command double; the actual selected-tool verifier has separate tests.
+    return {'developer_dir':offline.DEVELOPER_DIR,'xcode_version':offline.XCODE_VERSION,
+            'version_command':['xcodebuild','-version'],'selection_command':['xcrun','--find','xcresulttool'],
+            'path':offline.DEVELOPER_DIR+'/usr/bin/xcresulttool'}
+
+
+def attachment_export(command, **kwargs):
+    output=Path(command[command.index('--output-path')+1]);output.mkdir()
+    (output/'manifest.json').write_text('[]')
+    return subprocess.CompletedProcess(command,0,b'',b'')
+
+
 class Reader:
     def __init__(self, *, state='Shutdown', sha=SHA, events=None):
         self.cleanup_unconfirmed = False; self.calls = []; self.state = state; self.sha = sha; self.events = events
@@ -81,8 +94,10 @@ class Reader:
 
 class VisionOfflineTests(unittest.TestCase):
     def setUp(self):
+        self.deadline=time.monotonic()+180
         env = patch.dict(os.environ, {'TOUCHCOLOR_BUDGET_PHASE': '', 'GITHUB_SHA': '', 'TOUCHCOLOR_JOB_PLATFORM':'', 'TOUCHCOLOR_VISION_CASE':'','TOUCHCOLOR_TEXT_PHASE':'','TOUCHCOLOR_WATCH_PROFILE':'','TOUCHCOLOR_JOB_LANE':'','TOUCHCOLOR_JOB_MINUTES':'','TOUCHCOLOR_EVIDENCE_LIMIT':''})
         env.start(); self.addCleanup(env.stop)
+        selection=patch.object(offline,"selected_reader",return_value=synthetic_reader());selection.start();self.addCleanup(selection.stop)
 
     def qualify(self, folder, report, summary, shutdown, **kwargs):
         reader = kwargs.pop('runner', Reader())
@@ -91,7 +106,8 @@ class VisionOfflineTests(unittest.TestCase):
         role=kwargs.get('role','largest')
         result = offline.qualify(report, Path(folder)/('build/vision-runtime/'+role+'-offline-result.json'), shutdown,
             sha=kwargs.pop('sha', SHA), device=kwargs.pop('device', DEVICE), runtime=kwargs.pop('runtime', RUNTIME), runner=reader,
-            summary_path=Path(folder)/('build/vision-runtime/'+role+'-summary.json'), summary_runner=summary_runner, **kwargs)
+            summary_path=Path(folder)/('build/vision-runtime/'+role+'-summary.json'), summary_runner=summary_runner,
+            attachment_runner=kwargs.pop('attachment_runner',attachment_export), deadline=kwargs.pop('deadline',getattr(self,'deadline',None)), **kwargs)
         return result, reader, summary_runner
 
     def test_pending_is_not_pass_and_single_summary_runs_after_shutdown_readback(self):
@@ -219,7 +235,7 @@ class VisionOfflineTests(unittest.TestCase):
             def persist(): seen.append(report['deferred_result']['attempted'])
             reader = Reader()
             self.qualify(folder, report, summary, shutdown, runner=reader, persist=persist)
-            self.assertEqual(seen, [True]); self.assertTrue(reader.calls)
+            self.assertTrue(seen and all(seen)); self.assertTrue(reader.calls)
 
     def test_work_helper_defers_only_vision_and_does_not_extract(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -267,7 +283,7 @@ class VisionOfflineTests(unittest.TestCase):
                 def qualify(setting, report_path, stage, **kwargs):
                     setting['deferred_result']['attempted']=True;role=kwargs['role'];setting['status']='hosted_result_passed' if role=='hosted' else 'largest_ui_passed'
                     setting['verified_results']=offline.verify_offline_summary(hosted_summary if role=='hosted' else summary, setting['deferred_result'], DEVICE, role)
-                with patch.dict(os.environ, {'TOUCHCOLOR_BUDGET_PHASE':'evidence'}), patch.object(offline, 'qualify', side_effect=qualify):
+                with patch.dict(os.environ, {'TOUCHCOLOR_BUDGET_PHASE':'evidence','TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC':str(time.monotonic()+180)}), patch.object(offline, 'qualify', side_effect=qualify):
                     offline.qualify_for_evidence(root)
                 result=json.loads(path.read_bytes())
                 self.assertEqual(result['result'], 'passed' if original=='pending_offline_qualification' else 'failed')
@@ -296,7 +312,7 @@ class VisionOfflineTests(unittest.TestCase):
             with patch.object(offline, 'enabled_budget', return_value=budget), patch('job_budget.enabled_budget', return_value=budget), patch('job_budget.fail_record'), patch('subprocess.Popen') as launch:
                 result, _, _=self.qualify(folder, report, summary, shutdown, summary_runner=offline.run_captured)
             launch.assert_not_called();self.assertFalse(sizes.qualified(result))
-            self.assertEqual(result['summary_operation']['state'],'not_started_budget')
+            self.assertIn('reserve',result['summary_error'].lower())
             self.assertEqual(budget.remaining('upload'),before)
             self.assertEqual(budget.events[-1]['phase'],'evidence')
 
@@ -361,7 +377,7 @@ class VisionOfflineTests(unittest.TestCase):
                      'vision_hosted_result':hosted,'vision_offline_shutdown':shutdown,
                      'vision_offline_qualification':{'result':'passed','roles':{'hosted':True,'largest':True},'attempted':{'hosted':True,'largest':True}}}
             (root/'build/vision-runtime/runtime.json').write_text(json.dumps(runtime))
-            evidence=root/'build/evidence';evidence.mkdir()
+            evidence=root/'build/evidence';evidence.mkdir(exist_ok=True)
             offline.copy_cached_summary(root);offline.copy_cached_summary(root,role='hosted')
             (evidence/'vision-runtime.json').write_text(json.dumps(runtime))
             self.assertTrue(offline.evidence_complete(evidence))
@@ -386,7 +402,7 @@ class VisionOfflineTests(unittest.TestCase):
                  'vision_offline_expected':['hosted','largest'],
                  'vision_offline_qualification':{'result':'passed','roles':{'hosted':True,'largest':True},'attempted':{'hosted':True,'largest':True}}}
         runtime_path=root/'build/vision-runtime/runtime.json';runtime_path.write_text(json.dumps(runtime))
-        evidence=root/'build/evidence';evidence.mkdir()
+        evidence=root/'build/evidence';evidence.mkdir(exist_ok=True)
         offline.copy_cached_summary(root);offline.copy_cached_summary(root,role='hosted')
         (evidence/'vision-runtime.json').write_bytes(runtime_path.read_bytes())
         self.assertTrue(offline.evidence_complete(evidence))
@@ -515,7 +531,7 @@ class VisionOfflineTests(unittest.TestCase):
                      'device':{'udid':DEVICE},'runtime':RUNTIME,'result':'passed','vision_normal_result':normal,'vision_hosted_result':hosted,
                      'vision_offline_shutdown':shutdown,'vision_offline_qualification':{'result':'passed','roles':{'hosted':True,'normal':True},'attempted':{'hosted':True,'normal':True}}}
             (root/'build/vision-runtime/runtime.json').write_text(json.dumps(runtime))
-            evidence=root/'build/evidence';evidence.mkdir()
+            evidence=root/'build/evidence';evidence.mkdir(exist_ok=True)
             offline.copy_cached_summary(root,role='hosted');offline.copy_cached_summary(root,role='normal')
             (evidence/'vision-runtime.json').write_text(json.dumps(runtime))
             self.assertTrue(offline.evidence_complete(evidence))
@@ -544,7 +560,7 @@ class VisionOfflineTests(unittest.TestCase):
                 def qualify(setting,report_path,stage,**kwargs):
                     role=kwargs['role'];seen.append(role);setting['deferred_result']['attempted']=True
                     setting['status']=role+'_result_passed';setting['verified_results']={'fixture':True}
-                with patch.dict(os.environ,{'TOUCHCOLOR_BUDGET_PHASE':'evidence'}),patch.object(offline,'qualify',side_effect=qualify):
+                with patch.dict(os.environ,{'TOUCHCOLOR_BUDGET_PHASE':'evidence','TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC':str(time.monotonic()+180)}),patch.object(offline,'qualify',side_effect=qualify):
                     offline.qualify_for_evidence(root);offline.qualify_for_evidence(root)
                 self.assertEqual(len(seen),1)
                 self.assertEqual(json.loads(path.read_bytes())['result'],'failed')
@@ -554,22 +570,19 @@ class VisionOfflineTests(unittest.TestCase):
             _,summary,shutdown,_,_=fixture(folder);hosted,hosted_summary=hosted_fixture(folder,summary,shutdown)
             result,_,command=self.qualify(folder,hosted,hosted_summary,shutdown,role='hosted')
             self.assertTrue(offline.hosted_qualified(result));self.assertEqual(command.call_args.kwargs,{'timeout':30,'text':False})
-            self.assertTrue(command.call_args.args[0][-1].endswith(offline.HOSTED_BUNDLE))
+            self.assertNotEqual(command.call_args.args[0][-1],str(Path(folder).resolve()/offline.HOSTED_BUNDLE))
             hosted_summary['passedTests']=41
             with self.assertRaises((ValueError,RuntimeError)):offline.verify_offline_summary(hosted_summary,hosted['deferred_result'],DEVICE,'hosted')
             files=list((ROOT/'TouchColorVisionTests').rglob('*.swift'))+list((ROOT/'Packages/ColorCore/Tests').rglob('*.swift'))
             self.assertEqual(sum(len(__import__('re').findall(r'func test\w+\(',p.read_text())) for p in files),offline.HOSTED_COUNT)
 
     def test_directory_and_final_identity_deadlines_are_enforced(self):
-        for empty in (True,False):
-            with tempfile.TemporaryDirectory() as folder:
-                root=Path(folder);fixture(root);bundle=root/offline.BUNDLE;now=[0.]
-                def walk(*args,**kwargs):
-                    yield str(bundle),[],['Info.plist']
-                    now[0]=1000.
-                    if empty:yield str(bundle/'empty'),[],[]
-                with patch.object(offline.os,'walk',side_effect=walk):
-                    with self.assertRaises(ValueError):offline.bundle_identity(root,clock=lambda:now[0])
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);fixture(root);now=[0.]
+            def clock():
+                now[0]+=20
+                return now[0]
+            with self.assertRaises(ValueError):offline.bundle_identity(root,clock=clock)
 
     def test_source_budgets_and_cached_export_order_remain_explicit(self):
         workflow=(ROOT/'.github/workflows/apple-platforms.yml').read_text()
@@ -661,14 +674,12 @@ class VisionOfflineTests(unittest.TestCase):
             error=subprocess.TimeoutExpired(['summary'],30);error.cleanup_confirmed=True
             result,_,_=self.qualify(root,report,summary,shutdown,summary_runner=Mock(side_effect=error))
             self.assertFalse(sizes.qualified(result));proof=result['bundle_change_provenance']
-            self.assertEqual(proof['after'],{'status':'not_observed'});self.assertFalse(proof['inventory_complete'])
+            self.assertTrue(proof['after']['walk_complete']);self.assertTrue(proof['inventory_complete'])
             inventory={'identity':{'sha256':'stale'}};now=[0.]
-            def walk(*args,**kwargs):
-                yield str(root/offline.BUNDLE),[],['Info.plist']
-                now[0]=1000.
-                yield str(root/offline.BUNDLE/'Data'),[],[]
-            with patch.object(offline.os,'walk',side_effect=walk):
-                with self.assertRaises(ValueError):offline.bundle_identity(root,clock=lambda:now[0],inventory=inventory)
+            def clock():
+                now[0]+=20
+                return now[0]
+            with self.assertRaises(ValueError):offline.bundle_identity(root,clock=clock,inventory=inventory)
             self.assertFalse(inventory['walk_complete']);self.assertNotIn('identity',inventory)
 
     def test_final_escaped_filename_provenance_is_bounded_after_status_changes(self):

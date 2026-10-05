@@ -55,7 +55,14 @@ import ApplicationServices
             expectedUID = record["uid"] as? Int
             app.launchEnvironment["TOUCHCOLOR_SANDBOX_PROBE_FILE"] = try XCTUnwrap(record["file"] as? String)
         }
-        app.launchArguments = ["--ui-test-reset"]; app.launch()
+        app.launchArguments = ["--ui-test-reset"]
+        // Each contact locale uses this one exact-product setup launch.
+        if name.contains("testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail") {
+            app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        } else if name.contains("testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail") {
+            app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        }
+        app.launch()
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
         XCTAssertEqual(running.count, 1)
         let actual = try XCTUnwrap(running.first)
@@ -364,10 +371,11 @@ import ApplicationServices
             let status = app.staticTexts["camera.status"]
             XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue((status.value as? String ?? status.label).contains("No camera is available"))
-            let picker = app.popUpButtons["camera.device"]
-            XCTAssertTrue(picker.exists, app.debugDescription)
-            XCTAssertFalse(picker.isEnabled, app.debugDescription)
-            XCTAssertEqual(picker.value as? String, "No camera")
+            let unavailable = app.staticTexts["camera.no-device"]
+            XCTAssertTrue(unavailable.exists, app.debugDescription)
+            XCTAssertEqual(unavailable.elementType, .staticText)
+            XCTAssertEqual(unavailable.value as? String ?? unavailable.label, "No camera")
+            XCTAssertFalse(app.popUpButtons["camera.device"].exists, app.debugDescription)
             XCTAssertFalse(app.buttons["camera.start"].isEnabled)
             XCTAssertFalse(app.buttons["camera.freeze"].isEnabled)
             XCTAssertFalse(app.buttons["camera.save"].isEnabled)
@@ -383,26 +391,28 @@ import ApplicationServices
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
     }
 
-    func testExplicitPrivacyContactHasLocalizedLinkSemanticsWithoutOpeningMail() {
-        for (language, locale, label) in [("en", "en_US", "Contact the developer about privacy"),
-                                           ("zh-Hans", "zh_CN", "联系开发者咨询隐私问题")] {
-            app.terminate()
-            app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
-            app.launch()
-            XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 10), app.debugDescription)
-            app.buttons["privacy.open"].click()
-            XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5), app.debugDescription)
-            let contacts = app.links.matching(identifier: "privacy.contact")
-            XCTAssertEqual(contacts.count, 1, app.debugDescription)
-            let contact = contacts.element(boundBy: 0)
-            XCTAssertEqual(contact.elementType, .link)
-            XCTAssertEqual(contact.label, label)
-            XCTAssertTrue(contact.isEnabled, app.debugDescription)
-            XCTAssertTrue(contact.isHittable, app.debugDescription)
-            // Inspect semantics only. Activating mailto is outside this test.
-            app.buttons["privacy.close"].click()
-            XCTAssertTrue(app.buttons["image.open.empty"].waitForExistence(timeout: 5), app.debugDescription)
-        }
+    func testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail() {
+        assertPrivacyContact(label: "Contact the developer about privacy")
+    }
+
+    func testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail() {
+        assertPrivacyContact(label: "联系开发者咨询隐私问题")
+    }
+
+    private func assertPrivacyContact(label: String) {
+        XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 10), app.debugDescription)
+        app.buttons["privacy.open"].click()
+        XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5), app.debugDescription)
+        let contacts = app.links.matching(identifier: "privacy.contact")
+        XCTAssertEqual(contacts.count, 1, app.debugDescription)
+        let contact = contacts.element(boundBy: 0)
+        XCTAssertEqual(contact.elementType, .link)
+        XCTAssertEqual(contact.label, label)
+        XCTAssertTrue(contact.isEnabled, app.debugDescription)
+        XCTAssertTrue(contact.isHittable, app.debugDescription)
+        // Inspect semantics only. Activating mailto is outside this test.
+        app.buttons["privacy.close"].click()
+        XCTAssertTrue(app.buttons["image.open.empty"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
     @MainActor private func audit(_ state: String) throws {

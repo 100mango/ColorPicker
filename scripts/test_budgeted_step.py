@@ -42,6 +42,18 @@ class BudgetControllerTests(unittest.TestCase):
         self.assertEqual(code,0);self.assertEqual(calls[0][0],['bash','-euo','pipefail','-c','echo synthetic'])
         self.assertTrue(calls[0][1]['start_new_session'])
         self.assertEqual(calls[0][1]['env']['TOUCHCOLOR_BUDGET_PHASE'],'work')
+    def test_evidence_body_inherits_its_original_absolute_deadline(self):
+        code,calls,_=self.execute(phase='evidence')
+        self.assertEqual(code,0)
+        self.assertEqual(float(calls[0][1]['env']['TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC']),self.clock.mono+60)
+    def test_failed_vision_qualifier_with_pending_owned_reader_fences_later_commands(self):
+        root=Path('build/vision-runtime');root.mkdir(parents=True)
+        (root/'runtime.json').write_text(json.dumps({'sha':'a'*40,'result':'pending_offline_qualification',
+            'vision_hosted_result':{'summary_operation':{'state':'running','cleanup_confirmed':False}}}))
+        code,_,_=self.execute(outcome=137,phase='evidence')
+        self.assertEqual(code,137);self.assertTrue(budgets.UNCLEAN.exists())
+        self.assertTrue(json.loads((root/'runtime.json').read_bytes())['cleanup_unconfirmed'])
+        _,calls,_=self.execute(phase='evidence');self.assertEqual(calls,[])
     def test_original_raw_body_cap_cannot_become_late_success(self):
         process=FakeProcess()
         def late_return(timeout):

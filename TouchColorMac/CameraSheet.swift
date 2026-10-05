@@ -13,10 +13,13 @@ struct CameraSheet: View {
                 .frame(width: 520, height: 280).background(.black)
                 .overlay { Image(systemName: "plus").font(.title).foregroundStyle(.white).shadow(color: .black, radius: 2).accessibilityHidden(true) }
                 .accessibilityLabel("Live camera preview, sampling the center pixel")
-            Picker("Camera", selection: $camera.selectedDeviceID) {
-                if camera.devices.isEmpty { Text("No camera").tag("") }
-                ForEach(camera.devices) { device in Text(device.name).tag(device.id) }
-            }.disabled(camera.devices.isEmpty || camera.preparing || camera.running).accessibilityIdentifier("camera.device")
+            if camera.devices.isEmpty {
+                Text("No camera").accessibilityIdentifier("camera.no-device")
+            } else {
+                Picker("Camera", selection: $camera.selectedDeviceID) {
+                    ForEach(camera.devices) { device in Text(device.name).tag(device.id) }
+                }.disabled(camera.preparing || camera.running).accessibilityIdentifier("camera.device")
+            }
             Text(camera.status).multilineTextAlignment(.center).lineLimit(4).frame(maxWidth: .infinity)
                 .accessibilityIdentifier("camera.status")
             HStack {

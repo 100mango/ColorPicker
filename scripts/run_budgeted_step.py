@@ -25,6 +25,8 @@ def execute(body, *, label, seconds, phase, process_factory=subprocess.Popen, cl
         environment={**os.environ,'TOUCHCOLOR_BUDGET_PHASE':phase}
         # The exact source body is read from a quoted heredoc; no user text is interpolated.
         started=budget.monotonic()
+        if phase=='evidence':
+            environment['TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC']=str(started+timeout)
         process=process_factory(['bash','-euo','pipefail','-c',body],env=environment,start_new_session=True)
         wait_remaining=max(0,timeout+(RESERVES['cleanup'] if cleanup_driver else 0)-(budget.monotonic()-started))
         try: code=process.wait(timeout=wait_remaining)
@@ -55,6 +57,12 @@ def execute(body, *, label, seconds, phase, process_factory=subprocess.Popen, cl
     finally:
         print('JOB_BUDGET_STEP '+json.dumps({'label':label,'phase':phase,'exit':code,'timed_out':timed_out,'shell_group_gone':cleanup}),file=sys.stderr,flush=True)
         if phase=='evidence':
+            if code and budget.record['platform']=='vision':
+                from vision_offline_result import fence_incomplete_reads
+                try: unconfirmed=fence_incomplete_reads()
+                except Exception: unconfirmed=True
+                if unconfirmed:
+                    fail_record('Interrupted Vision reader or snapshot cleanup is unconfirmed',phase=phase,cleanup_unconfirmed=True)
             if Path('build/job-budget-phase-evidence.json').exists() and code==0:
                 code=1 # A swallowed exporter error is still incomplete.
             retain_metadata(fallback_reason='Evidence phase failed or exceeded its reserved deadline' if code else None) # Filesystem only.
