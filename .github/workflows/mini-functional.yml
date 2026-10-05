@@ -1,0 +1,170 @@
+name: Targeted existing Mini functional qualification
+on:
+  push:
+    branches: [codex/mini-functional]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-ios-refs/heads/codex/platform-integration
+  cancel-in-progress: false
+jobs:
+  compatibility:
+    name: iPadMini
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      TC_TEST_FAMILY: iPadMini
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify exact tested commit
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/mini-functional
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mini-functional.yml@refs/heads/codex/mini-functional
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          echo "Tested commit: $(git rev-parse HEAD)"
+          echo "Tested tree: $(git rev-parse 'HEAD^{tree}')"
+          shasum -a 256 .github/workflows/mini-functional.yml
+      - name: Record exact stable toolchain and simulators
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          xcrun simctl list devicetypes -j
+          xcrun simctl help privacy
+          xcodebuild -version > /tmp/touchcolor-xcode.txt
+          grep 'Xcode 27.0' /tmp/touchcolor-xcode.txt
+          grep -F '27A266a' /tmp/touchcolor-xcode.txt
+          xcodebuild -showsdks > /tmp/touchcolor-sdks.txt
+          grep 'iphoneos27.0' /tmp/touchcolor-sdks.txt
+      - name: Validate checked-in project and metadata
+        run: |
+          python3 scripts/generate_project.py
+          python3 scripts/generate_watch_project.py
+          git diff --exit-code -- TouchColor.xcodeproj TouchColorWatch.xcodeproj
+          python3 scripts/generate_palette_fixture_project.py
+          git diff --exit-code -- TestFixtures
+          plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
+          python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
+          python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics
+          xcodebuild -list -project TouchColor.xcodeproj
+      - name: Shared domain raster and legacy palette tests
+        timeout-minutes: 6
+        run: swift test --package-path Packages/ColorCore
+      - name: Build unsigned Release for physical iOS devices
+        run: |
+          set -o pipefail
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify_embedded_watch.py build/device/Build/Products/Release-iphoneos/TouchColor.app device
+      - name: Analyze production Objective-C source
+        timeout-minutes: 5
+        run: |
+          set -o pipefail
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO CLANG_ANALYZER_OUTPUT=plist analyze
+      - name: Record unsigned app framework inventory
+        run: |
+          python3 - <<'PYFRAMEWORKS'
+          import json,plistlib
+          from pathlib import Path
+          app=Path('build/device/Build/Products/Release-iphoneos/TouchColor.app')
+          assert (app/'TouchColor').is_file()
+          metadata=plistlib.loads((app/'Info.plist').read_bytes())
+          assert metadata['UIDeviceFamily']==[1,2], metadata['UIDeviceFamily']
+          assert not metadata.get('UIFileSharingEnabled')
+          assert not metadata.get('LSSupportsOpeningDocumentsInPlace')
+          assert not list(app.rglob('*PaletteFixtures*')), 'Fixture host must not be in Release packaging'
+          assert 'PaletteFixtures' not in Path('TouchColor.xcodeproj/project.pbxproj').read_text()
+          print(json.dumps({'supported_device_families':metadata['UIDeviceFamily'],'scope':'native iPhone and iPad'}))
+          directory=app/'Frameworks'
+          entries=sorted(str(p.relative_to(app)) for p in directory.rglob('*')) if directory.is_dir() else []
+          print(json.dumps({'app':'TouchColor.app','embedded_framework_directory_entries':entries}))
+          PYFRAMEWORKS
+          otool -L build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor
+          strings build/device/Build/Products/Release-iphoneos/TouchColor.app/TouchColor > /tmp/touchcolor-release-strings.txt
+          if grep -E -- '--ui-test-' /tmp/touchcolor-release-strings.txt; then
+            echo 'Test-only seams leaked into Release'; exit 1
+          fi
+      - name: Build simulator test products
+        id: build-tests
+        timeout-minutes: 8
+        run: |
+          xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
+            build-for-testing
+      - name: Build independent simulator-only palette fixture host
+        id: build-fixture
+        timeout-minutes: 4
+        run: |
+          xcodebuild -project TestFixtures/PaletteFixtures.xcodeproj -scheme PaletteFixtures -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/palette-fixtures \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Warm up required simulator
+        id: warm-device
+        if: ${{ !cancelled() && steps.build-tests.outcome == 'success' && steps.build-fixture.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" prepare
+      - name: Unit and constrained-window layout tests
+        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorTests
+      - name: Seed synthetic photo
+        id: seed-device
+        if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
+        timeout-minutes: 10
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" seed
+      - name: Functional UI tests
+        id: functional-tests
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
+        timeout-minutes: 20
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
+      - name: Read bounded app and Files-service metadata after a functional failure
+        id: runtime-diagnostics
+        if: ${{ !cancelled() && steps.functional-tests.outcome == 'failure' }}
+        timeout-minutes: 2
+        run: python3 scripts/uikit_runtime_diagnostics.py "$TC_TEST_FAMILY"
+      - name: Official XCTest accessibility audits
+        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
+        timeout-minutes: 12
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" AccessibilityAudits
+      - name: Shut down simulator
+        if: ${{ always() && steps.warm-device.outcome != 'skipped' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
+        timeout-minutes: 2
+        run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" shutdown
+      - name: Export bounded device evidence
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/export_audit_failures.py
+      - name: Always report test summaries and simulator diagnostics
+        if: always()
+        run: |
+          vm_stat
+          tc_report_status=0
+          python3 scripts/uikit_warmup.py "$TC_TEST_FAMILY" report || tc_report_status=$?
+          find build -maxdepth 1 -name '*.xcresult' -print -exec xcrun xcresulttool get test-results summary --path {} \; || true
+          find ~/Library/Logs/DiagnosticReports -maxdepth 1 -name 'TouchColor*' -print -exec tail -n 100 {} \; 2>/dev/null || true
+          exit "$tc_report_status"
+      - name: Verify tested source stayed unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          echo "Final tested tree: $(git rev-parse 'HEAD^{tree}')"
+          shasum -a 256 .github/workflows/mini-functional.yml
