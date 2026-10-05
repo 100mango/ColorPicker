@@ -1,0 +1,65 @@
+name: Mini direct existing XCTest diagnostic
+on:
+  push:
+    branches: [codex/mini-direct-xctest]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-ios-refs/heads/codex/platform-integration
+  cancel-in-progress: false
+jobs:
+  mini-direct-xctest:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_JOB_PLATFORM: ios
+      TOUCHCOLOR_JOB_LANE: mini-direct-xctest
+      TOUCHCOLOR_JOB_MINUTES: '20'
+      TOUCHCOLOR_BUDGET_PHASE: work
+      TOUCHCOLOR_EVIDENCE_LIMIT: '1000000'
+    steps:
+      - name: Start the original job clock
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, time
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('TOUCHCOLOR_JOB_STARTED_EPOCH=' + str(time.time()) + '\n')
+              output.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC=' + str(time.monotonic()) + '\n')
+          PY
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Initialize the original source-bound budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/mini-direct-xctest
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mini-direct-xctest.yml@refs/heads/codex/mini-direct-xctest
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 scripts/job_budget.py initialize
+      - name: Run one unchanged Mini case, then permanently stop
+        shell: bash
+        run: python3 scripts/mini_direct_xctest.py diagnose
+      - name: Stage bounded existing host files only
+        id: stage
+        if: always()
+        timeout-minutes: 1
+        run: python3 scripts/mini_direct_xctest.py stage
+      - name: Check the original upload reserve
+        id: upload_reserve
+        if: always()
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py check-upload
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always() && steps.stage.outcome == 'success' && steps.upload_reserve.outcome == 'success'
+        timeout-minutes: 1
+        with:
+          name: mini-direct-xctest-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/mini-direct-upload
+          if-no-files-found: warn
+          retention-days: 7
