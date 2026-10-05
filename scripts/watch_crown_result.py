@@ -361,9 +361,12 @@ def _budget_and_stages(report, source):
         se, fe, sm, fm = (stage.get(key) for key in ('started_epoch', 'finished_epoch', 'started_monotonic', 'finished_monotonic'))
         limit = stage.get('timeout_seconds')
         if stage['command'][:3] in (['xcrun','simctl','boot'],['xcrun','simctl','bootstatus']):
-            cap = 120 if stage['command'][2]=='boot' else 240
-            require(phase=='setup' and stage.get('setup_command_cap_seconds')==cap and number(limit) and 0<limit<=cap,
-                    'Setup boot/readiness cap or phase changed')
+            require(phase=='setup','Boot/readiness command is outside setup')
+        if phase=='setup' and stage['command'][:2]==['xcrun','simctl']:
+            caps={'list':30,'create':60,'pair':60,'pair_activate':60,'boot':180,'bootstatus':420}
+            cap=caps.get(stage['command'][2] if len(stage['command'])>2 else '')
+            require(cap is not None and stage.get('setup_command_cap_seconds')==cap and number(limit) and 0<limit<=cap,
+                    'Canonical setup command cap changed or unknown family')
         require(all(number(value) for value in (se, fe, sm, fm, limit)), 'invalid command timing')
         require(previous_epoch <= se <= fe and previous_mono <= sm <= fm and 0 < limit <= (PHASE_LIMITS | RESERVES)[phase] and
                 fm-sm < limit and fe-se < limit and abs((fm-sm)-(fe-se)) <= 1, 'overlapping, expired or contradictory command clocks')

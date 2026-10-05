@@ -30,6 +30,9 @@ from watch_failure_continuation import recorded_timeout, strict_json
 
 ROOT = Path('build/evidence')
 SIMULATOR_STOP = Path('build/crown-simulator-uncertain.json')
+# Canonical Watch maxima, checked against its source without importing the
+# imperative runner. These are caps, clipped to the existing setup/work clocks.
+SETUP_COMMAND_CAPS = {'list':30,'create':60,'pair':60,'pair_activate':60,'boot':180,'bootstatus':420}
 
 def device_facing(command):
     # These are the only device-facing tool families used by this driver.
@@ -271,9 +274,9 @@ class Driver:
         left=self.current['limit_seconds']-(self.clock()-self.current['started_monotonic'])
         declared=seconds
         if clip_setup:
-            cap={'boot':120,'bootstatus':240}.get(command[2] if len(command)>2 else '')
+            cap=SETUP_COMMAND_CAPS.get(command[2] if len(command)>2 else '')
             require(self.current['name']=='setup' and self.phase_kind=='work' and command[:2]==['xcrun','simctl']
-                    and cap==seconds,'Only admitted setup boot/readiness commands may clip')
+                    and cap==seconds,'Only source-admitted setup command families may clip')
             seconds=min(seconds,left,self.budget.remaining('work'))
             require(seconds>=1,'No bounded setup allowance remains')
         else:require(left+0.01>=seconds,'Full command allowance unavailable in '+self.current['name'])
@@ -393,6 +396,13 @@ class Driver:
     def text(self, command, seconds=5, **kw): return self.run(command, seconds, **kw)[1].strip()
     def value(self, command, seconds=5, **kw): return strict_json(self.text(command, seconds, **kw))
 
+    def setup_text(self, command):
+        require(command[:2]==['xcrun','simctl'] and len(command)>2 and command[2] in SETUP_COMMAND_CAPS,
+                'Unknown setup command family')
+        return self.text(command,SETUP_COMMAND_CAPS[command[2]],clip_setup=True)
+
+    def setup_value(self, command): return strict_json(self.setup_text(command))
+
     def source(self):
         source = self.report['source']
         observed = {'sha': self.text(['git', 'rev-parse', 'HEAD'], 2),
@@ -457,35 +467,35 @@ class Driver:
 
     def setup(self):
         with self.phase('setup', PHASES['setup']):
-            devices=self.value(['xcrun','simctl','list','devices','available','-j'])['devices']
+            devices=self.setup_value(['xcrun','simctl','list','devices','available','-j'])['devices']
             runtime, watch, inventory=select_profile(devices,'watchOS-27-0','smallest')
             chosen=next(v for v in inventory if v['udid']==watch['udid'])
             require(chosen['millimeters']==40 and watch.get('deviceTypeIdentifier'), 'Only observed smallest 40mm Watch admitted')
-            before=self.value(['xcrun','simctl','list','pairs','-j'])
+            before=self.setup_value(['xcrun','simctl','list','pairs','-j'])
             require(isinstance(before.get('pairs'),dict) and len(before['pairs'])<=64, 'Invalid initial pair inventory')
             phone_runtime, phone=phone_template(devices)
             self.report['initial_inventory']={'devices':devices,'pairs':before}
             for role, template, selected_runtime in [('phone',phone,phone_runtime),('watch',watch,runtime)]:
-                identifier=self.text(['xcrun','simctl','create','TouchColor-Crown-'+role+'-'+str(uuid.uuid4())[:8],template['deviceTypeIdentifier'],selected_runtime],10)
+                identifier=self.setup_text(['xcrun','simctl','create','TouchColor-Crown-'+role+'-'+str(uuid.uuid4())[:8],template['deviceTypeIdentifier'],selected_runtime])
                 verify_new_device(identifier,devices,self.owned)
                 self.owned.append({'role':role,'udid':identifier,'runtime':selected_runtime,'deviceTypeIdentifier':template['deviceTypeIdentifier']}); self.persist_guarded()
             phone_id, watch_id=[v['udid'] for v in self.owned]
-            pair=self.text(['xcrun','simctl','pair',watch_id,phone_id],10);uuid.UUID(pair)
+            pair=self.setup_text(['xcrun','simctl','pair',watch_id,phone_id]);uuid.UUID(pair)
             require(pair not in before['pairs'], 'Pair ownership ambiguous')
             self.pair=pair # Exact new pair is tracked even if readback fails.
-            pairs=self.value(['xcrun','simctl','list','pairs','-j'])
+            pairs=self.setup_value(['xcrun','simctl','list','pairs','-j'])
             record=verify_pair(pairs,pair,watch_id,phone_id,before['pairs'])
             active=activate_owned_pair(pairs,pair,watch_id,phone_id,before['pairs'],
-                 lambda identifier:self.run(['xcrun','simctl','pair_activate',identifier],5),
-                 lambda:self.value(['xcrun','simctl','list','pairs','-j']))
+                 lambda identifier:self.setup_text(['xcrun','simctl','pair_activate',identifier]),
+                 lambda:self.setup_value(['xcrun','simctl','list','pairs','-j']))
             self.report['pair']={'id':pair,'record':record,'activation':active}
             self.device=watch_id
             self.report['device']={'udid':watch_id,'runtime':runtime,'profile':'smallest','millimeters':40,
                     'deviceTypeIdentifier':watch['deviceTypeIdentifier'],'text_phase':'normal','owned':True}
             for identifier in (phone_id,watch_id):
-                self.run(['xcrun','simctl','boot',identifier],120,clip_setup=True)
-                self.run(['xcrun','simctl','bootstatus',identifier,'-b'],240,clip_setup=True)
-            inventory=self.value(['xcrun','simctl','list','devices','available','-j'])['devices']
+                self.setup_text(['xcrun','simctl','boot',identifier])
+                self.setup_text(['xcrun','simctl','bootstatus',identifier,'-b'])
+            inventory=self.setup_value(['xcrun','simctl','list','devices','available','-j'])['devices']
             rows=[v for group in inventory.values() for v in group if v['udid'] in (phone_id,watch_id)]
             require(len(rows)==2 and all(v['state']=='Booted' for v in rows), 'Owned pair readiness unconfirmed')
             self.report['setup_readback']=rows

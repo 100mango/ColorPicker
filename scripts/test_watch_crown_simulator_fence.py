@@ -346,15 +346,15 @@ class SetupAllowanceTests(FenceTestCase):
         with patch.object(driver,'stop_group',return_value=True),self.d.phase('setup',450):
             self.clock.advance(3)
             for _ in range(2):
-                self.d.run(['xcrun','simctl','boot',DEVICE],120,clip_setup=True)
-                self.d.run(['xcrun','simctl','bootstatus',DEVICE,'-b'],240,clip_setup=True)
+                self.d.run(['xcrun','simctl','boot',DEVICE],180,clip_setup=True)
+                self.d.run(['xcrun','simctl','bootstatus',DEVICE,'-b'],420,clip_setup=True)
         self.assertAlmostEqual(self.clock.mono-100,422.381)
-        [self.assertAlmostEqual(actual,expected) for actual,expected in zip(observed[:3],[120,240,120])];self.assertAlmostEqual(observed[3],217.501)
+        [self.assertAlmostEqual(actual,expected) for actual,expected in zip(observed[:3],[180,420,180])];self.assertAlmostEqual(observed[3],217.501)
         self.assertFalse(self.d.simulator_uncertain);self.assertEqual(self.d.budget.record['started_monotonic'],100)
         self.assertEqual(self.d.budget.record['minutes'],25)
 
-    def test_clipping_cannot_shrink_ui_or_any_non_boot_command(self):
-        for command,seconds in [(test_command(METHODS[0],DEVICE),180),(['xcrun','simctl','create','name'],120),
+    def test_clipping_cannot_shrink_ui_or_any_unadmitted_setup_command(self):
+        for command,seconds in [(test_command(METHODS[0],DEVICE),180),(['xcrun','simctl','shutdown',DEVICE],120),
                                 (['xcrun','simctl','boot',DEVICE],240)]:
             with self.subTest(command=command),self.d.phase('setup',450):
                 with self.assertRaises(ValueError):self.d.run(command,seconds,clip_setup=True)
@@ -364,7 +364,7 @@ class SetupAllowanceTests(FenceTestCase):
         self.d.process_factory=self.process()
         with self.d.phase('setup',450):
             self.clock.advance(449.5)
-            with self.assertRaises(ValueError):self.d.run(['xcrun','simctl','bootstatus',DEVICE,'-b'],240,clip_setup=True)
+            with self.assertRaises(ValueError):self.d.run(['xcrun','simctl','bootstatus',DEVICE,'-b'],420,clip_setup=True)
         self.assertEqual(self.spawns,[]);self.assertFalse(self.d.simulator_uncertain)
         self.clock.advance(350)
         with self.assertRaises(BudgetExhausted):
