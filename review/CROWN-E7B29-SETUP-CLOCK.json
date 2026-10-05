@@ -1,0 +1,53 @@
+{
+  "purpose": "timing-field projection only; never full-run qualification",
+  "source_sha": "e7b29fec6d9b10ed706193fe122954f3b57eecde",
+  "run_id": "37287069946",
+  "stage_index": 23,
+  "stage": {
+    "command": [
+      "xcrun",
+      "simctl",
+      "bootstatus",
+      "474DAD8A-AB5A-43BA-991E-EB70180CD242",
+      "-b"
+    ],
+    "phase": "setup",
+    "budget_phase": "work",
+    "source_sha": "e7b29fec6d9b10ed706193fe122954f3b57eecde",
+    "started": true,
+    "started_epoch": 1791190999.133177,
+    "started_monotonic": 1102.314939791,
+    "timeout_seconds": 408.9576459169999,
+    "exit": 0,
+    "raw_exit": 0,
+    "timed_out": false,
+    "process_group_gone": true,
+    "capture_reader_finished": true,
+    "stdout_truncated": false,
+    "setup_command_cap_seconds": 420,
+    "deadline_monotonic": 1511.109129375,
+    "pid": 24939,
+    "reader_errors": [],
+    "stdout_sha256": "08ec776b835449fdd6b51d2430b4d730baa659aa4e78092252c68afd19558c8b",
+    "stdout_bytes": 138,
+    "finished_epoch": 1791191166.40473,
+    "finished_monotonic": 1269.502899291
+  },
+  "phase": {
+    "name": "setup",
+    "limit_seconds": 600,
+    "started_monotonic": 911.109129375,
+    "started_epoch": 1791190807.831765,
+    "completed": false,
+    "finished_monotonic": 1269.608756208,
+    "finished_epoch": 1791191166.5106418
+  },
+  "budget": {
+    "started_monotonic": 862.191645791
+  },
+  "original_run_has_uncertainty": true,
+  "original_report_sha256": "3f1b5c62e35db8010a399b7f1fa6372bb57af5d6750d280116e20066e2674519",
+  "artifact_sha256": "161b73da9adf53ad246f15697f26660f73502b3ccb8dcb379dc78a788fafba83",
+  "original_cases": [],
+  "original_cleanup": "unconfirmed after later shutdown timeout; not changed by timing projection"
+}

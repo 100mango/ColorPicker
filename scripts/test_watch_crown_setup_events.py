@@ -1,13 +1,14 @@
 """Versioned event admission adversaries; no Apple semantic-readiness claim."""
 import copy
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from test_watch_crown_result import fixture, stage
 import watch_crown_result as result
-from watch_crown_setup_events import validate_setup_events, PROTOCOL, BOOT_OUTPUT_LIMIT
+from watch_crown_setup_events import validate_setup_events, validate_setup_window, PROTOCOL, BOOT_OUTPUT_LIMIT
 
 
 class EventProofTests(unittest.TestCase):
@@ -207,6 +208,64 @@ class EventProofTests(unittest.TestCase):
         self.assertFalse(result.validate_result(self.report,self.root,expected_source=expected)['complete'])
         r=copy.deepcopy(self.report);r['cases']=[]
         self.assertFalse(result.validate_result(r,self.root)['complete'])
+
+
+class SetupClockProjectionTests(unittest.TestCase):
+    def setUp(self):
+        root=Path(__file__).resolve().parents[1]
+        self.projection=json.loads((root/'review/CROWN-E7B29-SETUP-CLOCK.json').read_text())
+        self.stage=copy.deepcopy(self.projection['stage']);self.phase=self.projection['phase'];self.budget=self.projection['budget']
+    def check(self,stage=None,phase=None,budget=None):
+        return validate_setup_window(self.stage if stage is None else stage,self.phase if phase is None else phase,
+            self.budget if budget is None else budget,self.phase['started_monotonic'],self.phase['started_epoch'])
+    def test_retained_projection_is_timely_without_upgrading_failed_run(self):
+        self.assertEqual(self.projection['source_sha'],'e7b29fec6d9b10ed706193fe122954f3b57eecde')
+        self.assertEqual(self.projection['stage_index'],23)
+        remain=self.phase['started_monotonic']+600-self.stage['started_monotonic']
+        self.assertAlmostEqual(self.stage['timeout_seconds']-remain,.1634563329997718,places=12)
+        self.assertGreater(self.stage['timeout_seconds'],remain+.001) # Reproduces old false rejection.
+        self.assertEqual(self.check(),(self.stage['finished_monotonic'],self.stage['finished_epoch']))
+        self.assertTrue(self.projection['original_run_has_uncertainty'])
+        self.assertFalse(self.phase['completed']);self.assertEqual(self.projection['original_cases'],[])
+    def test_effective_deadline_cannot_exceed_any_original_ceiling(self):
+        stage=copy.deepcopy(self.stage);stage['deadline_monotonic']=self.phase['started_monotonic']+600+.0000001
+        with self.assertRaises(ValueError):self.check(stage)
+        stage=copy.deepcopy(self.stage);stage['deadline_monotonic']=stage['started_monotonic']+stage['timeout_seconds']+.0000001
+        with self.assertRaises(ValueError):self.check(stage)
+        budget={'started_monotonic':self.stage['deadline_monotonic']-1020-.0000001}
+        with self.assertRaises(ValueError):self.check(budget=budget)
+    def test_completion_at_or_after_effective_deadline_is_still_rejected(self):
+        for late in (0,.0000001,.085142084,.163456333):
+            stage=copy.deepcopy(self.stage);stage['finished_monotonic']=stage['deadline_monotonic']+late
+            stage['finished_epoch']=stage['started_epoch']+stage['finished_monotonic']-stage['started_monotonic']
+            with self.subTest(late=late),self.assertRaises(ValueError):self.check(stage)
+    def test_nominal_cap_and_all_original_clocks_remain_validated(self):
+        for bad in (0,420.000001,float('nan')):
+            stage=copy.deepcopy(self.stage);stage['timeout_seconds']=bad
+            with self.subTest(bad=bad),self.assertRaises(ValueError):self.check(stage)
+        with self.assertRaises(ValueError):self.check(phase={**self.phase,'started_monotonic':float('nan')})
+        with self.assertRaises(ValueError):self.check(budget={'started_monotonic':float('nan')})
+    def test_actual_allocator_delay_shortens_effective_window_without_more_time(self):
+        from unittest.mock import patch
+        import run_watch_crown_control as driver
+        import test_watch_crown_setup_allowances as replay
+        test=replay.SetupReplayTests();test.setUp()
+        try:
+            test.install(replay.CANONICAL_BOOT)
+            original=test.d.budget.admit
+            def delayed(label,*args,**kwargs):
+                granted=original(label,*args,**kwargs)
+                if label=='xcrun simctl bootstatus '+replay.WATCH:test.clock.advance(.163456333)
+                return granted
+            test.d.budget.admit=delayed
+            with patch.object(driver,'stop_group',return_value=True):test.d.setup()
+            row=test.d.report['stages'][-1];phase=test.d.report['phases'][0]
+            self.assertGreater(row['timeout_seconds'],phase['started_monotonic']+600-row['started_monotonic'])
+            self.assertLess(row['finished_monotonic'],row['deadline_monotonic'])
+            self.assertLessEqual(row['deadline_monotonic'],phase['started_monotonic']+600)
+            self.assertTrue(phase['completed']);self.assertFalse(test.d.simulator_uncertain)
+            self.assertEqual(len(test.commands),11)
+        finally:test.tearDown()
 
 
 if __name__ == '__main__':

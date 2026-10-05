@@ -22,6 +22,29 @@ def number(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def validate_setup_window(stage, phase, budget, previous_mono, previous_epoch):
+    """Validate effective absolute bounds, not an earlier grant at a later stamp.
+
+    Driver.run clips the nominal grant, then records the stage start, then takes
+    min(start+grant, setup cutoff, remaining original pool) as the deadline.
+    Scheduling between grant calculation and the stamp may shorten the actual
+    window. It cannot move its enforced deadline or permit late completion.
+    """
+    sm, fm, se, fe, deadline, allowance = (stage.get(k) for k in
+        ('started_monotonic','finished_monotonic','started_epoch','finished_epoch','deadline_monotonic','timeout_seconds'))
+    require(all(number(v) for v in (sm, fm, se, fe, deadline, allowance,
+            phase.get('started_monotonic'), budget.get('started_monotonic'))) and
+            phase.get('limit_seconds') == 600, 'missing finite setup clocks')
+    cap = CAPS[stage['command'][2]]
+    require(stage.get('setup_command_cap_seconds') == cap and 1 <= allowance <= cap,
+            'setup command cap changed')
+    upper = min(sm + allowance, phase['started_monotonic'] + 600, budget['started_monotonic'] + 1020)
+    require(previous_mono <= sm <= fm < deadline <= upper and previous_epoch <= se <= fe and
+            abs((fm-sm)-(fe-se)) <= 1 and fe < se + allowance,
+            'late, reordered or contradictory setup completion')
+    return fm, fe
+
+
 def validate_setup_events(report, blobs, manifest):
     """Validate the exact planned sequence and reconstruct every claimed event."""
     require(report.get('schema') == SCHEMA and type(report.get('schema')) is int and
@@ -102,20 +125,7 @@ def validate_setup_events(report, blobs, manifest):
                 stage.get('stdout_truncated') is False and not stage.get('reader_errors') and
                 not stage.get('cleanup_error') and not stage.get('reported_device_timeout') and
                 stage.get('simulator_command_completion') != 'unconfirmed', 'setup command cleanup/output uncertain')
-        sm, fm, se, fe, deadline, allowance = (stage.get(k) for k in
-            ('started_monotonic','finished_monotonic','started_epoch','finished_epoch','deadline_monotonic','timeout_seconds'))
-        require(all(number(v) for v in (sm, fm, se, fe, deadline, allowance)), 'missing finite setup clocks')
-        cap = CAPS[command[2]]
-        require(stage.get('setup_command_cap_seconds') == cap and 1 <= allowance <= cap and
-                allowance <= phase['started_monotonic'] + 600 - sm + .001 and
-                allowance <= budget['started_monotonic'] + 1020 - sm + .001,
-                'setup cap or original pool changed')
-        require(previous_mono <= sm <= fm < deadline and previous_epoch <= se <= fe and
-                deadline <= sm + allowance + .001 and deadline <= phase['started_monotonic'] + 600 and
-                deadline <= budget['started_monotonic'] + 1020 and
-                abs((fm-sm)-(fe-se)) <= 1 and fe < se + allowance,
-                'late, reordered or contradictory setup completion')
-        previous_mono, previous_epoch = fm, fe
+        previous_mono, previous_epoch = validate_setup_window(stage, phase, budget, previous_mono, previous_epoch)
     # Creation/pair IDs must match the actual bounded command-output digests.
     for position, identity in ((2,phone['udid']), (3,watch['udid']), (4,pair['id'])):
         stage = selected[position][1]; raw = (identity+'\n').encode('ascii')

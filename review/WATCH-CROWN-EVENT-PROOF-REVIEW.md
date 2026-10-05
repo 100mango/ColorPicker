@@ -42,3 +42,13 @@ The first local packet was blocked on two reproduced validation gaps and was nev
 The admitted source emits no command between setup and the first XCTest. The validator now enforces that closed sequence, rather than classifying only the literal `xcrun` prefix. Absolute-path xcrun, env/shell wrappers, and unrelated host commands inserted there all fail. These are explicit adversarial receipt checks, not added native operations. The driver, protocol, budgets, UI and cleanup remain unchanged from the first local event packet.
 
 Three new regression methods cover both blockers and all four recognized active/inactive branches. The full focused count is now 233 per Python mode. The original blocked tree and patch remain preserved for comparison; only this successor is offered for review.
+
+## Native allocator-to-stage timestamp correction
+
+The e7b29 run retained nominal Watch bootstatus allowance408.957645917s, calculated before the later stage start timestamp. Scheduling advanced0.163456333s between those events; the later setup remainder was408.794189584s. The actual enforced deadline remained the original setup cutoff1511.109129375 and the command finished at1269.502899291, more than241s early. The old validator incorrectly compared the earlier nominal grant with the later remainder.
+
+This successor independently bounds the recorded effective deadline by min(stage start + nominal grant, original setup cutoff, original work cutoff). Nominal grant remains within its canonical cap; all clocks must be finite, and completion must remain strictly before the effective deadline. No timing tolerance is added. The previous1ms nominal comparison tolerance is removed. An allocator observation delay can only shorten the effective window, never extend its deadline.
+
+The committed minimal real fixture is explicitly a timing-field projection from run37287069946/stage23, bound to the retained report and artifact digests. It is not a successful-run fixture. The original setup rejection, later shutdown timeout, durable uncertainty, absent UI cases and unconfirmed cleanup are preserved. The full native report must still fail validation.
+
+Five new tests reproduce the real numeric projection, inject actual pre-stamp delay into the unchanged driver allocator, and reject extended deadlines, any completion at/after the effective cutoff, changed caps and invalid original clocks. This yields238 focused tests per mode. Driver, workflow, command sequence, event semantics, budgets and every other validator gate are unchanged.
