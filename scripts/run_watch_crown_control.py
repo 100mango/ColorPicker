@@ -522,7 +522,9 @@ class Driver:
         for identifier in identities:
             # Terminate can return an already-stopped error. Only the subsequent
             # exact owned-device service inventory establishes absence.
-            termination,_=self.run(['xcrun','simctl','terminate',self.device,identifier],3,required=False)
+            require(self.current is not None and self.current['limit_seconds']-(self.clock()-self.current['started_monotonic']) >= 30,
+                    'Full termination allowance unavailable in original phase')
+            termination,_=self.run(['xcrun','simctl','terminate',self.device,identifier],30,required=False)
             if termination['timed_out']:
                 self.budget.latch_cleanup_failure()
                 fail_record('Timed-out app termination has unknown simulator daemon completion',phase=self.phase_kind,cleanup_unconfirmed=True)
@@ -553,6 +555,9 @@ class Driver:
                 elif line.startswith('WATCH_STATIC_CROWN_'): static.append(line)
                 else: ordinary.append(line)
             case['diagnostics_file']=self.retain(name+'-console.log','\n'.join(ordinary)+'\n','diagnostics',name,limit=65_536)
+            if name=='actual_cold':
+                # Persist already captured host bytes before any later device cleanup.
+                self.retain('cold-list-frames.json',json.dumps(self.frames.report,separators=(',',':')),'cold_frames','actual_cold',limit=150_000)
             if static: self.retain('static-observations.log','\n'.join(static)+'\n','observation_static',name,limit=16_384)
             if reported_device_timeout(output):
                 self.latch_simulator_uncertainty(stage,'xctest_console_reports_timeout')
@@ -570,8 +575,8 @@ class Driver:
             # that has already started. Reconcile exact finalized evidence here.
             status=method_scheduling_status(method,self.device,self.budget.record['sha'],stage,summary,lifecycle)
             case['scheduling_status']=status
-            cleanup=self.stop_apps(method);case['process_cleanup']=cleanup;case['cleanup_confirmed']=True
             case['observed_command_result']=status
+            cleanup=self.stop_apps(method);case['process_cleanup']=cleanup;case['cleanup_confirmed']=True
 
     def cleanup(self):
         if self.simulator_blocked() or self.budget.cleanup_unconfirmed or not self.owned: return
@@ -617,7 +622,6 @@ class Driver:
                 stage, raw=self.run(['xcrun','xcresulttool','get','test-results','tests','--path',case['result_bundle']],20)
                 case['tests_file']=self.retain(case['name']+'-tests.json',raw,'tests',case['name'],limit=150_000)
                 case['tests_stage_index']=len(self.report['stages'])-1
-            self.retain('cold-list-frames.json',json.dumps(self.frames.report,separators=(',',':')),'cold_frames','actual_cold',limit=150_000)
 
     def execute(self):
         require(not self.simulator_blocked(),'Prior simulator uncertainty; fresh VM required')

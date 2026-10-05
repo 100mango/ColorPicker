@@ -254,6 +254,47 @@ class BoundedDriverTests(unittest.TestCase):
         self.assertEqual(self.d.report['stages'],[])
 
 
+    def test_canonical_termination_latencies_fit_same_cold_phase(self):
+        elapsed=iter((4.375,22.015,.705));clock=self.clock;commands=[]
+        class Process:
+            pid=123456
+            def __init__(self,command,**kw):
+                commands.append(command);self.stdout=io.BytesIO(b'PID Status Label\n' if 'launchctl' in command else b'')
+            def wait(self,timeout=None):clock.advance(next(elapsed));return 0
+        self.d.process_factory=Process;self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
+        self.d.runners={'actual_cold':'com.mango.touchColor.TouchColorWatchUITests.xctrunner'}
+        with patch.object(driver,'stop_group',return_value=True),self.d.phase('actual_cold',240):
+            result=self.d.stop_apps(METHODS[0])
+        self.assertTrue(result['confirmed']);self.assertEqual(len(commands),3)
+        self.assertEqual([x['timeout_seconds'] for x in self.d.report['stages']],[30,30,5])
+        self.assertEqual(self.d.report['phases'][0]['limit_seconds'],240)
+        self.assertAlmostEqual(self.clock.mono,127.095)
+
+    def test_termination_requires_full_remaining_phase_before_spawn(self):
+        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'actual_cold':'runner'}
+        self.d.process_factory=lambda *args,**kw:self.fail('No process may start without30seconds')
+        with self.d.phase('actual_cold',240):
+            self.clock.advance(210.5)
+            with self.assertRaisesRegex(ValueError,'Full termination allowance unavailable'):self.d.stop_apps(METHODS[0])
+        self.assertEqual(self.d.report['stages'],[])
+
+    def test_one_float_step_short_of_termination_allowance_cannot_spawn(self):
+        import math
+        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'actual_cold':'runner'}
+        self.d.process_factory=lambda *args,**kw:self.fail('No process may start on clipped nominal grant')
+        with self.d.phase('actual_cold',240):
+            self.clock.mono=math.nextafter(self.clock.mono+210.,math.inf);self.clock.wall+=210.
+            with self.assertRaisesRegex(ValueError,'Full termination allowance unavailable'):self.d.stop_apps(METHODS[0])
+        self.assertEqual(self.d.report['stages'],[])
+
+    def test_termination_requires_full_original_work_pool_before_spawn(self):
+        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'actual_cold':'runner'}
+        self.d.process_factory=lambda *args,**kw:self.fail('No process may start outside original pool')
+        self.clock.advance(990.5)
+        self.d.current={'name':'actual_cold','limit_seconds':240,'started_monotonic':self.clock.mono}
+        with self.assertRaises((ValueError,BudgetExhausted)):self.d.stop_apps(METHODS[0])
+        self.assertEqual(self.d.report['stages'],[])
+
 class SequentialMethodTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.old=Path.cwd();os.chdir(self.temp.name)
@@ -310,6 +351,69 @@ class SequentialMethodTests(unittest.TestCase):
         self.assertEqual(sum(c[:2]==['xcodebuild','test-without-building'] for c in self.commands),3)
         self.assertTrue(all(v['cleanup_confirmed'] for v in self.d.report['cases']))
         self.assertFalse(self.d.report['acceptance'])
+    def test_exact_captured_frame_pairs_persist_before_termination_uncertainty(self):
+        original=self.d.run;records=[];seen_caps=[]
+        for attempt in range(12):
+            for suffix in ('before','after'):
+                records.append(dict(case='-[WatchWorkflowTests testHomeListDigitalCrownFromColdLaunch]',
+                    phase='cold.'+str(attempt)+'.'+suffix,viewport=[0,0,162,197],snapshotMilliseconds=20,
+                    rows=[dict(id='watch.photo',frame=[2,95.5,158,47])]))
+        def wrapped(command,seconds,*args,**kwargs):
+            if command[:3]==['xcrun','simctl','terminate']:
+                retained=json.loads(Path('build/evidence/cold-list-frames.json').read_text())
+                self.assertEqual(retained['records'],records);self.assertEqual(retained['matched_records'],24)
+                self.assertEqual(self.d.report['cases'][0]['observed_command_result'],'failed')
+                self.assertFalse(self.d.report['cases'][0]['cleanup_confirmed']);seen_caps.append(seconds)
+            stage,raw=original(command,seconds,*args,**kwargs)
+            if command[:2]==['xcodebuild','test-without-building']:
+                raw+=''.join('WATCH_LIST_FRAME '+json.dumps(record)+'\n' for record in records)
+            return stage,raw
+        self.d.run=wrapped;self.terminate_timeout=True
+        with self.assertRaises(RuntimeError),patch.object(driver,'fail_record'):self.d.method(METHODS[0])
+        path=Path('build/evidence/cold-list-frames.json');before=path.read_bytes()
+        entry=next(x for x in self.d.report['evidence'] if x['path']==path.name)
+        self.assertEqual(entry['sha256'],hashlib.sha256(before).hexdigest());self.assertEqual(entry['bytes'],len(before))
+        commands=len(self.commands);self.d.cleanup();self.d.evidence()
+        self.assertEqual(len(self.commands),commands);self.assertEqual(path.read_bytes(),before)
+        self.assertEqual(seen_caps,[30]);self.assertFalse(self.d.report['acceptance'])
+
+    def test_local_frame_write_failure_stops_before_any_cleanup_or_control(self):
+        original=Path.write_bytes
+        def denied(path,raw):
+            if path.name=='cold-list-frames.json':raise OSError('synthetic storage failure')
+            return original(path,raw)
+        with patch.object(Path,'write_bytes',denied),self.assertRaises(OSError):self.d.method(METHODS[0])
+        self.assertEqual(len(self.commands),1)
+        self.assertTrue(Path('build/evidence/actual_cold-lifecycle.log').is_file())
+        self.assertTrue(Path('build/evidence/actual_cold-console.log').is_file())
+        self.assertNotIn('observed_command_result',self.d.report['cases'][0])
+
+    def test_local_frame_write_exact_byte_boundary_before_next_command(self):
+        for size in (150000,150001):
+            with self.subTest(size=size):
+                fixture=SequentialMethodTests();fixture.setUp()
+                try:
+                    report={'records':[],'matched_records':0,'omitted_records':0,'invalid_records':0,'padding':''}
+                    overhead=len(json.dumps(report,separators=(',',':')).encode());report['padding']='x'*(size-overhead)
+                    fixture.d.frames.report=report
+                    if size==150001:
+                        with self.assertRaisesRegex(ValueError,'Required evidence exceeds'):fixture.d.method(METHODS[0])
+                        self.assertEqual(len(fixture.commands),1);self.assertFalse(Path('build/evidence/cold-list-frames.json').exists())
+                    else:
+                        fixture.d.method(METHODS[0]);self.assertEqual(Path('build/evidence/cold-list-frames.json').stat().st_size,size)
+                    self.assertFalse(fixture.d.report['acceptance'])
+                finally:fixture.tearDown()
+
+    def test_local_frame_cap_is_unchanged_and_empty_capture_stays_empty(self):
+        self.d.frames.report={'records':[], 'matched_records':0,'omitted_records':0,'invalid_records':0}
+        self.d.method(METHODS[0])
+        value=json.loads(Path('build/evidence/cold-list-frames.json').read_text())
+        self.assertEqual(value['records'],[]);self.assertEqual(value['matched_records'],0)
+        source=(ROOT/'scripts/run_watch_crown_control.py').read_text()
+        self.assertEqual(source.count("self.retain('cold-list-frames.json'"),1)
+        self.assertIn("'cold_frames','actual_cold',limit=150_000",source)
+        self.assertNotIn('cold-list-frames.json',source.split('    def evidence(self):',1)[1])
+
     def test_timeout_console_retained_without_extract_or_new_control(self):
         self.timeout=True
         with self.assertRaises(ValueError):self.d.method(METHODS[0])

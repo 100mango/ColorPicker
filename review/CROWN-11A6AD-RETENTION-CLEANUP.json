@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "purpose": "Historical failed cold test followed by uncertain device cleanup; no old artifact upgrade",
+  "source": {
+    "sha": "11a6ad5aff784bce375ab446000604c61728b6e2",
+    "ref": "refs/heads/codex/watch-crown-diagnostic",
+    "repository": "100mango/ColorPicker",
+    "run_id": "37325045737",
+    "attempt": "1",
+    "tree": "648eb1237a868113aef4f4982d0975ff5157aa3c",
+    "workflow_sha256": "17a26672cb899157885a3bd3586eed1c0d289c55ec3f489bccaf2478a9a35542"
+  },
+  "actual_cold": {
+    "executed": true,
+    "case_seconds": 92.804,
+    "command_seconds": 127.83610070799995,
+    "raw_exit": 65,
+    "summary_result": "Failed",
+    "failed_count": 1,
+    "scheduling_status": "failed",
+    "assertion": "WatchWorkflowTests.swift:278 privacy target.isHittable",
+    "crown_rotations": 12,
+    "snapshot_starts": 24,
+    "frame_payloads": "not retained; parsed count/content unknown",
+    "final_geometry": {
+      "viewport": [
+        0,
+        0,
+        162,
+        197
+      ],
+      "editor": [
+        2,
+        47.5,
+        158,
+        44
+      ],
+      "photo": [
+        2,
+        95.5,
+        158,
+        47
+      ],
+      "count": [
+        2,
+        181,
+        158,
+        44
+      ]
+    },
+    "movement": "unproved"
+  },
+  "termination": {
+    "command": [
+      "xcrun",
+      "simctl",
+      "terminate",
+      "5DBF1E3C-C4E7-47D6-870F-553AAAE173F1",
+      "com.mango.touchColor.watchkitapp"
+    ],
+    "phase": "actual_cold",
+    "budget_phase": "work",
+    "source_sha": "11a6ad5aff784bce375ab446000604c61728b6e2",
+    "started": true,
+    "started_epoch": 1791211132.8933408,
+    "started_monotonic": 651.520943625,
+    "timeout_seconds": 3,
+    "exit": 124,
+    "raw_exit": null,
+    "timed_out": true,
+    "process_group_gone": true,
+    "capture_reader_finished": true,
+    "stdout_truncated": false,
+    "deadline_monotonic": 654.520943625,
+    "pid": 8300,
+    "simulator_command_completion": "unconfirmed",
+    "reader_errors": [],
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stdout_bytes": 0,
+    "finished_epoch": 1791211136.192186,
+    "finished_monotonic": 654.819789333
+  },
+  "uncertainty": {
+    "schema": 1,
+    "source_sha": "11a6ad5aff784bce375ab446000604c61728b6e2",
+    "run_id": "37325045737",
+    "attempt": "1",
+    "stage_index": 26,
+    "reason": "device_deadline_expired",
+    "device_commands_forbidden": true,
+    "vm_disposal_required": true,
+    "marker_durability": "fsync_confirmed"
+  },
+  "artifact_sha256": "b2c9dc16a601b45976116128e8c46d1c77977ec166cd0c2998a4ec3a302a2680",
+  "canonical_termination": {
+    "source": "scripts/uikit_warmup.py",
+    "cap_seconds": 30,
+    "observations": [
+      {
+        "file": "uikit-a6ea-111555271264-text.log",
+        "seconds": 4.375
+      },
+      {
+        "file": "uikit-e25d-111562590035-text.log",
+        "seconds": 22.015
+      }
+    ],
+    "scope": "iOS command-family evidence, not Watch completion guarantee"
+  }
+}
