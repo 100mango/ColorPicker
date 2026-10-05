@@ -10,12 +10,12 @@ concurrency:
 jobs:
   mini-direct-xctest:
     runs-on: xcode-27
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
-      TOUCHCOLOR_JOB_PLATFORM: ios
+      TOUCHCOLOR_JOB_PLATFORM: mini-direct-xctest
       TOUCHCOLOR_JOB_LANE: mini-direct-xctest
-      TOUCHCOLOR_JOB_MINUTES: '20'
+      TOUCHCOLOR_JOB_MINUTES: '25'
       TOUCHCOLOR_BUDGET_PHASE: work
       TOUCHCOLOR_EVIDENCE_LIMIT: '1000000'
     steps:

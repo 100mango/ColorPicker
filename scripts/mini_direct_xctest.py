@@ -214,8 +214,8 @@ class Diagnostic:
         b = self.budget
         require(b is not None and b.phase == 'work' and not b.cleanup_unconfirmed and
                 b.record.get('sha') == self.sha and b.record.get('run_id') == os.environ['GITHUB_RUN_ID'] and
-                b.record.get('platform') == 'ios' and b.record.get('lane') == 'mini-direct-xctest' and
-                b.record.get('minutes') == 20, 'Original source-bound 20-minute budget required')
+                b.record.get('platform') == 'mini-direct-xctest' and b.record.get('lane') == 'mini-direct-xctest' and
+                b.record.get('minutes') == 25, 'Dedicated source-bound 25-minute diagnostic budget required')
         require(not STOP.exists() and not STOP.is_symlink() and not ROOT.exists() and
                 not RESULT.exists() and not RESULT.is_symlink(), 'Diagnostic cannot be retried')
         self.report = {'schema': 1, 'purpose': 'single_existing_mini_case_diagnostic',
@@ -284,9 +284,9 @@ class Diagnostic:
         w.command(['xcrun', 'simctl', 'bootstatus', device, '-b'], 240)
         w.command(['xcrun', 'simctl', 'install', device,
                    'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], 300)
-        require(w.command(['git', 'rev-parse', 'HEAD'], 3, simulator=False).strip() == self.sha,
+        require(w.command(['git', 'rev-parse', 'HEAD'], 30, simulator=False).strip() == self.sha,
                 'Checkout changed during build/setup')
-        w.command(['git', 'diff', '--quiet', 'HEAD', '--'], 3, simulator=False)
+        w.command(['git', 'diff', '--quiet', 'HEAD', '--'], 30, simulator=False)
         require(read_identity('iPadMini') == self.identity and products() == self.report['products'],
                 'Installed product/device binding changed')
         w.require_time()
@@ -297,7 +297,7 @@ class Diagnostic:
         command = test_argv(self.identity['udid'])
         self.report['test_argv'] = command
         # No partial UI window. This is the unchanged job-budget work remainder,
-        # initially 720s, not a new clock after the 600s preparation ceiling.
+        # initially 1020s, not a new clock after the 600s preparation ceiling.
         self.budget.admit('single direct Mini XCTest', TEST_SECONDS,
                           minimum=TEST_SECONDS, cleanup=CLEANUP_SECONDS)
         with PENDING.open('x') as output:

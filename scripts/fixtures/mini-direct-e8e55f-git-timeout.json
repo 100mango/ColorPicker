@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "purpose": "single_existing_mini_case_diagnostic",
+  "sha": "e8e55fdcbbf4b17cb0aae5716c6d3db3e9d11a37",
+  "workflow_sha": "e8e55fdcbbf4b17cb0aae5716c6d3db3e9d11a37",
+  "run_id": "37345389809",
+  "run_attempt": "1",
+  "case": "TouchColorUITests/TouchColorIPadUITests/testPalettePasteReviewAcceptAndRelaunch",
+  "build_argv": [
+    "xcodebuild",
+    "-quiet",
+    "-project",
+    "TouchColor.xcodeproj",
+    "-scheme",
+    "TouchColor",
+    "-configuration",
+    "Debug",
+    "-destination",
+    "generic/platform=iOS Simulator",
+    "-derivedDataPath",
+    "build/simulator",
+    "build-for-testing"
+  ],
+  "warmup_accepted": false,
+  "full_row_accepted": false,
+  "release_accepted": false,
+  "vm_disposal_required": true,
+  "summary": {
+    "status": "unavailable_not_requested"
+  },
+  "status": "failed_or_incomplete",
+  "preparation_commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "allowance_seconds": 3,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 458.869331541,
+      "capture_seconds": 2.9993343749999894,
+      "elapsed_seconds": 0.01
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--quiet",
+        "HEAD",
+        "--"
+      ],
+      "allowance_seconds": 3,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 458.879264916,
+      "capture_seconds": 2.9993599580000136,
+      "elapsed_seconds": 0.041
+    },
+    {
+      "argv": [
+        "xcodebuild",
+        "-version"
+      ],
+      "allowance_seconds": 5,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 460.920989416,
+      "capture_seconds": 4.999398332999988,
+      "elapsed_seconds": 0.4
+    },
+    {
+      "argv": [
+        "xcodebuild",
+        "-quiet",
+        "-project",
+        "TouchColor.xcodeproj",
+        "-scheme",
+        "TouchColor",
+        "-configuration",
+        "Debug",
+        "-destination",
+        "generic/platform=iOS Simulator",
+        "-derivedDataPath",
+        "build/simulator",
+        "build-for-testing"
+      ],
+      "allowance_seconds": 300,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 756.321564583,
+      "capture_seconds": 299.99922704200003,
+      "stdout": {
+        "raw_bytes": 7957,
+        "retained_bytes": 7957,
+        "dropped_bytes": 0,
+        "truncated": false,
+        "raw_newlines": 52,
+        "dropped_newline_bytes": 0,
+        "sha256_all_observed": "296025ae881ec7674ffe2818807780a0afb58df45e9bda5cf77ff10454cbf6b3",
+        "sha256_retained": "296025ae881ec7674ffe2818807780a0afb58df45e9bda5cf77ff10454cbf6b3",
+        "format": "raw bytes; head then tail; discontinuity when truncated"
+      },
+      "stderr": {
+        "raw_bytes": 0,
+        "retained_bytes": 0,
+        "dropped_bytes": 0,
+        "truncated": false,
+        "raw_newlines": 0,
+        "dropped_newline_bytes": 0,
+        "sha256_all_observed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "sha256_retained": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "format": "raw bytes; head then tail; discontinuity when truncated"
+      },
+      "elapsed_seconds": 90.329
+    },
+    {
+      "argv": [
+        "xcrun",
+        "simctl",
+        "list",
+        "devices",
+        "available",
+        "-j"
+      ],
+      "allowance_seconds": 30,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 576.777973791,
+      "capture_seconds": 29.998720958000035,
+      "elapsed_seconds": 1.545
+    },
+    {
+      "argv": [
+        "xcrun",
+        "simctl",
+        "boot",
+        "D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5"
+      ],
+      "allowance_seconds": 180,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 728.325459833,
+      "capture_seconds": 179.99895737499992,
+      "elapsed_seconds": 2.585
+    },
+    {
+      "argv": [
+        "xcrun",
+        "simctl",
+        "bootstatus",
+        "D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5",
+        "-b"
+      ],
+      "allowance_seconds": 240,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 791.073163958,
+      "capture_seconds": 239.87317620800002,
+      "elapsed_seconds": 159.39
+    },
+    {
+      "argv": [
+        "xcrun",
+        "simctl",
+        "install",
+        "D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5",
+        "build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app"
+      ],
+      "allowance_seconds": 300,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 1010.979054,
+      "capture_seconds": 299.418869125,
+      "elapsed_seconds": 181.006
+    },
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "allowance_seconds": 3,
+      "exit": null,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 895.731091916,
+      "capture_seconds": 2.4226739999999154,
+      "reason": "duration-limit",
+      "elapsed_seconds": 3.493
+    }
+  ],
+  "budget": {
+    "schema": 1,
+    "platform": "ios",
+    "minutes": 20,
+    "started_epoch": 1791219744.936843,
+    "started_monotonic": 453.779133708,
+    "lane": "mini-direct-xctest",
+    "sha": "e8e55fdcbbf4b17cb0aae5716c6d3db3e9d11a37",
+    "run_id": "37345389809",
+    "reserves": {
+      "cleanup": 130,
+      "evidence": 180,
+      "validation": 60,
+      "upload": 60,
+      "overhead": 20
+    },
+    "startup_margin": 30,
+    "phase": "work",
+    "remaining_seconds": 277.388,
+    "cleanup_unconfirmed": false,
+    "events": [
+      {
+        "phase": "work",
+        "label": "UIKit preparation: git rev-parse HEAD",
+        "requested_seconds": 3,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 3,
+        "remaining_seconds": 717.91,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: git diff --quiet",
+        "requested_seconds": 3,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 3,
+        "remaining_seconds": 717.9,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcodebuild -version",
+        "requested_seconds": 5,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 5,
+        "remaining_seconds": 717.858,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcodebuild -quiet -project",
+        "requested_seconds": 300,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 300,
+        "remaining_seconds": 717.458,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcrun simctl list",
+        "requested_seconds": 30,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 30,
+        "remaining_seconds": 627.002,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcrun simctl boot",
+        "requested_seconds": 180,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 180,
+        "remaining_seconds": 625.454,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcrun simctl bootstatus",
+        "requested_seconds": 240,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 240,
+        "remaining_seconds": 622.868,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcrun simctl install",
+        "requested_seconds": 300,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 300,
+        "remaining_seconds": 462.971,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: git rev-parse HEAD",
+        "requested_seconds": 3,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 3,
+        "remaining_seconds": 281.38,
+        "admitted": true
+      }
+    ],
+    "result": "budget_only_not_test_acceptance"
+  },
+  "toolchain": "Xcode 27.0\nBuild version 27A266a\n",
+  "products": {
+    "app": {
+      "identifier": "com.mango.touchColor",
+      "executable": "TouchColor",
+      "plist_sha256": "3966a83ca403b53463a6812671862a9641b95878b3b06647b5cf4c302b7ef3cd",
+      "code": {
+        "TouchColor": {
+          "bytes": 1324736,
+          "sha256": "3cdb287f4c8c137460a214cb3f1f92fbbd711f03e3ee6c7dc2f742f6dbff187c"
+        }
+      },
+      "debug_dylib": null
+    },
+    "tree_sha256": "f9ecc31884980c5bc6d1202ac08a484609b78668c32c4f01276718c37f7b2a7d",
+    "files": 197,
+    "bytes": 23668398,
+    "xctestrun": "TouchColor_iphonesimulator27.0-arm64-x86_64.xctestrun"
+  },
+  "device": {
+    "family": "iPadMini",
+    "udid": "D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5",
+    "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "started": 1791219839.481187
+  },
+  "reason": "duration-limit"
+}

@@ -21,8 +21,8 @@ ENV = {'GITHUB_REPOSITORY': '100mango/ColorPicker', 'GITHUB_REF': m.REF,
        'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'macOS', 'RUNNER_ENVIRONMENT': 'github-hosted',
        'GITHUB_JOB': 'mini-direct-xctest', 'GITHUB_SHA': 'a' * 40, 'GITHUB_WORKFLOW_SHA': 'a' * 40,
        'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1',
-       'TOUCHCOLOR_JOB_PLATFORM': 'ios', 'TOUCHCOLOR_JOB_LANE': 'mini-direct-xctest',
-       'TOUCHCOLOR_JOB_MINUTES': '20', 'TOUCHCOLOR_BUDGET_PHASE': 'work'}
+       'TOUCHCOLOR_JOB_PLATFORM': 'mini-direct-xctest', 'TOUCHCOLOR_JOB_LANE': 'mini-direct-xctest',
+       'TOUCHCOLOR_JOB_MINUTES': '25', 'TOUCHCOLOR_BUDGET_PHASE': 'work'}
 IDENTITY = {'family': 'iPadMini', 'udid': 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
             'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', 'started': 1}
 
@@ -52,8 +52,8 @@ class IdentityAndBudget(Temporary):
                 with self.subTest(key=key), patch.dict(os.environ, {key: 'wrong'}):
                     with self.assertRaises(ValueError): m.require_job()
 
-    def test_original_720_second_work_envelope(self):
-        self.assertAlmostEqual(self.budget.remaining(), 720, delta=.2)
+    def test_dedicated_1020_second_work_envelope(self):
+        self.assertAlmostEqual(self.budget.remaining(), 1020, delta=.2)
         self.assertEqual(sum(self.budget.record['reserves'].values()), 450)
         self.assertEqual(self.budget.record['startup_margin'], 30)
 
@@ -486,7 +486,7 @@ class SourceContracts(unittest.TestCase):
         value = yaml.load((SOURCE / '.github/workflows/mini-direct-xctest.yml').read_text(), Loader=yaml.BaseLoader)
         self.assertEqual(value['on'], {'push': {'branches': ['codex/mini-direct-xctest']}})
         self.assertEqual(list(value['jobs']), ['mini-direct-xctest'])
-        job = value['jobs']['mini-direct-xctest']; self.assertEqual(job['timeout-minutes'], '20')
+        job = value['jobs']['mini-direct-xctest']; self.assertEqual(job['timeout-minutes'], '25')
         self.assertEqual(job['runs-on'], 'xcode-27'); self.assertNotIn('strategy', job)
         index = next(i for i, s in enumerate(job['steps']) if s.get('run') == 'python3 scripts/mini_direct_xctest.py diagnose')
         tail = job['steps'][index + 1:]
@@ -550,6 +550,89 @@ class BuildQuietRegression(Temporary):
         self.assertEqual(capture.call_args.kwargs['cap'], 1_000_000)
         self.assertLessEqual(capture.call_args.kwargs['seconds'], 300)
         self.assertEqual(d.report['preparation_commands'][-1]['exit'], 65)
+
+
+class DedicatedScheduleRegression(Temporary):
+    def scheduled(self, elapsed):
+        d=self.diagnostic();d.budget.hard_deadline=1470.;d.budget.monotonic=lambda:elapsed
+        d.persist=lambda:None
+        return d
+
+    def assert_case_admitted(self, elapsed):
+        d=self.scheduled(elapsed)
+        result=dict(status='command_exit_observed',observed_command_exit=0,host_cleanup_confirmed=True)
+        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe',return_value=(result,{})) as observer:
+            d.execute()
+        observer.assert_called_once_with(m.test_argv(IDENTITY['udid']),300,work_deadline=1000.)
+        self.assertFalse(d.report['warmup_accepted']);self.assertFalse(d.report['full_row_accepted'])
+        self.assertTrue(m.PENDING.exists())
+
+    def test_observed_437_second_setup_allows_original_case(self):
+        self.assert_case_admitted(437.)
+
+    def test_setup_600_boundary_still_requires_and_admits_full_window(self):
+        self.assert_case_admitted(600.)
+
+    def test_insufficient_actual_remaining_work_never_starts_case(self):
+        d=self.scheduled(701.)
+        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe') as observer:
+            with self.assertRaises(BudgetExhausted):d.execute()
+        observer.assert_not_called();self.assertFalse(m.PENDING.exists())
+
+    def test_only_dedicated_identity_gets_25_minutes(self):
+        self.assertEqual(self.budget.record['platform'],'mini-direct-xctest')
+        self.assertEqual(self.budget.record['minutes'],25)
+        self.assertEqual(sum(self.budget.record['reserves'].values()),450)
+        self.assertEqual(self.budget.record['startup_margin'],30)
+        for platform,minutes,valid in [('ios',20,True),('ios',25,False),('mini-direct-xctest',20,False)]:
+            record={**self.budget.record,'platform':platform,'minutes':minutes}
+            with self.subTest(platform=platform,minutes=minutes):
+                if valid:self.assertEqual(JobBudget(record).record['minutes'],20)
+                else:
+                    with self.assertRaises(ValueError):JobBudget(record)
+
+    def test_only_final_host_git_caps_change(self):
+        d=self.diagnostic();d.warmup=Mock();d.warmup.select.return_value=IDENTITY['udid']
+        def command(argv,seconds,**kw):
+            if argv==['git','rev-parse','HEAD']:return 'a'*40
+            if argv==['xcodebuild','-version']:return 'Xcode 27.0\nBuild version 27A266a\n'
+            return ''
+        d.warmup.command.side_effect=command
+        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'products',return_value={'exact':'unchanged'}):d.prepare()
+        calls=d.warmup.command.call_args_list
+        for argv in (['git','rev-parse','HEAD'],['git','diff','--quiet','HEAD','--']):
+            selected=[c for c in calls if c.args[0]==argv]
+            self.assertEqual([c.args[1] for c in selected],[3,30])
+            self.assertTrue(all(c.kwargs=={'simulator':False} for c in selected))
+
+    def test_late_final_git_zero_exit_preserves_marker_and_blocks_next_call(self):
+        d=self.diagnostic();tick=[550.];d.warmup.clock=lambda:tick[0];d.warmup.deadline=600.
+        d.budget.monotonic=lambda:tick[0];d.budget.hard_deadline=1470.;d.persist=lambda:None
+        def capture(command,**kw):
+            self.assertEqual(kw['seconds'],30.)
+            tick[0]=580.;return subprocess.CompletedProcess(command,0,b'a'*40+b'\n',b'')
+        with patch.object(m.time,'monotonic',side_effect=lambda:tick[0]),patch.object(m,'capture',side_effect=capture) as call:
+            with self.assertRaisesRegex(ValueError,'returned_after_deadline'):
+                d.warmup.command(['git','rev-parse','HEAD'],30,simulator=False)
+            with self.assertRaises(Exception):d.warmup.command(['xcrun','simctl','boot','never'],180)
+        call.assert_called_once();self.assertTrue(m.PENDING.exists())
+
+    def test_unknown_final_git_cleanup_blocks_case_and_latches(self):
+        d=self.diagnostic()
+        def prepare():d.warmup.command(['git','rev-parse','HEAD'],30,simulator=False)
+        with patch.object(d,'prepare',side_effect=prepare),patch.object(m,'capture',side_effect=m.CaptureStopped('duration-limit',False)),patch.object(d,'execute') as execute:
+            self.assertEqual(d.run(),3)
+        execute.assert_not_called();self.assertTrue(d.budget.cleanup_unconfirmed);self.assertTrue(m.PENDING.exists())
+        self.assertFalse(d.report['preparation_commands'][-1]['host_cleanup_confirmed'])
+
+    def test_retained_native_setup_is_not_reclassified(self):
+        fixture=json.loads((SOURCE/'scripts/fixtures/mini-direct-e8e55f-git-timeout.json').read_bytes())
+        self.assertEqual(fixture['sha'],'e8e55fdcbbf4b17cb0aae5716c6d3db3e9d11a37')
+        self.assertEqual(fixture['run_id'],'37345389809');self.assertNotIn('xctest',fixture)
+        self.assertEqual(fixture['budget']['minutes'],20);self.assertEqual(fixture['budget']['platform'],'ios')
+        self.assertEqual(fixture['reason'],'duration-limit');self.assertEqual(fixture['budget']['remaining_seconds'],277.388)
+        self.assertEqual(fixture['preparation_commands'][-1]['allowance_seconds'],3)
+        self.assertIsNone(fixture['preparation_commands'][-1]['exit'])
 
 
 if __name__ == '__main__': unittest.main()
