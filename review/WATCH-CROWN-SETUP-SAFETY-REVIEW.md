@@ -1,0 +1,37 @@
+# Crown setup scheduling and simulator-uncertainty barrier
+
+LOCAL successor on publicd865194b8fae4e77ad6c73eff16eacd6221c4bd0, exact tree3cb2ee39b1d0e9a9eaf9d878cf633c509a86f29b. No publication, CI dispatch, native retry or Mac-capacity action is performed or implied. All earlier frozen packets remain unchanged.
+
+## Retained native evidence
+
+Run37268186257/job111629352130 produced six512-byte console records with zero omissions. Preflight and both Debug builds completed in approximately42 seconds. The first owned phone bootstatus hit its25-second cap before any UI testcase started. Its host process group and reader ended, but simulator/daemon completion remained unknown. The old finalizer then attempted OSLog, two shutdowns and a device inventory, which also timed out. Those post-timeout calls were a safety gap; the old terminal red result is preserved.
+
+A retained successful setup sequence on1410/small40mm took6.637+123.119+99.743+189.882=419.381 seconds for phone boot/readiness and Watch boot/readiness alone. This is timing evidence for setup only; the old product row remained failed. It demonstrates that the previous120-second whole setup and5/25-second boot/readiness caps were not a credible admission schedule.
+
+## Scheduling correction, no added job time
+
+Only the setup ceiling changes from120 to450 seconds. Only setup simctl boot and bootstatus may clip their respective120/240-second caps to remaining setup time and the original work pool. The final bootstatus in the portable replay of the retained sequence receives217.501 seconds after a3-second simulated setup prelude; the189.882-second operation fits without resetting any clock. A sub-one-second remainder starts nothing. Clipping is rejected for XCTest, other commands, another phase or an altered source cap.
+
+The job remains25 minutes with startup30 and cleanup130/evidence180/validation60/upload60/overhead20 reserves. Maximum work remains1,020 seconds from the original wall/monotonic starts. Work phase ceilings now sum to1,320 seconds:30+240+450+240+180+180. They share the1,020-second pool and are not additive reservations. The earlier990-second plan and30-second unallocated-work wording in historical proposal/review documents are superseded by this correction. A slow setup can leave one or more controls not started/incomplete. Every later UI phase still requires its full240/180/180-second admission; every unchanged UI command still requests180 seconds and preserves120-second XCTest execution allowance. No retry, larger VM, added profile, broader cohort or budget borrowing is introduced.
+
+## Dedicated uncertainty barrier
+
+Device-facing commands are the actual families used by this driver: xcrun simctl, including reads and spawn, and xcodebuild test/test-without-building. A timeout, late return after owned group/reader cleanup, unknown host cleanup, interruption or missing terminal receipt fences simulator uncertainty. Native timeout text is a stop signal too: console timeout fences before any xcresult extraction; a timeout found only in the structured summary fences immediately after that read. The echoed -test-timeouts-enabled configuration flag alone is not timeout evidence.
+
+The barrier is distinct from killing the host-side xcrun/xcodebuild process. Confirmed host cleanup cannot prove that CoreSimulator finished a device request. Once fenced, all new subprocesses are forbidden, including source git and xcresult reads. method, cleanup, evidence, phase admission and execute check the dedicated barrier, so clearing generic work-stop/budget flags does not clear it. Only cleanup of the already-owned host process group/reader and local persistence/console output remain; disposable VM teardown is authoritative. No post-latch OSLog, shutdown, delete, inventory or other device operation is attempted.
+
+Fencing occurs in memory first. The local first-wins stop marker records source/run/attempt, stage and reason, forbids commands and requires VM disposal. Marker persistence is attempted only after already-owned host cleanup has been attempted. Exclusive creation, file flush/fsync and directory-entry fsync establish the durable write; write/fsync failure is caught, explicitly recorded as durability unknown and cannot interrupt host cleanup or reopen command admission. Any marker, including malformed content or a symlink, is a stop barrier; it is not followed or used as permission.
+
+A durable run-intent receipt precedes device-facing spawn. Internal report writes use a guarded path: persistence failure after device activity or ownership fences uncertainty, including pre-spawn, post-spawn, ownership, phase-exit and final writes. If a host process is still active, marker I/O waits until that owned cleanup attempt. Post-persistence deadline checks can also fence a late result. If the first pre-spawn receipt fails before any device activity, no command starts. A newly constructed Driver refuses prior receipt, budget or marker state, so missing marker durability cannot make a reload retry an old invocation. There is no resume/clear-fence path.
+
+Timely terminal nonzero results are different. A complete exit65, without timeout evidence or uncertainty, remains a real XCTest failure. Exact summary/lifecycle/command/source/device/timing checks still govern whether another independent control may start. A portable integration regression runs the real bounded process path for all three invocations and retains failed cold, failed static and passed RGB, with acceptancefalse. A report or stage recording simulator uncertainty is independently rejected even if the generic budget flag is synthetically cleared; raw failure diagnostics remain retained.
+
+## Scope and verification
+
+Modified implementation is limited to the setup source/validator cap, the driver uncertainty/persistence boundary, and the independent validator's explicit rejection. New tests and this report document the change. The existing512-byte console mirror, canonical Apple/iOS workflows, diagnostic workflow, job-budget identities/reserves, original cold/RGB test file, standalone Crown component and method assertions remain unchanged.
+
+Twenty-four executable adversarial tests run normally and under python3 -O. Across all14 current device-command forms they exercise timeout, interruption, late return and unknown cleanup; additional cases cover reader/host-cleanup errors, marker write/fsync failure, pre/post-spawn and phase/final receipt failures, console/summary-only native timeouts, cleared generic flags, malformed markers, all finalizer/entry paths and reload. They also prove the retained419.381-second setup sequence fits the clipped450-second ceiling, full UI admission is unchanged and real exit65 remains usable for independent controls.
+
+Independent adversarial review reproduced two persistence/native-timeout gaps in the partial candidate. Both were corrected. A bounded recheck reported no remaining blocker and verified the external reproducers now start zero later commands. Full canonical/focused normal and optimized suites, six generators, evidence boundaries, source invariants and fresh patch replay are recorded in the sibling checks/manifest.
+
+Linux portable tests cannot establish native boot timing feasibility, macOS filesystem flush behavior, actual Crown delivery or a new native result. The existing d865 failure remains failed/incomplete. This packet requests source review only; a new native attempt still needs separate exact-source/capacity admission.

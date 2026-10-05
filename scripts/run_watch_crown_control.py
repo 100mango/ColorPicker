@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """One owned, source-bound Watch diagnostic. No retries and never product acceptance.
 
-Phase ceilings share the ORIGINAL job clock. A 120s setup phase does not give
-120s to each simulator operation. Every subprocess owns a bounded process group.
+Phase ceilings share the ORIGINAL job clock. The 450s setup ceiling shares the same1020s work pool;
+no phase resets that original clock or reserves all later worst-case ceilings. Every subprocess owns a bounded process group.
 """
 import contextlib
 import hashlib
@@ -29,6 +29,18 @@ from watch_diagnostics import ListFrameDiagnostics
 from watch_failure_continuation import recorded_timeout, strict_json
 
 ROOT = Path('build/evidence')
+SIMULATOR_STOP = Path('build/crown-simulator-uncertain.json')
+
+def device_facing(command):
+    # These are the only device-facing tool families used by this driver.
+    return (isinstance(command,list) and (command[:2]==['xcrun','simctl'] or
+            (command[:1]==['xcodebuild'] and any(v in command for v in ('test','test-without-building')))))
+
+
+def reported_device_timeout(output):
+    # Actual timeout words, not xcodebuild's echoed -test-timeouts-enabled flag.
+    # This is a conservative stop signal, never a positive failure classifier.
+    return bool(re.search(r'\b(?:timed? out|time-out|timeout)\b|exceeded execution time allowance|execution time.*exceeded|test may have hung',output,re.I))
 
 
 def digest(raw): return hashlib.sha256(raw).hexdigest()
@@ -143,10 +155,67 @@ class Driver:
         self.stdout_limit = 262_144
         self.work_stopped = False
         self.console_seen=set();self.console_bytes=0;self.console_omitted=0
+        self.simulator_uncertain=False
+        self._stop_write_attempted=False
+        self._device_activity=False
+        self._host_cleanup_pending=False
+        # A fresh Driver may never resume an old invocation. Even if writing a
+        # stop marker failed, its pre-spawn report/initial budget blocks reload.
+        try:
+            prior=any(path.exists() or path.is_symlink() for path in (SIMULATOR_STOP,ROOT/'report.json',STATE))
+        except OSError: prior=True
+        if prior:
+            self.simulator_uncertain=True;self.work_stopped=True;self.budget.latch_cleanup_failure()
+            self.report['simulator_uncertainty']={'reason':'prior_run_state_requires_vm_disposal',
+                'device_commands_forbidden':True,'vm_disposal_required':True,'marker_durability':'unknown'}
+
+    def simulator_blocked(self):
+        if self.simulator_uncertain: return True
+        try: return SIMULATOR_STOP.exists() or SIMULATOR_STOP.is_symlink()
+        except OSError: return True
+
+    def latch_simulator_uncertainty(self, row, reason, *, durable=True):
+        # Memory barrier first. Local marker failures must NEVER interrupt the
+        # already-owned host process-group/reader cleanup or allow new commands.
+        self.simulator_uncertain=True;self.work_stopped=True;self.budget.latch_cleanup_failure()
+        row['simulator_command_completion']='unconfirmed'
+        value=self.report.setdefault('simulator_uncertainty',{'schema':1,'source_sha':self.report['source']['sha'],
+            'run_id':self.report['run_id'],'attempt':self.report['attempt'],
+            'stage_index':len(self.report['stages'])-1,'reason':reason,
+            'device_commands_forbidden':True,'vm_disposal_required':True,'marker_durability':'unknown'})
+        if not durable or self._stop_write_attempted: return
+        self._stop_write_attempted=True
+        try:
+            SIMULATOR_STOP.parent.mkdir(parents=True,exist_ok=True)
+            require(not SIMULATOR_STOP.parent.is_symlink() and not SIMULATOR_STOP.is_symlink(),'Unsafe simulator stop destination')
+            raw=json.dumps(value,separators=(',',':')).encode()
+            require(len(raw)<=4096,'Simulator stop metadata bound')
+            with SIMULATOR_STOP.open('xb') as stream:
+                stream.write(raw);stream.flush();os.fsync(stream.fileno())
+            # File contents and its newly created directory entry are both
+            # flushed. Failure leaves explicit durability unknown and a fence.
+            directory=os.open(SIMULATOR_STOP.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            try:os.fsync(directory)
+            finally:os.close(directory)
+            value['marker_durability']='fsync_confirmed'
+        except FileExistsError:
+            value['marker_durability']='existing_barrier_unverified'
+        except BaseException as error:
+            value['marker_durability']='unknown'
+            value['marker_error']=type(error).__name__
 
     def persist(self):
         self.report['budget'] = self.budget.snapshot()
         write_json(ROOT/'report.json', self.report, limit=300_000)
+
+    def persist_guarded(self):
+        try:self.persist()
+        except BaseException:
+            if self._device_activity or self.owned:
+                row=self.report['stages'][-1] if self.report['stages'] else {}
+                self.latch_simulator_uncertainty(row,'receipt_persistence_failed_after_device_activity',
+                    durable=not self._host_cleanup_pending)
+            raise
 
     def console_summary(self, boundary):
         # Called only after persist() succeeded. No verdict, report or clock is
@@ -175,6 +244,7 @@ class Driver:
 
     @contextlib.contextmanager
     def phase(self, name, seconds, *, kind='work'):
+        require(not self.simulator_blocked(),'Simulator uncertainty forbids further phases; dispose VM')
         seconds = self.budget.admit(name, seconds, minimum=1 if kind=='cleanup' else seconds, cleanup=0, phase=kind)
         row = {'name': name, 'limit_seconds': seconds, 'started_monotonic': self.clock(),
                'started_epoch': self.wall(), 'completed': False}
@@ -187,96 +257,138 @@ class Driver:
         finally:
             row.update(finished_monotonic=self.clock(), finished_epoch=self.wall())
             self.current = None
-            self.persist()
+            self.persist_guarded()
             self.console_summary(name)
 
-    def run(self, command, seconds, *, required=True, first=False):
+    def run(self, command, seconds, *, required=True, first=False, clip_setup=False):
+        require(not self.simulator_blocked(), 'Simulator uncertainty forbids all further commands; dispose VM')
         require(self.current is not None, 'Every command needs a bounded phase')
         require(not self.budget.cleanup_unconfirmed, 'Prior process cleanup is unconfirmed')
         require(not (self.phase_kind=='work' and self.work_stopped), 'Prior operation expired; no further work')
         if first:
             require(not any(s['phase']==self.current['name'] for s in self.report['stages']), 'Phase can start only at its first command')
-            # First operation defines this phase's start; the original job clock
-            # remains authoritative and has already paid for Python setup time.
             self.current.update(started_monotonic=self.clock(), started_epoch=self.wall())
-        left = self.current['limit_seconds']-(self.clock()-self.current['started_monotonic'])
-        require(left+0.01 >= seconds, 'Full command allowance unavailable in '+self.current['name'])
-        self.budget.admit(' '.join(command[:4]), seconds, minimum=seconds, cleanup=0, phase=self.phase_kind)
-        row = {'command': command, 'phase': self.current['name'], 'budget_phase': self.phase_kind,
-               'source_sha': self.report['source']['sha'],
-               'started': False, 'started_epoch': self.wall(), 'started_monotonic': self.clock(),
-               'timeout_seconds': seconds, 'exit': None, 'raw_exit': None, 'timed_out': False,
-               'process_group_gone': False, 'capture_reader_finished': False, 'stdout_truncated': False}
+        left=self.current['limit_seconds']-(self.clock()-self.current['started_monotonic'])
+        declared=seconds
+        if clip_setup:
+            cap={'boot':120,'bootstatus':240}.get(command[2] if len(command)>2 else '')
+            require(self.current['name']=='setup' and self.phase_kind=='work' and command[:2]==['xcrun','simctl']
+                    and cap==seconds,'Only admitted setup boot/readiness commands may clip')
+            seconds=min(seconds,left,self.budget.remaining('work'))
+            require(seconds>=1,'No bounded setup allowance remains')
+        else:require(left+0.01>=seconds,'Full command allowance unavailable in '+self.current['name'])
+        seconds=self.budget.admit(' '.join(command[:4]),seconds,minimum=1 if clip_setup else seconds,cleanup=0,phase=self.phase_kind)
+        row={'command':command,'phase':self.current['name'],'budget_phase':self.phase_kind,
+             'source_sha':self.report['source']['sha'],'started':False,'started_epoch':self.wall(),'started_monotonic':self.clock(),
+             'timeout_seconds':seconds,'exit':None,'raw_exit':None,'timed_out':False,
+             'process_group_gone':False,'capture_reader_finished':False,'stdout_truncated':False}
+        if clip_setup:row['setup_command_cap_seconds']=declared
         self.report['stages'].append(row)
-        operation_deadline = min(row['started_monotonic']+seconds, self.current['started_monotonic']+self.current['limit_seconds'])
-        row['deadline_monotonic'] = operation_deadline
-        output = bytearray(); errors = []
-        p = None; thread = None; cleanup_attempted = False
-        try:
-            p = self.process_factory(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     start_new_session=True, env=dict(self.env))
-            row.update(started=True, pid=p.pid)
-            self.persist()
-            def drain():
-                try:
-                    while True:
-                        chunk = p.stdout.read(8192)
-                        if not chunk: break
-                        room = self.stdout_limit-len(output)
-                        output.extend(chunk[:max(0, room)])
-                        if len(chunk)>room: row['stdout_truncated'] = True
-                except Exception as error: errors.append(type(error).__name__)
-            thread = threading.Thread(target=drain, daemon=True); thread.start()
-            try:
-                row['raw_exit'] = p.wait(timeout=max(0,operation_deadline-self.clock()))
-                row['exit'] = row['raw_exit']
-                if self.clock()>=operation_deadline: row.update(exit=124,timed_out=True)
-            except subprocess.TimeoutExpired:
-                row.update(exit=124, timed_out=True)
-            # A timeout leaves the work phase, preserving the cleanup tail.
-            # No independent UI follows a timed-out command.
-            grace = min(5, max(0, self.budget.remaining('cleanup')/2))
-            cleanup_attempted = True
-            row['process_group_gone'] = stop_group(p, grace=grace)
-            thread.join(timeout=min(2, max(0, self.budget.remaining('cleanup'))))
-            row['capture_reader_finished'] = not thread.is_alive() and not errors
-            row['reader_errors'] = errors
-            # The absolute operation includes descendant and capture cleanup.
-            # Confirmed cleanup can consume its reserved tail, but an expired
-            # operation still prohibits every later work command.
-            if self.clock()>=operation_deadline:
-                row.update(exit=124,timed_out=True)
+        deadline=min(row['started_monotonic']+seconds,self.current['started_monotonic']+self.current['limit_seconds'],
+                     self.clock()+self.budget.remaining(self.phase_kind))
+        row['deadline_monotonic']=deadline
+        output=bytearray();errors=[];p=None;thread=None;cleanup_attempted=False;spawn_attempted=False
+        facing=device_facing(command)
+        def ambiguous():
+            return (row['timed_out'] or row['raw_exit'] is None or not row['process_group_gone']
+                    or not row['capture_reader_finished'] or self.clock()>=deadline)
+        def expired():
+            if self.clock()>=deadline:row.update(exit=124,timed_out=True)
             if row['timed_out'] and self.phase_kind=='work':
                 self.work_stopped=True
                 self.report['work_stop']={'reason':'operation_deadline_expired','stage_index':len(self.report['stages'])-1,
                     'cleanup_confirmed':row['process_group_gone'] and row['capture_reader_finished']}
+        def host_cleanup():
+            nonlocal cleanup_attempted
+            if p is None:
+                self._host_cleanup_pending=False;return
+            if cleanup_attempted:return
+            cleanup_attempted=True
+            try:row['process_group_gone']=stop_group(p,grace=min(5,max(0,self.budget.remaining('cleanup')/2)))
+            except BaseException as error:
+                row['cleanup_error']=type(error).__name__;row['process_group_gone']=False
+            if thread is not None:
+                try:thread.join(timeout=min(2,max(0,self.budget.remaining('cleanup'))))
+                except BaseException as error:errors.append(type(error).__name__)
+                row['capture_reader_finished']=not thread.is_alive() and not errors
+            else:row['capture_reader_finished']=True # No reader was ever started.
+            row['reader_errors']=errors
+            self._host_cleanup_pending=False
+        try:
+            if facing:
+                # Durable run intent precedes device-facing spawn. If this
+                # persistence fails, nothing starts; any reload sees old state.
+                self.persist_guarded()
+                expired()
+                require(not row['timed_out'],'Device command not started: receipt consumed its allowance')
+            spawn_attempted=True
+            self._host_cleanup_pending=True
+            if facing:self._device_activity=True
+            p=self.process_factory(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True,env=dict(self.env))
+            row.update(started=True,pid=p.pid)
+            self.persist_guarded()
+            def drain():
+                try:
+                    while True:
+                        chunk=p.stdout.read(8192)
+                        if not chunk:break
+                        room=self.stdout_limit-len(output);output.extend(chunk[:max(0,room)])
+                        if len(chunk)>room:row['stdout_truncated']=True
+                except Exception as error:errors.append(type(error).__name__)
+            thread=threading.Thread(target=drain,daemon=True);thread.start()
+            try:
+                row['raw_exit']=p.wait(timeout=max(0,deadline-self.clock()));row['exit']=row['raw_exit']
+            except subprocess.TimeoutExpired:row.update(exit=124,timed_out=True)
+            expired()
+            if facing and row['timed_out']:self.latch_simulator_uncertainty(row,'device_deadline_expired',durable=False)
+            host_cleanup();expired()
+            if facing and ambiguous():self.latch_simulator_uncertainty(row,'device_deadline_or_host_cleanup_unconfirmed',durable=False)
             if not row['process_group_gone'] or not row['capture_reader_finished']:
                 self.budget.latch_cleanup_failure()
-                fail_record('Crown owned process/read cleanup unconfirmed', phase=self.phase_kind, cleanup_unconfirmed=True)
-            row['stdout_sha256'] = digest(bytes(output)); row['stdout_bytes'] = len(output)
-            text = bytes(output).decode('utf-8', errors='replace')
+                fail_record('Crown owned process/read cleanup unconfirmed',phase=self.phase_kind,cleanup_unconfirmed=True)
+            row['stdout_sha256']=digest(bytes(output));row['stdout_bytes']=len(output)
+            text=bytes(output).decode('utf-8',errors='replace')
+            if facing and reported_device_timeout(text):
+                row['reported_device_timeout']=True
+                self.latch_simulator_uncertainty(row,'native_output_reports_timeout',durable=False)
             if row['timed_out'] or self.budget.cleanup_unconfirmed:
-                if required: raise RuntimeError('Crown command timed out or cleanup was unconfirmed')
-                return row, text
-            require(self.clock() <= self.current['started_monotonic']+self.current['limit_seconds'], 'Whole phase deadline reached')
-            if required: require(row['exit'] == 0 and not row['stdout_truncated'], 'Command failed or output incomplete: '+' '.join(command[:4]))
-            return row, text
+                if required:raise RuntimeError('Crown command timed out or cleanup was unconfirmed')
+                return row,text
+            require(self.clock()<=self.current['started_monotonic']+self.current['limit_seconds'],'Whole phase deadline reached')
+            if required:require(row['exit']==0 and not row['stdout_truncated'],'Command failed or output incomplete: '+' '.join(command[:4]))
+            return row,text
         except BaseException:
-            if p is not None and not cleanup_attempted:
-                cleanup_attempted = True
-                row['process_group_gone'] = stop_group(p, grace=min(5,max(0,self.budget.remaining('cleanup')/2)))
-                if thread is not None:
-                    thread.join(timeout=min(2,max(0,self.budget.remaining('cleanup'))))
-                    row['capture_reader_finished'] = not thread.is_alive() and not errors
-            if p is not None and (not row['process_group_gone'] or not row['capture_reader_finished']):
-                self.budget.latch_cleanup_failure()
+            # An ordinary timely terminal failure is not simulator uncertainty.
+            # Interruptions/no terminal receipt/unknown cleanup are different.
+            if facing and spawn_attempted and ambiguous():
+                self.latch_simulator_uncertainty(row,'device_operation_interrupted_or_unconfirmed',durable=False)
+            host_cleanup();expired()
+            if facing and spawn_attempted and ambiguous():
+                self.latch_simulator_uncertainty(row,'device_finalization_unconfirmed',durable=False)
+            if p is not None and (not row['process_group_gone'] or not row['capture_reader_finished']):self.budget.latch_cleanup_failure()
             raise
         finally:
-            if p is not None and row['capture_reader_finished'] and p.stdout is not None: p.stdout.close()
+            # Host cleanup precedes every potentially failing durable stop write.
+            host_cleanup();expired()
+            if p is not None and row['capture_reader_finished'] and p.stdout is not None:
+                try:p.stdout.close()
+                except BaseException as error:
+                    row['capture_reader_finished']=False;row['cleanup_error']=type(error).__name__
+                    if facing:self.latch_simulator_uncertainty(row,'device_capture_close_unconfirmed',durable=False)
             if command[:1]==['xcodebuild'] and 'test-without-building' not in command and row.get('exit')!=0:
                 row['failure_output_tail']=bytes(output[-4096:]).decode('utf-8',errors='replace')
-            row.update(finished_epoch=self.wall(), finished_monotonic=self.clock())
-            self.persist()
+            row.update(finished_epoch=self.wall(),finished_monotonic=self.clock())
+            if facing and spawn_attempted and (ambiguous() or self.simulator_uncertain):
+                self.latch_simulator_uncertainty(row,'device_finalization_ambiguous')
+            try:self.persist_guarded()
+            except BaseException:
+                if facing and spawn_attempted:self.latch_simulator_uncertainty(row,'device_receipt_persistence_failed')
+                raise
+            expired()
+            if facing and spawn_attempted and ambiguous() and not self.simulator_uncertain:
+                row.update(finished_epoch=self.wall(),finished_monotonic=self.clock())
+                self.latch_simulator_uncertainty(row,'device_receipt_returned_after_deadline')
+                self.persist_guarded() # Filesystem-only; never restart a simulator/reader.
 
     def text(self, command, seconds=5, **kw): return self.run(command, seconds, **kw)[1].strip()
     def value(self, command, seconds=5, **kw): return strict_json(self.text(command, seconds, **kw))
@@ -305,6 +417,7 @@ class Driver:
             require(self.source() == self.report['source_before'], 'Generator drift')
 
     def fingerprints(self):
+        require(not self.simulator_blocked(),'Simulator uncertainty forbids further evidence work')
         start = self.clock(); result = {}
         for method in METHODS[:2]:
             root = Path(method['derived_data'])/'Build/Products'
@@ -355,7 +468,7 @@ class Driver:
             for role, template, selected_runtime in [('phone',phone,phone_runtime),('watch',watch,runtime)]:
                 identifier=self.text(['xcrun','simctl','create','TouchColor-Crown-'+role+'-'+str(uuid.uuid4())[:8],template['deviceTypeIdentifier'],selected_runtime],10)
                 verify_new_device(identifier,devices,self.owned)
-                self.owned.append({'role':role,'udid':identifier,'runtime':selected_runtime,'deviceTypeIdentifier':template['deviceTypeIdentifier']}); self.persist()
+                self.owned.append({'role':role,'udid':identifier,'runtime':selected_runtime,'deviceTypeIdentifier':template['deviceTypeIdentifier']}); self.persist_guarded()
             phone_id, watch_id=[v['udid'] for v in self.owned]
             pair=self.text(['xcrun','simctl','pair',watch_id,phone_id],10);uuid.UUID(pair)
             require(pair not in before['pairs'], 'Pair ownership ambiguous')
@@ -370,8 +483,8 @@ class Driver:
             self.report['device']={'udid':watch_id,'runtime':runtime,'profile':'smallest','millimeters':40,
                     'deviceTypeIdentifier':watch['deviceTypeIdentifier'],'text_phase':'normal','owned':True}
             for identifier in (phone_id,watch_id):
-                self.run(['xcrun','simctl','boot',identifier],5)
-                self.run(['xcrun','simctl','bootstatus',identifier,'-b'],25)
+                self.run(['xcrun','simctl','boot',identifier],120,clip_setup=True)
+                self.run(['xcrun','simctl','bootstatus',identifier,'-b'],240,clip_setup=True)
             inventory=self.value(['xcrun','simctl','list','devices','available','-j'])['devices']
             rows=[v for group in inventory.values() for v in group if v['udid'] in (phone_id,watch_id)]
             require(len(rows)==2 and all(v['state']=='Booted' for v in rows), 'Owned pair readiness unconfirmed')
@@ -397,6 +510,7 @@ class Driver:
                 'inventory_sha256':digest(raw.encode()),'entries':len(lines)-1}
 
     def method(self, method):
+        require(not self.simulator_blocked(),'Simulator uncertainty forbids later controls; dispose VM')
         name=method['key']
         case={'name':name,'identifier':method['target']+'/'+method['case'],'project':method['project']+'.xcodeproj',
               'scheme':method['project'],'result_bundle':'build/watch-crown-'+name+'.xcresult','cleanup_confirmed':False}
@@ -414,14 +528,18 @@ class Driver:
                 else: ordinary.append(line)
             case['diagnostics_file']=self.retain(name+'-console.log','\n'.join(ordinary)+'\n','diagnostics',name,limit=65_536)
             if static: self.retain('static-observations.log','\n'.join(static)+'\n','observation_static',name,limit=16_384)
-            require(not stage['timed_out'] and not self.budget.cleanup_unconfirmed, 'Timed-out or unclean command; no further operations')
+            if reported_device_timeout(output):
+                self.latch_simulator_uncertainty(stage,'xctest_console_reports_timeout')
+            require(not stage['timed_out'] and not self.budget.cleanup_unconfirmed and not self.simulator_blocked(), 'Timed-out or unclean command; no further operations')
             # Capture finalized structured summary once within the SAME method
             # phase. It cannot steal the later evidence reserve or reset a clock.
             summary_stage, raw=self.run(['xcrun','xcresulttool','get','test-results','summary','--path',case['result_bundle']],15)
             case['summary_file']=self.retain(name+'-summary.json',raw,'summary',name,limit=100_000)
             summary=strict_json(raw)
             case['summary_stage_index']=len(self.report['stages'])-1
-            require(not recorded_timeout(summary) and not recorded_timeout(output), 'Recorded XCTest timeout; stop new UI')
+            if recorded_timeout(summary):
+                self.latch_simulator_uncertainty(stage,'structured_xctest_result_reports_timeout')
+                raise ValueError('Recorded XCTest timeout; VM disposal required')
             # Final evidence validation cannot retroactively authorize a control
             # that has already started. Reconcile exact finalized evidence here.
             status=method_scheduling_status(method,self.device,self.budget.record['sha'],stage,summary,lifecycle)
@@ -430,7 +548,7 @@ class Driver:
             case['observed_command_result']=status
 
     def cleanup(self):
-        if self.budget.cleanup_unconfirmed or not self.owned: return
+        if self.simulator_blocked() or self.budget.cleanup_unconfirmed or not self.owned: return
         with self.phase('cleanup', 130,kind='cleanup'):
             if self.device:
                 stage, output=self.run(['xcrun','simctl','spawn',self.device,'log','show','--last','27m','--style','compact',
@@ -461,7 +579,7 @@ class Driver:
                 'pair_inventory_sha256':digest(pair_raw.encode()),'pair_stage_index':pair_index}
 
     def evidence(self):
-        if self.budget.cleanup_unconfirmed: return
+        if self.simulator_blocked() or self.budget.cleanup_unconfirmed: return
         with self.phase('evidence', 180,kind='evidence'):
             self.report['source_after']=self.source()
             self.report['source_verified']=self.report.get('source_before')==self.report['source_after']
@@ -476,10 +594,11 @@ class Driver:
             self.retain('cold-list-frames.json',json.dumps(self.frames.report,separators=(',',':')),'cold_frames','actual_cold',limit=150_000)
 
     def execute(self):
+        require(not self.simulator_blocked(),'Prior simulator uncertainty; fresh VM required')
         require(not ROOT.exists() and not ROOT.is_symlink(), 'Fresh evidence root required')
         ROOT.mkdir(parents=True)
         write_json(STATE,self.budget.record)
-        self.persist()
+        self.persist_guarded()
         try:
             self.preflight(); self.builds(); self.setup()
             for method in METHODS: self.method(method)
@@ -491,7 +610,7 @@ class Driver:
             for function in (self.cleanup,self.evidence):
                 try: function()
                 except Exception as error: self.report['errors'].append(type(error).__name__+': '+str(error)[:1000])
-            self.persist()
+            self.persist_guarded()
             self.console_summary('final')
         return 0 # Workflow's independent validator, not this controller, reports the diagnostic verdict.
 

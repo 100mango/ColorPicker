@@ -20,7 +20,7 @@ MAX_EVIDENCE_BYTES = 1_200_000
 MAX_RECEIPT_BYTES = 300_000
 MAX_OBSERVATION_BYTES = 16_384
 RESERVES = {'cleanup': 130, 'evidence': 180, 'validation': 60, 'upload': 60, 'overhead': 20}
-PHASE_LIMITS = {'preflight': 30, 'builds': 240, 'setup': 120,
+PHASE_LIMITS = {'preflight': 30, 'builds': 240, 'setup': 450,
                 'actual_cold': 240, 'isolated_static': 180, 'rgb_positive': 180}
 CASE_NAMES = ('actual_cold', 'isolated_static', 'rgb_positive')
 CASES = {
@@ -227,6 +227,10 @@ def _lifecycle(raw, case, status, stage):
 
 
 def _identity(report, expected_source=None):
+    require('simulator_uncertainty' not in report, 'Simulator command completion is uncertain; VM disposal required')
+    require(not isinstance(report.get('stages'),list) or not any(isinstance(s,dict) and s.get('simulator_command_completion')=='unconfirmed'
+                    for s in report['stages']),
+            'Stage records unresolved simulator command completion')
     require(report.get('schema') == 1 and type(report.get('schema')) is int, 'unsupported receipt schema')
     require(report.get('acceptance', False) is False, 'receipt claims product acceptance')
     source = report.get('source')
@@ -356,6 +360,10 @@ def _budget_and_stages(report, source):
         require(phase in PHASE_LIMITS or phase in RESERVES, 'unexpected command phase')
         se, fe, sm, fm = (stage.get(key) for key in ('started_epoch', 'finished_epoch', 'started_monotonic', 'finished_monotonic'))
         limit = stage.get('timeout_seconds')
+        if stage['command'][:3] in (['xcrun','simctl','boot'],['xcrun','simctl','bootstatus']):
+            cap = 120 if stage['command'][2]=='boot' else 240
+            require(phase=='setup' and stage.get('setup_command_cap_seconds')==cap and number(limit) and 0<limit<=cap,
+                    'Setup boot/readiness cap or phase changed')
         require(all(number(value) for value in (se, fe, sm, fm, limit)), 'invalid command timing')
         require(previous_epoch <= se <= fe and previous_mono <= sm <= fm and 0 < limit <= (PHASE_LIMITS | RESERVES)[phase] and
                 fm-sm < limit and fe-se < limit and abs((fm-sm)-(fe-se)) <= 1, 'overlapping, expired or contradictory command clocks')

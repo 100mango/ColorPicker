@@ -7,7 +7,7 @@ PLATFORM = 'watch-crown-control'
 LANE = 'watch-crown-control-smallest'
 REF = 'refs/heads/codex/watch-crown-diagnostic'
 WORKFLOW = '.github/workflows/watch-crown-control.yml'
-PHASES = {'preflight': 30, 'builds': 240, 'setup': 120,
+PHASES = {'preflight': 30, 'builds': 240, 'setup': 450,
           'actual_cold': 240, 'isolated_static': 180, 'rgb_positive': 180}
 CAP = 1_200_000
 OBS_CAP = 32_768

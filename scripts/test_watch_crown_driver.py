@@ -53,7 +53,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(STARTUP_MARGIN,30)
         c=Clock();d=driver.Driver(environment(),clock=lambda:c.mono,wall=lambda:c.wall)
         self.assertEqual(d.budget.remaining(),1020)
-        self.assertEqual(sum(PHASES.values()),990)
+        self.assertEqual(sum(PHASES.values()),1320) # Ceilings share1020s; never additive reservations.
+        self.assertEqual(PHASES['setup'],450)
         wrong=copy.deepcopy(d.budget.record);wrong['platform']='watch'
         with self.assertRaises(ValueError):JobBudget(wrong,wall=lambda:c.wall,monotonic=lambda:c.mono)
         c.advance(900)
