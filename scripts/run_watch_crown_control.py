@@ -12,6 +12,7 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import stat
 import sys
 import threading
 import time
@@ -33,6 +34,96 @@ ROOT = Path('build/evidence')
 def digest(raw): return hashlib.sha256(raw).hexdigest()
 
 
+# Console mirrors are advisory subsets of already-persisted receipts. They are
+# never consumed by the validator and add no commands or acceptance evidence.
+CONSOLE_RECORD_BYTES = 512
+CONSOLE_RECORDS = 9  # Eight existing phase boundaries and one final boundary.
+CONSOLE_TOTAL_BYTES = CONSOLE_RECORD_BYTES * CONSOLE_RECORDS
+CONSOLE_BOUNDARIES = tuple(PHASES) + ('cleanup', 'evidence', 'final')
+
+
+def _console_bool(value): return value if type(value) is bool else None
+
+
+def _console_int(value, maximum=1_000_000_000):
+    return value if type(value) is int and -255 <= value <= maximum else None
+
+
+def _console_operation(command):
+    if not isinstance(command,list) or not command: return None
+    if command[0]=='git': return 'source'
+    if command[0] in ('sw_vers','uname') or command==['xcodebuild','-version']: return 'toolchain'
+    if command[:2]==['xcodebuild','test-without-building']: return 'xctest'
+    if command[0]=='xcodebuild': return 'build'
+    if command[:2]==['xcrun','xcresulttool']: return 'result-extraction'
+    if command[:2]==['xcrun','simctl'] and len(command)>2:
+        if command[2] in ('create','pair','pair_activate','boot','bootstatus','list','terminate','shutdown','unpair','delete'): return command[2]
+        if command[2]=='spawn': return 'simulator-observation'
+    if len(command)>1 and command[1] in ('scripts/generate_watch_project.py','scripts/generate_watch_crown_control_project.py'): return 'generator'
+    return None
+
+
+def _console_record(report, boundary, omitted):
+    """Fixed allowlist only: never include errors, argv, paths or native output."""
+    if boundary not in CONSOLE_BOUNDARIES or not isinstance(report,dict): return None
+    source=report.get('source',{});budget=report.get('budget',{})
+    if not isinstance(source,dict) or not isinstance(budget,dict): return None
+    sha=source.get('sha');run=source.get('run_id');attempt=source.get('attempt')
+    if not (isinstance(sha,str) and re.fullmatch('[0-9a-f]{40}',sha) and sha==budget.get('sha')
+            and isinstance(run,str) and re.fullmatch('[1-9][0-9]{0,23}',run) and run==report.get('run_id')==budget.get('run_id')
+            and isinstance(attempt,str) and re.fullmatch('[1-9][0-9]{0,5}',attempt) and attempt==report.get('attempt')): return None
+    phases=report.get('phases',[]);stages=report.get('stages',[]);cases=report.get('cases',[])
+    if not all(isinstance(value,list) for value in (phases,stages,cases)): return None
+    if len(phases)>9 or len(stages)>192 or len(cases)>3: return None
+    matching=[v for v in phases if isinstance(v,dict) and v.get('name')==boundary]
+    phase=matching[0] if len(matching)==1 else {}
+    last=stages[-1] if stages and isinstance(stages[-1],dict) else {}
+    # Schema 1 uses fixed-position tuples to fit Darwin's 512-byte PIPE_BUF.
+    # last=[phase,operation,exit,raw_exit,timed_out,group_gone,reader_finished]
+    # cases.<cold|static|rgb>=[started,stored_result,raw_exit,cleanup_confirmed]
+    if type(omitted) is not int or not 0<=omitted<=CONSOLE_RECORDS: return None
+    summaries={}
+    for name,method in zip(('cold','static','rgb'),METHODS):
+        matches=[v for v in cases if isinstance(v,dict) and v.get('name')==method['key']]
+        case=matches[0] if len(matches)==1 else {}
+        index=case.get('stage_index')
+        stage=stages[index] if type(index) is int and 0<=index<len(stages) and isinstance(stages[index],dict) else {}
+        status=case.get('observed_command_result')
+        summaries[name]=[_console_bool(stage.get('started')),
+            status if status in ('passed','failed') else None,_console_int(stage.get('raw_exit')),
+            _console_bool(case.get('cleanup_confirmed'))]
+    errors=report.get('errors');cleanup=report.get('cleanup',{})
+    value={'v':1,'sha':sha,'run':run,'try':attempt,'phase':boundary,
+        'done':_console_bool(phase.get('completed')),'stages':len(stages),
+        'last':[last.get('phase') if last.get('phase') in CONSOLE_BOUNDARIES else None,
+                _console_operation(last.get('command')),_console_int(last.get('exit')),
+                _console_int(last.get('raw_exit')),_console_bool(last.get('timed_out')),
+                _console_bool(last.get('process_group_gone')),_console_bool(last.get('capture_reader_finished'))],
+        'cases':summaries,'cleanup':_console_bool(cleanup.get('confirmed')) if isinstance(cleanup,dict) else None,
+        'errors':len(errors) if isinstance(errors,list) and len(errors)<=192 else None,
+        'acceptance':_console_bool(report.get('acceptance')),'omitted':omitted,'delivery':'best_effort'}
+    raw=('WATCH_CROWN_STATUS '+json.dumps(value,separators=(',',':'),allow_nan=False)+'\n').encode()
+    return raw if len(raw)<=CONSOLE_RECORD_BYTES else None
+
+
+def _write_console_nonblocking(raw):
+    """At most one atomic pipe write. Full/unsupported stdout is dropped, never waited on."""
+    previous=None
+    try:
+        # O_NONBLOCK does not bound regular-file or terminal writes. Only use an
+        # actual pipe and its observed PIPE_BUF atomic-write allowance.
+        if not stat.S_ISFIFO(os.fstat(1).st_mode) or len(raw)>os.fpathconf(1,'PC_PIPE_BUF'): return False
+        previous=os.get_blocking(1)
+        if previous: os.set_blocking(1,False)
+        return os.write(1,raw)==len(raw)
+    except (OSError,ValueError):
+        return False
+    finally:
+        if previous:
+            try: os.set_blocking(1,True)
+            except OSError: pass
+
+
 class Driver:
     def __init__(self, env=os.environ, *, clock=time.monotonic, wall=time.time, process_factory=subprocess.Popen):
         self.env, self.clock, self.wall, self.process_factory = env, clock, wall, process_factory
@@ -51,10 +142,25 @@ class Driver:
         self.runners = {}
         self.stdout_limit = 262_144
         self.work_stopped = False
+        self.console_seen=set();self.console_bytes=0;self.console_omitted=0
 
     def persist(self):
         self.report['budget'] = self.budget.snapshot()
         write_json(ROOT/'report.json', self.report, limit=300_000)
+
+    def console_summary(self, boundary):
+        # Called only after persist() succeeded. No verdict, report or clock is
+        # modified; serialization/write time still consumes the original clock.
+        if boundary not in CONSOLE_BOUNDARIES or boundary in self.console_seen or len(self.console_seen)>=CONSOLE_RECORDS: return
+        self.console_seen.add(boundary)
+        try:
+            raw=_console_record(self.report,boundary,self.console_omitted)
+            if raw is None or self.console_bytes+len(raw)>CONSOLE_TOTAL_BYTES:
+                self.console_omitted+=1;return
+            self.console_bytes+=len(raw) # Charge attempted bytes even if stdout drops them.
+            if not _write_console_nonblocking(raw): self.console_omitted+=1
+        except Exception:
+            self.console_omitted+=1 # Logging cannot turn a failure into a pass or interrupt cleanup.
 
     def retain(self, name, raw, kind, case=None, limit=150_000):
         if isinstance(raw, str): raw = raw.encode()
@@ -82,6 +188,7 @@ class Driver:
             row.update(finished_monotonic=self.clock(), finished_epoch=self.wall())
             self.current = None
             self.persist()
+            self.console_summary(name)
 
     def run(self, command, seconds, *, required=True, first=False):
         require(self.current is not None, 'Every command needs a bounded phase')
@@ -385,6 +492,7 @@ class Driver:
                 try: function()
                 except Exception as error: self.report['errors'].append(type(error).__name__+': '+str(error)[:1000])
             self.persist()
+            self.console_summary('final')
         return 0 # Workflow's independent validator, not this controller, reports the diagnostic verdict.
 
 
