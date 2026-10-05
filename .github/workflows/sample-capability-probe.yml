@@ -1,0 +1,51 @@
+name: One-off targetless sample help
+on:
+  push:
+    branches: [codex/sample-capability-probe]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-sample-capability-probe
+  cancel-in-progress: false
+jobs:
+  installed-help:
+    if: github.event.created == false && github.event.forced == false && github.event.before == 'a6ea406d51e38319b76d19a5a5417b72cec857f4' && github.run_attempt == 1
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact diagnostic source
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Check source, test owned bounds, inspect targetless help once
+        id: probe
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/sample-capability-probe
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$GITHUB_WORKFLOW_REF" = "100mango/ColorPicker/.github/workflows/sample-capability-probe.yml@refs/heads/codex/sample-capability-probe"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = a6ea406d51e38319b76d19a5a5417b72cec857f4
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          root="$(pwd -P)"
+          python="$(/usr/bin/python3 -I -S -c 'import os,sys; print(os.path.realpath(sys.executable))')"
+          "$python" -I -S -B "$root/scripts/run_sample_capability_ci.py"
+      - name: Retain only checked small capability receipts
+        if: always() && steps.probe.outputs.artifact_ready == 'true'
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sample-capability-${{ github.sha }}
+          path: ${{ steps.probe.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          include-hidden-files: false
