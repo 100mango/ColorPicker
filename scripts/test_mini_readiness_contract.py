@@ -99,7 +99,7 @@ class ReadinessSourceContracts(unittest.TestCase):
         self.assertIn('testPalettePasteReviewAcceptAndRelaunch',text)
         self.assertIn("'-default-test-execution-time-allowance', '180'",text)
         self.assertIn("'-maximum-test-execution-time-allowance', '240'",text)
-        self.assertIn('PREPARATION_SECONDS, TEST_SECONDS, CLEANUP_SECONDS = 600, 300, 20',text)
+        self.assertIn('PREPARATION_SECONDS, TEST_SECONDS, CLEANUP_SECONDS = 600, 660, 20',text)
         workflow=(ROOT/'.github/workflows/mini-direct-xctest.yml').read_text()
         self.assertIn('timeout-minutes: 25',workflow)
         self.assertIn('codex/mini-direct-xctest',workflow)

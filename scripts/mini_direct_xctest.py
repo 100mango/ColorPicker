@@ -1,4 +1,4 @@
-"""One fixed Mini XCTest case against functional build-for-testing products.
+"""One fixed Mini case with Xcode-managed bootstrap on a newly owned device.
 
 Always diagnostic-only: the disposable VM ends after host-only evidence. No
 standalone launch, Photos seed, fixture service, retry, warmup or qualification.
@@ -21,7 +21,7 @@ from bounded_process import group_exists, stop_group
 from job_budget import enabled_budget, fail_record
 from mini_passive_compatibility import HeadTail
 from mini_passive_launch import product_identity
-from palette_lifecycle_diagnostics import capture, CaptureStopped, strict_json, require
+from palette_lifecycle_diagnostics import capture, CaptureStopped, strict_json, require, valid_uuid
 from uikit_runtime_diagnostics import read_identity
 from uikit_warmup import Warmup
 
@@ -32,7 +32,7 @@ CASE_LABEL = '-[TouchColorIPadUITests testPalettePasteReviewAcceptAndRelaunch]'
 BUILD = ['xcodebuild', '-quiet', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor',
          '-configuration', 'Debug', '-destination', 'generic/platform=iOS Simulator',
          '-derivedDataPath', 'build/simulator', 'build-for-testing']
-PREPARATION_SECONDS, TEST_SECONDS, CLEANUP_SECONDS = 600, 300, 20
+PREPARATION_SECONDS, TEST_SECONDS, CLEANUP_SECONDS = 600, 660, 20
 ROOT = Path('build/iPadMini-direct-xctest')
 STOP = Path('build/iPadMini-direct-xctest-stop')
 PENDING = Path('build/iPadMini-runtime-command-uncertain')
@@ -221,7 +221,10 @@ class Diagnostic:
         self.report = {'schema': 1, 'purpose': 'single_existing_mini_case_diagnostic',
                        'sha': self.sha, 'workflow_sha': self.sha, 'run_id': os.environ['GITHUB_RUN_ID'],
                        'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'case': CASE,
-                       'build_argv': BUILD, 'warmup_accepted': False, 'full_row_accepted': False,
+                       'build_argv': BUILD, 'bootstrap_contract': 'xcode-managed-owned-mini-v1',
+                       'deployment_owner': 'xcodebuild', 'pretest_boot_completion': 'not_requested',
+                       'pretest_installed_bytes': 'not_observed',
+                       'warmup_accepted': False, 'full_row_accepted': False,
                        'release_accepted': False, 'vm_disposal_required': True,
                        'summary': {'status': 'unavailable_not_requested'}, 'status': 'not_started'}
         self.warmup = Warmup('iPadMini', started=STARTED, budget=b, runner=self.setup_runner)
@@ -266,6 +269,73 @@ class Diagnostic:
         value.stderr = value.stderr.decode('utf-8', errors='replace')
         return value
 
+    def create_owned_mini(self):
+        """Configure one new exact destination; do not boot, install or claim readiness."""
+        w = self.warmup
+        raw = w.command(['xcrun', 'simctl', 'list', '-j'], 30)
+        inventory = strict_json(raw)
+        require(isinstance(inventory, dict) and isinstance(inventory.get('runtimes'), list) and
+                isinstance(inventory.get('devicetypes'), list) and isinstance(inventory.get('devices'), dict),
+                'Missing installed runtime/type/device inventory')
+        require(len(inventory['runtimes']) <= 128 and len(inventory['devicetypes']) <= 1024 and
+                len(inventory['devices']) <= 128, 'Inventory entry bound')
+        runtimes = [r for r in inventory['runtimes'] if isinstance(r, dict) and
+                    r.get('identifier') == 'com.apple.CoreSimulator.SimRuntime.iOS-27-0']
+        types = [t for t in inventory['devicetypes'] if isinstance(t, dict) and
+                 t.get('name') == 'iPad mini (A17 Pro)']
+        require(len(runtimes) == 1 and runtimes[0].get('isAvailable') is True and len(types) == 1,
+                'Exact stable iOS27 Mini runtime/type required')
+        runtime, device_type = runtimes[0]['identifier'], types[0].get('identifier')
+        require(isinstance(device_type, str) and re.fullmatch(
+                r'com\.apple\.CoreSimulator\.SimDeviceType\.[A-Za-z0-9-]{1,100}', device_type),
+                'Invalid installed Mini type identifier')
+        require(sum(isinstance(t, dict) and t.get('identifier') == device_type
+                    for t in inventory['devicetypes']) == 1, 'Ambiguous installed Mini type identifier')
+        name = 'TouchColor Mini Direct ' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT']
+        initial = []
+        for devices in inventory['devices'].values():
+            require(isinstance(devices, list) and len(devices) <= 512, 'Invalid device inventory rows')
+            initial.extend(devices)
+        require(len(initial) <= 4096 and all(isinstance(d, dict) and valid_uuid(d.get('udid'))
+                and isinstance(d.get('name'), str) for d in initial), 'Invalid initial device identities')
+        ids = [d['udid'] for d in initial]
+        require(len(set(ids)) == len(ids) and not any(d['name'] == name for d in initial),
+                'Ambiguous inventory or existing owned name')
+        proof = {'initial_inventory_sha256': hashlib.sha256(raw.encode()).hexdigest(),
+                 'initial_device_count': len(ids), 'requested_name': name,
+                 'runtime': runtime, 'device_type': device_type, 'status': 'creation_pending'}
+        self.report['device_configuration'] = proof
+        self.persist()
+        device = w.command(['xcrun', 'simctl', 'create', name, device_type, runtime], 60).strip()
+        require(valid_uuid(device) and device not in ids, 'Created UUID invalid or already existed')
+        proof.update(returned_uuid=device, absent_from_initial_inventory=True, status='readback_pending')
+        # Retain the exact creation response before any subsequent device call.
+        self.persist()
+        raw = w.command(['xcrun', 'simctl', 'list', 'devices', 'available', '-j'], 30)
+        after = strict_json(raw)
+        require(isinstance(after, dict) and isinstance(after.get('devices'), dict) and
+                len(after['devices']) <= 128, 'Invalid creation readback')
+        matches = []
+        for key, devices in after['devices'].items():
+            require(isinstance(devices, list) and len(devices) <= 512 and
+                    all(isinstance(d, dict) and valid_uuid(d.get('udid')) and
+                        isinstance(d.get('name'), str) for d in devices), 'Invalid readback device rows')
+            matches.extend((key, d) for d in devices if d.get('udid') == device or d.get('name') == name)
+        require(len(matches) == 1, 'Created device readback is missing or ambiguous')
+        actual_runtime, selected = matches[0]
+        require(actual_runtime == runtime and selected.get('udid') == device and
+                selected.get('name') == name and selected.get('deviceTypeIdentifier') == device_type and
+                selected.get('isAvailable') is True and selected.get('state') == 'Shutdown',
+                'Created Mini configuration differs')
+        w.require_time()
+        self.identity = {'family': 'iPadMini', 'udid': device, 'runtime': runtime, 'started': time.time()}
+        write_json(w.build / 'iPadMini-simulator.json', self.identity)
+        require(read_identity('iPadMini') == self.identity, 'Created identity persistence differs')
+        proof.update(status='configured_shutdown_device_only', readback_state='Shutdown',
+                     readback_sha256=hashlib.sha256(raw.encode()).hexdigest())
+        self.report['device'] = self.identity
+        return device
+
     def prepare(self):
         w = self.warmup
         require(w.command(['git', 'rev-parse', 'HEAD'], 3, simulator=False).strip() == self.sha, 'Wrong checkout')
@@ -276,19 +346,12 @@ class Diagnostic:
         require(not Path('build/simulator').exists() and not Path('build/simulator').is_symlink(), 'Stale products')
         w.command(BUILD, 300, simulator=False)
         self.report['products'] = products()
-        device = w.select()  # Original template Mini, on this fresh disposable VM.
-        self.identity = read_identity('iPadMini')
-        require(self.identity['udid'] == device, 'Selected ownership changed')
-        self.report['device'] = self.identity
-        w.command(['xcrun', 'simctl', 'boot', device], 180, optional=True)
-        w.command(['xcrun', 'simctl', 'bootstatus', device, '-b'], 240)
-        w.command(['xcrun', 'simctl', 'install', device,
-                   'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], 300)
+        self.create_owned_mini()
         require(w.command(['git', 'rev-parse', 'HEAD'], 30, simulator=False).strip() == self.sha,
                 'Checkout changed during build/setup')
         w.command(['git', 'diff', '--quiet', 'HEAD', '--'], 30, simulator=False)
         require(read_identity('iPadMini') == self.identity and products() == self.report['products'],
-                'Installed product/device binding changed')
+                'Built product/device binding changed')
         w.require_time()
 
     def execute(self):
@@ -298,6 +361,8 @@ class Diagnostic:
         self.report['test_argv'] = command
         # No partial UI window. This is the unchanged job-budget work remainder,
         # initially 1020s, not a new clock after the 600s preparation ceiling.
+        # 660s combines the original 300s command with 360s moved bootstrap;
+        # individual case allowances remain 180/240s. Full660+20 must still fit.
         self.budget.admit('single direct Mini XCTest', TEST_SECONDS,
                           minimum=TEST_SECONDS, cleanup=CLEANUP_SECONDS)
         with PENDING.open('x') as output:

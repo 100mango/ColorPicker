@@ -58,7 +58,7 @@ class IdentityAndBudget(Temporary):
         self.assertEqual(self.budget.record['startup_margin'], 30)
 
     def test_no_partial_xctest_window(self):
-        d = self.diagnostic(); d.budget.hard_deadline = time.monotonic() + 450 + 319
+        d = self.diagnostic(); d.budget.hard_deadline = time.monotonic() + 450 + 679
         with patch.object(m, 'read_identity', return_value=IDENTITY), patch.object(m, 'observe') as observe:
             with self.assertRaises(BudgetExhausted): d.execute()
         observe.assert_not_called(); self.assertFalse(m.PENDING.exists())
@@ -68,14 +68,14 @@ class IdentityAndBudget(Temporary):
         value = {'status': 'command_exit_observed', 'observed_command_exit': 0, 'host_cleanup_confirmed': True}
         with patch.object(m, 'read_identity', return_value=IDENTITY), patch.object(m, 'observe', return_value=(value, {})) as observe:
             d.execute()
-        observe.assert_called_once_with(m.test_argv(IDENTITY['udid']), 300,
+        observe.assert_called_once_with(m.test_argv(IDENTITY['udid']), 660,
                                        work_deadline=d.budget.hard_deadline - 450 - 20)
         self.assertTrue(m.PENDING.exists()); self.assertTrue(m.STOP.exists())
         self.assertFalse(d.report['warmup_accepted']); self.assertFalse(d.report['full_row_accepted'])
 
     def test_persistence_cannot_steal_test_time(self):
         d = self.diagnostic()
-        def consume(): d.budget.hard_deadline = time.monotonic() + 450 + 319
+        def consume(): d.budget.hard_deadline = time.monotonic() + 450 + 679
         with patch.object(m, 'read_identity', return_value=IDENTITY), patch.object(d, 'persist', side_effect=consume), patch.object(m, 'observe') as observe:
             with self.assertRaises(BudgetExhausted): d.execute()
         observe.assert_not_called(); self.assertTrue(m.PENDING.exists())
@@ -105,25 +105,24 @@ class IdentityAndBudget(Temporary):
         execute.assert_not_called(); self.assertTrue(m.PENDING.exists())
         self.assertEqual(json.loads((m.ROOT / 'receipt.json').read_text())['status'], 'failed_or_incomplete')
 
-    def test_preparation_preserves_original_template_sequence(self):
+    def test_preparation_delegates_only_configured_device_creation(self):
         d = self.diagnostic(); self.assertEqual(d.warmup.deadline, m.STARTED + 600)
-        d.warmup = Mock(); d.warmup.select.return_value = IDENTITY['udid']
+        d.warmup = Mock()
         def command(args, seconds, **kwargs):
             if args == ['git', 'rev-parse', 'HEAD']: return 'a' * 40
             if args == ['xcodebuild', '-version']: return 'Xcode 27.0\nBuild version 27A266a\n'
             return ''
         d.warmup.command.side_effect = command
-        with patch.object(m, 'read_identity', return_value=IDENTITY), patch.object(m, 'products', return_value={'exact': 'product'}):
+        with patch.object(d, 'create_owned_mini', return_value=IDENTITY['udid']) as create, patch.object(m, 'read_identity', return_value=IDENTITY), patch.object(m, 'products', return_value={'exact': 'product'}):
             d.prepare()
-        d.warmup.select.assert_called_once_with()
+        create.assert_called_once_with(); d.warmup.select.assert_not_called()
         calls = d.warmup.command.call_args_list
         self.assertIn(unittest.mock.call(m.BUILD, 300, simulator=False), calls)
-        device_calls = [(c.args, c.kwargs) for c in calls if c.args[0][:2] == ['xcrun', 'simctl']]
-        self.assertEqual(device_calls, [
-            ((['xcrun', 'simctl', 'boot', IDENTITY['udid']], 180), {'optional': True}),
-            ((['xcrun', 'simctl', 'bootstatus', IDENTITY['udid'], '-b'], 240), {}),
-            ((['xcrun', 'simctl', 'install', IDENTITY['udid'],
-               'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], 300), {})])
+        self.assertEqual([c for c in calls if c.args[0][:2] == ['xcrun', 'simctl']], [])
+        self.assertEqual(d.report['bootstrap_contract'], 'xcode-managed-owned-mini-v1')
+        self.assertEqual(d.report['deployment_owner'], 'xcodebuild')
+        self.assertEqual(d.report['pretest_boot_completion'], 'not_requested')
+        self.assertEqual(d.report['pretest_installed_bytes'], 'not_observed')
 
     def test_setup_timeout_keeps_uncertainty_and_blocks_xctest(self):
         d = self.diagnostic()
@@ -469,12 +468,14 @@ class SourceContracts(unittest.TestCase):
         self.assertEqual([a for a in args if a.startswith('-only-testing:')], ['-only-testing:' + m.CASE])
         self.assertEqual(args[-1], 'test-without-building')
 
-    def test_no_new_device_lifecycle_or_fixture_operation(self):
+    def test_only_owned_creation_and_no_manual_bootstrap_or_fixture_operation(self):
         source = (SOURCE / 'scripts/mini_direct_xctest.py').read_text()
-        for action in ('launch', 'terminate', 'shutdown', 'delete', 'erase', 'addmedia', 'spawn', 'create'):
+        for action in ('boot', 'bootstatus', 'install', 'launch', 'terminate', 'shutdown', 'delete', 'erase', 'addmedia', 'spawn'):
             self.assertNotIn("'simctl', '" + action + "'", source)
         self.assertNotIn('PaletteFixtures.app', source)
-        self.assertIn('device = w.select()', source)
+        self.assertNotIn('w.select()', source)
+        self.assertEqual(source.count("['xcrun', 'simctl', 'create', name, device_type, runtime]"),1)
+        self.assertIn('self.create_owned_mini()',source)
 
     def test_exact_case_source_and_setup_are_unchanged_dependencies(self):
         test = (SOURCE / 'TouchColorUITests/TouchColorIPadUITests.m').read_text()
@@ -564,18 +565,18 @@ class DedicatedScheduleRegression(Temporary):
         result=dict(status='command_exit_observed',observed_command_exit=0,host_cleanup_confirmed=True)
         with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe',return_value=(result,{})) as observer:
             d.execute()
-        observer.assert_called_once_with(m.test_argv(IDENTITY['udid']),300,work_deadline=1000.)
+        observer.assert_called_once_with(m.test_argv(IDENTITY['udid']),660,work_deadline=1000.)
         self.assertFalse(d.report['warmup_accepted']);self.assertFalse(d.report['full_row_accepted'])
         self.assertTrue(m.PENDING.exists())
 
-    def test_observed_437_second_setup_allows_original_case(self):
-        self.assert_case_admitted(437.)
+    def test_bounded_314_second_build_creation_source_schedule_fits(self):
+        self.assert_case_admitted(314.)
 
-    def test_setup_600_boundary_still_requires_and_admits_full_window(self):
-        self.assert_case_admitted(600.)
+    def test_exact_original_340_boundary_admits_full_managed_window(self):
+        self.assert_case_admitted(340.)
 
     def test_insufficient_actual_remaining_work_never_starts_case(self):
-        d=self.scheduled(701.)
+        d=self.scheduled(340.000001)
         with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe') as observer:
             with self.assertRaises(BudgetExhausted):d.execute()
         observer.assert_not_called();self.assertFalse(m.PENDING.exists())
@@ -599,7 +600,7 @@ class DedicatedScheduleRegression(Temporary):
             if argv==['xcodebuild','-version']:return 'Xcode 27.0\nBuild version 27A266a\n'
             return ''
         d.warmup.command.side_effect=command
-        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'products',return_value={'exact':'unchanged'}):d.prepare()
+        with patch.object(d,'create_owned_mini',return_value=IDENTITY['udid']),patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'products',return_value={'exact':'unchanged'}):d.prepare()
         calls=d.warmup.command.call_args_list
         for argv in (['git','rev-parse','HEAD'],['git','diff','--quiet','HEAD','--']):
             selected=[c for c in calls if c.args[0]==argv]
@@ -680,6 +681,184 @@ class SummaryAbsoluteDeadline(Temporary):
         with patch.object(m,'capture',side_effect=m.CaptureStopped('duration-limit',False)):d.host_summary()
         self.assertEqual(d.report['summary']['status'],'unavailable');self.assertTrue(d.budget.cleanup_unconfirmed)
         self.assertEqual(d.report['xctest']['observed_command_exit'],65)
+
+
+class ManagedBootstrapContracts(Temporary):
+    TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro'
+    OLD = 'BBBBBBBB-1111-2222-3333-CCCCCCCCCCCC'
+    NAME = 'TouchColor Mini Direct 123-1'
+
+    def inventory(self):
+        return {'runtimes': [{'identifier': IDENTITY['runtime'], 'isAvailable': True}],
+                'devicetypes': [{'name': 'iPad mini (A17 Pro)', 'identifier': self.TYPE}],
+                'devices': {IDENTITY['runtime']: [{'udid': self.OLD, 'name': 'Image template'}]}}
+
+    def readback(self):
+        return {'devices': {IDENTITY['runtime']: [{'udid': IDENTITY['udid'], 'name': self.NAME,
+            'deviceTypeIdentifier': self.TYPE, 'isAvailable': True, 'state': 'Shutdown'}]}}
+
+    def run_creation(self, initial=None, returned=None, after=None, failure_at=None, failure=None):
+        d=self.diagnostic(); seen=[]
+        initial=self.inventory() if initial is None else initial
+        after=self.readback() if after is None else after
+        answers=[json.dumps(initial), IDENTITY['udid'] if returned is None else returned, json.dumps(after)]
+        def capture(command, **kw):
+            index=len(seen);seen.append(command)
+            if index==failure_at: raise failure
+            return subprocess.CompletedProcess(command,0,answers[index].encode(),b'')
+        with patch.object(m,'capture',side_effect=capture),patch.object(d,'prepare',side_effect=d.create_owned_mini),patch.object(d,'execute') as execute:
+            d.run()
+        return d,seen,execute
+
+    def test_exact_new_device_commands_and_honest_configuration_receipt(self):
+        d,seen,execute=self.run_creation()
+        self.assertEqual(seen,[['xcrun','simctl','list','-j'],
+            ['xcrun','simctl','create',self.NAME,self.TYPE,IDENTITY['runtime']],
+            ['xcrun','simctl','list','devices','available','-j']])
+        execute.assert_called_once()
+        proof=d.report['device_configuration']
+        self.assertEqual(proof['status'],'configured_shutdown_device_only')
+        self.assertEqual(proof['returned_uuid'],IDENTITY['udid'])
+        self.assertTrue(proof['absent_from_initial_inventory'])
+        self.assertEqual(proof['readback_state'],'Shutdown')
+        self.assertEqual(m.read_identity('iPadMini'),d.identity)
+        self.assertEqual(d.report['pretest_boot_completion'],'not_requested')
+        self.assertEqual(d.report['pretest_installed_bytes'],'not_observed')
+        self.assertEqual([e['allowance_seconds'] for e in d.report['preparation_commands']],[30,60,30])
+
+    def test_runtime_unavailable_stops_before_create(self):
+        value=self.inventory();value['runtimes'][0]['isAvailable']=False
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called();self.assertTrue(m.PENDING.exists())
+
+    def test_duplicate_runtime_stops_before_create(self):
+        value=self.inventory();value['runtimes']*=2
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+
+    def test_foreign_runtime_and_type_do_not_fall_back(self):
+        value=self.inventory();value['runtimes'][0]['identifier']='com.apple.CoreSimulator.SimRuntime.iOS-26-0'
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+
+    def test_ambiguous_type_stops_before_create(self):
+        value=self.inventory();value['devicetypes']*=2
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+
+    def test_foreign_type_name_cannot_alias_selected_type_identifier(self):
+        value=self.inventory();value['devicetypes'].append({'name':'Foreign device', 'identifier':self.TYPE})
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+        self.assertEqual(d.report['reason'],'Ambiguous installed Mini type identifier')
+
+    def test_lowercase_uuid_alias_cannot_hide_in_foreign_readback_row(self):
+        value=self.readback();value['devices'][IDENTITY['runtime']].append({
+            'udid':IDENTITY['udid'].lower(), 'name':'Foreign device',
+            'deviceTypeIdentifier':self.TYPE, 'isAvailable':True, 'state':'Shutdown'})
+        d,seen,execute=self.run_creation(after=value)
+        self.assertEqual(len(seen),3);execute.assert_not_called()
+        self.assertEqual(d.report['reason'],'Invalid readback device rows')
+
+    def test_invalid_type_identifier_stops_before_create(self):
+        value=self.inventory();value['devicetypes'][0]['identifier']='../../unknown'
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+
+    def test_existing_synthetic_name_is_not_reused(self):
+        value=self.inventory();value['devices'][IDENTITY['runtime']][0]['name']=self.NAME
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+
+    def test_duplicate_initial_uuid_is_ambiguous(self):
+        value=self.inventory();value['devices'][IDENTITY['runtime']]*=2
+        d,seen,execute=self.run_creation(initial=value)
+        self.assertEqual(len(seen),1);execute.assert_not_called()
+
+    def test_existing_uuid_return_does_not_get_readback(self):
+        d,seen,execute=self.run_creation(returned=self.OLD)
+        self.assertEqual(len(seen),2);execute.assert_not_called()
+
+    def test_malformed_uuid_return_does_not_get_readback(self):
+        d,seen,execute=self.run_creation(returned='not-a-device')
+        self.assertEqual(len(seen),2);execute.assert_not_called()
+
+    def test_missing_readback_blocks_xctest(self):
+        d,seen,execute=self.run_creation(after={'devices': {IDENTITY['runtime']: []}})
+        self.assertEqual(len(seen),3);execute.assert_not_called()
+
+    def test_foreign_readback_type_blocks_xctest(self):
+        value=self.readback();value['devices'][IDENTITY['runtime']][0]['deviceTypeIdentifier']='other'
+        d,seen,execute=self.run_creation(after=value)
+        self.assertEqual(len(seen),3);execute.assert_not_called()
+
+    def test_booted_readback_cannot_claim_new_shutdown_configuration(self):
+        value=self.readback();value['devices'][IDENTITY['runtime']][0]['state']='Booted'
+        d,seen,execute=self.run_creation(after=value)
+        self.assertEqual(len(seen),3);execute.assert_not_called()
+
+    def test_duplicate_readback_uuid_blocks_xctest(self):
+        value=self.readback();value['devices'][IDENTITY['runtime']]*=2
+        d,seen,execute=self.run_creation(after=value)
+        self.assertEqual(len(seen),3);execute.assert_not_called()
+
+    def test_creation_timeout_stops_before_readback(self):
+        d,seen,execute=self.run_creation(failure_at=1,failure=m.CaptureStopped('duration-limit',True))
+        self.assertEqual(len(seen),2);execute.assert_not_called();self.assertTrue(m.PENDING.exists())
+        self.assertIsNone(d.report['preparation_commands'][-1]['exit'])
+
+    def test_unknown_creation_cleanup_latches_existing_budget(self):
+        d,seen,execute=self.run_creation(failure_at=1,failure=m.CaptureStopped('duration-limit',False))
+        self.assertEqual(len(seen),2);execute.assert_not_called();self.assertTrue(d.budget.cleanup_unconfirmed)
+
+    def test_late_create_exit_has_no_readback_or_xctest(self):
+        d=self.diagnostic();tick=[0.];d.warmup.clock=lambda:tick[0];d.warmup.deadline=600.
+        d.budget.monotonic=lambda:tick[0];d.budget.hard_deadline=1470.;seen=[]
+        def capture(command,**kw):
+            seen.append(command)
+            if len(seen)==1:return subprocess.CompletedProcess(command,0,json.dumps(self.inventory()).encode(),b'')
+            tick[0]=60.;return subprocess.CompletedProcess(command,0,IDENTITY['udid'].encode(),b'')
+        with patch.object(m.time,'monotonic',side_effect=lambda:tick[0]),patch.object(m,'capture',side_effect=capture),patch.object(d,'prepare',side_effect=d.create_owned_mini),patch.object(d,'execute') as execute:
+            d.run()
+        self.assertEqual(len(seen),2);execute.assert_not_called();self.assertTrue(m.PENDING.exists())
+        self.assertEqual(d.report['preparation_commands'][-1]['reason'],'setup_capture_returned_after_deadline')
+
+    def test_managed_command_never_starts_after_original_full_window_boundary(self):
+        d=self.diagnostic();d.budget.monotonic=lambda:340.00001;d.budget.hard_deadline=1470.
+        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe') as observe:
+            with self.assertRaises(BudgetExhausted):d.execute()
+        observe.assert_not_called()
+
+    def test_managed_persistence_consumes_same_original_work_pool(self):
+        d=self.diagnostic();tick=[339.];d.budget.monotonic=lambda:tick[0];d.budget.hard_deadline=1470.
+        d.persist=lambda:tick.__setitem__(0,340.00001)
+        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe') as observe:
+            with self.assertRaises(BudgetExhausted):d.execute()
+        observe.assert_not_called();self.assertTrue(m.PENDING.exists())
+
+    def test_original_setup600_no_longer_fits_managed_window_and_is_not_extended(self):
+        d=self.diagnostic();d.budget.monotonic=lambda:600.;d.budget.hard_deadline=1470.
+        with patch.object(m,'read_identity',return_value=IDENTITY),patch.object(m,'observe') as observe:
+            with self.assertRaises(BudgetExhausted):d.execute()
+        observe.assert_not_called();self.assertEqual(m.PREPARATION_SECONDS,600)
+
+    def test_ui_argv_keeps_individual_case_allowances_and_fixed_selection(self):
+        argv=m.test_argv(IDENTITY['udid'])
+        self.assertEqual(argv[argv.index('-default-test-execution-time-allowance')+1],'180')
+        self.assertEqual(argv[argv.index('-maximum-test-execution-time-allowance')+1],'240')
+        self.assertEqual([x for x in argv if x.startswith('-only-testing:')],['-only-testing:'+m.CASE])
+        self.assertNotIn('-test-iterations',argv);self.assertNotIn('-retry-tests-on-failure',argv)
+        self.assertEqual(m.TEST_SECONDS,660)
+
+    def test_attempt2_install_failure_stays_unexecuted_and_source_scoped(self):
+        f=json.loads((SOURCE/'scripts/fixtures/mini-966459-attempt2-install-timeout.json').read_text())
+        self.assertEqual(f['sha'],'966459c77cab4a4c40ce777cd10751d7e8a890fe')
+        self.assertEqual(f['run_id'],'37359491816');self.assertEqual(f['run_attempt'],'2')
+        self.assertNotIn('xctest',f);self.assertNotIn('bootstrap_contract',f)
+        last=f['preparation_commands'][-1]
+        self.assertEqual(last['argv'][2],'install');self.assertEqual(last['allowance_seconds'],300)
+        self.assertIsNone(last['exit']);self.assertEqual(last['reason'],'duration-limit')
+        self.assertFalse(f['warmup_accepted']);self.assertFalse(f['full_row_accepted'])
 
 
 if __name__ == '__main__': unittest.main()
