@@ -178,7 +178,7 @@ class SimulatorFenceTests(FenceTestCase):
                 t=SimulatorFenceTests();t.setUp()
                 try:
                     t.d.process_factory=t.process(code=65)
-                    with patch.object(driver,'stop_group',return_value=True),t.d.phase('actual_cold',240):
+                    with patch.object(driver,'stop_group',return_value=True),t.d.phase('isolated_static',180):
                         if required:
                             with self.assertRaises(ValueError):t.d.run(test_command(METHODS[0],DEVICE),180)
                         else:
@@ -188,7 +188,7 @@ class SimulatorFenceTests(FenceTestCase):
                     self.assertNotIn('simulator_uncertainty',t.d.report)
                 finally:t.tearDown()
 
-    def test_real_bounded_exit65_still_allows_the_three_exact_independent_methods(self):
+    def test_real_bounded_exit65_keeps_the_single_static_failure(self):
         t=driver_tests.SequentialMethodTests();t.setUp()
         try:
             fake_other=t.d.run;real_run=driver.Driver.run.__get__(t.d,driver.Driver);clock=t.clock;starts=[]
@@ -215,8 +215,8 @@ class SimulatorFenceTests(FenceTestCase):
             t.d.run=combined
             with patch.object(driver,'stop_group',return_value=True):
                 for method in METHODS:t.d.method(method)
-            self.assertEqual(len(starts),3)
-            self.assertEqual([r['observed_command_result'] for r in t.d.report['cases']],['failed','failed','passed'])
+            self.assertEqual(len(starts),1)
+            self.assertEqual([r['observed_command_result'] for r in t.d.report['cases']],['failed'])
             self.assertFalse(t.d.simulator_uncertain);self.assertFalse(t.d.report['acceptance'])
         finally:t.tearDown()
 
@@ -295,7 +295,7 @@ class SimulatorFenceTests(FenceTestCase):
             with self.assertRaises(ValueError):self.d.method(METHODS[0])
         self.assertEqual(len(self.spawns),1)
         self.assertEqual(self.d.report['stages'][0]['raw_exit'],65)
-        self.assertIn('timed out',Path('build/evidence/actual_cold-console.log').read_text())
+        self.assertIn('timed out',Path('build/evidence/isolated_static-console.log').read_text())
         self.assert_blocked_everywhere();self.reload_blocked()
 
     def test_timeout_found_only_in_structured_summary_immediately_fences(self):
@@ -312,11 +312,11 @@ class SimulatorFenceTests(FenceTestCase):
             with self.assertRaises(ValueError):t.d.method(METHODS[0])
             self.assertEqual(len(t.commands),2)
             self.assertTrue(t.d.simulator_uncertain);self.assertTrue(driver.SIMULATOR_STOP.exists())
-            self.assertTrue(Path('build/evidence/actual_cold-summary.json').is_file())
+            self.assertTrue(Path('build/evidence/isolated_static-summary.json').is_file())
             # Restore the real command guard; mocks must not provide a bypass.
             t.d.run=driver.Driver.run.__get__(t.d,driver.Driver)
             before=len(t.commands);t.d.cleanup();t.d.evidence()
-            with self.assertRaises(ValueError):t.d.method(METHODS[1])
+            with self.assertRaises(ValueError):t.d.method(METHODS[0])
             self.assertEqual(len(t.commands),before)
         finally:t.tearDown()
 
@@ -366,11 +366,11 @@ class SetupAllowanceTests(FenceTestCase):
             self.clock.advance(449.5)
             with self.assertRaises(ValueError):self.d.run(['xcrun','simctl','bootstatus',DEVICE,'-b'],420,clip_setup=True)
         self.assertEqual(self.spawns,[]);self.assertFalse(self.d.simulator_uncertain)
-        self.clock.advance(350)
+        self.clock.advance(391)
         with self.assertRaises(BudgetExhausted):
-            with self.d.phase('actual_cold',240):self.fail('Later UI must not start without full phase')
-        self.assertEqual(PHASES['actual_cold'],240);self.assertEqual(PHASES['isolated_static'],180);self.assertEqual(PHASES['rgb_positive'],180)
-        self.assertEqual(sum(PHASES.values()),1470)
+            with self.d.phase('isolated_static',180):self.fail('Later UI must not start without full phase')
+        self.assertEqual(PHASES['isolated_static'],180)
+        self.assertEqual(sum(PHASES.values()),1050)
 
 
 class IndependentFenceVerdictTests(unittest.TestCase):

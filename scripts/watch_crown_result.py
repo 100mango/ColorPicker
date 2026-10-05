@@ -1,8 +1,8 @@
-"""Independently reconcile a bounded, three-method Watch Crown diagnostic receipt.
+"""Independently reconcile a bounded, static-only Watch Crown diagnostic receipt.
 
 Only retained files authenticated by the receipt manifest are read. A passing
-control is not product acceptance; a real failed test stays failed even when a
-later control is incomplete. Missing, timed-out or ambiguous evidence never
+control is not product acceptance. A complete stationary Crown failure stays failed;
+missing evidence or uncertain cleanup leaves the single case incomplete. Missing, timed-out or ambiguous evidence never
 qualifies as passed. This validator starts no process and cannot run tests.
 """
 import argparse
@@ -23,18 +23,15 @@ MAX_RECEIPT_BYTES = 300_000
 MAX_OBSERVATION_BYTES = 16_384
 RESERVES = {'cleanup': 130, 'evidence': 180, 'validation': 60, 'upload': 60, 'overhead': 20}
 PHASE_LIMITS = {'preflight': 30, 'builds': 240, 'setup': 600,
-                'actual_cold': 240, 'isolated_static': 180, 'rgb_positive': 180}
-CASE_NAMES = ('actual_cold', 'isolated_static', 'rgb_positive')
+                'isolated_static': 180}
+CASE_NAMES = ('isolated_static',)
+DIAGNOSTIC_SCOPE = 'static-list-crown-only-v1'
+EXCLUDED_CASES = ['actual_cold', 'rgb_positive']
+WORKFLOW = '.github/workflows/watch-static-crown-control.yml'
 CASES = {
-    'actual_cold': {'identifier': 'TouchColorWatchUITests/WatchWorkflowTests/testHomeListDigitalCrownFromColdLaunch',
-                    'project': 'TouchColorWatch.xcodeproj', 'scheme': 'TouchColorWatch',
-                    'result_bundle': 'build/watch-crown-actual_cold.xcresult', 'derived_data': 'build/crown-product'},
     'isolated_static': {'identifier': 'TouchColorWatchCrownControlUITests/WatchStaticCrownControlTests/testStaticListDigitalCrownThreeRotations',
                        'project': 'TouchColorWatchCrownControl.xcodeproj', 'scheme': 'TouchColorWatchCrownControl',
                        'result_bundle': 'build/watch-crown-isolated_static.xcresult', 'derived_data': 'build/crown-static'},
-    'rgb_positive': {'identifier': 'TouchColorWatchUITests/WatchWorkflowTests/testRealDigitalCrownChangesRGBComponent',
-                     'project': 'TouchColorWatch.xcodeproj', 'scheme': 'TouchColorWatch',
-                     'result_bundle': 'build/watch-crown-rgb_positive.xcresult', 'derived_data': 'build/crown-product'},
 }
 COUNTS = ('passedTests', 'failedTests', 'skippedTests', 'expectedFailures')
 TIMEOUT = re.compile(r'exceeded execution time allowance|execution time.*exceeded|\btimed? out\b|\btime[ -]?out\b|test may have hung', re.I)
@@ -129,7 +126,7 @@ def _safe_read(root, name, cap):
 def _manifest(report, root):
     entries = report.get('evidence')
     require(isinstance(entries, list) and 1 <= len(entries) <= 64, 'missing bounded evidence manifest')
-    total = 0; observation = {'observation_home': 0, 'observation_static': 0}; blobs = {}; manifest = {}
+    total = 0; observation = {'observation_static': 0}; blobs = {}; manifest = {}
     for entry in entries:
         require(isinstance(entry, dict), 'invalid evidence entry')
         name = entry.get('path'); size = entry.get('bytes'); digest = entry.get('sha256')
@@ -140,11 +137,22 @@ def _manifest(report, root):
         raw = _safe_read(root, name, min(size, MAX_EVIDENCE_BYTES))
         require(len(raw) == size and hashlib.sha256(raw).hexdigest() == digest, 'evidence size or SHA256 mismatch: ' + name)
         kind = entry.get('kind')
+        allowed = {
+            'isolated_static-build.log': ('build', 'isolated_static', 262_144),
+            'setup-phone-bootstatus.log': ('setup_bootstatus', 'phone', 16_384),
+            'setup-watch-bootstatus.log': ('setup_bootstatus', 'watch', 16_384),
+            'static-observations.log': ('observation_static', 'isolated_static', 16_384),
+            'cleanup-devices.json': ('cleanup_devices', None, 100_000), 'cleanup-pairs.json': ('cleanup_pairs', None, 100_000),
+            **{'isolated_static-'+suffix: (category, 'isolated_static', cap) for suffix, category, cap in
+               [('lifecycle.log','lifecycle',4096),('console.log','diagnostics',65_536),('summary.json','summary',100_000),
+                ('cleanup-services.log','case_cleanup',65_536),('tests.json','tests',150_000)]}}
+        require(name in allowed and (kind, entry.get('case')) == allowed[name][:2], 'Excluded or foreign evidence path/kind/case')
+        require(size <= allowed[name][2], 'evidence exceeds unchanged per-file cap: '+name)
         if kind in observation:
             observation[kind] += size
             require(observation[kind] <= MAX_OBSERVATION_BYTES, kind + ' observation exceeds 16384 byte cap')
         blobs[name] = raw; manifest[name] = entry
-    require(sum(observation.values()) <= 32768, 'combined observations exceed 32768 byte cap')
+    require(sum(observation.values()) <= MAX_OBSERVATION_BYTES, 'static observations exceed 16384 byte cap')
     return blobs, manifest
 
 
@@ -236,13 +244,16 @@ def _identity(report, expected_source=None):
     require(report.get('schema') == SCHEMA and type(report.get('schema')) is int and
             report.get('protocol') == PROTOCOL, 'unsupported receipt schema/protocol')
     require(report.get('acceptance', False) is False, 'receipt claims product acceptance')
+    require(isinstance(report.get('errors'),list), 'malformed producer error inventory')
+    require(report.get('diagnostic_scope') == DIAGNOSTIC_SCOPE and report.get('excluded_cases') == EXCLUDED_CASES,
+            'missing or foreign static-only diagnostic scope/exclusions')
     source = report.get('source')
     require(isinstance(source, dict), 'missing source identity')
     for field, width in (('sha', 40), ('tree', 40), ('workflow_sha256', 64)):
         require(isinstance(source.get(field), str) and re.fullmatch('[0-9a-f]{' + str(width) + '}', source[field]),
                 'invalid source ' + field)
     require(source.get('repository') == '100mango/ColorPicker' and
-            source.get('ref') == 'refs/heads/codex/watch-crown-diagnostic', 'source repository/ref mismatch')
+            source.get('ref') == 'refs/heads/codex/watch-static-crown-diagnostic' and source.get('workflow') == WORKFLOW, 'source repository/ref mismatch')
     for key in ('run_id', 'attempt'):
         require(isinstance(source.get(key), str) and re.fullmatch('[1-9][0-9]*', source[key]) and
                 report.get(key) == source[key], 'source/run identity mismatch: ' + key)
@@ -280,13 +291,15 @@ def _identity(report, expected_source=None):
             activation['record'].get('phone', {}).get('udid') == phone['udid'] and
             activation['record'].get('state') in ('(active, connected)', '(active, disconnected)'), 'owned pair activation unconfirmed')
     products = report.get('products_before')
-    require(isinstance(products, dict) and set(products) == {'actual_cold', 'isolated_static'} and
-            products == report.get('products_after'), 'built products missing or changed between controls')
+    require(isinstance(products, dict) and set(products) == {'isolated_static'} and
+            products == report.get('products_after'), 'static built products missing or changed during diagnostic')
     for product in products.values():
         require(isinstance(product, dict) and isinstance(product.get('sha256'), str) and
                 re.fullmatch('[0-9a-f]{64}', product['sha256']) and type(product.get('files')) is int and
                 1 <= product['files'] <= 8192 and type(product.get('bytes')) is int and 0 < product['bytes'] <= 1024**3,
                 'invalid built product fingerprint')
+    require(report.get('runner_bundle_ids') == {'isolated_static': 'com.mango.touchColor.watchCrownControl.uitests.xctrunner'},
+            'runner identity is missing, excluded or foreign')
     initial = report.get('initial_inventory', {})
     require(isinstance(initial.get('devices'), dict) and isinstance(initial.get('pairs'), dict) and
             isinstance(initial['pairs'].get('pairs'), dict), 'missing original pair/device ownership inventory')
@@ -311,7 +324,7 @@ def _identity(report, expected_source=None):
 def _budget_identity(report, source):
     budget = report.get('budget')
     require(isinstance(budget, dict) and budget.get('schema') == 1 and budget.get('platform') == 'watch-crown-control' and
-            budget.get('lane') == 'watch-crown-control-smallest' and type(budget.get('minutes')) is int and budget['minutes'] == 25,
+            budget.get('lane') == 'watch-static-crown-control-smallest' and type(budget.get('minutes')) is int and budget['minutes'] == 25,
             'wrong source-owned 25-minute budget identity')
     require(budget.get('sha') == source['sha'] and budget.get('run_id') == source['run_id'], 'budget source/run mismatch')
     require(budget.get('reserves') == RESERVES and budget.get('startup_margin') == 30, 'budget reserves or startup margin changed')
@@ -336,6 +349,9 @@ def _budget_and_stages(report, source):
         require(previous_epoch <= se <= fe and previous_mono <= sm <= fm and
                 fm - sm <= phase_limit and fe - se <= phase_limit and abs((fm-sm)-(fe-se)) <= 1,
                 'overlapping, over-budget or contradictory phase clocks')
+        if name in PHASE_LIMITS:
+            require(sm-budget['started_monotonic']+phase_limit <= 1020 and
+                    se-budget['started_epoch']+phase_limit <= 1020, 'full phase allowance not admitted on original clock')
         cutoff = 1020 if name in PHASE_LIMITS else {'cleanup': 1150, 'evidence': 1330}[name]
         require(fm - budget['started_monotonic'] <= cutoff and fe - budget['started_epoch'] <= cutoff,
                 'phase exceeded original-clock cutoff')
@@ -353,9 +369,11 @@ def _budget_and_stages(report, source):
         require(isinstance(stage, dict), 'invalid command stage')
         require(isinstance(stage.get('command'), list) and stage['command'] and
                 all(isinstance(arg, str) and len(arg) <= 4096 for arg in stage['command']), 'invalid command argv')
+        require(stage.get('source_sha') == source['sha'], 'command source SHA mismatch')
         require(type(stage.get('started')) is bool and stage['started'], 'command was not started')
         require(type(stage.get('exit')) is int and type(stage.get('raw_exit')) is int and stage['exit'] == stage['raw_exit'], 'synthetic or missing command exit')
-        require(stage.get('timed_out') is False, 'command timed out or timeout state unknown')
+        require(stage.get('timed_out') is False and not stage.get('reported_device_timeout'),
+                'command timed out or timeout state unknown')
         require(stage.get('process_group_gone') is True and stage.get('capture_reader_finished') is True and
                 not stage.get('reader_errors') and not stage.get('cleanup_error'), 'owned process or capture cleanup unconfirmed')
         require(type(stage.get('stdout_truncated')) is bool, 'missing capture truncation state')
@@ -386,6 +404,51 @@ def _budget_and_stages(report, source):
     require(isinstance(cleanup, dict) and all(cleanup.get(key) is True for key in ('confirmed', 'device_absence_verified', 'pair_absence_verified')),
             'owned pair/device cleanup is incomplete')
     return stages
+
+
+def _command_inventory(report):
+    """Exact fixed lane commands. Wrappers, extra selectors and product work fail closed."""
+    stages=report['stages']; device=report['device']['udid']
+    phone=next(d['udid'] for d in report['owned_devices'] if d['role']=='phone')
+    source_commands=[(['git','rev-parse','HEAD'],2),(['git','rev-parse','HEAD^{tree}'],2),
+                     (['git','status','--porcelain','--untracked-files=all'],2)]
+    preflight=[s for s in stages if s['phase']=='preflight']
+    require(len(preflight)==10, 'fixed preflight command inventory changed')
+    generator=preflight[6]['command']
+    require(len(generator)==2 and re.fullmatch(r'python(?:3(?:\.[0-9]+)?)?',Path(generator[0]).name) and
+            generator[1]=='scripts/generate_watch_crown_control_project.py', 'foreign project generator')
+    expected={
+        'preflight':source_commands+[(['xcodebuild','-version'],4),(['sw_vers','-buildVersion'],2),(['uname','-m'],2),
+                                     (generator,3)]+source_commands,
+        'builds':[(['xcodebuild','-quiet','-project','TouchColorWatchCrownControl.xcodeproj','-scheme','TouchColorWatchCrownControl',
+                   '-configuration','Debug','-destination','generic/platform=watchOS Simulator','-derivedDataPath','build/crown-static',
+                   'ARCHS=arm64','CODE_SIGNING_ALLOWED=NO','build-for-testing'],110)],
+        'isolated_static':[(expected_command('isolated_static',device),180),
+            (['xcrun','xcresulttool','get','test-results','summary','--path',CASES['isolated_static']['result_bundle']],15),
+            (['xcrun','simctl','terminate',device,'com.mango.touchColor.watchCrownControl'],30),
+            (['xcrun','simctl','terminate',device,'com.mango.touchColor.watchCrownControl.uitests.xctrunner'],30),
+            (['xcrun','simctl','spawn',device,'launchctl','list'],5)],
+        'cleanup':[(['xcrun','simctl','shutdown',device],10),(['xcrun','simctl','shutdown',phone],10),
+            (['xcrun','simctl','list','devices','-j'],5),(['xcrun','simctl','unpair',report['pair']['id']],10),
+            (['xcrun','simctl','delete',device],10),(['xcrun','simctl','delete',phone],10),
+            (['xcrun','simctl','list','devices','-j'],5),(['xcrun','simctl','list','pairs','-j'],5)],
+        'evidence':source_commands+[
+            (['xcrun','xcresulttool','get','test-results','tests','--path',CASES['isolated_static']['result_bundle']],20)]}
+    for phase,commands in expected.items():
+        observed=[stage for stage in stages if stage['phase']==phase]
+        require([(stage['command'],stage['timeout_seconds']) for stage in observed]==commands,
+                'fixed static-only command inventory/caps changed: '+phase)
+        if phase!='isolated_static':
+            require(all(stage['raw_exit']==0 and not stage['stdout_truncated'] for stage in observed
+                        if stage['command'][:3]!=['xcrun','simctl','shutdown']), 'non-test command failed or was truncated')
+    require(all(stage['phase'] in expected or stage['phase']=='setup' for stage in stages), 'foreign command phase')
+    require(isinstance(report.get('cases'),list) and len(report['cases'])==1 and
+            isinstance(report['cases'][0],dict) and report['cases'][0].get('name')=='isolated_static',
+            'exact singleton static case inventory required')
+    row=report['cases'][0]
+    static_indices=[i for i,stage in enumerate(stages) if stage['phase']=='isolated_static']
+    require([row.get('stage_index'),row.get('summary_stage_index'),row.get('process_cleanup',{}).get('inventory_stage_index')]
+            ==[static_indices[0],static_indices[1],static_indices[4]], 'case stages do not bind sole static invocation')
 
 
 def _case_timing(report, name, stage):
@@ -458,8 +521,7 @@ def _extraction_and_cleanup(report, name, row, stage, blobs, manifest):
             cleanup.get('raw_exit') == 0 and cleanup.get('started') is True and cleanup.get('timed_out') is False and
             cleanup.get('stdout_truncated') is False and cleanup.get('process_group_gone') is True and cleanup.get('capture_reader_finished') is True,
             'case cleanup inventory command incomplete')
-    expected_ids = ['com.mango.touchColor.watchCrownControl', 'com.mango.touchColor.watchCrownControl.uitests.xctrunner'] if name == 'isolated_static' else [
-        'com.mango.touchColor.watchkitapp', 'com.mango.touchColor.TouchColorWatchUITests.xctrunner']
+    expected_ids = ['com.mango.touchColor.watchCrownControl', 'com.mango.touchColor.watchCrownControl.uitests.xctrunner']
     require(proof.get('identifiers') == expected_ids, 'case cleanup targets wrong app/runner')
     filename = proof.get('inventory_file')
     require(filename == name + '-cleanup-services.log' and filename in blobs and manifest[filename].get('kind') == 'case_cleanup' and
@@ -471,49 +533,50 @@ def _extraction_and_cleanup(report, name, row, stage, blobs, manifest):
     require(proof.get('entries') == len(lines)-1, 'process inventory count mismatch')
 
 
+def _capture_extraction(report, row, stage, blobs, manifest):
+    """Reconcile producer attestation, never reconstruct discarded interleaving."""
+    size,digest=stage.get('stdout_bytes'),stage.get('stdout_sha256')
+    require(type(size) is int and 0 < size <= 262_144 and isinstance(digest,str) and
+            re.fullmatch('[0-9a-f]{64}',digest), 'original static capture digest/count is missing or invalid')
+    files=[]
+    for path,cap in [('isolated_static-lifecycle.log',4096),('isolated_static-console.log',65_536),
+                     ('static-observations.log',16_384)]:
+        require(path in blobs and path in manifest, 'static extraction file is missing')
+        raw=blobs[path]
+        require(0 < len(raw) <= cap and manifest[path]['bytes']==len(raw) and
+                manifest[path]['sha256']==hashlib.sha256(raw).hexdigest(), 'static extraction file bytes differ')
+        files.append({'path':path,'sha256':manifest[path]['sha256'],'bytes':manifest[path]['bytes']})
+    expected={'schema':1,'policy':'watch-static-crown-split-lines-v1',
+        'provenance':'source-controlled extraction; original interleaving is not reconstructed',
+        'source_sha':report['source']['sha'],'run_id':report['run_id'],'attempt':report['attempt'],
+        'case':'isolated_static','stage_index':row['stage_index'],
+        'capture':{'sha256':digest,'bytes':size},'files':files}
+    proof=row.get('capture_extraction')
+    require(isinstance(proof,dict) and type(proof.get('schema')) is int and
+            type(proof.get('stage_index')) is int and isinstance(proof.get('capture'),dict) and
+            type(proof['capture'].get('bytes')) is int and isinstance(proof.get('files'),list) and
+            all(isinstance(v,dict) and type(v.get('bytes')) is int for v in proof['files']) and proof==expected,
+            'static source-controlled extraction receipt differs from test stage or retained files')
+    # The fixed policy duplicates lifecycle lines in the ordinary console and
+    # splits static markers out of it. This verifies the deterministic visible
+    # relation, without asserting a lost ordering of static and ordinary lines.
+    console=blobs['isolated_static-console.log'].decode('utf-8',errors='strict')
+    lifecycle=blobs['isolated_static-lifecycle.log'].decode('utf-8',errors='strict')
+    markers=blobs['static-observations.log'].decode('utf-8',errors='strict')
+    require(lifecycle=='\n'.join(line for line in console.splitlines() if line.startswith('Test Case '))+'\n',
+            'lifecycle differs from fixed console extraction policy')
+    require(not any(line.startswith('WATCH_STATIC_CROWN_') for line in console.splitlines()) and
+            all(line.startswith('WATCH_STATIC_CROWN_') for line in markers.splitlines()),
+            'static marker/console split differs from fixed extraction policy')
+
+
 def _observations(blobs, manifest):
-    for filename, kind, case in (('cold-list-frames.json', 'cold_frames', 'actual_cold'),
-                                  ('home-observations.json', 'observation_home', 'actual_cold'),
-                                  ('static-observations.log', 'observation_static', 'isolated_static')):
-        require(filename in blobs and manifest[filename].get('kind') == kind and manifest[filename].get('case') == case,
-                'mandatory observation missing or unbound: ' + filename)
-    cold = strict_json(blobs['cold-list-frames.json'])
-    records = cold.get('records')
-    require(isinstance(records, list) and 2 <= len(records) <= 24 and len(records) % 2 == 0 and
-            cold.get('matched_records') == len(records) and cold.get('omitted_records') == 0 and cold.get('invalid_records') == 0,
-            'cold List frame observations missing or incomplete')
+    filename = 'static-observations.log'
+    require(filename in blobs and manifest[filename].get('kind') == 'observation_static' and
+            manifest[filename].get('case') == 'isolated_static', 'mandatory static observation missing or unbound')
     def rect(value):
-        return isinstance(value, list) and len(value) == 4 and all(number(v) for v in value) and value[2] >= 0 and value[3] >= 0
-    for i, record in enumerate(records):
-        require(isinstance(record, dict) and record.get('case') == '-[WatchWorkflowTests testHomeListDigitalCrownFromColdLaunch]' and
-                record.get('phase') == 'cold.' + str(i//2) + ('.before' if i%2 == 0 else '.after') and
-                rect(record.get('viewport')) and record['viewport'][2] > 0 and record['viewport'][3] > 0 and
-                type(record.get('snapshotMilliseconds')) is int and record['snapshotMilliseconds'] >= 0,
-                'cold frame identity, phase or geometry invalid')
-        rows = record.get('rows')
-        require(isinstance(rows, list) and 1 <= len(rows) <= 24 and all(isinstance(r, dict) and
-                isinstance(r.get('id'), str) and re.fullmatch(r'watch\.(?:editor|photo|count|transfer\.open|privacy|color\.\d+)', r['id']) and
-                rect(r.get('frame')) for r in rows), 'cold frame rows invalid')
-    home = strict_json(blobs['home-observations.json']); records = home.get('records')
-    cold_id = '__WatchWorkflowTests_testHomeListDigitalCrownFromColdLaunch_'
-    require(home.get('schema') == 1 and home.get('case') == cold_id and home.get('counter_order') == ['appear', 'disappear', 'palette', 'transfer'] and
-            home.get('terminal_snapshot') is False and home.get('counts_are_lower_bounds') is True and home.get('truncated') is False and
-            isinstance(records, list) and 1 <= len(records) <= 28 and home.get('matched_records') == len(records) and
-            all(home.get(k) == 0 for k in ('omitted_records', 'invalid_records', 'foreign_records')), 'Home observations missing, omitted or misrepresented')
-    prior = {}
-    for record in records:
-        require(isinstance(record, dict) and record.get('case') == cold_id and type(record.get('pid')) is int and record['pid'] > 0 and
-                type(record.get('uptimeMilliseconds')) is int and record['uptimeMilliseconds'] >= 0 and
-                isinstance(record.get('log_timestamp'), str) and bool(record['log_timestamp']) and
-                record.get('event') in home['counter_order'] and record.get('terminal') is False and record.get('saturated') is False and
-                record.get('omitted') == [0, 0, 0, 0], 'Home PID, uptime, timestamp or omission invalid')
-        counts = record.get('counts')
-        require(isinstance(counts, list) and len(counts) == 4 and all(type(v) is int and 0 <= v <= cap for v, cap in zip(counts, (4,4,8,8))) and
-                counts[home['counter_order'].index(record['event'])] > 0, 'Home counter invalid')
-        before = prior.get(record['pid'])
-        require(before is None or (record['uptimeMilliseconds'] >= before['uptimeMilliseconds'] and
-                all(a >= b for a,b in zip(counts,before['counts']))), 'Home counters or uptime decreased')
-        prior[record['pid']] = record
+        return (isinstance(value, list) and len(value) == 4 and all(number(v) for v in value) and
+                value[2] > 0 and value[3] > 0 and math.isfinite(value[0]+value[2]) and math.isfinite(value[1]+value[3]))
     lines = blobs['static-observations.log'].decode('utf-8', errors='strict').splitlines()
     frames = []; summaries = []; frame_bytes = 0; summary_bytes = 0
     for line in lines:
@@ -530,6 +593,9 @@ def _observations(blobs, manifest):
             summaries.append(value); summary_bytes += len(payload.encode())
     require(len(summaries) == 1, 'static result missing or duplicated')
     summary = summaries[0]
+    integer_fields=('crownCalls','crownSnapshots','touchSnapshots','touchCalls','emittedFrames','maxStructuredBytes',
+                    'frameBytes','structuredBytes','omittedFrames','omittedRows','omittedSubtreeRoots','snapshotErrors')
+    require(all(type(summary.get(k)) is int for k in integer_fields), 'static summary count types are not exact integers')
     require(summary.get('crownCalls') == 3 and summary.get('delta') == -0.1 and summary.get('crownSnapshots') == 6 and
             type(summary.get('touchSnapshots')) is int and 0 <= summary['touchSnapshots'] <= 2 and
             type(summary.get('touchCalls')) is int and 0 <= summary['touchCalls'] <= 1 and
@@ -546,6 +612,9 @@ def _observations(blobs, manifest):
     require([f.get('phase') for f in frames] == expected_phases, 'static Crown/touch snapshot sequence mismatch')
     pid = None; uptime = -1
     for frame in frames:
+        require(all(type(frame.get(k)) is int for k in ('runnerPID','listCount','navigationCount','backButtons',
+                'omittedIdentityCharacters','omittedSubtreeRoots','duplicateRows','invalidRows','omittedRows','nodesVisited')),
+                'static frame count types are not exact integers')
         require(type(frame.get('runnerPID')) is int and frame['runnerPID'] > 0 and (pid is None or pid == frame['runnerPID']) and
                 number(frame.get('uptime')) and frame['uptime'] >= uptime and frame.get('geometryComplete') is True and
                 frame.get('listCount') == 1 and frame.get('navigationCount') == 1 and frame.get('listIdentifier') == 'static.list' and
@@ -558,6 +627,43 @@ def _observations(blobs, manifest):
         rows = frame.get('rows')
         require(isinstance(rows, list) and 1 <= len(rows) <= 12 and all(isinstance(r, dict) and type(r.get('id')) is int and
                 0 <= r['id'] < 12 and rect(r.get('frame')) for r in rows) and len({r['id'] for r in rows}) == len(rows), 'static rows missing or invalid')
+
+    def same(a, b): return all(abs(x-y) <= .5 for x,y in zip(a,b))
+    def intersects(a, b):
+        return a[0] < b[0]+b[2] and b[0] < a[0]+a[2] and a[1] < b[1]+b[3] and b[1] < a[1]+a[3]
+    def movement(before, after):
+        if any(not same(before[k], after[k]) for k in ('viewport','list','navigation')): return 'unclassified'
+        left={r['id']:r['frame'] for r in before['rows']};right={r['id']:r['frame'] for r in after['rows']}
+        shared=left.keys() & right.keys()
+        for identifier in shared:
+            a,b=left[identifier],right[identifier]
+            if not (intersects(a,before['viewport']) or intersects(b,after['viewport'])): continue
+            if all(abs(a[k]-b[k]) <= .5 for k in (0,2,3)) and b[1] < a[1]-1: return 'downward'
+        if left.keys()==right.keys() and all(same(left[k],right[k]) for k in shared): return 'stationary'
+        return 'unclassified'
+    moved=False;stationary=True;last=None
+    for i in range(3):
+        before,after=frames[2*i:2*i+2]; change=movement(before,after)
+        if change=='downward': moved=True;stationary=False
+        elif change!='stationary': stationary=False
+        if movement(frames[0],after)=='downward': moved=True
+        if last is not None and movement(last,before)!='stationary': stationary=False
+        last=after
+    observed='moved_downward' if moved else 'stationary' if stationary else 'inconclusive_geometry_changed'
+    require(observed != 'inconclusive_geometry_changed', 'changed geometry leaves the Crown observation incomplete')
+    require(summary['crownStatus']==observed, 'static Crown marker contradicts retained frame movement')
+    touch=summary.get('touchStatus')
+    if observed != 'stationary':
+        require(summary['touchCalls']==summary['touchSnapshots']==0 and touch=='not_attempted',
+                'touch was attempted before a frozen stationary Crown result')
+    elif summary['touchCalls']==1:
+        require(summary['touchSnapshots']==2 and movement(frames[5],frames[6])=='stationary', 'touch lacks its frozen stationary starting frame')
+        touch_result={'downward':'moved_downward','stationary':'stationary','unclassified':'inconclusive_geometry_changed'}[movement(frames[6],frames[7])]
+        require(touch==touch_result, 'touch marker contradicts separately retained frames')
+    else:
+        require(summary['touchSnapshots']==1 and touch in ('not_attempted_geometry_changed','not_attempted_invalid_geometry'),
+                'stationary Crown lacks its bounded optional touch outcome')
+    return summary
 
 
 def _directory_budget(root, manifest):
@@ -577,10 +683,18 @@ def _directory_budget(root, manifest):
     return total
 
 
+def incomplete_result(error=None):
+    return {'schema': 1, 'result': 'incomplete', 'complete': False, 'acceptance': False,
+            'purpose': 'static_list_crown_only', 'diagnostic_scope': DIAGNOSTIC_SCOPE,
+            'excluded_cases': list(EXCLUDED_CASES), 'cases': [{'name':'isolated_static',
+                'identifier':CASES['isolated_static']['identifier'], 'result':'incomplete'}],
+            'errors': [error] if error else []}
+
+
 def validate_result(report, evidence_dir, *, expected_source=None, expected_budget=None):
     """Return diagnostic outcomes; no receipt can produce acceptance=True."""
-    result = {'schema': 1, 'result': 'incomplete', 'complete': False, 'acceptance': False,
-              'purpose': 'three_method_diagnostic_only', 'cases': [], 'errors': []}
+    result = incomplete_result()
+    result['cases'] = []
     blobs = {}; manifest = {}; stages = report.get('stages', []) if isinstance(report, dict) else []
     if not isinstance(stages, list): stages = []
     global_valid = True
@@ -588,7 +702,7 @@ def validate_result(report, evidence_dir, *, expected_source=None, expected_budg
         require(isinstance(report, dict), 'receipt is not an object')
         blobs, manifest = _manifest(report, evidence_dir)
         result['evidence_bytes'] = _directory_budget(evidence_dir, manifest)
-    except (ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError, RecursionError) as error:
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError, OSError, UnicodeError, RecursionError, OverflowError) as error:
         result['errors'].append(str(error)[:500]); global_valid = False
     try:
         source, device = _identity(report, expected_source)
@@ -596,20 +710,29 @@ def validate_result(report, evidence_dir, *, expected_source=None, expected_budg
         validate_setup_events(report, blobs, manifest)
         if expected_budget is not None:
             require(all(report['budget'].get(k) == v for k, v in expected_budget.items()), 'receipt clock or budget differs from original persisted budget')
-    except (ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError, RecursionError) as error:
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError, OSError, UnicodeError, RecursionError, OverflowError) as error:
         result['errors'].append(str(error)[:500]); global_valid = False
         device = report.get('device', {}).get('udid') if isinstance(report, dict) and isinstance(report.get('device'), dict) else None
     try:
         if global_valid:
             _budget_and_stages(report, source)
             _cleanup_evidence(report, blobs, manifest)
-            _observations(blobs, manifest)
-    except (ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError, RecursionError) as error:
-        result['errors'].append(str(error)[:500])
+            _command_inventory(report)
+            build = next(s for s in report['stages'] if s['phase']=='builds')
+            require('isolated_static-build.log' in manifest and
+                    build.get('stdout_sha256') == manifest['isolated_static-build.log']['sha256'] and
+                    build.get('stdout_bytes') == manifest['isolated_static-build.log']['bytes'],
+                    'static build evidence is missing or unbound')
+            observation = _observations(blobs, manifest)
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError, OSError, UnicodeError, RecursionError, OverflowError) as error:
+        result['errors'].append(str(error)[:500]); global_valid = False
     if isinstance(report, dict) and report.get('errors'):
-        result['errors'].extend(str(error)[:500] for error in report['errors'][:8])
+        if isinstance(report['errors'],list):
+            result['errors'].extend(str(error)[:500] for error in report['errors'][:8])
+        else:
+            result['errors'].append('malformed producer error inventory'); global_valid = False
     rows = report.get('cases', []) if isinstance(report, dict) else []
-    if not isinstance(rows, list) or len(rows) != 3 or any(not isinstance(row, dict) for row in rows) or [r.get('name') for r in rows] != list(CASE_NAMES):
+    if not isinstance(rows, list) or len(rows) != 1 or any(not isinstance(row, dict) for row in rows) or [r.get('name') for r in rows] != list(CASE_NAMES):
         result['errors'].append('case inventory is incomplete, duplicated or reordered')
     by_name = {row.get('name'): row for row in rows if isinstance(row, dict) and isinstance(row.get('name'), str)} if isinstance(rows, list) else {}
     used_indices = []
@@ -645,6 +768,7 @@ def validate_result(report, evidence_dir, *, expected_source=None, expected_budg
                     'test was unstarted, timed out, truncated or lacks genuine terminal exit')
             require(row.get('cleanup_confirmed') is True, 'case app/runner cleanup unconfirmed')
             _case_timing(report, name, stage)
+            _capture_extraction(report, row, stage, blobs, manifest)
             _extraction_and_cleanup(report, name, row, stage, blobs, manifest)
             status = _summary(summary, case, stage, device)
             require(stage['raw_exit'] == (0 if status == 'passed' else 65), 'test command exit contradicts structured summary')
@@ -652,8 +776,11 @@ def validate_result(report, evidence_dir, *, expected_source=None, expected_budg
             outcome['duration_seconds'] = _lifecycle(blobs[row['lifecycle_file']], case, status, stage)
             require(not recorded_timeout(blobs[row['diagnostics_file']].decode('utf-8', errors='strict')), 'console records timeout')
             require(global_valid, 'receipt provenance, timing, evidence or cleanup is incomplete')
+            require((status == 'passed') == (observation['crownStatus'] == 'moved_downward'),
+                    'static Crown result contradicts genuine XCTest outcome; touch cannot satisfy Crown')
+            outcome['crown_status'] = observation['crownStatus']; outcome['touch_status'] = observation['touchStatus']
             outcome['result'] = status
-        except (ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError, RecursionError) as error:
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError, OSError, UnicodeError, RecursionError, OverflowError) as error:
             outcome['errors'].append(str(error)[:500])
         result['cases'].append(outcome)
     if used_indices != sorted(used_indices):
@@ -673,10 +800,15 @@ def validate_result(report, evidence_dir, *, expected_source=None, expected_budg
     return result
 
 
-def load_result(report_path, evidence_dir=None, *, expected_source=None, expected_budget=None):
+def load_result(report_path, evidence_dir=None, *, expected_source=None, expected_budget=None, expected_binding=None):
     path = Path(report_path)
     raw = _safe_read(path.parent, path.name, MAX_RECEIPT_BYTES)
-    return validate_result(strict_json(raw), evidence_dir or path.parent, expected_source=expected_source, expected_budget=expected_budget)
+    report = strict_json(raw)
+    if expected_binding is not None:
+        require(isinstance(report,dict) and isinstance(report.get('source'),dict) and
+                all(report['source'].get(k)==v for k,v in expected_binding.items()),
+                'receipt source/ref/workflow/run differs from this exact job')
+    return validate_result(report, evidence_dir or path.parent, expected_source=expected_source, expected_budget=expected_budget)
 
 
 def main(argv=None):
@@ -691,15 +823,18 @@ def main(argv=None):
         budget = load()
         budget.admit('Independent Watch Crown result validation', 60, minimum=60, cleanup=0, phase='validation')
         started = time.monotonic()
-        result = load_result(args.report, args.evidence_dir or args.evidence_directory, expected_budget=budget.record)
+        from watch_crown_contract import binding
+        admitted = {**binding(os.environ), 'workflow_sha256': hashlib.sha256(Path(WORKFLOW).read_bytes()).hexdigest()}
+        result = load_result(args.report, args.evidence_dir or args.evidence_directory,
+                             expected_budget=budget.record, expected_binding=admitted)
         require(time.monotonic()-started < 60, 'validation exceeded 60-second reserve')
-    except (ValueError, OSError, TypeError, UnicodeError, RecursionError, RuntimeError) as error:
-        result = {'schema': 1, 'result': 'incomplete', 'complete': False, 'acceptance': False, 'errors': [str(error)[:500]]}
+    except (ValueError, KeyError, IndexError, AttributeError, OSError, TypeError, UnicodeError, RecursionError, RuntimeError, OverflowError) as error:
+        result = incomplete_result(str(error)[:500])
     try:
         from atomic_json import write_json
         write_json(Path(args.evidence_dir or args.evidence_directory or Path(args.report).parent)/'validation.json', result, limit=16_384)
     except (ValueError, OSError, TypeError) as error:
-        result = {'schema': 1, 'result': 'incomplete', 'complete': False, 'acceptance': False, 'errors': ['validation receipt could not be retained: ' + str(error)[:500]]}
+        result = incomplete_result('validation receipt could not be retained: ' + str(error)[:500])
     print(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False))
     return 0 if result['result'] == 'passed' and result['complete'] else 1
 

@@ -1,0 +1,67 @@
+name: Static-only Watch Crown diagnostic
+on:
+  push:
+    branches: [codex/watch-static-crown-diagnostic]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-watch-crown-control
+  cancel-in-progress: false
+jobs:
+  watch-static-crown-control-smallest:
+    if: github.repository == '100mango/ColorPicker' && github.ref == 'refs/heads/codex/watch-static-crown-diagnostic' && github.event_name == 'push'
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_WATCH_PROFILE: smallest
+      TOUCHCOLOR_TEXT_PHASE: normal
+      TOUCHCOLOR_JOB_PLATFORM: watch-crown-control
+      TOUCHCOLOR_JOB_LANE: watch-static-crown-control-smallest
+      TOUCHCOLOR_JOB_MINUTES: 25
+      TOUCHCOLOR_DIAGNOSTIC_SCOPE: static-list-crown-only-v1
+      TOUCHCOLOR_MAX_EVIDENCE_BYTES: 1200000
+    steps:
+      - name: Stamp original clock before checkout
+        run: |
+          python3 - <<'PY_CLOCK'
+          import os, time
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('TOUCHCOLOR_JOB_STARTED_EPOCH=' + str(time.time()) + '\n')
+              f.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC=' + str(time.monotonic()) + '\n')
+          PY_CLOCK
+      - name: Check out exact diagnostic source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Run bounded one-case static-only diagnostic
+        run: python3 scripts/run_watch_crown_control.py
+      - name: Independently validate retained static-only diagnostic
+        timeout-minutes: 1
+        if: always()
+        run: python3 scripts/watch_crown_result.py build/evidence/report.json build/evidence
+      - name: Check unchanged upload reserve and evidence cap
+        timeout-minutes: 1
+        id: evidence_guard
+        if: always()
+        run: |
+          python3 scripts/job_budget.py check-upload
+          python3 - <<'PY_CAP'
+          from pathlib import Path
+          root=Path('build/evidence')
+          if root.is_symlink() or not root.is_dir(): raise SystemExit('No safe evidence directory')
+          files=list(root.iterdir())
+          if any(p.is_symlink() or not p.is_file() or p.stat().st_nlink!=1 for p in files): raise SystemExit('Unsafe evidence entry')
+          if sum(p.stat().st_size for p in files)>1200000: raise SystemExit('Evidence cap exceeded')
+          PY_CAP
+      - name: Retain actual failures and incomplete diagnostics
+        timeout-minutes: 1
+        if: always() && !cancelled() && steps.evidence_guard.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: watch-static-crown-smallest-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/evidence
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 9

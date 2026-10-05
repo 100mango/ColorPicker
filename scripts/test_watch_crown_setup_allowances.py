@@ -153,10 +153,10 @@ class SetupReplayTests(unittest.TestCase):
     def test_later_ui_still_requires_full_original_phase_allowance(self):
         self.install(CANONICAL_BOOT);self.clock.advance(46.464)
         with patch.object(driver,'stop_group',return_value=True):self.d.setup()
-        with self.d.phase('actual_cold',240):self.clock.advance(240)
         with self.d.phase('isolated_static',180):self.clock.advance(180)
+        self.clock.advance(max(0,840.001-(self.clock.mono-100)))
         with self.assertRaises(BudgetExhausted):
-            with self.d.phase('rgb_positive',180):self.fail('Must not start shortened RGB phase')
+            with self.d.phase('isolated_static',180):self.fail('Must not start a shortened static phase')
         self.assertEqual(len(self.commands),11);self.assertEqual(self.d.budget.record['minutes'],25)
 
 

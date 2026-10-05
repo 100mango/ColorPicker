@@ -106,10 +106,10 @@ class RedistributionTests(unittest.TestCase):
         self.assertEqual(t.d.report['setup_proof']['simultaneous_state'],'unobserved')
         for row in t.d.report['stages']:
             self.assertLessEqual(row['deadline_monotonic'],100+1020)
-        with t.d.phase('actual_cold',240):t.clock.advance(240)
         with t.d.phase('isolated_static',180):t.clock.advance(180)
+        t.clock.advance(max(0,840.001-(t.clock.mono-100)))
         with self.assertRaises(BudgetExhausted):
-            with t.d.phase('rgb_positive',180):self.fail('No shortened RGB control is allowed')
+            with t.d.phase('isolated_static',180):self.fail('No shortened static control is allowed')
         self.assertEqual(len(t.commands),11);self.assertEqual(t.d.report['cases'],[])
     def test_full_setup_admission_latest420_seconds_or_no_commands(self):
         for offset in (420,420.001):
@@ -124,12 +124,15 @@ class RedistributionTests(unittest.TestCase):
                         with patch.object(driver,'stop_group',return_value=True):t.d.setup()
                         self.assertTrue(t.d.report['phases'][0]['completed'])
                         self.assertTrue(all(s['deadline_monotonic']<=1120 for s in t.d.report['stages']))
-                        with self.assertRaises(BudgetExhausted):
-                            with t.d.phase('actual_cold',240):self.fail('Insufficient original work remains')
+                        if t.d.budget.remaining('work') < 180:
+                            with self.assertRaises(BudgetExhausted):
+                                with t.d.phase('isolated_static',180):self.fail('Insufficient original work remains')
+                        else:
+                            with t.d.phase('isolated_static',180):pass
                 finally:t.tearDown()
     def test_caps_pool_reserves_and_required_ui_allowances_are_unchanged(self):
-        self.assertEqual(PHASES,{'preflight':30,'builds':240,'setup':600,'actual_cold':240,'isolated_static':180,'rgb_positive':180})
-        self.assertEqual(sum(PHASES.values()),1470)
+        self.assertEqual(PHASES,{'preflight':30,'builds':240,'setup':600,'isolated_static':180})
+        self.assertEqual(sum(PHASES.values()),1050)
         self.assertEqual(driver.SETUP_COMMAND_CAPS,{'list':30,'create':60,'pair':60,'pair_activate':60,'boot':180,'bootstatus':420})
         self.assertEqual(RESERVES,{'cleanup':130,'evidence':180,'validation':60,'upload':60,'overhead':20});self.assertEqual(STARTUP_MARGIN,30)
         t=self.create();self.assertEqual(t.d.budget.remaining('work'),1020);self.assertEqual(t.d.budget.record['minutes'],25)

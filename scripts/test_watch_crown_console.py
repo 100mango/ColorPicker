@@ -28,7 +28,7 @@ def decode(raw):
         'boundary':value['phase'],'phase_completed':value['done'],'stage_count':value['stages'],
         'last':dict(zip(('phase','operation','exit','raw_exit','timed_out','group_gone','reader_finished'),value['last'])),
         'cases':[dict(zip(('started','result','exit','cleanup_confirmed'),value['cases'][key]))
-                 for key in ('cold','static','rgb')],
+                 for key in ('static',)],
         'cleanup_confirmed':value['cleanup'],'error_count':value['errors'],
         'acceptance':value['acceptance'],'console_omitted':value['omitted'],'delivery':value['delivery']}
 
@@ -50,10 +50,10 @@ class ConsoleProjectionTests(unittest.TestCase):
     def test_real_failure_is_mirrored_without_alias_or_sensitive_text(self):
         value=report();secret='PRIVATE_SENTINEL\nUNTRUSTED_OUTPUT'
         value['errors']=[secret]
-        value['stages']=[dict(command=['xcodebuild','test-without-building',secret],phase='actual_cold',started=True,
+        value['stages']=[dict(command=['xcodebuild','test-without-building',secret],phase='isolated_static',started=True,
                              exit=65,raw_exit=65,timed_out=False,process_group_gone=True,capture_reader_finished=True,
                              failure_output_tail=secret)]
-        value['cases']=[dict(name='actual_cold',stage_index=0,observed_command_result='failed',cleanup_confirmed=True,notes=secret)]
+        value['cases']=[dict(name='isolated_static',stage_index=0,observed_command_result='failed',cleanup_confirmed=True,notes=secret)]
         raw=driver._console_record(value,'final',2);result=decode(raw)
         self.assertNotIn(b'PRIVATE_SENTINEL',raw);self.assertNotIn(b'UNTRUSTED_OUTPUT',raw)
         self.assertEqual(result['cases'][0]['result'],'failed');self.assertEqual(result['cases'][0]['exit'],65)
@@ -68,13 +68,13 @@ class ConsoleProjectionTests(unittest.TestCase):
              patch.object(driver.os,'get_blocking',return_value=True),patch.object(driver.os,'set_blocking'), \
              patch.object(driver.os,'write',side_effect=lambda fd,raw:sent.append(raw) or len(raw)):
             for boundary in driver.CONSOLE_BOUNDARIES:d.console_summary(boundary)
-        self.assertEqual(len(sent),9);self.assertEqual(d.console_omitted,0)
+        self.assertEqual(len(sent),7);self.assertEqual(d.console_omitted,0)
         self.assertTrue(all(len(raw)<=512 for raw in sent))
         self.assertEqual([decode(raw)['boundary'] for raw in sent],list(driver.CONSOLE_BOUNDARIES))
         for raw in sent:
             value=json.loads(raw.decode().removeprefix('WATCH_CROWN_STATUS '))
             self.assertEqual(value['v'],1);self.assertEqual(len(value['last']),7)
-            self.assertEqual(set(value['cases']),{'cold','static','rgb'})
+            self.assertEqual(set(value['cases']),{'static'})
             self.assertTrue(all(len(fields)==4 for fields in value['cases'].values()))
 
     def test_maximum_allowed_generated_fields_fit_512_without_omission(self):
@@ -108,7 +108,9 @@ class ConsoleProjectionTests(unittest.TestCase):
     def test_malformed_fields_and_ambiguous_cases_never_become_passed(self):
         value=report();value['stages']=[{'command':['private-command','sensitive-argument'],'phase':'SECRET',
                                       'exit':10**100,'raw_exit':True,'timed_out':'false'}]
-        value['cases']=[{'name':'actual_cold','stage_index':False,'observed_command_result':'PRIVATE'}]*2
+        value['cases']=[{'name':'isolated_static','stage_index':False,'observed_command_result':'PRIVATE'}]*2
+        self.assertIsNone(driver._console_record(value,'final',0))
+        value['cases']=value['cases'][:1]
         result=decode(driver._console_record(value,'final',0))
         self.assertIsNone(result['cases'][0]['result']);self.assertIsNone(result['cases'][0]['started'])
         self.assertIsNone(result['last']['operation']);self.assertIsNone(result['last']['phase'])
@@ -126,7 +128,7 @@ class ConsoleProjectionTests(unittest.TestCase):
         with patch.object(driver,'_write_console_nonblocking',side_effect=lambda raw:sent.append(raw) or True):
             for _ in range(100):
                 for boundary in driver.CONSOLE_BOUNDARIES:d.console_summary(boundary)
-        self.assertEqual(len(sent),9);self.assertTrue(all(len(raw)<=512 for raw in sent))
+        self.assertEqual(len(sent),7);self.assertTrue(all(len(raw)<=512 for raw in sent))
         self.assertEqual(d.console_bytes,sum(map(len,sent)));self.assertLessEqual(d.console_bytes,4608)
 
     def test_dropped_write_is_accounted_without_retry(self):

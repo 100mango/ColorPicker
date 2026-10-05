@@ -74,7 +74,12 @@ class EventProofTests(unittest.TestCase):
         for state in ('(inactive, connected)','(inactive, disconnected)'):
             value=copy.deepcopy(self.report);value['pair']['record']['state']=state
             value['pair']['activation']['activation_requested']=True
-            index=8
+            phone=value['owned_devices'][0]['udid']
+            boots=[i for i,row in enumerate(value['stages']) if row.get('phase')=='setup' and
+                   row.get('command')==['xcrun','simctl','boot',phone]]
+            self.assertEqual(len(boots),1,'Expected exactly one owned-phone boot command')
+            index=boots[0]-1
+            self.assertEqual(value['stages'][index]['command'],['xcrun','simctl','list','pairs','-j'])
             extra=stage(['xcrun','simctl','pair_activate',value['pair']['id']],'setup',42.4,.05,60)
             extra.update(source_sha=value['source']['sha'],budget_phase='work',setup_command_cap_seconds=60,
                          deadline_monotonic=202.4)
@@ -85,6 +90,8 @@ class EventProofTests(unittest.TestCase):
             for case in value['cases']:
                 for key in ('stage_index','summary_stage_index','tests_stage_index'):
                     if case[key]>=index:case[key]+=1
+                if case['capture_extraction']['stage_index']>=index:
+                    case['capture_extraction']['stage_index']+=1
                 if case['process_cleanup']['inventory_stage_index']>=index:
                     case['process_cleanup']['inventory_stage_index']+=1
             for key in ('device_stage_index','pair_stage_index'):
@@ -155,7 +162,14 @@ class EventProofTests(unittest.TestCase):
             with self.subTest(change=change):self.rejected(change)
 
     def test_creation_ids_are_bound_to_actual_output_bytes(self):
-        for position in (4,5,6):
+        phone,watch=self.report['owned_devices']
+        commands=[['xcrun','simctl','create','TouchColor-Crown-'+device['role']+'-aabbccdd',
+                   device['deviceTypeIdentifier'],device['runtime']] for device in (phone,watch)]
+        commands.append(['xcrun','simctl','pair',watch['udid'],phone['udid']])
+        for command in commands:
+            positions=[i for i,row in enumerate(self.report['stages']) if row.get('phase')=='setup' and row.get('command')==command]
+            self.assertEqual(len(positions),1,'Expected exactly one exact owned creation command')
+            position=positions[0]
             self.rejected(lambda r:r['stages'][position].update(stdout_sha256='0'*64))
 
     def test_proof_is_reconstructed_not_trusted(self):

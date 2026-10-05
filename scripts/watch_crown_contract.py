@@ -4,23 +4,19 @@ import hashlib
 import re
 
 PLATFORM = 'watch-crown-control'
-LANE = 'watch-crown-control-smallest'
-REF = 'refs/heads/codex/watch-crown-diagnostic'
-WORKFLOW = '.github/workflows/watch-crown-control.yml'
+LANE = 'watch-static-crown-control-smallest'
+REF = 'refs/heads/codex/watch-static-crown-diagnostic'
+WORKFLOW = '.github/workflows/watch-static-crown-control.yml'
+DIAGNOSTIC_SCOPE = 'static-list-crown-only-v1'
+EXCLUDED_CASES = ('actual_cold', 'rgb_positive')
 PHASES = {'preflight': 30, 'builds': 240, 'setup': 600,
-          'actual_cold': 240, 'isolated_static': 180, 'rgb_positive': 180}
+          'isolated_static': 180}
 CAP = 1_200_000
-OBS_CAP = 32_768
+OBS_CAP = 16_384  # Only the unchanged static allocation remains eligible.
 METHODS = (
-    {'key': 'actual_cold', 'project': 'TouchColorWatch', 'target': 'TouchColorWatchUITests',
-     'case': 'WatchWorkflowTests/testHomeListDigitalCrownFromColdLaunch', 'derived_data': 'build/crown-product',
-     'bundle_id': 'com.mango.touchColor.watchkitapp'},
     {'key': 'isolated_static', 'project': 'TouchColorWatchCrownControl', 'target': 'TouchColorWatchCrownControlUITests',
      'case': 'WatchStaticCrownControlTests/testStaticListDigitalCrownThreeRotations', 'derived_data': 'build/crown-static',
      'bundle_id': 'com.mango.touchColor.watchCrownControl'},
-    {'key': 'rgb_positive', 'project': 'TouchColorWatch', 'target': 'TouchColorWatchUITests',
-     'case': 'WatchWorkflowTests/testRealDigitalCrownChangesRGBComponent', 'derived_data': 'build/crown-product',
-     'bundle_id': 'com.mango.touchColor.watchkitapp'},
 )
 
 
@@ -32,6 +28,8 @@ def binding(env):
     require(env.get('GITHUB_EVENT_NAME') == 'push', 'Dedicated source push required')
     require(env.get('GITHUB_REPOSITORY') == '100mango/ColorPicker', 'Wrong repository')
     require(env.get('GITHUB_REF') == REF, 'Diagnostic branch only; main and canonical cohort refs forbidden')
+    require(env.get('GITHUB_WORKFLOW_REF') == '100mango/ColorPicker/'+WORKFLOW+'@'+REF, 'Wrong exact diagnostic workflow')
+    require(env.get('TOUCHCOLOR_DIAGNOSTIC_SCOPE') == DIAGNOSTIC_SCOPE, 'Wrong static-only diagnostic scope')
     sha = env.get('GITHUB_SHA', '')
     require(re.fullmatch('[0-9a-f]{40}', sha), 'Missing exact source SHA')
     require(env.get('GITHUB_WORKFLOW_SHA') == sha, 'Workflow/source mismatch')
@@ -41,12 +39,13 @@ def binding(env):
     require(env.get('DEVELOPER_DIR') == '/Applications/Xcode_27.app/Contents/Developer' and env.get('RUNNER_ARCH') == 'ARM64', 'Wrong toolchain/runner architecture')
     require(env.get('TOUCHCOLOR_MAX_EVIDENCE_BYTES') == str(CAP), 'Evidence cap changed')
     require(re.fullmatch('[1-9][0-9]*', env.get('GITHUB_RUN_ID', '')) and re.fullmatch('[1-9][0-9]*', env.get('GITHUB_RUN_ATTEMPT', '')), 'Missing run identity')
-    return {'sha': sha, 'ref': REF,
+    return {'sha': sha, 'ref': REF, 'workflow': WORKFLOW,
             'repository': env['GITHUB_REPOSITORY'], 'run_id': env['GITHUB_RUN_ID'],
             'attempt': env['GITHUB_RUN_ATTEMPT']}
 
 
 def test_command(method, device):
+    require(method == METHODS[0], 'Only the fixed static method is admitted')
     require(re.fullmatch('[0-9A-Fa-f-]{36}', device), 'Invalid destination UUID')
     name = method['project']
     return ['xcodebuild', 'test-without-building', '-project', name+'.xcodeproj', '-scheme', name,
@@ -64,7 +63,7 @@ def method_scheduling_status(method, device, source_sha, stage, summary, lifecyc
 
     Counts alone are not case completion. Reconcile this exact invocation's
     source, destination, real exit, lifecycle and finalized summary before any
-    independent control may start. The return value is diagnostic, not acceptance.
+    app cleanup may start. The return value is diagnostic, not acceptance.
     """
     import math
     def number(value):return type(value) in (int,float) and math.isfinite(value)

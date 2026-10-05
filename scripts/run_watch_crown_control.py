@@ -21,12 +21,10 @@ import uuid
 from atomic_json import write_json
 from bounded_process import stop_group
 from job_budget import JobBudget, create_record, RESERVES, STATE, fail_record
-from watch_crown_contract import (binding, require, test_command, method_scheduling_status, METHODS, PHASES, WORKFLOW, CAP)
+from watch_crown_contract import (binding, require, test_command, method_scheduling_status, METHODS, PHASES, WORKFLOW, CAP, DIAGNOSTIC_SCOPE, EXCLUDED_CASES)
 from watch_crown_setup_events import SCHEMA, PROTOCOL, BOOT_OUTPUT_LIMIT, validate_setup_events
 from watch_profiles import select_profile
 from watch_runtime_pair import phone_template, verify_new_device, verify_pair, activate_owned_pair
-from watch_home_diagnostics import summarize_home_notifications
-from watch_diagnostics import ListFrameDiagnostics
 from watch_failure_continuation import recorded_timeout, strict_json
 
 ROOT = Path('build/evidence')
@@ -53,7 +51,7 @@ def digest(raw): return hashlib.sha256(raw).hexdigest()
 # Console mirrors are advisory subsets of already-persisted receipts. They are
 # never consumed by the validator and add no commands or acceptance evidence.
 CONSOLE_RECORD_BYTES = 512
-CONSOLE_RECORDS = 9  # Eight existing phase boundaries and one final boundary.
+CONSOLE_RECORDS = 9  # Preserve the original 4,608-byte ceiling; only seven boundaries are eligible.
 CONSOLE_TOTAL_BYTES = CONSOLE_RECORD_BYTES * CONSOLE_RECORDS
 CONSOLE_BOUNDARIES = tuple(PHASES) + ('cleanup', 'evidence', 'final')
 
@@ -75,7 +73,7 @@ def _console_operation(command):
     if command[:2]==['xcrun','simctl'] and len(command)>2:
         if command[2] in ('create','pair','pair_activate','boot','bootstatus','list','terminate','shutdown','unpair','delete'): return command[2]
         if command[2]=='spawn': return 'simulator-observation'
-    if len(command)>1 and command[1] in ('scripts/generate_watch_project.py','scripts/generate_watch_crown_control_project.py'): return 'generator'
+    if len(command)>1 and command[1] == 'scripts/generate_watch_crown_control_project.py': return 'generator'
     return None
 
 
@@ -90,16 +88,16 @@ def _console_record(report, boundary, omitted):
             and isinstance(attempt,str) and re.fullmatch('[1-9][0-9]{0,5}',attempt) and attempt==report.get('attempt')): return None
     phases=report.get('phases',[]);stages=report.get('stages',[]);cases=report.get('cases',[])
     if not all(isinstance(value,list) for value in (phases,stages,cases)): return None
-    if len(phases)>9 or len(stages)>192 or len(cases)>3: return None
+    if len(phases)>7 or len(stages)>192 or len(cases)>1: return None
     matching=[v for v in phases if isinstance(v,dict) and v.get('name')==boundary]
     phase=matching[0] if len(matching)==1 else {}
     last=stages[-1] if stages and isinstance(stages[-1],dict) else {}
     # Schema 1 uses fixed-position tuples to fit Darwin's 512-byte PIPE_BUF.
     # last=[phase,operation,exit,raw_exit,timed_out,group_gone,reader_finished]
-    # cases.<cold|static|rgb>=[started,stored_result,raw_exit,cleanup_confirmed]
+    # cases.static=[started,stored_result,raw_exit,cleanup_confirmed]
     if type(omitted) is not int or not 0<=omitted<=CONSOLE_RECORDS: return None
     summaries={}
-    for name,method in zip(('cold','static','rgb'),METHODS):
+    for name,method in (('static',METHODS[0]),):
         matches=[v for v in cases if isinstance(v,dict) and v.get('name')==method['key']]
         case=matches[0] if len(matches)==1 else {}
         index=case.get('stage_index')
@@ -146,12 +144,12 @@ class Driver:
         self.budget = JobBudget(create_record(env, wall, clock), wall=wall, monotonic=clock)
         self.report = {'schema': SCHEMA, 'protocol': PROTOCOL, 'source': binding(env), 'run_id': env['GITHUB_RUN_ID'],
                        'attempt': env['GITHUB_RUN_ATTEMPT'], 'source_verified': False,
+                       'diagnostic_scope': DIAGNOSTIC_SCOPE, 'excluded_cases': list(EXCLUDED_CASES),
                        'toolchain': {}, 'stages': [], 'phases': [], 'cases': [], 'evidence': [],
                        'owned_devices': [], 'cleanup': {'confirmed': False}, 'errors': [],
                        'acceptance': False, 'result': 'incomplete'}
         self.current = None
         self.phase_kind = 'work'
-        self.frames = ListFrameDiagnostics()
         self.device = None
         self.pair = None
         self.owned = self.report['owned_devices']
@@ -423,14 +421,13 @@ class Driver:
                          'architecture': self.text(['uname', '-m'], 2)}
             require(toolchain == {'xcode': 'Xcode 27.0\nBuild version 27A266a', 'macos': '26A428', 'architecture': 'arm64'}, 'Unadmitted toolchain')
             self.report['toolchain'] = toolchain
-            for name in ('generate_watch_project.py', 'generate_watch_crown_control_project.py'):
-                self.run([sys.executable, 'scripts/'+name], 3)
+            self.run([sys.executable, 'scripts/generate_watch_crown_control_project.py'], 3)
             require(self.source() == self.report['source_before'], 'Generator drift')
 
     def fingerprints(self):
         require(not self.simulator_blocked(),'Simulator uncertainty forbids further evidence work')
         start = self.clock(); result = {}
-        for method in METHODS[:2]:
+        for method in METHODS:
             root = Path(method['derived_data'])/'Build/Products'
             require(root.is_dir() and not root.is_symlink() and any(root.glob('*.xctestrun')), 'Missing build-for-testing products')
             sha = hashlib.sha256(); count = size = 0
@@ -450,7 +447,7 @@ class Driver:
 
     def builds(self):
         with self.phase('builds', PHASES['builds']):
-            for method in METHODS[:2]:
+            for method in METHODS:
                 name=method['project']
                 command=['xcodebuild','-quiet','-project',name+'.xcodeproj','-scheme',name,'-configuration','Debug',
                          '-destination','generic/platform=watchOS Simulator','-derivedDataPath',method['derived_data'],
@@ -460,8 +457,7 @@ class Driver:
                 products=Path(method['derived_data'])/'Build/Products/Debug-watchsimulator'
                 runner=products/(method['target']+'-Runner.app')/'Info.plist'
                 value=plistlib.loads(runner.read_bytes())['CFBundleIdentifier']
-                require(value == ('com.mango.touchColor.watchCrownControl.uitests.xctrunner' if method['key']=='isolated_static'
-                                  else 'com.mango.touchColor.TouchColorWatchUITests.xctrunner'), 'Unexpected built runner identity')
+                require(value == 'com.mango.touchColor.watchCrownControl.uitests.xctrunner', 'Unexpected built runner identity')
                 self.runners[method['key']]=value
             self.report['runner_bundle_ids']=self.runners
             self.report['products_before']=self.fingerprints()
@@ -517,7 +513,8 @@ class Driver:
             validate_setup_events(self.report,event_bytes,{v['path']:v for v in self.report['evidence']})
 
     def stop_apps(self, method):
-        key='isolated_static' if method['key']=='isolated_static' else 'actual_cold'
+        require(method == METHODS[0], 'Only static app cleanup is admitted')
+        key='isolated_static'
         identities=(method['bundle_id'],self.runners[key])
         for identifier in identities:
             # Terminate can return an already-stopped error. Only the subsequent
@@ -538,7 +535,8 @@ class Driver:
                 'inventory_sha256':digest(raw.encode()),'entries':len(lines)-1}
 
     def method(self, method):
-        require(not self.simulator_blocked(),'Simulator uncertainty forbids later controls; dispose VM')
+        require(not self.simulator_blocked(),'Simulator uncertainty forbids static execution; dispose VM')
+        require(method == METHODS[0] and not self.report['cases'], 'Exactly one fixed static invocation is admitted')
         name=method['key']
         case={'name':name,'identifier':method['target']+'/'+method['case'],'project':method['project']+'.xcodeproj',
               'scheme':method['project'],'result_bundle':'build/watch-crown-'+name+'.xcresult','cleanup_confirmed':False}
@@ -551,14 +549,29 @@ class Driver:
             case['lifecycle_file']=self.retain(name+'-lifecycle.log',lifecycle,'lifecycle',name,limit=4096)
             ordinary=[]; static=[]
             for line in output.splitlines():
-                if 'WATCH_LIST_FRAME ' in line: self.frames.record(line)
-                elif line.startswith('WATCH_STATIC_CROWN_'): static.append(line)
+                if line.startswith('WATCH_STATIC_CROWN_'): static.append(line)
                 else: ordinary.append(line)
             case['diagnostics_file']=self.retain(name+'-console.log','\n'.join(ordinary)+'\n','diagnostics',name,limit=65_536)
-            if name=='actual_cold':
-                # Persist already captured host bytes before any later device cleanup.
-                self.retain('cold-list-frames.json',json.dumps(self.frames.report,separators=(',',':')),'cold_frames','actual_cold',limit=150_000)
             if static: self.retain('static-observations.log','\n'.join(static)+'\n','observation_static',name,limit=16_384)
+            # Attest this source-controlled split while the actual captured text
+            # is still owned in memory. The files do not reconstruct original
+            # interleaving; their digest/counts are derived here from this capture.
+            capture=output.encode('utf-8')
+            require(type(stage.get('stdout_bytes')) is int and 0 < stage['stdout_bytes'] <= self.stdout_limit and
+                    len(capture)==stage['stdout_bytes'] and digest(capture)==stage.get('stdout_sha256'),
+                    'Original static capture digest/count is missing or cannot be represented exactly')
+            paths=[case['lifecycle_file'],case['diagnostics_file']]+(['static-observations.log'] if static else [])
+            files=[]
+            for path in paths:
+                entries=[v for v in self.report['evidence'] if v['path']==path]
+                require(len(entries)==1,'Static extraction needs exactly one immutable evidence entry')
+                files.append({k:entries[0][k] for k in ('path','sha256','bytes')})
+            case['capture_extraction']={'schema':1,'policy':'watch-static-crown-split-lines-v1',
+                'provenance':'source-controlled extraction; original interleaving is not reconstructed',
+                'source_sha':self.report['source']['sha'],'run_id':self.report['run_id'],'attempt':self.report['attempt'],
+                'case':'isolated_static','stage_index':case['stage_index'],
+                'capture':{'sha256':stage['stdout_sha256'],'bytes':stage['stdout_bytes']},'files':files}
+            self.persist_guarded() # Receipt exists before summary extraction or app cleanup.
             if reported_device_timeout(output):
                 self.latch_simulator_uncertainty(stage,'xctest_console_reports_timeout')
             require(not stage['timed_out'] and not self.budget.cleanup_unconfirmed and not self.simulator_blocked(), 'Timed-out or unclean command; no further operations')
@@ -571,8 +584,8 @@ class Driver:
             if recorded_timeout(summary):
                 self.latch_simulator_uncertainty(stage,'structured_xctest_result_reports_timeout')
                 raise ValueError('Recorded XCTest timeout; VM disposal required')
-            # Final evidence validation cannot retroactively authorize a control
-            # that has already started. Reconcile exact finalized evidence here.
+            # Reconcile the sole case before app cleanup. Final validation cannot
+            # repair contradictory or unfinished native evidence.
             status=method_scheduling_status(method,self.device,self.budget.record['sha'],stage,summary,lifecycle)
             case['scheduling_status']=status
             case['observed_command_result']=status
@@ -581,13 +594,6 @@ class Driver:
     def cleanup(self):
         if self.simulator_blocked() or self.budget.cleanup_unconfirmed or not self.owned: return
         with self.phase('cleanup', 130,kind='cleanup'):
-            if self.device:
-                stage, output=self.run(['xcrun','simctl','spawn',self.device,'log','show','--last','27m','--style','compact',
-                    '--predicate','subsystem == "com.mango.touchColor.WatchDiagnostics"'],10,required=False)
-                if stage['exit']==0 and not stage['stdout_truncated']:
-                    home=summarize_home_notifications(output)
-                    self.retain('home-observations.json',json.dumps(home,separators=(',',':')),'observation_home','actual_cold',limit=16_384)
-                else: self.report['errors'].append('Home OSLog extraction unavailable or incomplete')
             for owned in reversed(self.owned): self.run(['xcrun','simctl','shutdown',owned['udid']],10,required=False)
             inventory=self.value(['xcrun','simctl','list','devices','-j'])['devices']
             rows={row['udid']:row for values in inventory.values() for row in values}
@@ -616,7 +622,7 @@ class Driver:
             self.report['source_verified']=self.report.get('source_before')==self.report['source_after']
             if 'products_before' in self.report:
                 self.report['products_after']=self.fingerprints()
-                require(self.report['products_after']==self.report['products_before'],'Products changed between controls')
+                require(self.report['products_after']==self.report['products_before'],'Static products changed during diagnostic')
             for case in self.report['cases']:
                 if not Path(case['result_bundle']).exists(): continue
                 stage, raw=self.run(['xcrun','xcresulttool','get','test-results','tests','--path',case['result_bundle']],20)

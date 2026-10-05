@@ -19,9 +19,10 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def environment():
     return dict(GITHUB_EVENT_NAME='push',GITHUB_REPOSITORY='100mango/ColorPicker',
-      GITHUB_REF='refs/heads/codex/watch-crown-diagnostic',GITHUB_SHA='a'*40,GITHUB_WORKFLOW_SHA='a'*40,
-      GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',TOUCHCOLOR_JOB_PLATFORM='watch-crown-control',
-      TOUCHCOLOR_JOB_LANE='watch-crown-control-smallest',TOUCHCOLOR_JOB_MINUTES='25',
+      GITHUB_REF='refs/heads/codex/watch-static-crown-diagnostic',GITHUB_SHA='a'*40,GITHUB_WORKFLOW_SHA='a'*40,
+      GITHUB_WORKFLOW_REF='100mango/ColorPicker/.github/workflows/watch-static-crown-control.yml@refs/heads/codex/watch-static-crown-diagnostic',
+      TOUCHCOLOR_DIAGNOSTIC_SCOPE='static-list-crown-only-v1',GITHUB_RUN_ID='123',GITHUB_RUN_ATTEMPT='1',TOUCHCOLOR_JOB_PLATFORM='watch-crown-control',
+      TOUCHCOLOR_JOB_LANE='watch-static-crown-control-smallest',TOUCHCOLOR_JOB_MINUTES='25',
       TOUCHCOLOR_WATCH_PROFILE='smallest',TOUCHCOLOR_TEXT_PHASE='normal',RUNNER_ARCH='ARM64',
       DEVELOPER_DIR='/Applications/Xcode_27.app/Contents/Developer',TOUCHCOLOR_MAX_EVIDENCE_BYTES='1200000',
       TOUCHCOLOR_JOB_STARTED_EPOCH='10000',TOUCHCOLOR_JOB_STARTED_MONOTONIC='100')
@@ -53,15 +54,15 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(STARTUP_MARGIN,30)
         c=Clock();d=driver.Driver(environment(),clock=lambda:c.mono,wall=lambda:c.wall)
         self.assertEqual(d.budget.remaining(),1020)
-        self.assertEqual(sum(PHASES.values()),1470) # Ceilings share1020s; never additive reservations.
+        self.assertEqual(sum(PHASES.values()),1050) # Ceilings share1020s; never additive reservations.
         self.assertEqual(PHASES['setup'],600)
         wrong=copy.deepcopy(d.budget.record);wrong['platform']='watch'
         with self.assertRaises(ValueError):JobBudget(wrong,wall=lambda:c.wall,monotonic=lambda:c.mono)
         c.advance(900)
-        with self.assertRaises(BudgetExhausted):d.budget.admit('unchanged RGB',180,minimum=180,cleanup=0)
+        with self.assertRaises(BudgetExhausted):d.budget.admit('unchanged static',180,minimum=180,cleanup=0)
         self.assertEqual(d.budget.remaining('cleanup')-d.budget.remaining(),130)
 
-    def test_three_exact_sequential_commands_without_retry_or_gate_alias(self):
+    def test_single_exact_static_command_without_retry_or_gate_alias(self):
         for method in METHODS:
             command=test_command(method,'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE')
             self.assertEqual(command.count('test-without-building'),1)
@@ -71,7 +72,7 @@ class ContractTests(unittest.TestCase):
             self.assertNotIn('-retry-tests-on-failure',command)
             self.assertEqual(command[command.index('-maximum-test-execution-time-allowance')+1],'120')
             self.assertEqual(command[command.index('-parallel-testing-enabled')+1],'NO')
-        self.assertEqual([v['key'] for v in METHODS],['actual_cold','isolated_static','rgb_positive'])
+        self.assertEqual([v['key'] for v in METHODS],['isolated_static'])
 
     def test_native_exit64_fixture_exactly_explains_removed_argument(self):
         fixture=json.loads((ROOT/'review/CROWN-090986-ARGV-FAILURE.json').read_text())
@@ -86,10 +87,11 @@ class ContractTests(unittest.TestCase):
         old=list(stage['command']);i=old.index('-test-iterations');self.assertEqual(old[i+1],'1')
         del old[i:i+2]
         device=stage['command'][stage['command'].index('-destination')+1].split('id=')[1]
-        self.assertEqual(test_command(METHODS[0],device),old)
+        self.assertNotEqual(test_command(METHODS[0],device),old)
+        self.assertIn('-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testHomeListDigitalCrownFromColdLaunch',old)
         # Even a future correctly formed command cannot turn usage exit64 into a test outcome.
         from watch_crown_contract import method_scheduling_status
-        corrected=dict(stage,command=old)
+        corrected=dict(stage,command=test_command(METHODS[0],device))
         with self.assertRaisesRegex(ValueError,'Missing genuine terminal test exit'):
             method_scheduling_status(METHODS[0],device,fixture['source']['sha'],corrected,{},'')
 
@@ -193,7 +195,7 @@ class BoundedDriverTests(unittest.TestCase):
 
     def test_ordinary65_preserved_cleanup_and_no_retry(self):
         self.d.process_factory=self.fake(code=65,raw=b'real failure')
-        with patch.object(driver,'stop_group',return_value=True),self.d.phase('actual_cold',240):
+        with patch.object(driver,'stop_group',return_value=True),self.d.phase('isolated_static',180):
             stage,text=self.d.run(['xcodebuild','test-without-building'],180,required=False,first=True)
         self.assertEqual(stage['exit'],65);self.assertEqual(stage['raw_exit'],65)
         self.assertEqual(text,'real failure');self.assertTrue(stage['process_group_gone'])
@@ -201,14 +203,14 @@ class BoundedDriverTests(unittest.TestCase):
 
     def test_timeout_retains_output_and_prevents_next_method(self):
         self.d.process_factory=self.fake(elapsed=180,raw=b'original timeout',timeout=True)
-        with patch.object(driver,'stop_group',return_value=True),self.d.phase('actual_cold',240):
+        with patch.object(driver,'stop_group',return_value=True),self.d.phase('isolated_static',180):
             stage,text=self.d.run(['xcodebuild','test-without-building'],180,required=False,first=True)
         self.assertTrue(stage['timed_out']);self.assertIsNone(stage['raw_exit'])
         self.assertEqual(text,'original timeout')
 
     def test_unknown_cleanup_latches_all_commands(self):
         self.d.process_factory=self.fake()
-        with patch.object(driver,'stop_group',return_value=False),patch.object(driver,'fail_record'),self.d.phase('actual_cold',240):
+        with patch.object(driver,'stop_group',return_value=False),patch.object(driver,'fail_record'),self.d.phase('isolated_static',180):
             stage,text=self.d.run(['xcodebuild','test-without-building'],180,required=False,first=True)
             with self.assertRaises(ValueError):self.d.run(['must-not-run'],1)
         self.assertTrue(self.d.budget.cleanup_unconfirmed)
@@ -216,7 +218,7 @@ class BoundedDriverTests(unittest.TestCase):
 
     def test_oversized_output_is_drained_bounded_and_not_complete(self):
         self.d.process_factory=self.fake(raw=b'x'*300_000)
-        with patch.object(driver,'stop_group',return_value=True),self.d.phase('actual_cold',240):
+        with patch.object(driver,'stop_group',return_value=True),self.d.phase('isolated_static',180):
             stage,text=self.d.run(['xcodebuild','test-without-building'],180,required=False,first=True)
         self.assertTrue(stage['stdout_truncated']);self.assertEqual(len(text),262_144)
 
@@ -250,11 +252,11 @@ class BoundedDriverTests(unittest.TestCase):
     def test_original_clock_exhaustion_blocks_before_process(self):
         self.clock.advance(990)
         with self.assertRaises(BudgetExhausted):
-            with self.d.phase('rgb_positive',180):self.fail('must not execute')
+            with self.d.phase('isolated_static',180):self.fail('must not execute')
         self.assertEqual(self.d.report['stages'],[])
 
 
-    def test_canonical_termination_latencies_fit_same_cold_phase(self):
+    def test_canonical_termination_latencies_fit_same_static_phase(self):
         elapsed=iter((4.375,22.015,.705));clock=self.clock;commands=[]
         class Process:
             pid=123456
@@ -262,36 +264,36 @@ class BoundedDriverTests(unittest.TestCase):
                 commands.append(command);self.stdout=io.BytesIO(b'PID Status Label\n' if 'launchctl' in command else b'')
             def wait(self,timeout=None):clock.advance(next(elapsed));return 0
         self.d.process_factory=Process;self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
-        self.d.runners={'actual_cold':'com.mango.touchColor.TouchColorWatchUITests.xctrunner'}
-        with patch.object(driver,'stop_group',return_value=True),self.d.phase('actual_cold',240):
+        self.d.runners={'isolated_static':'com.mango.touchColor.watchCrownControl.uitests.xctrunner'}
+        with patch.object(driver,'stop_group',return_value=True),self.d.phase('isolated_static',180):
             result=self.d.stop_apps(METHODS[0])
         self.assertTrue(result['confirmed']);self.assertEqual(len(commands),3)
         self.assertEqual([x['timeout_seconds'] for x in self.d.report['stages']],[30,30,5])
-        self.assertEqual(self.d.report['phases'][0]['limit_seconds'],240)
+        self.assertEqual(self.d.report['phases'][0]['limit_seconds'],180)
         self.assertAlmostEqual(self.clock.mono,127.095)
 
     def test_termination_requires_full_remaining_phase_before_spawn(self):
-        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'actual_cold':'runner'}
+        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'isolated_static':'runner'}
         self.d.process_factory=lambda *args,**kw:self.fail('No process may start without30seconds')
-        with self.d.phase('actual_cold',240):
-            self.clock.advance(210.5)
+        with self.d.phase('isolated_static',180):
+            self.clock.advance(150.5)
             with self.assertRaisesRegex(ValueError,'Full termination allowance unavailable'):self.d.stop_apps(METHODS[0])
         self.assertEqual(self.d.report['stages'],[])
 
     def test_one_float_step_short_of_termination_allowance_cannot_spawn(self):
         import math
-        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'actual_cold':'runner'}
+        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'isolated_static':'runner'}
         self.d.process_factory=lambda *args,**kw:self.fail('No process may start on clipped nominal grant')
-        with self.d.phase('actual_cold',240):
-            self.clock.mono=math.nextafter(self.clock.mono+210.,math.inf);self.clock.wall+=210.
+        with self.d.phase('isolated_static',180):
+            self.clock.mono=math.nextafter(self.clock.mono+150.,math.inf);self.clock.wall+=150.
             with self.assertRaisesRegex(ValueError,'Full termination allowance unavailable'):self.d.stop_apps(METHODS[0])
         self.assertEqual(self.d.report['stages'],[])
 
     def test_termination_requires_full_original_work_pool_before_spawn(self):
-        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'actual_cold':'runner'}
+        self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE';self.d.runners={'isolated_static':'runner'}
         self.d.process_factory=lambda *args,**kw:self.fail('No process may start outside original pool')
         self.clock.advance(990.5)
-        self.d.current={'name':'actual_cold','limit_seconds':240,'started_monotonic':self.clock.mono}
+        self.d.current={'name':'isolated_static','limit_seconds':180,'started_monotonic':self.clock.mono}
         with self.assertRaises((ValueError,BudgetExhausted)):self.d.stop_apps(METHODS[0])
         self.assertEqual(self.d.report['stages'],[])
 
@@ -301,8 +303,7 @@ class SequentialMethodTests(unittest.TestCase):
         Path('build/evidence').mkdir(parents=True)
         self.clock=Clock();self.d=driver.Driver(environment(),clock=lambda:self.clock.mono,wall=lambda:self.clock.wall)
         self.d.device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
-        self.d.runners={'actual_cold':'com.mango.touchColor.TouchColorWatchUITests.xctrunner',
-                        'isolated_static':'com.mango.touchColor.watchCrownControl.uitests.xctrunner'}
+        self.d.runners={'isolated_static':'com.mango.touchColor.watchCrownControl.uitests.xctrunner'}
         self.commands=[];self.timeout=False;self.bad_cleanup=False;self.terminate_timeout=False
         def run(command,seconds,required=True,first=False):
             self.commands.append(command)
@@ -321,12 +322,14 @@ class SequentialMethodTests(unittest.TestCase):
                 self.active_case=(target,cls,method,stage)
                 Path(command[command.index('-resultBundlePath')+1]).mkdir()
                 text="Test Case '-["+target+'.'+cls+' '+method+"]' "
-                return stage,text+'started.\n'+text+('failed' if failure else 'passed')+' (2.0 seconds).\n'
+                raw=text+'started.\n'+text+('failed' if failure else 'passed')+' (2.0 seconds).\n'
+                stage.update(stdout_bytes=len(raw.encode()),stdout_sha256=hashlib.sha256(raw.encode()).hexdigest())
+                return stage,raw
             if command[:3]==['xcrun','simctl','terminate'] and self.terminate_timeout:
                 stage.update(exit=124,raw_exit=None,timed_out=True)
                 return stage,'termination timeout'
             if 'summary' in command:
-                failed='rgb_positive' not in command[-1]
+                failed=True
                 target,cls,method,test_stage=self.active_case
                 counts=dict(passedTests=0 if failed else 1,failedTests=1 if failed else 0,skippedTests=0,expectedFailures=0)
                 project='TouchColorWatchCrownControl' if target=='TouchColorWatchCrownControlUITests' else 'TouchColorWatch'
@@ -341,84 +344,80 @@ class SequentialMethodTests(unittest.TestCase):
                 return stage,json.dumps(summary)
 
             if 'launchctl' in command:
-                return stage,'PID\tStatus\tLabel\n'+('123\t0\tapplication.com.mango.touchColor.watchkitapp\n' if self.bad_cleanup else '')
+                return stage,'PID\tStatus\tLabel\n'+('123\t0\tapplication.com.mango.touchColor.watchCrownControl\n' if self.bad_cleanup else '')
             return stage,''
         self.d.run=run
     def tearDown(self):os.chdir(self.old);self.temp.cleanup()
-    def test_three_calls_keep_first_two_real_failures_and_rgb_pass(self):
+    def test_single_call_keeps_real_static_failure(self):
         for method in METHODS:self.d.method(method)
-        self.assertEqual([v['observed_command_result'] for v in self.d.report['cases']],['failed','failed','passed'])
-        self.assertEqual(sum(c[:2]==['xcodebuild','test-without-building'] for c in self.commands),3)
+        self.assertEqual([v['observed_command_result'] for v in self.d.report['cases']],['failed'])
+        self.assertEqual(sum(c[:2]==['xcodebuild','test-without-building'] for c in self.commands),1)
         self.assertTrue(all(v['cleanup_confirmed'] for v in self.d.report['cases']))
         self.assertFalse(self.d.report['acceptance'])
-    def test_exact_captured_frame_pairs_persist_before_termination_uncertainty(self):
-        original=self.d.run;records=[];seen_caps=[]
-        for attempt in range(12):
-            for suffix in ('before','after'):
-                records.append(dict(case='-[WatchWorkflowTests testHomeListDigitalCrownFromColdLaunch]',
-                    phase='cold.'+str(attempt)+'.'+suffix,viewport=[0,0,162,197],snapshotMilliseconds=20,
-                    rows=[dict(id='watch.photo',frame=[2,95.5,158,47])]))
+    def test_static_markers_lifecycle_console_persist_before_termination_uncertainty(self):
+        original=self.d.run;payload='WATCH_STATIC_CROWN_RESULT {"case":"synthetic captured marker"}\n';seen_caps=[]
         def wrapped(command,seconds,*args,**kwargs):
             if command[:3]==['xcrun','simctl','terminate']:
-                retained=json.loads(Path('build/evidence/cold-list-frames.json').read_text())
-                self.assertEqual(retained['records'],records);self.assertEqual(retained['matched_records'],24)
-                self.assertEqual(self.d.report['cases'][0]['observed_command_result'],'failed')
-                self.assertFalse(self.d.report['cases'][0]['cleanup_confirmed']);seen_caps.append(seconds)
+                self.assertEqual(Path('build/evidence/static-observations.log').read_text(),payload)
+                for suffix in ('lifecycle.log','console.log'):self.assertTrue(Path('build/evidence/isolated_static-'+suffix).is_file())
+                self.assertEqual(self.d.report['cases'][0]['observed_command_result'],'failed');seen_caps.append(seconds)
             stage,raw=original(command,seconds,*args,**kwargs)
             if command[:2]==['xcodebuild','test-without-building']:
-                raw+=''.join('WATCH_LIST_FRAME '+json.dumps(record)+'\n' for record in records)
+                raw+=payload;stage.update(stdout_bytes=len(raw.encode()),stdout_sha256=hashlib.sha256(raw.encode()).hexdigest())
             return stage,raw
         self.d.run=wrapped;self.terminate_timeout=True
         with self.assertRaises(RuntimeError),patch.object(driver,'fail_record'):self.d.method(METHODS[0])
-        path=Path('build/evidence/cold-list-frames.json');before=path.read_bytes()
+        path=Path('build/evidence/static-observations.log');before=path.read_bytes()
         entry=next(x for x in self.d.report['evidence'] if x['path']==path.name)
         self.assertEqual(entry['sha256'],hashlib.sha256(before).hexdigest());self.assertEqual(entry['bytes'],len(before))
         commands=len(self.commands);self.d.cleanup();self.d.evidence()
         self.assertEqual(len(self.commands),commands);self.assertEqual(path.read_bytes(),before)
         self.assertEqual(seen_caps,[30]);self.assertFalse(self.d.report['acceptance'])
 
-    def test_local_frame_write_failure_stops_before_any_cleanup_or_control(self):
-        original=Path.write_bytes
+    def static_output(self,payload):
+        original=self.d.run
+        def wrapped(command,*args,**kwargs):
+            stage,raw=original(command,*args,**kwargs)
+            if command[:2]==['xcodebuild','test-without-building']:
+                raw+=payload;stage.update(stdout_bytes=len(raw.encode()),stdout_sha256=hashlib.sha256(raw.encode()).hexdigest())
+            return stage,raw
+        self.d.run=wrapped
+
+    def test_local_static_write_failure_stops_before_summary_or_cleanup(self):
+        self.static_output('WATCH_STATIC_CROWN_RESULT {}\n');original=Path.write_bytes
         def denied(path,raw):
-            if path.name=='cold-list-frames.json':raise OSError('synthetic storage failure')
+            if path.name=='static-observations.log':raise OSError('synthetic storage failure')
             return original(path,raw)
         with patch.object(Path,'write_bytes',denied),self.assertRaises(OSError):self.d.method(METHODS[0])
         self.assertEqual(len(self.commands),1)
-        self.assertTrue(Path('build/evidence/actual_cold-lifecycle.log').is_file())
-        self.assertTrue(Path('build/evidence/actual_cold-console.log').is_file())
+        self.assertTrue(Path('build/evidence/isolated_static-lifecycle.log').is_file())
+        self.assertTrue(Path('build/evidence/isolated_static-console.log').is_file())
         self.assertNotIn('observed_command_result',self.d.report['cases'][0])
 
-    def test_local_frame_write_exact_byte_boundary_before_next_command(self):
-        for size in (150000,150001):
+    def test_static_marker_exact_byte_boundary_before_next_command(self):
+        for size in (16384,16385):
             with self.subTest(size=size):
                 fixture=SequentialMethodTests();fixture.setUp()
                 try:
-                    report={'records':[],'matched_records':0,'omitted_records':0,'invalid_records':0,'padding':''}
-                    overhead=len(json.dumps(report,separators=(',',':')).encode());report['padding']='x'*(size-overhead)
-                    fixture.d.frames.report=report
-                    if size==150001:
+                    prefix='WATCH_STATIC_CROWN_RESULT ';fixture.static_output(prefix+'x'*(size-len(prefix)-1)+'\n')
+                    if size==16385:
                         with self.assertRaisesRegex(ValueError,'Required evidence exceeds'):fixture.d.method(METHODS[0])
-                        self.assertEqual(len(fixture.commands),1);self.assertFalse(Path('build/evidence/cold-list-frames.json').exists())
+                        self.assertEqual(len(fixture.commands),1);self.assertFalse(Path('build/evidence/static-observations.log').exists())
                     else:
-                        fixture.d.method(METHODS[0]);self.assertEqual(Path('build/evidence/cold-list-frames.json').stat().st_size,size)
-                    self.assertFalse(fixture.d.report['acceptance'])
+                        fixture.d.method(METHODS[0]);self.assertEqual(Path('build/evidence/static-observations.log').stat().st_size,size)
                 finally:fixture.tearDown()
 
-    def test_local_frame_cap_is_unchanged_and_empty_capture_stays_empty(self):
-        self.d.frames.report={'records':[], 'matched_records':0,'omitted_records':0,'invalid_records':0}
-        self.d.method(METHODS[0])
-        value=json.loads(Path('build/evidence/cold-list-frames.json').read_text())
-        self.assertEqual(value['records'],[]);self.assertEqual(value['matched_records'],0)
+    def test_missing_static_capture_is_never_reconstructed(self):
+        self.d.method(METHODS[0]);self.assertFalse(Path('build/evidence/static-observations.log').exists())
         source=(ROOT/'scripts/run_watch_crown_control.py').read_text()
-        self.assertEqual(source.count("self.retain('cold-list-frames.json'"),1)
-        self.assertIn("'cold_frames','actual_cold',limit=150_000",source)
-        self.assertNotIn('cold-list-frames.json',source.split('    def evidence(self):',1)[1])
+        self.assertEqual(source.count("self.retain('static-observations.log'"),1)
+        self.assertNotIn('cold-list-frames.json',source);self.assertNotIn('home-observations.json',source)
 
     def test_timeout_console_retained_without_extract_or_new_control(self):
         self.timeout=True
         with self.assertRaises(ValueError):self.d.method(METHODS[0])
         self.assertEqual(len(self.commands),1)
-        self.assertTrue(Path('build/evidence/actual_cold-console.log').is_file())
+        self.assertTrue(Path('build/evidence/isolated_static-console.log').is_file())
         self.assertNotIn('observed_command_result',self.d.report['cases'][0])
     def test_live_owned_app_blocks_continuation(self):
         self.bad_cleanup=True
@@ -462,9 +461,9 @@ class SequentialMethodTests(unittest.TestCase):
                         return stage,text
                     t.d.run=corrupt
                     with self.assertRaises(ValueError):
-                        t.d.method(METHODS[0]);t.d.method(METHODS[1])
+                        t.d.method(METHODS[0])
                     self.assertEqual(sum(c[:2]==['xcodebuild','test-without-building'] for c in t.commands),1)
-                    self.assertTrue(Path('build/evidence/actual_cold-summary.json').is_file())
+                    self.assertTrue(Path('build/evidence/isolated_static-summary.json').is_file())
                     self.assertEqual(t.d.report['stages'][0]['raw_exit'],65)
                     self.assertFalse(t.d.report['acceptance'])
                 finally:t.tearDown()
@@ -484,7 +483,7 @@ class SequentialMethodTests(unittest.TestCase):
                         return stage,text
                     t.d.run=corrupt
                     with self.assertRaises(ValueError):
-                        t.d.method(METHODS[0]);t.d.method(METHODS[1])
+                        t.d.method(METHODS[0])
                     self.assertEqual(sum(c[:2]==['xcodebuild','test-without-building'] for c in t.commands),1)
                 finally:t.tearDown()
 
