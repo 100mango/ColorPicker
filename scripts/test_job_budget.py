@@ -38,14 +38,14 @@ class JobBudgetTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.budget('watch',25)
         source=(Path(__file__).resolve().parents[1]/'.github/workflows/apple-platforms.yml').read_text().split('  native-platform:',1)[1]
         rows=re.findall(r'- platform: (\w+)(.*?)(?=\n          - platform:|\n    runs-on:)',source,re.S)
-        self.assertEqual(len(rows),15)
+        self.assertEqual(len(rows),19)
         watch_rows=0
         for platform,body in rows:
             minutes=int(re.search(r'            minutes: (\d+)',body).group(1))
             expected={'watch':45,'vision':25,'tv':25,'mac':40,'ios':20,'paired':45}[platform]
             self.assertEqual(minutes,expected)
-            if platform=='watch':watch_rows+=1;self.assertIn('evidence_bytes: 2000000',body)
-        self.assertEqual(watch_rows,2)
+            if platform=='watch':watch_rows+=1;self.assertIn('evidence_bytes: '+('600000' if 'text_phase: system-largest' in body else '1200000'),body)
+        self.assertEqual(watch_rows,4)
         self.assertIn("--label 'Native watchOS executable and real simulator workflows' --seconds 2520",source)
         self.assertIn('max-parallel: 2',source)
 

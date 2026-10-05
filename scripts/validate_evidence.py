@@ -14,6 +14,7 @@ allowed_root.update((f'{p}-{suffix}.json' for p in ('vision', 'watch', 'tv') for
 allowed_root.add('mac-modal-probe-summary.json')
 allowed_root.add('job-budget.json')
 allowed_root.add('mac-evidence-selection.json')
+allowed_root.add('native-text-evidence.json')
 allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vision-ui-screenshots', 'vision-screenshots', 'watch-screenshots', 'watch-ui-screenshots', 'tv-screenshots'}
 allowed_dirs.add('modal-probe-screenshots')
 allowed_root.update({'vision-largest-text-summary.json','watch-largest-text-summary.json'})
@@ -87,8 +88,12 @@ mac_evidence_complete = None
 if (root/'mac-evidence-selection.json').exists():
     from retain_mac_evidence import validate_selection
     mac_evidence_complete = validate_selection(root)['complete'] # Safety/integrity first; preserve safe partial packets.
+from native_text_evidence import REPORT as TEXT_SELECTION, evidence_complete as native_text_complete
+text_complete=native_text_complete(root)
 from vision_offline_result import evidence_complete
-vision_complete=evidence_complete(root)
+# A validated explicit omission packet remains uploadable but cannot qualify.
+# Legacy controller-only fallback still requires its exact authenticated provenance.
+vision_complete=False if (root/TEXT_SELECTION).is_file() and not text_complete else evidence_complete(root)
 if not count:
     raise RuntimeError('No bounded evidence to retain')
 print(f'Final evidence guard passed: {count} files, {total} bytes (including final manifests)')
@@ -101,3 +106,6 @@ if mac_evidence_complete is not None and os.environ.get("GITHUB_OUTPUT"):
 
 if os.environ.get('GITHUB_OUTPUT'):
     with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('vision_offline_qualified='+str(vision_complete).lower()+'\n')
+
+if os.environ.get('GITHUB_OUTPUT') and os.environ.get('TOUCHCOLOR_JOB_PLATFORM') in ('vision','watch'):
+    with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('native_text_evidence_complete='+str(text_complete).lower()+'\n')

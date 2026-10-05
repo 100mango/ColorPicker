@@ -1,18 +1,24 @@
-"""One 600-second UIKit preparation clock, with owned-command containment."""
+"""Absolute UIKit preparation/seed clocks, with owned-command containment."""
 import time
 
 STARTED = time.monotonic()  # Includes imports, selection, setup and fixture checks.
 
+import contextlib
 import datetime
 import json
 import os
 from pathlib import Path
+import signal
+import struct
 import subprocess
 import sys
+import tempfile
+import zlib
 
 from atomic_json import write_json
 from bounded_process import run_captured
 from job_budget import enabled_budget, fail_record
+from uikit_runtime_diagnostics import validate_identity
 
 FAMILIES = {'iPhoneCompact', 'iPhoneLarge', 'iPadLarge', 'iPadMini'}
 SECONDS = 600
@@ -25,12 +31,12 @@ class WarmupFailed(RuntimeError):
 
 class Warmup:
     def __init__(self, family, *, started, clock=time.monotonic, runner=run_captured,
-                 budget=None, sleep=time.sleep):
+                 budget=None, sleep=time.sleep, seconds=SECONDS):
         if family not in FAMILIES:
             raise ValueError('Unknown simulator family')
         self.family, self.clock, self.runner = family, clock, runner
         self.budget, self.sleep = budget, sleep
-        self.deadline = started + SECONDS
+        self.deadline = started + seconds
         self.build = Path('build')
         if self.build.is_symlink():
             raise WarmupFailed('Unsafe build root')
@@ -119,6 +125,75 @@ class Warmup:
         print('Selected ' + selected['name'] + ' ' + selected['udid'], flush=True)
         return selected['udid']
 
+    def owned_device(self):
+        """Read the existing binding before inventory; never select/rebind here."""
+        self.require_time()
+        self.identity_path = self.build / (self.family + '-simulator.json')
+        if (self.identity_path.is_symlink() or not self.identity_path.is_file()
+                or self.identity_path.stat().st_size > 8192):
+            raise WarmupFailed('Missing or unsafe recorded owned device binding')
+        self.identity_bytes = self.identity_path.read_bytes()
+        self.identity = validate_identity(json.loads(self.identity_bytes), self.family)
+        devices = json.loads(self.command(
+            ['xcrun', 'simctl', 'list', 'devices', 'available', '-j'], 30))['devices']
+        names = {'iPhoneCompact': 'TouchColor Compact SE3', 'iPhoneLarge': 'iPhone 18 Pro Max',
+                 'iPadMini': 'iPad mini (A17 Pro)'}
+        matches = [device for device in devices.get(self.identity['runtime'], [])
+                   if device.get('udid') == self.identity['udid'] and device.get('isAvailable')]
+        if len(matches) != 1 or not (matches[0]['name'].startswith('iPad Pro 13-inch')
+                if self.family == 'iPadLarge' else matches[0]['name'] == names[self.family]):
+            raise WarmupFailed('Inventory differs from the recorded owned device')
+        self.require_identity()
+        print('Selected recorded owned device ' + self.identity['udid'], flush=True)
+        return self.identity['udid']
+
+    def require_identity(self):
+        self.require_time()
+        if self.identity_path.is_symlink() or self.identity_path.read_bytes() != self.identity_bytes:
+            raise WarmupFailed('Recorded owned device binding changed')
+
+    def seed(self, device):
+        self.require_identity()
+        if device != self.identity['udid']:
+            raise WarmupFailed('Seed target differs from the recorded owned device')
+        seeded = self.build / (self.family + '-fixture-seeded')
+        if seeded.is_symlink():
+            raise WarmupFailed('Unsafe photo seed marker')
+        if seeded.exists():
+            if not seeded.is_file() or seeded.stat().st_size > 8192 or json.loads(seeded.read_text()) != self.identity:
+                raise WarmupFailed('Photo seed marker differs from the recorded owned device')
+            print('Synthetic photo already seeded for the recorded owned device', flush=True)
+            return
+        # Keep the original asymmetric six-color fixture, in this invocation's
+        # private directory. A TMPDIR alias must not create shared global files.
+        with tempfile.TemporaryDirectory(prefix=self.family + '-photo-', dir=self.build) as folder:
+            path = Path(folder) / 'touchcolor-asymmetric.png'
+            width, height = 300, 200
+            def chunk(name, data):
+                return (struct.pack('>I', len(data)) + name + data
+                        + struct.pack('>I', zlib.crc32(name + data) & 0xffffffff))
+            palette = [bytes(color) for color in
+                       [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (255, 0, 255), (255, 255, 0)]]
+            rows = b''.join(b'\0' + b''.join(palette[(y // 100) * 3 + x // 100]
+                                             for x in range(width)) for y in range(height))
+            path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                             + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+            self.require_identity()
+            self.command(['xcrun', 'simctl', 'addmedia', device, str(path)], SECONDS)
+            self.require_identity()
+            # Only a confirmed timely, zero addmedia exit can publish success.
+            write_json(seeded, self.identity)
+            self.require_time()
+        print('Synthetic photo seed complete', flush=True)
+
+    def shutdown(self, device):
+        self.require_identity()
+        if device != self.identity['udid']:
+            raise WarmupFailed('Shutdown target differs from the recorded owned device')
+        # A timely nonzero shutdown (already stopped) retains legacy behavior;
+        # timeout, interruption and late exit always retain the stop latch.
+        self.command(['xcrun', 'simctl', 'shutdown', device], 90, optional=True)
+
     def fixture(self, container):
         path = Path(container) / 'Documents/TouchColor-Ordered-Colors.json'
         deadline = min(self.clock() + 10, self.deadline - CLEANUP)
@@ -206,14 +281,40 @@ def report_inventory(family, *, runner=run_captured, clock=time.monotonic):
         print('UIKIT_REPORT_DIAGNOSTICS:' + json.dumps(value, sort_keys=True), flush=True)
 
 
+def interrupted(signum, frame):
+    # Raise through run_captured so it can finitely reap its owned process group.
+    # Repeated termination signals cannot interrupt that cleanup reserve.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    raise WarmupFailed('UIKit owned command interrupted by signal ' + str(signum))
+
+
 def main():
     controller = None
     try:
         if len(sys.argv) == 3 and sys.argv[2] == 'report':
             return report_inventory(sys.argv[1])
+        suite = sys.argv[2]
+        if suite not in ('prepare', 'prepare-unit', 'seed', 'shutdown',
+                         'TouchColorTests', 'TouchColorUITests', 'AccessibilityAudits'):
+            raise ValueError('Unknown simulator suite')
         budget = enabled_budget()
-        controller = Warmup(sys.argv[1], started=STARTED, budget=budget)
-        controller.prepare(sys.argv[2])
+        controller = Warmup(sys.argv[1], started=STARTED, budget=budget,
+                            seconds=120 if suite == 'shutdown' else SECONDS)
+        if suite in ('prepare', 'prepare-unit'):
+            controller.prepare(suite)
+        else:
+            # Shell substitution receives only the verified UUID; progress stays
+            # visible in stderr, including the last admitted command on timeout.
+            with contextlib.redirect_stdout(sys.stderr):
+                device = controller.owned_device()
+                if suite in ('seed', 'TouchColorUITests', 'AccessibilityAudits'):
+                    controller.seed(device)
+                elif suite == 'shutdown':
+                    controller.shutdown(device)
+                controller.require_identity()
+            if suite not in ('seed', 'shutdown'):
+                print(device, flush=True)
         return 0
     except Exception as error:
         if os.environ.get('TOUCHCOLOR_BUDGET_PHASE') in ('work', 'cleanup', 'evidence'):
@@ -225,4 +326,6 @@ def main():
 
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     raise SystemExit(main())

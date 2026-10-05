@@ -1,7 +1,7 @@
 """Touch-owned system text-size execution; no default external process runner.
 
-Normal-size tests run first. Only the existing Chinese/layout cases below are
-repeated under an actually read-back system setting on the same owned device.
+The existing Chinese/layout cases below run on independent fresh rows under
+an actually read-back system setting. Normal rows never run this phase.
 """
 import contextlib
 import os
@@ -113,9 +113,13 @@ def verify_summary(summary, device_id, platform, count):
     return {'totalTestCount': count, **expected, 'device': device}
 
 
-def run_largest(device, report_path, command, contract, cases, runner, *, timeout=600, defer_vision_summary=False, source_sha=None):
+def run_largest(device, report_path, command, contract, cases, runner, *, timeout=600, defer_vision_summary=False, source_sha=None, row_binding=None):
     """Preserve exact setting status; no exit-code alias means restored/passed."""
     if defer_vision_summary:
+        from native_text_rows import validate
+        binding = validate(row_binding, sha=source_sha)
+        if binding['platform'] != 'vision' or binding['phase'] != 'system-largest' or tuple(cases) != VISION_CASES[binding['case']]:
+            raise ValueError('Largest execution differs from exact Vision row')
         from vision_offline_result import validate_contract
         validate_contract(command, contract, cases, source_sha, device)
     started = time.time() if defer_vision_summary else None
@@ -128,7 +132,7 @@ def run_largest(device, report_path, command, contract, cases, runner, *, timeou
         return report
     if defer_vision_summary:
         from vision_offline_result import prepare
-        report = prepare(report, command, contract, cases, source_sha, device, started, time.time())
+        report = prepare(report, command, contract, cases, source_sha, device, started, time.time(), row_binding=row_binding)
         from atomic_json import write_json
         write_json(report_path, report, limit=48*1024)
         return report

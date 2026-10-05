@@ -250,7 +250,7 @@ class WatchContinuationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'original 65'): gate.require_no_failures(report)
         self.assertEqual(report['result'], 'failed')
 
-    def execute_driver_tail(self, *, normal=65, allowed=True, largest_error=None):
+    def execute_driver_tail(self, *, normal=65, phase="normal", largest_error=None):
         source = ast.parse((ROOT / 'scripts/test_extra_platforms.py').read_text())
         outer = next(node for node in source.body if isinstance(node, ast.Try))
         index = next(i for i, node in enumerate(outer.body) if isinstance(node, ast.If)
@@ -260,7 +260,11 @@ class WatchContinuationTests(unittest.TestCase):
         code = ast.Module(body=[ast.Try(body=outer.body[index:], handlers=outer.handlers, orelse=[], finalbody=[]), source.body[-1]], type_ignores=[])
         ast.fix_missing_locations(code)
         stage, _, before = fixture(); report = {'sha': SHA, 'stages': []}
+        from native_text_rows import row
+        binding=row('watch', phase, '', 'smallest', SHA)
+        calls=[]
         def run(command, timeout, required=True):
+            calls.append((command,timeout))
             item = copy.deepcopy(stage); item['command'] = command
             result = normal if gate.BUNDLE in command else 0; item['exit'] = result
             report['stages'].append(item)
@@ -268,40 +272,54 @@ class WatchContinuationTests(unittest.TestCase):
             return result
         largest = Mock(side_effect=largest_error, return_value={'status': 'largest_ui_passed'})
         env = dict(kind='watch', report=report, test_common=['xcodebuild', 'test-without-building'], test_arguments=[],
-                   device={'udid': DEVICE}, runtime=RUNTIME, WATCH_UI_BUNDLE=gate.BUNDLE,
-                   watch_checkpoint=Mock(return_value=before), run=run, inspect_watch_failure=Mock(return_value={'allowed': allowed, 'reason': 'fixture'}),
+                   device={'udid': DEVICE}, runtime=RUNTIME, WATCH_UI_BUNDLE=gate.BUNDLE,text_phase=phase,text_row=binding,
+                   pending_vision_result=None,pending_vision_hosted=None,pending_vision_normal=None,
+                   watch_checkpoint=Mock(return_value=before), run=run, inspect_watch_failure=Mock(side_effect=AssertionError('Fresh rows do not inspect continuation eligibility')),
                    record_failure=gate.record_failure, require_no_failures=gate.require_no_failures,
                    applicable_cases=lambda *args: ('testChineseColorEditorSave',), os=__import__('os'), json=json,
                    TouchSizeRunner=lambda _: type('Runner', (), {'cleanup_unconfirmed': False})(), Path=Path,
                    project='TouchColorWatch.xcodeproj', name='TouchColorWatch', platform='watchOS', out=Path('unused'),
                    run_largest=largest, qualified=lambda _: True, photo_seed_failed=False, subprocess=subprocess)
-        with self.assertRaises(SystemExit) as ended:
-            exec(compile(code, '<actual driver tail>', 'exec'), env)
-        self.assertEqual(ended.exception.code, 1)
-        return report, largest
+        if (phase=='normal' and normal) or largest_error:
+            with self.assertRaises(SystemExit) as ended:
+                exec(compile(code, '<actual driver tail>', 'exec'), env)
+            self.assertEqual(ended.exception.code, 1)
+        else: exec(compile(code, '<actual driver tail>', 'exec'), env)
+        return report, largest, calls
 
-    def test_actual_driver_schedules_largest_and_still_exits_failed(self):
-        report, largest = self.execute_driver_tail()
+    def test_normal_failure_preserves_original_and_never_starts_largest(self):
+        for failure in (65, 124, -9):
+            report, largest, calls = self.execute_driver_tail(normal=failure)
+            largest.assert_not_called()
+            self.assertEqual(report['normal_watch_ui']['exit'], failure)
+            self.assertEqual(report['tests'], 'failed')
+            self.assertEqual(report['result'], 'failed')
+            self.assertNotIn('largest_text_outcome', report)
+            self.assertEqual([timeout for _, timeout in calls], [480, 840])
+
+    def test_successful_normal_row_does_not_supply_largest_coverage(self):
+        report, largest, calls = self.execute_driver_tail(normal=0)
+        largest.assert_not_called()
+        self.assertEqual(report['result'], 'passed')
+        self.assertNotIn('largest_system_text', report)
+        self.assertEqual([timeout for _, timeout in calls], [480, 840])
+
+    def test_fresh_largest_row_executes_hosted_and_only_existing_largest_scope(self):
+        report, largest, calls = self.execute_driver_tail(phase='system-largest')
         largest.assert_called_once()
         self.assertEqual(largest.call_args.kwargs, {'timeout': 600})
-        self.assertEqual(report['normal_watch_ui']['exit'], 65)
-        self.assertEqual(report['tests'], 'failed')
+        self.assertEqual([timeout for _, timeout in calls], [480])
+        self.assertNotIn('normal_watch_ui', report)
         self.assertEqual(report['largest_text_outcome']['result'], 'passed')
-        self.assertEqual(report['result'], 'failed')
+        self.assertEqual(report['result'], 'passed')
 
-    def test_actual_driver_largest_error_does_not_erase_original(self):
-        report, largest = self.execute_driver_tail(largest_error=RuntimeError('largest failed'))
+    def test_fresh_largest_failure_is_not_reclassified(self):
+        report, largest, calls = self.execute_driver_tail(phase='system-largest', largest_error=RuntimeError('largest failed'))
         largest.assert_called_once()
-        self.assertEqual(largest.call_args.kwargs, {'timeout': 600})
-        self.assertEqual(report['largest_text_outcome']['error'], 'largest failed')
-        self.assertTrue(report['error'].startswith('Stage failed with exit 65:'))
-        self.assertEqual([v['phase'] for v in report['failures']], ['watch-normal-ui', 'largest-text'])
+        self.assertEqual(report['error'], 'largest failed')
         self.assertEqual(report['result'], 'failed')
-
-    def test_actual_driver_blocked_failure_never_starts_largest(self):
-        report, largest = self.execute_driver_tail(allowed=False)
-        largest.assert_not_called(); self.assertEqual(report['largest_text_outcome']['result'], 'not_started')
-        self.assertEqual(report['normal_watch_ui']['exit'], 65)
+        self.assertEqual([item['phase'] for item in report['failures']], ['largest-text'])
+        self.assertNotIn('normal_watch_ui', report)
 
     def test_scope_source_allowances_and_fresh_state_remain_exact(self):
         import re
@@ -313,7 +331,7 @@ class WatchContinuationTests(unittest.TestCase):
         driver = (ROOT / 'scripts/test_extra_platforms.py').read_text()
         self.assertIn('normal_code=run(normal_command,840,required=False)', driver)
         self.assertIn('size_runner,timeout=600,**deferred)', driver)
-        self.assertIn("deferred={'defer_vision_summary':True,'source_sha':report['sha']} if kind=='vision' else {}", driver)
+        self.assertIn("deferred={'defer_vision_summary':True,'source_sha':report['sha'],'row_binding':text_row} if kind=='vision' else {}", driver)
         self.assertNotIn('WatchContinuationObserver', driver)
 
 

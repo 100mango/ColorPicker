@@ -45,8 +45,8 @@ jobs:
         working-directory: scripts
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step test_watch_failure_continuation test_uikit_warmup
-          python3 -O -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step test_watch_failure_continuation
+          python3 -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_native_text_rows test_native_text_evidence test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step test_watch_failure_continuation test_uikit_warmup
+          python3 -O -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step test_watch_failure_continuation test_native_text_rows test_native_text_evidence
           python3 test_evidence_guard.py
           bash -n test_simulators.sh
       - name: Execute shared package tests
@@ -103,68 +103,103 @@ jobs:
         include:
           - platform: tv
             minutes: 25
-            evidence_bytes: 3000000
+            evidence_bytes: 2000000
           - platform: mac
             minutes: 40
             evidence_bytes: 3000000
           - platform: vision
             lane: vision-chinese
             vision_case: chinese
+            text_phase: normal
             minutes: 25
             evidence_bytes: 950000
           - platform: vision
             lane: vision-corrupt-audit
             vision_case: corrupt-audit
+            text_phase: normal
             minutes: 25
             evidence_bytes: 650000
           - platform: vision
             lane: vision-canvas-audit
             vision_case: canvas-audit
+            text_phase: normal
             minutes: 25
             evidence_bytes: 650000
           - platform: vision
             lane: vision-paste-relaunch
             vision_case: paste-relaunch
+            text_phase: normal
             minutes: 25
             evidence_bytes: 1300000
           - platform: vision
             lane: vision-png-export
             vision_case: png-export
+            text_phase: normal
             minutes: 25
             evidence_bytes: 900000
           - platform: vision
             lane: vision-json-export
             vision_case: json-export
+            text_phase: normal
             minutes: 25
             evidence_bytes: 900000
           - platform: vision
             lane: vision-photos
             vision_case: photos
+            text_phase: normal
             minutes: 25
             evidence_bytes: 950000
           - platform: vision
             lane: vision-cancel
             vision_case: cancel
+            text_phase: normal
             minutes: 25
             evidence_bytes: 750000
           - platform: vision
             lane: vision-files-select
             vision_case: files-select
+            text_phase: normal
             minutes: 25
             evidence_bytes: 950000
+          - platform: vision
+            lane: vision-chinese-system-largest
+            vision_case: chinese
+            text_phase: system-largest
+            minutes: 25
+            evidence_bytes: 700000
+          - platform: vision
+            lane: vision-canvas-audit-system-largest
+            vision_case: canvas-audit
+            text_phase: system-largest
+            minutes: 25
+            evidence_bytes: 700000
           - platform: ios
             minutes: 20
             evidence_bytes: 1000000
           - platform: watch
             lane: watch-smallest
             watch_profile: smallest
+            text_phase: normal
             minutes: 45
-            evidence_bytes: 2000000
+            evidence_bytes: 1200000
           - platform: watch
             lane: watch-largest
             watch_profile: largest
+            text_phase: normal
             minutes: 45
-            evidence_bytes: 2000000
+            evidence_bytes: 1200000
+          - platform: watch
+            lane: watch-smallest-system-largest
+            watch_profile: smallest
+            text_phase: system-largest
+            minutes: 45
+            evidence_bytes: 600000
+          - platform: watch
+            lane: watch-largest-system-largest
+            watch_profile: largest
+            text_phase: system-largest
+            minutes: 45
+            evidence_bytes: 600000
           - platform: paired
             minutes: 45
             evidence_bytes: 1000000
@@ -175,7 +210,8 @@ jobs:
       TOUCHCOLOR_JOB_MINUTES: ${{ matrix.minutes }}
       TOUCHCOLOR_JOB_LANE: ${{ matrix.lane || matrix.platform }}
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
-      TOUCHCOLOR_WATCH_PROFILE: ${{ matrix.watch_profile || 'largest' }}
+      TOUCHCOLOR_WATCH_PROFILE: ${{ matrix.watch_profile }}
+      TOUCHCOLOR_TEXT_PHASE: ${{ matrix.text_phase }}
       TOUCHCOLOR_VISION_CASE: ${{ matrix.vision_case }}
       TOUCHCOLOR_EVIDENCE_LIMIT: ${{ matrix.evidence_bytes }}
     steps:
@@ -438,7 +474,7 @@ jobs:
             cp -R build/vision-runtime/screenshots build/evidence/vision-checkpoints
           fi
           if test -d build/vision-ui.xcresult; then
-            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/vision-ui.xcresult | tee build/evidence/vision-ui-summary.json || true
+            python3 scripts/vision_offline_result.py copy-normal-summary
             python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/vision-ui.xcresult --output-path build/evidence/vision-ui-screenshots || true
           fi
           if test -d build/watch-ui.xcresult; then
@@ -451,7 +487,7 @@ jobs:
           fi
           for platform in vision watch; do
             if test -d "build/$platform-largest-text.xcresult"; then
-              if test "$platform" = vision && { test "${TOUCHCOLOR_VISION_CASE:-}" = chinese || test "${TOUCHCOLOR_VISION_CASE:-}" = canvas-audit; }; then
+              if test "$platform" = vision; then
                 python3 scripts/vision_offline_result.py copy-summary
               else
                 python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
@@ -494,10 +530,12 @@ jobs:
           PY
           python3 scripts/compress_vision_evidence.py build/evidence
           python3 scripts/retain_mac_evidence.py build/evidence
+          python3 scripts/native_text_evidence.py retain build/evidence
           python3 - <<'PY'
           import json,os,sys
           from pathlib import Path
           if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0) # Mac keeps its explicit priority/omission plan.
+          if os.environ.get('TOUCHCOLOR_JOB_PLATFORM') in ('vision','watch'): sys.exit(0) # Native text rows keep mandatory proof and explicit omissions.
           root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
           for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
               if p.is_file():
@@ -545,3 +583,9 @@ jobs:
         if: ${{ always() && matrix.platform == 'vision' }}
         timeout-minutes: 1
         run: test '${{ steps.evidence_guard.outputs.vision_offline_qualified }}' = 'true'
+      - name: Require complete exact native text row evidence
+        if: ${{ always() && (matrix.platform == 'vision' || matrix.platform == 'watch') }}
+        timeout-minutes: 1
+        env:
+          NATIVE_TEXT_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.native_text_evidence_complete }}
+        run: test "$NATIVE_TEXT_EVIDENCE_COMPLETE" = true

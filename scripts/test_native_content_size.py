@@ -179,11 +179,13 @@ class NativeContentSizeTests(unittest.TestCase):
             result=run_public_trait_fallback(self.unsupported(),DEVICE,command,contract,TouchSizeRunner(ui,summary))
             self.assertTrue(result['cleanup_unconfirmed']);summary.assert_not_called()
 
-    def test_only_existing_small_subset_runs_after_normal_scope_with_same_caps(self):
+    def test_only_existing_small_subset_runs_in_separate_phase_with_same_caps(self):
         root=Path(__file__).resolve().parents[1]
         source=(root/'scripts/test_extra_platforms.py').read_text()
         self.assertLess(source.index("'build/watch-ui.xcresult'"),source.index('largest_cases=applicable_cases'))
         self.assertLess(source.index("'build/vision-ui.xcresult'"),source.index('largest_cases=applicable_cases'))
+        self.assertIn("largest_cases=applicable_cases(kind,text_row['case']) if text_phase=='system-largest' else ()",source)
+        self.assertEqual(source.count("if text_phase=='normal':"),2)
         self.assertIn("timeout=600",source)
         self.assertIn("if setting.get('cleanup_unconfirmed') or size_runner.cleanup_unconfirmed:",source)
         self.assertIn("if size_runner.cleanup_unconfirmed: report['cleanup_unconfirmed']=True",source)

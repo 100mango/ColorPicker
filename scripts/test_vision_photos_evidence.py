@@ -2,6 +2,7 @@
 import contextlib
 import hashlib
 import io
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -35,7 +36,8 @@ class PhotosEvidenceTests(unittest.TestCase):
                 if file.is_file() and file.name!='manifest.json' and file.name not in keep:file.unlink()
             p.write_text(json.dumps(groups))
     def guard(self,success=True):
-        result=subprocess.run([sys.executable,'-O',str(Path(__file__).with_name('validate_evidence.py')),str(self.root),'950000'],capture_output=True,text=True,timeout=5)
+        result=subprocess.run([sys.executable,'-O',str(Path(__file__).with_name('validate_evidence.py')),str(self.root),'950000'],capture_output=True,text=True,timeout=5,
+                              env={**os.environ,'GITHUB_OUTPUT':'','GITHUB_ENV':''})
         self.assertEqual(result.returncode==0,success,result.stdout+result.stderr)
     def test_exact_grid_and_two_latest_navigation_texts_keep_hashes_and_truncation(self):
         grid=self.attachment(self.text,'Debug description for `"PXGGridLayout-Info" Image`_0_fixture',b'x'*40000)

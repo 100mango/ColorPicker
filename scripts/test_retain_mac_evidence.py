@@ -322,7 +322,7 @@ class RetentionTests(unittest.TestCase):
             result=subprocess.run([sys.executable,str(ROOT/'scripts/validate_evidence.py'),str(root),str(keep.LIMIT)],
                                   env=env,capture_output=True,text=True,timeout=5)
             self.assertEqual(result.returncode,0,result.stderr) # Safe partial evidence may be uploaded.
-            self.assertEqual(output.read_text(),'mac_evidence_complete=true\nvision_offline_qualified=false\n')
+            self.assertEqual(output.read_text(),'mac_evidence_complete=true\nvision_offline_qualified=false\nnative_text_evidence_complete=false\n')
             gate=subprocess.run(['bash','-c','test "$VISION_OFFLINE_QUALIFIED" = true'],
                                 env={**os.environ,'VISION_OFFLINE_QUALIFIED':'false'},timeout=2)
             self.assertNotEqual(gate.returncode,0) # It cannot qualify the real Vision row.
@@ -343,7 +343,8 @@ class RetentionTests(unittest.TestCase):
         workflow = (ROOT/'.github/workflows/apple-platforms.yml').read_text()
         self.assertLess(workflow.index('Retain small test evidence for review'), workflow.index('Require requested Mac audit pixels'))
         self.assertIn("if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0)", workflow)
-        self.assertEqual(workflow.count('evidence_bytes: 3000000'), 2)
+        self.assertIn('- platform: mac\n            minutes: 40\n            evidence_bytes: 3000000', workflow)
+        self.assertEqual(workflow.count('evidence_bytes: 3000000'), 1)
 
 
 if __name__ == '__main__': unittest.main()

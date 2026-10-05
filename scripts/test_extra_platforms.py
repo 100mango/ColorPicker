@@ -12,15 +12,20 @@ from job_budget import enabled_budget, fail_record, BudgetExhausted, EXPECTED_MI
 from native_content_size import TouchSizeRunner, applicable_cases, run_largest, qualified, permits_public_trait_fallback, run_public_trait_fallback
 from watch_diagnostics import ListFrameDiagnostics, summarize_editor_lifecycle, log_lookback
 from watch_failure_continuation import (BUNDLE as WATCH_UI_BUNDLE, WatchCaseLifecycle,
-    checkpoint as watch_checkpoint, inspect_failure as inspect_watch_failure, record_failure, require_no_failures)
-from vision_offline_result import pending as vision_summary_pending, confirm_shutdown as confirm_vision_shutdown, prepare_hosted as prepare_vision_hosted
+    checkpoint as watch_checkpoint, record_failure, require_no_failures)
+from vision_offline_result import pending as vision_summary_pending, confirm_shutdown as confirm_vision_shutdown, prepare_hosted as prepare_vision_hosted, prepare_normal as prepare_vision_normal
 from vision_capture_format import verify_generated as verify_capture_format
-kind=sys.argv[1]; assert kind in ('vision','watch','tv')
+from native_text_rows import from_environment as text_row_from_environment, vision_roles
+kind=sys.argv[1]
+if kind not in ('vision','watch','tv'): raise ValueError('Unknown native platform')
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'captures':[],'platform':kind,'sha':check_output(['git','rev-parse','HEAD'],text=True,timeout=10).strip(),'stages':[]}
+text_row=text_row_from_environment(kind,report['sha']) if kind in ('vision','watch') else None
+text_phase=text_row['phase'] if text_row else 'normal'
+if text_row is not None: report['native_text_row']=text_row
 watch_frames=ListFrameDiagnostics()
 if kind=='watch': report['watch_list_frames']=watch_frames.report
 def run(command,timeout,required=True):
@@ -141,9 +146,10 @@ owned_watch_pair=None
 photo_seed_failed=False
 pending_vision_result=None
 pending_vision_hosted=None
+pending_vision_normal=None
 if kind=='vision':
-    report['vision_offline_case']=os.environ.get('TOUCHCOLOR_VISION_CASE')
-    report['vision_offline_expected']=['hosted']+(['largest'] if applicable_cases('vision',report['vision_offline_case']) else [])
+    report['vision_offline_case']=text_row['case']
+    report['vision_offline_expected']=vision_roles(text_row)
 try:
     common=['xcodebuild','-quiet','-project',project,'-scheme',name,'CODE_SIGNING_ALLOWED=NO']
     run(common+['-configuration','Release','-destination','generic/platform='+platform,'-derivedDataPath','build/'+kind+'-device','build'],420)
@@ -192,7 +198,7 @@ try:
     if kind=='vision':
         report['vision_initial_booted_devices']=[{'runtime':r,'udid':d['udid'],'name':d['name']} for r,rows in devices.items() for d in rows if d.get('state')=='Booted']
     if kind=='watch':
-        size=os.environ.get('TOUCHCOLOR_WATCH_PROFILE','largest')
+        size=text_row['profile']
         runtime,device,inventory=select_profile(devices,runtime_suffix,size)
         report['watch_profile']=size;report['watch_available_inventory']=inventory
         print('WATCH_AVAILABLE_PROFILE_INVENTORY',json.dumps(inventory),flush=True)
@@ -289,7 +295,7 @@ try:
         hosted_code=run(hosted_command,360,required=False)
         if hosted_code in (0,65):
             try:
-                pending_vision_hosted=prepare_vision_hosted(hosted_command,Path.cwd(),report['sha'],device['udid'],runtime,report['stages'][-1])
+                pending_vision_hosted=prepare_vision_hosted(hosted_command,Path.cwd(),report['sha'],device['udid'],runtime,report['stages'][-1],row_binding=text_row)
                 report['vision_hosted_result']=pending_vision_hosted
             except Exception as binding_error:
                 report['vision_hosted_binding_error']=str(binding_error)
@@ -309,17 +315,26 @@ try:
             print('VISION_PHOTOS_BOOTED_INVENTORY',json.dumps(booted),flush=True)
             if len(booted)!=1 or booted[0]['udid']!=device['udid'] or booted[0]['runtime']!=runtime:
                 raise RuntimeError('Photos row requires only its exact selected Vision device booted; no other device was changed')
-        assert case in VISION_CASES, 'Unknown isolated Vision case'
-        method,budget=VISION_CASES[case]
-        assert int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])==budget, 'Vision evidence allocation differs from exact inventory'
-        report['ui_scope']={'case':case,'cases':[method],'evidence_bytes':budget,'fresh_vm':True}
+        method=VISION_CASES[case][0]
+        report['ui_scope']={'case':case,'phase':text_phase,'cases':[method],'evidence_bytes':text_row['evidence_bytes'],'fresh_vm':True}
         selected=['-only-testing:TouchColorVisionUITests/VisionWorkflowTests/'+method]
         print('VISION_UI_EXACT_SCOPE',json.dumps(report['ui_scope']),flush=True)
         resources('before isolated '+method)
         require_responsive(report['resources'][-1])
-        try:
-            run(test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip,600)
-        finally:
+        if text_phase=='normal':
+            normal_command=test_common+test_arguments+['-resultBundlePath','build/vision-ui.xcresult']+selected+skip
+            normal_code=run(normal_command,600,required=False)
+            if normal_code in (0,65):
+                contract={'root':str(Path.cwd()),'project':project,'scheme':name,
+                          'derived_data':'build/vision-tests','test_bundle':name+'UITests','platform':platform+' Simulator'}
+                try:
+                    pending_vision_normal=prepare_vision_normal(normal_command,contract,[method],report['sha'],device['udid'],runtime,
+                                                                report['stages'][-1],row_binding=text_row)
+                    report['vision_normal_result']=pending_vision_normal
+                except Exception as binding_error:
+                    report['vision_normal_binding_error']=str(binding_error)
+                    if normal_code==0: raise
+            if normal_code: raise RuntimeError('Stage failed with exit '+str(normal_code)+': '+' '.join(normal_command))
             resources('after isolated '+method)
     elif kind=='watch':
         # Preserve completed hosted evidence independently. The observed49mm cold
@@ -328,29 +343,24 @@ try:
         # source-bound Watch job budget and per-case120/240s allowances remain finite.
         report['xctest_summary_scope']='hosted tests only; watch-ui-summary.json contains the separate UI result'
         run(test_common+test_arguments+['-resultBundlePath','build/watch-tests.xcresult','-only-testing:TouchColorWatchTests'],480)
-        normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
-            '-skip-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
-        report['watch_inputs_before_normal']=watch_checkpoint(report,device=device['udid'],runtime=runtime)
-        if report.get('cleanup_unconfirmed'): raise RuntimeError('Watch checkpoint cleanup unconfirmed; normal UI not started')
-        normal_code=run(normal_command,840,required=False)
-        normal_stage=report['stages'][-1]
-        report['normal_watch_ui']={'exit':normal_code,'result':'failed' if normal_code else 'passed','stage_index':len(report['stages'])-1}
-        if normal_code:
-            report['tests']='failed'
-            record_failure(report,'watch-normal-ui','Stage failed with exit '+str(normal_code)+': '+' '.join(normal_command))
-            report['watch_failure_continuation']=inspect_watch_failure(report,normal_stage,normal_command,
-                report['watch_inputs_before_normal'],sha=report['sha'],device=device['udid'],runtime=runtime)
-            print('WATCH_FAILURE_CONTINUATION',json.dumps(report['watch_failure_continuation']),flush=True)
-            if report['watch_failure_continuation'].get('allowed') is not True:
-                report['largest_text_outcome']={'result':'not_started','reason':report['watch_failure_continuation']['reason']}
-                raise RuntimeError('Independent largest-text blocked: '+report['watch_failure_continuation']['reason'])
+        if text_phase=='normal':
+            normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
+                '-skip-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
+            report['watch_inputs_before_normal']=watch_checkpoint(report,device=device['udid'],runtime=runtime)
+            if report.get('cleanup_unconfirmed'): raise RuntimeError('Watch checkpoint cleanup unconfirmed; normal UI not started')
+            normal_code=run(normal_command,840,required=False)
+            report['normal_watch_ui']={'exit':normal_code,'result':'failed' if normal_code else 'passed','stage_index':len(report['stages'])-1}
+            if normal_code:
+                report['tests']='failed'
+                record_failure(report,'watch-normal-ui','Stage failed with exit '+str(normal_code)+': '+' '.join(normal_command))
+                raise RuntimeError('Stage failed with exit '+str(normal_code)+': '+' '.join(normal_command))
     else:
         run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)
     report['tests']='failed' if report.get('failures') else 'passed'
-    largest_cases=applicable_cases(kind,os.environ.get('TOUCHCOLOR_VISION_CASE'))
+    largest_cases=applicable_cases(kind,text_row['case']) if text_phase=='system-largest' else ()
     if largest_cases:
-        # This independent Chinese/layout scope keeps fresh per-test state.
-        # A deferred normal failure remains failed after this phase, even on success.
+        # This independent fresh-VM row never executes or reuses the normal UI phase.
+        # Only the unchanged existing Chinese/layout methods run at the OS setting.
         def size_ui_runner(command,seconds):
             code=run(command,seconds,required=False)
             stage=report['stages'][-1]
@@ -364,8 +374,9 @@ try:
         report['text_size_phase']='largest'
         if kind=='watch': report['largest_text_outcome']={'result':'running'}
         try:
-            deferred={'defer_vision_summary':True,'source_sha':report['sha']} if kind=='vision' else {}
+            deferred={'defer_vision_summary':True,'source_sha':report['sha'],'row_binding':text_row} if kind=='vision' else {}
             setting=run_largest(device['udid'],out/'largest-text.json',command,contract,largest_cases,size_runner,timeout=600,**deferred)
+            setting['native_text_row']=dict(text_row)
             report['largest_system_text']=setting
             print('NATIVE_SYSTEM_TEXT_SIZE',json.dumps({key:value for key,value in setting.items() if key!='operations'}),flush=True)
             if setting.get('cleanup_unconfirmed') or size_runner.cleanup_unconfirmed:
@@ -393,7 +404,7 @@ try:
 
     if photo_seed_failed: raise RuntimeError('Photos seeding timed out or failed; other native tests executed, real Photos import remains unqualified')
     require_no_failures(report)
-    report['result']='pending_offline_qualification' if pending_vision_result is not None or pending_vision_hosted is not None else 'passed'
+    report['result']='pending_offline_qualification' if pending_vision_result is not None or pending_vision_hosted is not None or pending_vision_normal is not None else 'passed'
 except Exception as error:
     if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     if not any(value['error']==str(error) for value in report.get('failures',[])):
@@ -432,15 +443,15 @@ finally:
             if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
     elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
         run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
-        if pending_vision_result is not None or pending_vision_hosted is not None:
+        if pending_vision_result is not None or pending_vision_hosted is not None or pending_vision_normal is not None:
             report['vision_offline_shutdown']=report['stages'][-1]
-    if pending_vision_result is not None or pending_vision_hosted is not None:
+    if pending_vision_result is not None or pending_vision_hosted is not None or pending_vision_normal is not None:
         def no_offline_ui(*args): raise RuntimeError('Shutdown proof cannot launch UI tests')
         shutdown_runner=size_runner if pending_vision_result is not None else TouchSizeRunner(no_offline_ui)
         try:
             confirm_vision_shutdown(report,report.get('vision_offline_shutdown'),device=device['udid'],
                 runtime=runtime,runner=shutdown_runner,cleanup_unconfirmed=report.get('cleanup_unconfirmed',False))
-            for pending_result in (pending_vision_hosted,pending_vision_result):
+            for pending_result in (pending_vision_hosted,pending_vision_normal,pending_vision_result):
                 if pending_result is not None: pending_result['offline_shutdown_verified']=report['offline_shutdown_verified']
         except Exception as error:
             report['result']='failed';report.setdefault('error',str(error))

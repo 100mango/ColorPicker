@@ -8,67 +8,16 @@ if [[ -e "build/$family-runtime-command-uncertain" || -L "build/$family-runtime-
   echo 'BLOCKED: an owned simulator command has no confirmed timely exit; no later simulator action is permitted' >&2
   exit 3
 fi
-if [[ "$suite" == prepare || "$suite" == prepare-unit ]]; then
+if [[ "$suite" == prepare || "$suite" == prepare-unit || "$suite" == seed || "$suite" == shutdown ]]; then
   exec python3 "$(dirname -- "$0")/uikit_warmup.py" "$family" "$suite"
 fi
-xcrun simctl list devices available -j > /tmp/touchcolor-devices.json
-device=$(python3 - "$family" "$suite" <<'PY'
-import json,sys,subprocess,time
-from pathlib import Path
-all_devices=json.load(open('/tmp/touchcolor-devices.json'))['devices']
-runtimes=[key for key in all_devices if key.endswith('.iOS-27-0')]
-if not runtimes: raise SystemExit('BLOCKED: stable iOS 27.0 simulator runtime is unavailable')
-family=sys.argv[1]
-if family=='iPhoneCompact':
-    types=json.loads(subprocess.check_output(['xcrun','simctl','list','devicetypes','-j']))['devicetypes']
-    device_type=next((t for t in types if t['name']=='iPhone SE (3rd generation)'),None)
-    if not device_type: raise SystemExit('BLOCKED: required iPhone SE (3rd generation) device type is unavailable')
-    name='TouchColor Compact SE3'
-    candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name']==name]
-    if not candidates and sys.argv[2] in ('prepare','prepare-unit'):
-        udid=subprocess.check_output(['xcrun','simctl','create',name,device_type['identifier'],runtimes[0]],text=True).strip()
-        candidates=[{'udid':udid,'name':name}]
-        print('Created '+str(device_type)+' runtime '+runtimes[0],file=sys.stderr)
-elif family=='iPadMini':
-    name='iPad mini (A17 Pro)'
-    candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name']==name]
-elif family=='iPadLarge':
-    candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name'].startswith('iPad Pro 13-inch')]
-    if not candidates: raise SystemExit('BLOCKED: required native 13-inch iPad simulator is unavailable')
-    name=candidates[0]['name']
-else:
-    name='iPhone 18 Pro Max'
-    candidates=[d for d in all_devices[runtimes[0]] if d.get('isAvailable') and d['name']==name]
-if not candidates: raise SystemExit('BLOCKED: missing required '+name+' simulator')
-selected=candidates[0]
-identity_path=Path('build')/(family+'-simulator.json')
-if sys.argv[2] in ('prepare','prepare-unit'):
-    identity_path.parent.mkdir(parents=True,exist_ok=True)
-    identity_path.write_text(json.dumps({'family':family,'udid':selected['udid'],'runtime':runtimes[0],'started':time.time()}))
-elif not identity_path.is_file() or json.loads(identity_path.read_text())['udid']!=selected['udid']:
-    raise SystemExit('BLOCKED: selected simulator differs from the recorded owned device')
-print(selected['udid'])
-print('Selected '+selected['name']+' '+selected['udid'],file=sys.stderr)
-PY
-)
-if [[ "$suite" == shutdown ]]; then
-  xcrun simctl shutdown "$device" || true
-  exit 0
+# Validate the existing owned binding and bound all pre-test simctl commands.
+# XCTest arguments, timing and exit status below remain unchanged.
+device=$(python3 "$(dirname -- "$0")/uikit_warmup.py" "$family" "$suite")
+if [[ -e "build/$family-runtime-command-uncertain" || -L "build/$family-runtime-command-uncertain" ]]; then
+  echo 'BLOCKED: an owned simulator command has no confirmed timely exit' >&2
+  exit 3
 fi
-if [[ "$suite" == seed || "$suite" == TouchColorUITests || "$suite" == AccessibilityAudits ]] && [[ ! -f "build/$family-fixture-seeded" ]]; then
-  python3 - <<'PYPNG'
-import struct,zlib
-w,h=300,200
-chunk=lambda name,data: struct.pack('>I',len(data))+name+data+struct.pack('>I',zlib.crc32(name+data)&0xffffffff)
-palette=[bytes(c) for c in [(255,0,0),(0,255,0),(0,0,255),(0,255,255),(255,0,255),(255,255,0)]]
-rows=b''.join(b'\0'+b''.join(palette[(y//100)*3+x//100] for x in range(w)) for y in range(h))
-png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rows))+chunk(b'IEND',b'')
-open('/tmp/touchcolor-asymmetric.png','wb').write(png)
-PYPNG
-  xcrun simctl addmedia "$device" /tmp/touchcolor-asymmetric.png
-  touch "build/$family-fixture-seeded"
-fi
-if [[ "$suite" == seed ]]; then exit 0; fi
 selection="$suite"
 if [[ "$suite" == TouchColorUITests ]]; then
   if [[ "$family" == iPadLarge || "$family" == iPadMini ]]; then selection="TouchColorUITests/TouchColorIPadUITests"; else selection="TouchColorUITests/TouchColorUITests"; fi

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic regression checks for the independent, fail-closed upload allowlist."""
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -7,6 +8,7 @@ import sys
 import tempfile
 import uuid
 from bounded_process import run_captured
+from unittest.mock import patch
 
 guard = Path(__file__).with_name('validate_evidence.py')
 checked = 0
@@ -15,7 +17,8 @@ def check(prepare, expected, limit=4_000_000, optimized=False):
     with tempfile.TemporaryDirectory(prefix='touchcolor-evidence-guard-') as directory:
         root = Path(directory)/'evidence'; root.mkdir()
         prepare(root)
-        result = run_captured([sys.executable]+(['-O'] if optimized else [])+[str(guard), str(root), str(limit)], timeout=10, text=True)
+        with patch.dict(os.environ, {'GITHUB_OUTPUT':'','GITHUB_ENV':''}):
+            result = run_captured([sys.executable]+(['-O'] if optimized else [])+[str(guard), str(root), str(limit)], timeout=10, text=True)
         assert (result.returncode == 0) == expected, (prepare.__name__, result.stdout, result.stderr)
         checked += 1
 def valid(root):

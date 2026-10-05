@@ -21,7 +21,7 @@ class VisionSuiteTests(unittest.TestCase):
 
     def test_exact_workflow_rows_preserve_the_whole_run_budget(self):
         workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/apple-platforms.yml').read_text()
-        rows = re.findall(r'- platform: vision\s+lane: vision-([a-z-]+)\s+vision_case: ([a-z-]+)\s+minutes: (\d+)\s+evidence_bytes: (\d+)', workflow)
+        rows = re.findall(r'- platform: vision\s+lane: vision-([a-z-]+)\s+vision_case: ([a-z-]+)\s+text_phase: normal\s+minutes: (\d+)\s+evidence_bytes: (\d+)', workflow)
         self.assertEqual(len(rows), len(CASES))
         self.assertEqual({case for _, case, _, _ in rows}, set(CASES))
         for lane, case, minutes, budget in rows:
