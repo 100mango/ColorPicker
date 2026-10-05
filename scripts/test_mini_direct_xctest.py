@@ -147,7 +147,8 @@ class IdentityAndBudget(Temporary):
         result = subprocess.CompletedProcess([], 0, b'{"result":"Passed","passedTests":1,"arbitrary":"ignored"}', b'')
         with patch.object(m, 'capture', return_value=result) as capture: d.host_summary()
         self.assertEqual(d.report['summary']['fields'], {'result': 'Passed', 'passedTests': 1})
-        self.assertNotIn('simctl', capture.call_args.args[0]); self.assertEqual(capture.call_args.kwargs['seconds'], 3)
+        self.assertNotIn('simctl', capture.call_args.args[0]); self.assertGreater(capture.call_args.kwargs['seconds'], 0)
+        self.assertLessEqual(capture.call_args.kwargs['seconds'], 20)
 
     def test_host_summary_unavailable_after_timeout(self):
         d = self.diagnostic(); d.report['xctest'] = {'host_cleanup_confirmed': True}; m.RESULT.mkdir()
@@ -633,6 +634,52 @@ class DedicatedScheduleRegression(Temporary):
         self.assertEqual(fixture['reason'],'duration-limit');self.assertEqual(fixture['budget']['remaining_seconds'],277.388)
         self.assertEqual(fixture['preparation_commands'][-1]['allowance_seconds'],3)
         self.assertIsNone(fixture['preparation_commands'][-1]['exit'])
+
+
+class SummaryAbsoluteDeadline(Temporary):
+    def summary_at(self, tick, evidence_end):
+        d=self.diagnostic();d.report['xctest']=dict(host_cleanup_confirmed=True,observed_command_exit=65)
+        d.report['status']='diagnostic_stopped';m.RESULT.mkdir()
+        d.budget.monotonic=lambda:tick[0];d.budget.hard_deadline=evidence_end+140.
+        return d
+    def test_exact_cleanup_boundary_preserves_full_twenty_second_read(self):
+        tick=[100.];d=self.summary_at(tick,140.)
+        value=subprocess.CompletedProcess([],0,b'{"result":"Failed","failedTests":1}',b'')
+        with patch.object(m,'capture',return_value=value) as capture:d.host_summary()
+        self.assertEqual(capture.call_args.kwargs['seconds'],20.)
+        self.assertEqual(capture.call_args.kwargs['cleanup_grace'],10)
+        self.assertEqual(d.report['summary']['status'],'observed_aggregate_only')
+        self.assertEqual(d.report['xctest']['observed_command_exit'],65)
+    def test_insufficient_evidence_does_not_start_reader(self):
+        tick=[100.];d=self.summary_at(tick,139.999)
+        with patch.object(m,'capture') as capture:d.host_summary()
+        capture.assert_not_called();self.assertEqual(d.report['summary']['status'],'unavailable')
+        self.assertEqual(d.report['status'],'diagnostic_stopped')
+    def test_bookkeeping_overhead_is_subtracted_and_expired_entry_refuses(self):
+        tick=[100.];d=self.summary_at(tick,160.)
+        original=d.budget.admit
+        def admit(*a,**kw):
+            result=original(*a,**kw);tick[0]=119.;return result
+        value=subprocess.CompletedProcess([],0,b'{"result":"Failed"}',b'')
+        with patch.object(d.budget,'admit',side_effect=admit),patch.object(m,'capture',return_value=value) as capture:d.host_summary()
+        self.assertEqual(capture.call_args.kwargs['seconds'],1.)
+        tick[0]=100.
+        def expired(*a,**kw):
+            result=original(*a,**kw);tick[0]=120.;return result
+        with patch.object(d.budget,'admit',side_effect=expired),patch.object(m,'capture') as capture:d.host_summary()
+        capture.assert_not_called();self.assertEqual(d.report['summary']['reason'],'summary_deadline_expired_before_capture')
+    def test_late_successful_reader_does_not_override_actual_case(self):
+        tick=[100.];d=self.summary_at(tick,140.)
+        def capture(*a,**kw):
+            tick[0]=120.;return subprocess.CompletedProcess([],0,b'{"result":"Passed","passedTests":1}',b'')
+        with patch.object(m,'capture',side_effect=capture):d.host_summary()
+        self.assertEqual(d.report['summary'],{'status':'unavailable','reason':'summary_returned_after_deadline'})
+        self.assertEqual(d.report['xctest']['observed_command_exit'],65)
+    def test_unknown_reader_cleanup_keeps_case_and_latches_original_budget(self):
+        tick=[100.];d=self.summary_at(tick,140.)
+        with patch.object(m,'capture',side_effect=m.CaptureStopped('duration-limit',False)):d.host_summary()
+        self.assertEqual(d.report['summary']['status'],'unavailable');self.assertTrue(d.budget.cleanup_unconfirmed)
+        self.assertEqual(d.report['xctest']['observed_command_exit'],65)
 
 
 if __name__ == '__main__': unittest.main()

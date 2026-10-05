@@ -1,4 +1,4 @@
-"""One unchanged Mini XCTest case against functional build-for-testing products.
+"""One fixed Mini XCTest case against functional build-for-testing products.
 
 Always diagnostic-only: the disposable VM ends after host-only evidence. No
 standalone launch, Photos seed, fixture service, retry, warmup or qualification.
@@ -325,9 +325,15 @@ class Diagnostic:
         if not RESULT.is_dir() or RESULT.is_symlink():
             self.report['summary'] = {'status': 'unavailable_result_bundle'}; return
         try:
-            self.budget.admit('host-only XCTest summary', 3, minimum=3, cleanup=20, phase='evidence')
+            started = self.budget.monotonic()
+            tail = sum(self.budget.record['reserves'][key] for key in ('validation', 'upload', 'overhead'))
+            deadline = min(started + 20, self.budget.hard_deadline - tail - 20)
+            self.budget.admit('host-only XCTest summary', 20, minimum=20, cleanup=20, phase='evidence')
+            remaining = deadline - self.budget.monotonic()
+            require(remaining > 0, 'summary_deadline_expired_before_capture')
             value = capture(['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(RESULT)],
-                            seconds=3, cap=65536, cleanup_grace=10)
+                            seconds=remaining, cap=65536, cleanup_grace=10)
+            require(self.budget.monotonic() < deadline, 'summary_returned_after_deadline')
             require(value.returncode == 0, 'summary_command_nonzero')
             raw = strict_json(value.stdout)
             require(isinstance(raw, dict), 'summary_schema_unavailable')

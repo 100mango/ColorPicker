@@ -1,6 +1,9 @@
 #import "TCPaletteUIHelpers.h"
 #import <UIKit/UIKit.h>
 #import "TCFilesPickerRoute.h"
+#import <objc/runtime.h>
+
+static char TCPaletteReadinessExpiryKey;
 
 static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NSString *location) {
     if (!snapshot) return TCFilesRouteNone;
@@ -16,6 +19,8 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 }
 
 @implementation XCTestCase (TCPaletteUIHelpers)
+- (BOOL)tcPaletteReadinessExpired { return [objc_getAssociatedObject(self,&TCPaletteReadinessExpiryKey) boolValue]; }
+- (void)setTcPaletteReadinessExpired:(BOOL)value { objc_setAssociatedObject(self,&TCPaletteReadinessExpiryKey,value ? @YES : nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 - (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName {
     if (![app.launchArguments containsObject:@"--ui-test-palette-lifecycle"]) return;
     BOOL fileCase=[caseName containsString:@"testPaletteFileCancellationAndWatchInboxReturn"] || [caseName containsString:@"testPaletteFileSelectionReviewAndRelaunch"];
@@ -29,38 +34,93 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     NSLog(@"PALETTE_POST_FAILURE_OBSERVATION originalFailurePreserved=1 pickerAppeared=%d elapsed=%.3f budget=5",appeared,NSProcessInfo.processInfo.systemUptime-start);
     if (appeared) NSLog(@"PALETTE_POST_FAILURE_PICKER identifier=%@ frame=%@",picker.identifier,NSStringFromCGRect(picker.frame));
 }
-- (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
-    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime;
-    NSTimeInterval deadline=started+timeout;
-    // Resolve a remote Files element through XCTest's native existence wait
-    // before asking for enabled/hittable. All waits use one monotonic deadline;
-    // XCTest remote calls are not interruptible, so any overrun must still fail.
-    BOOL exists=[element waitForExistenceWithTimeout:timeout];
-    NSTimeInterval elapsed=NSProcessInfo.processInfo.systemUptime-started;
-    NSLog(@"PALETTE_READINESS existence=%d elapsed=%.3f budget=%.3f",exists,elapsed,timeout);
+// Every remote getter uses the original deadline; logging reads runner-local values only.
+- (BOOL)paletteElement:(XCUIElement *)element readyUntil:(NSTimeInterval)deadline
+               started:(NSTimeInterval)started existenceTimeout:(NSTimeInterval)existenceTimeout {
+    __block BOOL expired=NO;
+    __block NSUInteger loggedReads=0;
+    __block NSTimeInterval slowestRead=0;
+    void (^recordRead)(NSString *, BOOL, NSTimeInterval)=^(NSString *phase, BOOL value, NSTimeInterval began) {
+        NSTimeInterval now=NSProcessInfo.processInfo.systemUptime, duration=now-began;
+        slowestRead=MAX(slowestRead,duration);
+        // At most eight ordinary records, plus slow reads bounded by this gate's deadline.
+        if (loggedReads<8 || duration>5) {
+            NSLog(@"PALETTE_READINESS case=%@ phase=%@ value=%d read=%.3f total=%.3f budget=%.3f slow=%d",
+                  self.name,phase,value,duration,now-started,deadline-started,duration>5);
+            loggedReads++;
+        }
+    };
+    BOOL (^withinDeadline)(void)=^BOOL {
+        if (self.tcPaletteReadinessExpired || expired || NSProcessInfo.processInfo.systemUptime>=deadline) {
+            expired=YES; self.tcPaletteReadinessExpired=YES; return NO;
+        }
+        return YES;
+    };
+    if (!withinDeadline()) { XCTFail(@"Palette readiness expired before existence lookup"); return NO; }
+    NSTimeInterval began=NSProcessInfo.processInfo.systemUptime;
+    NSTimeInterval existenceGrant=MIN(existenceTimeout,MAX(0,deadline-began));
+    if (existenceGrant<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Palette readiness has no existence allowance"); return NO; }
+    BOOL exists=[element waitForExistenceWithTimeout:existenceGrant];
+    recordRead(@"exists",exists,began);
+    BOOL timely=withinDeadline();
+    XCTAssertTrue(timely,@"Native existence resolution exhausted the original readiness budget");
+    if (!timely) return NO;
     XCTAssertTrue(exists,@"The observed palette element must exist before checking readiness");
     if (!exists) return NO;
-    BOOL withinDeadline=NSProcessInfo.processInfo.systemUptime<deadline;
-    XCTAssertTrue(withinDeadline,@"Native existence resolution exhausted the original readiness budget");
-    if (!withinDeadline) return NO;
-    NSPredicate *readyPredicate=[NSPredicate predicateWithFormat:@"enabled == true AND hittable == true"];
-    BOOL readyNow=[readyPredicate evaluateWithObject:element];
-    withinDeadline=NSProcessInfo.processInfo.systemUptime<deadline;
-    XCTAssertTrue(withinDeadline,@"Remote readiness evaluation overran the original budget");
-    if (!withinDeadline) return NO;
-    if (readyNow) return YES;
-    NSTimeInterval remaining=MAX(0,deadline-NSProcessInfo.processInfo.systemUptime);
-    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:readyPredicate object:element];
-    XCTWaiterResult result=[XCTWaiter waitForExpectations:@[ready] timeout:remaining];
-    XCTAssertEqual(result,XCTWaiterResultCompleted,@"Palette action must be ready before its single tap");
-    withinDeadline=NSProcessInfo.processInfo.systemUptime<=deadline;
-    XCTAssertTrue(withinDeadline,@"Remote readiness wait overran the original budget");
-    return result==XCTWaiterResultCompleted && withinDeadline;
+    BOOL (^readyNow)(void)=^BOOL {
+        if (!withinDeadline()) return NO;
+        NSTimeInterval enabledStarted=NSProcessInfo.processInfo.systemUptime;
+        if (enabledStarted>=deadline) { expired=YES; self.tcPaletteReadinessExpired=YES; return NO; }
+        BOOL enabled=element.enabled;
+        recordRead(@"enabled",enabled,enabledStarted);
+        if (!withinDeadline() || !enabled) return NO;
+        NSTimeInterval hittableStarted=NSProcessInfo.processInfo.systemUptime;
+        // A slow enabled read must never be followed by another AX read after expiry.
+        if (!withinDeadline()) return NO;
+        BOOL hittable=element.hittable;
+        recordRead(@"hittable",hittable,hittableStarted);
+        if (!withinDeadline()) return NO;
+        return hittable;
+    };
+    BOOL ready=readyNow();
+    if (!ready && !expired) {
+        NSPredicate *predicate=[NSPredicate predicateWithBlock:^BOOL(id ignored, NSDictionary *bindings) { return readyNow(); }];
+        XCTNSPredicateExpectation *expectation=[[XCTNSPredicateExpectation alloc] initWithPredicate:predicate object:nil];
+        NSTimeInterval remaining=MAX(0,deadline-NSProcessInfo.processInfo.systemUptime);
+        if (remaining>0) ready=[XCTWaiter waitForExpectations:@[expectation] timeout:remaining]==XCTWaiterResultCompleted;
+        else expired=YES;
+    }
+    timely=withinDeadline();
+    NSLog(@"PALETTE_READINESS_FINAL case=%@ ready=%d timelyBeforeLog=%d total=%.3f budget=%.3f slowestRead=%.3f slow=%d",
+          self.name,ready,timely,NSProcessInfo.processInfo.systemUptime-started,deadline-started,slowestRead,slowestRead>5);
+    // Local logging can consume time too; the final tap wrapper rechecks again.
+    timely=withinDeadline();
+    XCTAssertTrue(timely,@"Remote readiness evaluation overran the original budget");
+    if (!timely) return NO;
+    XCTAssertTrue(ready,@"Palette action must be enabled and hittable before its single tap");
+    return ready;
+}
+- (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime;
+    return [self paletteElement:element readyUntil:started+timeout started:started existenceTimeout:timeout];
+}
+- (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout existenceTimeout:(NSTimeInterval)existenceTimeout {
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, deadline=started+timeout;
+    if (![self paletteElement:element readyUntil:deadline started:started existenceTimeout:existenceTimeout]) return;
+    NSLog(@"PALETTE_ACTION_READY case=%@ total=%.3f budget=%.3f",self.name,NSProcessInfo.processInfo.systemUptime-started,timeout);
+    BOOL timely=NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Palette action deadline expired before tap");
+    if (!timely) return;
+    [element tap];
+    // A dispatched action may itself return late. Preserve that action, then fence
+    // all following owned AX work before recording its unchanged-deadline failure.
+    BOOL completedTimely=NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!completedTimely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(completedTimely,@"Palette action returned after its original deadline");
 }
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
-    if (![self waitForReadyPaletteElement:element timeout:timeout]) return;
-    NSLog(@"PALETTE_ACTION_READY identifier=%@ label=%@ frame=%@",element.identifier,element.label,NSStringFromCGRect(element.frame));
-    [element tap];
+    [self tapReadyPaletteElement:element timeout:timeout existenceTimeout:timeout];
 }
 - (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll {
     CGRect viewport=scroll.frame,target=element.frame;
@@ -160,20 +220,28 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     XCTAssertEqual(history.cells.count,colors.count,@"Palette order and duplicates must be preserved");
     for (NSUInteger index=0;index<colors.count;index++) XCTAssertTrue([[history.cells elementBoundByIndex:index].label containsString:colors[index]],@"%@",history.debugDescription);
 }
-- (void)acceptPalette:(XCUIApplication *)app {
+- (void)acceptPalette:(XCUIApplication *)app readinessTimeout:(NSTimeInterval)timeout {
     XCUIElement *accept=app.buttons[@"palette.import.accept"], *close=app.buttons[@"palette.import.close"];
-    [self tapReadyPaletteElement:accept timeout:5];
+    [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];
+    if (self.tcPaletteReadinessExpired) return;
     [self waitForPalettePresentationToClose:close];
+}
+- (void)acceptPalette:(XCUIApplication *)app {
+    [self acceptPalette:app readinessTimeout:5];
 }
 - (void)exercisePalettePasteReviewAcceptAndRelaunch:(XCUIApplication *)app {
     NSArray *colors=@[@"#112233",@"#112233",@"#aabbcc"];
     NSString *JSON=@"[\"#112233\",\"#112233\",\"#AABBCC\"]";
     [self pastePalette:JSON app:app];[self verifyPaletteRows:colors app:app];
-    XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];
+    XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:15 existenceTimeout:5];
+    if (self.tcPaletteReadinessExpired) return;
+    [self waitForPalettePresentationToClose:close];
     [self verifyHistory:@[] app:app];
-    [self pastePalette:JSON app:app];[self verifyPaletteRows:colors app:app];[self acceptPalette:app];
+    [self pastePalette:JSON app:app];[self verifyPaletteRows:colors app:app];[self acceptPalette:app readinessTimeout:15];
+    if (self.tcPaletteReadinessExpired) return;
     [self verifyHistory:colors app:app];
-    [self pastePalette:@"[\"#445566\"]" app:app];[self verifyPaletteRows:@[@"#445566"] app:app];[self acceptPalette:app];
+    [self pastePalette:@"[\"#445566\"]" app:app];[self verifyPaletteRows:@[@"#445566"] app:app];[self acceptPalette:app readinessTimeout:15];
+    if (self.tcPaletteReadinessExpired) return;
     NSArray *appended=[colors arrayByAddingObject:@"#445566"];[self verifyHistory:appended app:app];
     [app terminate];app.launchArguments=@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];[app launch];
     [self verifyHistory:appended app:app];

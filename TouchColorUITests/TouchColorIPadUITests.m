@@ -24,6 +24,11 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
 @end
 @implementation TouchColorIPadUITests
 - (void)recordIssue:(XCTIssue *)issue {
+    if (self.tcPaletteReadinessExpired) {
+        // Preserve the failure without our own post-deadline AX/screenshot requests.
+        NSLog(@"IPAD_FUNCTIONAL_FAILURE case=%@ readinessExpired=1 issue=%@",self.name,issue.compactDescription);
+        [super recordIssue:issue]; return;
+    }
     if (self.recordingIssue) { [super recordIssue:issue]; return; }
     self.recordingIssue=YES;
     // Preserve real failure evidence before continueAfterFailure aborts the case.
@@ -51,6 +56,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
 - (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
 - (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)setUp {
+    self.tcPaletteReadinessExpired=NO;
     [super setUp];
     // Install before launch; known dialog controls stay in their explicit tests.
     self.failClosedInterruption=[self addUIInterruptionMonitorWithDescription:@"Abort every unhandled system interruption" handler:^BOOL(XCUIElement *unusedAlert) {
@@ -422,6 +428,12 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
 }
 - (void)tearDown {
     @try {
+        if (self.tcPaletteReadinessExpired) {
+            // XCTest's internal teardown is outside this hook's control. Our code
+            // must not request window recovery, new snapshots or termination now.
+            NSLog(@"PALETTE_READINESS_TEARDOWN_OMITTED case=%@ originalFailurePreserved=1",self.name);
+            [super tearDown]; return;
+        }
         // XCTest can end a failing case before its remaining actions. Recover the OS window
         // independently so a failed modal assertion cannot change the next suite's geometry.
         if (self.originalWindowSize.width>0) {

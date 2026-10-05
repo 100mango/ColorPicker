@@ -12,6 +12,11 @@
 @end
 @implementation TouchColorUITests
 - (void)recordIssue:(XCTIssue *)issue {
+    if (self.tcPaletteReadinessExpired) {
+        // Preserve the failure without our own post-deadline AX/screenshot requests.
+        NSLog(@"PHONE_FUNCTIONAL_FAILURE case=%@ readinessExpired=1 issue=%@",self.name,issue.compactDescription);
+        [super recordIssue:issue]; return;
+    }
     if (self.recordingIssue) { [super recordIssue:issue]; return; }
     self.recordingIssue=YES;
     // Preserve real failure evidence before continueAfterFailure aborts the case.
@@ -62,6 +67,7 @@
     if (data) NSLog(@"PALETTE_CASE %@",[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
 }
 - (void)setUp {
+    self.tcPaletteReadinessExpired=NO;
     [super setUp];
     // Install before launch; known dialog controls stay in their explicit tests.
     self.failClosedInterruption=[self addUIInterruptionMonitorWithDescription:@"Abort every unhandled system interruption" handler:^BOOL(XCUIElement *unusedAlert) {

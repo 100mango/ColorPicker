@@ -1,6 +1,7 @@
 #import <XCTest/XCTest.h>
 
 @interface XCTestCase (TCPaletteUIHelpers)
+@property (nonatomic) BOOL tcPaletteReadinessExpired; // Testcase-local, sticky until setUp.
 - (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName;
 - (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
