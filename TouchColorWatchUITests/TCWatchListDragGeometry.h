@@ -1,0 +1,96 @@
+#ifndef TC_WATCH_LIST_DRAG_GEOMETRY_H
+#define TC_WATCH_LIST_DRAG_GEOMETRY_H
+#include <math.h>
+#include <stddef.h>
+#include <limits.h>
+
+/* Test-only, public-frame arithmetic. No UI state, focus or event synthesis. */
+typedef struct { double x, y, width, height; } TCWatchListRect;
+typedef struct { double x, y; } TCWatchListPoint;
+typedef struct { int index; TCWatchListRect frame; } TCWatchListRow;
+typedef struct {
+    TCWatchListRect content;
+    TCWatchListPoint start, end;
+    int direction;
+} TCWatchListDrag;
+static const int TCWatchListAmbiguous = 0, TCWatchListEarlier = -1,
+    TCWatchListLater = 1, TCWatchListReady = 2;
+
+static inline int TCWatchListValid(TCWatchListRect r) {
+    return isfinite(r.x) && isfinite(r.y) && isfinite(r.width) && isfinite(r.height)
+        && r.width > 0 && r.height > 0 && isfinite(r.x + r.width) && isfinite(r.y + r.height);
+}
+static inline int TCWatchListContains(TCWatchListRect outer, TCWatchListRect inner) {
+    return TCWatchListValid(outer) && TCWatchListValid(inner)
+        && inner.x >= outer.x && inner.y >= outer.y
+        && inner.x + inner.width <= outer.x + outer.width
+        && inner.y + inner.height <= outer.y + outer.height;
+}
+static inline TCWatchListRect TCWatchListIntersection(TCWatchListRect a, TCWatchListRect b) {
+    double x = fmax(a.x, b.x), y = fmax(a.y, b.y);
+    return (TCWatchListRect){x, y, fmin(a.x+a.width, b.x+b.width)-x,
+        fmin(a.y+a.height, b.y+b.height)-y};
+}
+/* Navigation may overlay the CollectionView. Never drag through that chrome. */
+static inline int TCWatchListContent(TCWatchListRect viewport, TCWatchListRect list,
+                                    TCWatchListRect navigation, TCWatchListRect *content) {
+    if (!content || !TCWatchListValid(viewport) || !TCWatchListValid(list)
+        || !TCWatchListValid(navigation)) return 0;
+    TCWatchListRect visible = TCWatchListIntersection(viewport, list);
+    if (!TCWatchListValid(visible) || navigation.x > visible.x
+        || navigation.x + navigation.width < visible.x + visible.width
+        || navigation.y > visible.y || navigation.y + navigation.height < viewport.y
+        || navigation.y + navigation.height >= visible.y + visible.height) return 0;
+    double bottom = visible.y + visible.height;
+    visible.y = fmax(visible.y, navigation.y + navigation.height);
+    visible.height = bottom - visible.y;
+    if (visible.width < 40 || visible.height < 60) return 0;
+    *content = visible;
+    return 1;
+}
+/* Indices -1 and INT_MAX describe observed header/footer anchors, respectively.
+   Only intersecting rows contribute direction. Missing/contradictory evidence fails. */
+static inline int TCWatchListPlan(TCWatchListRect viewport, TCWatchListRect list,
+                                 TCWatchListRect navigation, int targetIndex,
+                                 int hasTarget, TCWatchListRect target,
+                                 const TCWatchListRow *rows, size_t count,
+                                 TCWatchListDrag *plan) {
+    if (!plan || targetIndex < 0 || (hasTarget != 0 && hasTarget != 1) || count > 24 || (count && !rows)
+        || !TCWatchListContent(viewport, list, navigation, &plan->content)) return TCWatchListAmbiguous;
+    TCWatchListRect content = plan->content;
+    int direction = TCWatchListAmbiguous;
+    if (hasTarget) {
+        if (!TCWatchListValid(target) || target.x < content.x
+            || target.x + target.width > content.x + content.width
+            || target.height > content.height) return TCWatchListAmbiguous;
+        if (TCWatchListContains(content, target)) return TCWatchListReady;
+        if (target.y < content.y) direction = TCWatchListEarlier;
+        else if (target.y + target.height > content.y + content.height) direction = TCWatchListLater;
+    } else {
+        for (size_t i = 0; i < count; ++i) {
+            if (!TCWatchListValid(rows[i].frame) || rows[i].index < -1) return TCWatchListAmbiguous;
+            if (!TCWatchListValid(TCWatchListIntersection(content, rows[i].frame))) continue;
+            int observed = rows[i].index < targetIndex ? TCWatchListLater
+                : (rows[i].index > targetIndex ? TCWatchListEarlier : TCWatchListAmbiguous);
+            if (!observed || (direction && direction != observed)) return TCWatchListAmbiguous;
+            direction = observed;
+        }
+    }
+    if (!direction) return TCWatchListAmbiguous;
+    /* At most 32pt / 22% of visible content; hold after drag suppresses fling.
+       Clipped targets use only the remaining reveal distance plus a small margin. */
+    double distance = fmin(32.0, content.height * 0.22);
+    if (hasTarget) {
+        double missing = direction == TCWatchListEarlier ? content.y - target.y
+            : target.y + target.height - content.y - content.height;
+        distance = fmin(distance, fmax(12.0, missing + 6.0));
+    }
+    double centerX = content.x + content.width * 0.5;
+    double centerY = content.y + content.height * 0.5;
+    double delta = direction == TCWatchListLater ? -distance : distance;
+    plan->start = (TCWatchListPoint){centerX, centerY - delta * 0.5};
+    plan->end = (TCWatchListPoint){centerX, centerY + delta * 0.5};
+    plan->direction = direction;
+    return direction;
+}
+#endif

@@ -60,6 +60,132 @@ class UIKitWarmupFixture(unittest.TestCase):
                              sleep=self.clock.advance, **options)
 
 
+class MeasuredInstallAllowanceTests(UIKitWarmupFixture):
+    app_path = 'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'
+
+    def is_app_install(self, command):
+        return command[2] == 'install' and command[-1] == self.app_path
+
+    def profile_runner(self, family, durations=None):
+        durations = durations or {}
+        def run(command, *, timeout):
+            result = self.runner(command, timeout=timeout)
+            if command[2:4] == ['list', 'devices'] and family in ('iPadLarge', 'iPhoneLarge'):
+                name = 'iPad Pro 13-inch (M5)' if family == 'iPadLarge' else 'iPhone 18 Pro Max'
+                result.stdout = json.dumps({'devices': {self.runtime: [
+                    {'name': name, 'udid': self.device, 'isAvailable': True}]}})
+            key = 'app-install' if self.is_app_install(command) else command[2]
+            if key in durations:
+                self.clock.advance(durations[key] - 0.25)
+            return result
+        return run
+
+    def test_observed_successful_installs_fit_without_changing_absolute_envelope(self):
+        # Install durations are recorded observations; the boot inputs below
+        # are synthetic planner scenarios, not a reconstruction of old timing.
+        for family, bootstatus, install in (('iPadLarge', 202, 276), ('iPhoneLarge', 167, 208),
+                                           ('iPadMini', 100, 179), ('iPhoneCompact', 100, 89.204)):
+            with self.subTest(family=family):
+                self.clock.value = 100; self.calls.clear()
+                controller = self.controller(family=family, runner=self.profile_runner(
+                    family, {'boot': 5, 'bootstatus': bootstatus, 'app-install': install}))
+                controller.prepare('prepare')
+                self.assertEqual([limit for command, limit in self.calls if self.is_app_install(command)], [300])
+                self.assertEqual(controller.deadline, 700)
+                self.assertLess(self.clock(), controller.deadline - warmup.CLEANUP)
+                self.assertFalse(controller.pending.exists())
+                self.assertIn('Synthetic Files fixture is ready', self.output.getvalue())
+
+    def test_all_four_validated_main_app_installs_receive_three_hundred_seconds(self):
+        for family in ('iPadLarge', 'iPhoneLarge', 'iPadMini', 'iPhoneCompact'):
+            with self.subTest(family=family):
+                self.clock.value = 100; self.calls.clear()
+                controller = self.controller(family=family, runner=self.profile_runner(family))
+                controller.prepare('prepare')
+                self.assertEqual([limit for command, limit in self.calls if self.is_app_install(command)],
+                                 [300])
+                self.assertEqual([limit for command, limit in self.calls
+                                  if command[2] == 'install' and not self.is_app_install(command)], [90])
+                self.assertEqual(warmup.SECONDS, 600)
+                self.assertEqual(warmup.CLEANUP, 20)
+
+    def test_remaining_absolute_budget_clips_large_install_and_rejects_late_zero(self):
+        base = self.profile_runner('iPadLarge', {'list': 20, 'boot': 180, 'bootstatus': 240})
+        def clipped(command, *, timeout):
+            if self.is_app_install(command):
+                self.calls.append((command, timeout)); self.clock.advance(timeout + 0.01)
+                return subprocess.CompletedProcess(command, 0, '', '')
+            return base(command, timeout=timeout)
+        controller = self.controller(family='iPadLarge', runner=clipped)
+        with self.assertRaisesRegex(warmup.WarmupFailed, 'admitted deadline'):
+            controller.prepare('prepare')
+        self.assertEqual(self.calls[-1][1], 140)
+        self.assertTrue(controller.pending.exists())
+        self.assertFalse(any(command[2] == 'launch' for command, _ in self.calls))
+
+    def test_inherited_native_budget_is_not_borrowed_for_large_install(self):
+        record = {'schema': 1, 'platform': 'ios', 'minutes': 20, 'sha': 'a' * 40,
+                  'started_epoch': 0, 'started_monotonic': 0,
+                  'reserves': RESERVES, 'startup_margin': STARTUP_MARGIN}
+        self.clock.value = 690
+        budget = JobBudget(record, wall=lambda: 690, monotonic=self.clock)
+        controller = warmup.Warmup('iPadLarge', started=690, clock=self.clock,
+            runner=self.profile_runner('iPadLarge'), budget=budget, sleep=self.clock.advance)
+        controller.prepare('prepare-unit')
+        self.assertEqual([limit for command, limit in self.calls if self.is_app_install(command)], [9.25])
+        self.assertTrue(all(limit <= 10 for _, limit in self.calls))
+        self.assertEqual(controller.deadline, 1290)
+
+    def test_large_install_late_zero_cannot_use_unused_global_time_as_success(self):
+        controller = self.controller(family='iPhoneLarge', runner=self.profile_runner(
+            'iPhoneLarge', {'app-install': 300.01}))
+        with self.assertRaisesRegex(warmup.WarmupFailed, 'admitted deadline'):
+            controller.prepare('prepare')
+        self.assertLess(self.clock(), controller.deadline)
+        self.assertTrue(controller.pending.exists())
+        self.assertFalse(any(command[2] == 'launch' for command, _ in self.calls))
+
+    def test_large_install_timeout_keeps_latch_even_with_confirmed_host_cleanup(self):
+        for confirmed in (True, False):
+            with self.subTest(cleanup_confirmed=confirmed):
+                self.clock.value = 100; self.calls.clear()
+                base = self.profile_runner('iPadLarge')
+                def timeout_install(command, *, timeout):
+                    if self.is_app_install(command):
+                        self.calls.append((command, timeout)); self.clock.advance(timeout)
+                        error = subprocess.TimeoutExpired(command, timeout)
+                        error.cleanup_confirmed = confirmed
+                        raise error
+                    return base(command, timeout=timeout)
+                controller = self.controller(family='iPadLarge', runner=timeout_install)
+                with self.assertRaises(warmup.WarmupFailed): controller.prepare('prepare')
+                self.assertEqual(self.calls[-1][1], 300)
+                self.assertTrue(controller.pending.exists())
+                self.assertFalse(any(command[2] == 'launch' for command, _ in self.calls))
+                controller.pending.unlink()  # Independent owned synthetic scenario only.
+
+    def test_smaller_profile_install_still_rejects_after_its_admitted_cap(self):
+        for family in ('iPadMini', 'iPhoneCompact'):
+            with self.subTest(family=family):
+                self.clock.value = 100; self.calls.clear()
+                controller = self.controller(family=family, runner=self.profile_runner(
+                    family, {'app-install': 300.01}))
+                with self.assertRaisesRegex(warmup.WarmupFailed, 'admitted deadline'):
+                    controller.prepare('prepare')
+                self.assertEqual(self.calls[-1][1], 300)
+                self.assertTrue(controller.pending.exists())
+                self.assertFalse(any(command[2] == 'launch' for command, _ in self.calls))
+                controller.pending.unlink()  # Independent owned synthetic scenario only.
+
+    def test_closed_profiles_reject_unknown_family_before_any_command(self):
+        self.assertEqual(warmup.FAMILIES, {'iPadMini', 'iPadLarge', 'iPhoneCompact', 'iPhoneLarge'})
+        for family in ('iPad', 'iPhone', 'watch', '', 'iPadMini-extra'):
+            with self.subTest(family=family):
+                with self.assertRaisesRegex(ValueError, 'Unknown simulator family'):
+                    self.controller(family=family)
+                self.assertEqual(self.calls, [])
+
+
 class UIKitWarmupTests(UIKitWarmupFixture):
     def test_real_preparation_sequence_and_fixture_contents_remain_required(self):
         controller = self.controller()
@@ -67,7 +193,8 @@ class UIKitWarmupTests(UIKitWarmupFixture):
         self.assertEqual([call[0][2] for call in self.calls],
                          ['list', 'boot', 'bootstatus', 'install', 'launch', 'terminate',
                           'install', 'launch', 'get_app_container', 'terminate', 'spawn', 'TouchColor.xcodeproj'])
-        self.assertTrue(all(0 < timeout <= 240 for _, timeout in self.calls))
+        self.assertTrue(all(0 < timeout <= (300 if command[2] == 'install' and
+            command[-1].endswith('/TouchColor.app') else 240) for command, timeout in self.calls))
         self.assertEqual([timeout for command, timeout in self.calls if command[2] == 'terminate'], [30, 30])
         self.assertFalse(controller.pending.exists())
         identity = json.loads(Path('build/iPadMini-simulator.json').read_text())
@@ -700,12 +827,28 @@ elif args[:2]==['simctl','addmedia']:
 
     def test_workflow_registers_seed_regressions_and_keeps_step_envelopes(self):
         workflow = (Path(warmup.__file__).parent.parent / '.github/workflows/ios.yml').read_text()
-        self.assertIn('python3 -m unittest test_uikit_runtime_diagnostics test_uikit_picker_geometry test_uikit_warmup', workflow)
+        self.assertIn('python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup', workflow)
         for name, minutes in [('Seed synthetic photo', 10), ('Shut down simulator', 2)]:
             section = workflow.split('      - name: ' + name + '\n', 1)[1].split('      - name:', 1)[0]
             self.assertIn('timeout-minutes: ' + str(minutes), section)
         source = Path(warmup.__file__).read_text()
-        self.assertIn("'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], 90)", source)
+        self.assertIn('install_seconds = 300  # self.family is one of the four closed, validated profiles.', source)
+        self.assertIn("'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], install_seconds)", source)
+        self.assertIn("'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)", source)
+
+    def test_uikit_serial_lane_preserves_other_project_capacity_and_row_scope(self):
+        import re
+        root = Path(warmup.__file__).parent.parent
+        uikit = (root / '.github/workflows/ios.yml').read_text()
+        native = (root / '.github/workflows/apple-platforms.yml').read_text()
+        self.assertEqual(re.findall(r'^      max-parallel: (\d+)\s*$', uikit, re.M), ['1'])
+        self.assertEqual(re.findall(r'^      max-parallel: (\d+)\s*$', native, re.M), ['2'])
+        self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]', uikit)
+        self.assertIn('cancel-in-progress: false', uikit)
+        self.assertIn('    timeout-minutes: 60', uikit)
+        self.assertEqual(re.findall(r'^    runs-on: (.+)$', uikit, re.M), ['xcode-27', 'xcode-27'])
+        # Native2 + UIKit1 + the two other projects' reserved serial lanes.
+        self.assertEqual(2 + 1 + 1 + 1, 5)
 
 
 if __name__ == '__main__':

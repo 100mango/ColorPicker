@@ -51,7 +51,7 @@ jobs:
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_uikit_picker_geometry test_uikit_warmup
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
         timeout-minutes: 6
@@ -105,7 +105,7 @@ jobs:
     name: ${{ matrix.family }}
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27
@@ -157,7 +157,7 @@ jobs:
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
-          python3 -m unittest discover -s scripts -p test_uikit_runtime_diagnostics.py
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Shared domain raster and legacy palette tests
         timeout-minutes: 6
@@ -230,7 +230,7 @@ jobs:
         if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 20
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" TouchColorUITests
-      - name: Read bounded Files-service metadata after a functional failure
+      - name: Read bounded app and Files-service metadata after a functional failure
         id: runtime-diagnostics
         if: ${{ !cancelled() && steps.functional-tests.outcome == 'failure' }}
         timeout-minutes: 2

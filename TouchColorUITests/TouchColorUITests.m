@@ -7,6 +7,8 @@
 @property (nonatomic, strong) id<NSObject> failClosedInterruption;
 @property (nonatomic, strong) XCUIApplication *app;
 @property (nonatomic) BOOL recordingIssue;
+@property (nonatomic, copy) NSString *paletteLifecycleToken;
+@property (nonatomic) NSTimeInterval paletteLifecycleStarted;
 @end
 @implementation TouchColorUITests
 - (void)recordIssue:(XCTIssue *)issue {
@@ -25,7 +27,16 @@
         }
     }
     // Capture pixels before the potentially slow remote hierarchy query.
-    NSLog(@"PHONE_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,self.app.debugDescription);
+    NSString *failureDescription=self.app.debugDescription;
+    NSLog(@"PHONE_FUNCTIONAL_FAILURE case=%@ issue=%@\n%@",self.name,issue.compactDescription,failureDescription);
+    // Reuse this existing snapshot; never query AX merely to learn a PID.
+    if (self.paletteLifecycleToken) {
+        NSRegularExpression *pattern=[NSRegularExpression regularExpressionWithPattern:@"^Attributes: Application, [^\\n]*pid: ([1-9][0-9]*), label: 'TouchColor'" options:0 error:nil];
+        NSArray<NSTextCheckingResult *> *matches=[pattern matchesInString:failureDescription options:0 range:NSMakeRange(0,failureDescription.length)];
+        NSNumber *pid=@0;
+        if (matches.count==1) pid=@([[failureDescription substringWithRange:[matches.firstObject rangeAtIndex:1]] longLongValue]);
+        [self emitPaletteLifecycleCase:@"failed" pid:pid];
+    }
     [self observeFailedPalettePresentation:self.app caseName:self.name];
     self.recordingIssue=NO;
     [super recordIssue:issue];
@@ -43,6 +54,13 @@
 - (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
 - (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
 - (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
+- (void)emitPaletteLifecycleCase:(NSString *)event pid:(NSNumber *)pid {
+    NSDictionary *fields=@{@"event":event,@"case":@"testInvalidPalettePastePreservesHistory",
+        @"token":self.paletteLifecycleToken,@"started":@(self.paletteLifecycleStarted),
+        @"epoch":@(NSDate.date.timeIntervalSince1970),@"pid":pid};
+    NSData *data=[NSJSONSerialization dataWithJSONObject:fields options:NSJSONWritingSortedKeys error:nil];
+    if (data) NSLog(@"PALETTE_CASE %@",[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
+}
 - (void)setUp {
     [super setUp];
     // Install before launch; known dialog controls stay in their explicit tests.
@@ -56,6 +74,12 @@
     self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
     if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndWatchInboxReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
         self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-palette-lifecycle"];
+    if ([self.name isEqualToString:@"-[TouchColorUITests testInvalidPalettePastePreservesHistory]"]) {
+        self.paletteLifecycleToken=NSUUID.UUID.UUIDString;
+        self.paletteLifecycleStarted=NSDate.date.timeIntervalSince1970;
+        self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-palette-lifecycle-token",self.paletteLifecycleToken]];
+        [self emitPaletteLifecycleCase:@"started" pid:@0];
+    }
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     [self.app launch];
 }

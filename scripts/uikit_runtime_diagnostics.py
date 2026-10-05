@@ -6,13 +6,14 @@ is emitted. Missing service evidence remains an explicit observation gap.
 import datetime
 import json
 import os
+import math
+import stat
 from pathlib import Path
 import re
 import sys
 import time
 import uuid
 
-from bounded_process import run_captured
 from native_runtime_diagnostics import crash_summary
 
 FAMILIES = {'iPadMini', 'iPadLarge', 'iPhoneCompact', 'iPhoneLarge'}
@@ -23,17 +24,70 @@ FRAME = 'UIKIT_RUNTIME_DIAGNOSTICS:'
 
 
 def validate_identity(value, family):
-    if family not in FAMILIES or value.get('family') != family:
-        raise ValueError('Invalid owned simulator family')
-    identifier = value.get('udid', '')
-    if str(uuid.UUID(identifier)).upper() != identifier:
+    fields = {'family', 'udid', 'runtime', 'started'}
+    if type(value) is not dict or set(value) != fields or family not in FAMILIES or value['family'] != family:
+        raise ValueError('Invalid owned simulator identity schema')
+    identifier = value['udid']
+    if type(identifier) is not str or str(uuid.UUID(identifier)).upper() != identifier:
         raise ValueError('Invalid owned simulator identifier')
-    if value.get('runtime') != 'com.apple.CoreSimulator.SimRuntime.iOS-27-0':
+    if value['runtime'] != 'com.apple.CoreSimulator.SimRuntime.iOS-27-0':
         raise ValueError('Unexpected simulator runtime')
-    started = value.get('started')
-    if isinstance(started, bool) or not isinstance(started, (int, float)) or not 0 < started <= time.time():
+    started = value['started']
+    if type(started) not in (int, float) or not 0 < started <= time.time() or not math.isfinite(started):
         raise ValueError('Invalid simulator start time')
-    return value
+    return {key: value[key] for key in ('family', 'udid', 'runtime', 'started')}
+
+
+def read_identity(family):
+    """One bounded trusted-FD read; no linked build root, file or hardlink alias."""
+    if family not in FAMILIES:
+        raise ValueError('Invalid owned simulator family')
+    limit = 8192
+    directory = os.open('build', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    descriptor = None
+    try:
+        descriptor = os.open(family + '-simulator.json',
+                             os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not 0 < before.st_size <= limit:
+            raise ValueError('Unsafe or oversized simulator identity')
+        data = bytearray()
+        while True:
+            part = os.read(descriptor, min(4096, limit + 1 - len(data)))
+            if not part:
+                break
+            data.extend(part)
+            if len(data) > limit:
+                raise ValueError('Oversized simulator identity')
+        after = os.fstat(descriptor)
+        fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns', 'st_nlink')
+        if len(data) != before.st_size or any(getattr(before, key) != getattr(after, key) for key in fields):
+            raise ValueError('Simulator identity changed during read')
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory)
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError('Duplicate simulator identity field')
+            result[key] = value
+        return result
+    def nonfinite(value):
+        raise ValueError('Nonfinite simulator identity field')
+    return validate_identity(json.loads(data, object_pairs_hook=pairs, parse_constant=nonfinite), family)
+
+
+def service_runner(command, *, timeout, text=True):
+    # Share the reviewed scoped cancellation/ownership protocol with lifecycle
+    # collection. Preserve this predecessor's original 3+20-second envelope.
+    from palette_lifecycle_diagnostics import capture
+    result = capture(command, seconds=timeout, cap=64 * 1024, cleanup_grace=10)
+    if text:
+        result.stdout = result.stdout.decode('utf-8', errors='replace')
+        result.stderr = result.stderr.decode('utf-8', errors='replace')
+    return result
 
 
 def service_rows(output):
@@ -84,13 +138,17 @@ def owned_crashes(home, identity):
     return {'owned_crash_root_present': True, 'reports': reports}
 
 
-def collect(identity, home, runner=run_captured):
+def collect(identity, home, runner=service_runner):
     result = {'family': identity['family'], 'deviceId': identity['udid'], 'runtime': identity['runtime'],
               'phase': 'after-functional-failure', 'wall_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'simulator_commands_completed': False}
     try:
         command = ['xcrun', 'simctl', 'spawn', identity['udid'], 'launchctl', 'list']
+        began = time.monotonic()
         process = runner(command, timeout=3, text=True)
+        if time.monotonic() - began > 3:
+            result['service_query_error'] = 'LateCommandExit'
+            return result
         result['service_query_exit'] = process.returncode
         result['services'] = service_rows(process.stdout) if process.returncode == 0 else []
         if process.returncode != 0:
@@ -103,6 +161,12 @@ def collect(identity, home, runner=run_captured):
         return result
     result['simulator_commands_completed'] = True
     result.update(owned_crashes(home, identity))
+    if identity['family'] in {'iPhoneLarge', 'iPhoneCompact'}:
+        from palette_lifecycle_diagnostics import collect_lifecycle
+        lifecycle = collect_lifecycle(identity)
+        result['palette_lifecycle'] = lifecycle
+        if lifecycle.get('simulator_commands_completed') is not True:
+            result['simulator_commands_completed'] = False
     return result
 
 
@@ -121,8 +185,7 @@ def main():
     family = sys.argv[1]
     if family not in FAMILIES:
         raise ValueError('Invalid simulator family')
-    path = Path('build') / (family + '-simulator.json')
-    identity = validate_identity(json.loads(path.read_text()), family)
+    identity = read_identity(family)
     pending = Path('build') / (family + '-runtime-command-uncertain')
     # An earlier unknown command cannot be cleared by a later successful query.
     # Exclusive creation also refuses an existing linked marker before spawning.

@@ -437,8 +437,8 @@ def accepted(root, binding, runtime):
     hosted = strict_json(read_file(root / 'watch-summary.json'))
     hosted_skipped = hosted.get('skippedTests')
     # One existing ImageIO encoder test may legitimately skip on this runtime;
-    # an all-51-pass result is stronger and must remain accepted.
-    if type(hosted_skipped) is not int or hosted_skipped not in (0, 1) or not summary_counts(hosted, device, 51, hosted_skipped):
+    # an all-52-pass result is stronger and must remain accepted.
+    if type(hosted_skipped) is not int or hosted_skipped not in (0, 1) or not summary_counts(hosted, device, 52, hosted_skipped):
         return False
     recorded = runtime.get('xctest_summary', {})
     if (any(recorded.get(key) != hosted.get(key) for key in ('result', 'passedTests', 'failedTests', 'skippedTests', 'totalTestCount'))

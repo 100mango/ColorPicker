@@ -26,6 +26,8 @@ def load_tests(loader, tests, pattern):
     # preflight entrypoint without changing any workflow timeout/budget rows.
     from test_watch_diagnostics import WatchDiagnosticsTests
     tests.addTests(loader.loadTestsFromTestCase(WatchDiagnosticsTests))
+    from test_watch_touch_drag import WatchTouchDragTests
+    tests.addTests(loader.loadTestsFromTestCase(WatchTouchDragTests))
     return tests
 
 

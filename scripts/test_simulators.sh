@@ -23,9 +23,18 @@ if [[ "$suite" == TouchColorUITests ]]; then
   if [[ "$family" == iPadLarge || "$family" == iPadMini ]]; then selection="TouchColorUITests/TouchColorIPadUITests"; else selection="TouchColorUITests/TouchColorUITests"; fi
 fi
 if [[ "$suite" == AccessibilityAudits ]]; then selection="TouchColorUITests/TouchColorAccessibilityUITests"; fi
+run_test_suite() {
 xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/simulator \
   -resultBundlePath "build/$family-$suite.xcresult" -parallel-testing-enabled NO \
   -collect-test-diagnostics never -test-timeouts-enabled YES -default-test-execution-time-allowance 180 \
   -maximum-test-execution-time-allowance 240 -only-testing:"$selection" \
   test-without-building
+}
+# Retain only exact target-case correlation metadata; pipefail preserves real
+# test failure. Unit/iPad/audit output and application behavior are unchanged.
+if [[ "$suite" == TouchColorUITests && ( "$family" == iPhoneLarge || "$family" == iPhoneCompact ) ]]; then
+  run_test_suite 2>&1 | python3 "$(dirname -- "$0")/palette_lifecycle_diagnostics.py" retain "$family"
+else
+  run_test_suite
+fi

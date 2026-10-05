@@ -82,6 +82,24 @@ class UIKitRuntimeDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result['services'], [])
         self.assertNotIn('private', framed_record(result))
 
+    def test_late_zero_service_exit_blocks_lifecycle_query_and_preserves_marker(self):
+        def runner(command, **options):
+            return subprocess.CompletedProcess(command, 0, '', '')
+        with tempfile.TemporaryDirectory() as home, patch.object(diagnostics.time, 'monotonic', side_effect=[0, 3.01]):
+            result = collect(dict(self.identity, family='iPhoneLarge'), home, runner)
+        self.assertFalse(result['simulator_commands_completed'])
+        self.assertEqual(result['service_query_error'], 'LateCommandExit')
+        self.assertNotIn('palette_lifecycle', result)
+
+    def test_lifecycle_unknown_exit_keeps_shared_simulator_fence(self):
+        def runner(command, **options):
+            return subprocess.CompletedProcess(command, 0, '', '')
+        lifecycle = {'simulator_commands_completed': False, 'reason': 'command-exit-unconfirmed'}
+        with tempfile.TemporaryDirectory() as home, patch('palette_lifecycle_diagnostics.collect_lifecycle', return_value=lifecycle):
+            result = collect(dict(self.identity, family='iPhoneLarge'), home, runner)
+        self.assertFalse(result['simulator_commands_completed'])
+        self.assertEqual(result['palette_lifecycle'], lifecycle)
+
     def test_output_limit_includes_framing_and_omits_oversized_metadata(self):
         value = {'family': 'iPadMini', 'deviceId': self.identity['udid'], 'diagnostic': '界' * 100000}
         line = framed_record(value)
@@ -146,6 +164,113 @@ class UIKitRuntimeDiagnosticsTests(unittest.TestCase):
             self.assertFalse((root/'command-ran').exists())
 
 
+
+class IdentityReaderTests(unittest.TestCase):
+    identity = {'family': 'iPhoneLarge', 'udid': 'D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5',
+                'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', 'started': 1.0}
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        previous = Path.cwd(); os.chdir(self.directory.name)
+        self.addCleanup(os.chdir, previous)
+        Path('build').mkdir()
+        self.path = Path('build/iPhoneLarge-simulator.json')
+
+    def test_exact_identity_is_fresh_and_preserves_only_four_fields(self):
+        self.path.write_text(json.dumps(self.identity))
+        value = diagnostics.read_identity('iPhoneLarge')
+        self.assertEqual(value, self.identity)
+        self.assertIsNot(value, self.identity)
+        for invalid in [dict(self.identity, private_note='SENTINEL_PRIVATE'), {}, [],
+                        dict(self.identity, started=True), dict(self.identity, started=float('inf')),
+                        dict(self.identity, started=10**400)]:
+            with self.assertRaises(ValueError): diagnostics.validate_identity(invalid, 'iPhoneLarge')
+
+    def test_file_and_build_symlinks_are_refused_before_content_read(self):
+        sentinel = Path('sentinel'); sentinel.write_text(json.dumps(self.identity))
+        self.path.symlink_to('../sentinel')
+        with patch.object(diagnostics.os, 'read', side_effect=AssertionError('content read')) as read:
+            with self.assertRaises(OSError): diagnostics.read_identity('iPhoneLarge')
+            read.assert_not_called()
+        self.path.unlink(); Path('build').rmdir(); Path('real').mkdir(); Path('build').symlink_to('real', target_is_directory=True)
+        with patch.object(diagnostics.os, 'read', side_effect=AssertionError('content read')) as read:
+            with self.assertRaises(OSError): diagnostics.read_identity('iPhoneLarge')
+            read.assert_not_called()
+        self.assertEqual(sentinel.read_text(), json.dumps(self.identity))
+
+    def test_hardlink_fifo_and_directory_are_refused_before_read(self):
+        sentinel = Path('sentinel'); sentinel.write_text(json.dumps(self.identity))
+        for kind in ('hardlink', 'fifo', 'directory'):
+            if kind == 'hardlink': os.link(sentinel, self.path)
+            elif kind == 'fifo': os.mkfifo(self.path)
+            else: self.path.mkdir()
+            with patch.object(diagnostics.os, 'read', side_effect=AssertionError('content read')) as read:
+                with self.assertRaises(ValueError): diagnostics.read_identity('iPhoneLarge')
+                read.assert_not_called()
+            if kind == 'directory': self.path.rmdir()
+            else: self.path.unlink()
+
+    def test_oversize_is_refused_before_read_and_exact_cap_is_bounded(self):
+        raw = json.dumps(self.identity).encode()
+        self.path.write_bytes(raw + b' ' * (8193-len(raw)))
+        with patch.object(diagnostics.os, 'read', side_effect=AssertionError('content read')) as read:
+            with self.assertRaises(ValueError): diagnostics.read_identity('iPhoneLarge')
+            read.assert_not_called()
+        self.path.write_bytes(raw + b' ' * (8192-len(raw)))
+        original = os.read; lengths = []
+        def observed(fd, limit):
+            data = original(fd, limit); lengths.append(len(data)); return data
+        with patch.object(diagnostics.os, 'read', side_effect=observed):
+            self.assertEqual(diagnostics.read_identity('iPhoneLarge'), self.identity)
+        self.assertEqual(sum(lengths), 8192)
+        self.assertLessEqual(max(lengths), 4096)
+
+    def test_growth_during_fd_read_stops_at_cap_plus_one(self):
+        self.path.write_text(json.dumps(self.identity))
+        original = os.read; lengths = []
+        def observed(fd, limit):
+            data = original(fd, limit); lengths.append(len(data))
+            if len(lengths) == 1:
+                with self.path.open('ab') as output: output.write(b' ' * 9000)
+            return data
+        with patch.object(diagnostics.os, 'read', side_effect=observed):
+            with self.assertRaises(ValueError): diagnostics.read_identity('iPhoneLarge')
+        self.assertEqual(sum(lengths), 8193)
+
+    def test_duplicate_malformed_nonfinite_and_extra_private_fields_fail(self):
+        values = [b'{', b'[]', b'{"family":"iPhoneLarge","family":"iPhoneLarge"}',
+                  json.dumps(dict(self.identity, started=float('nan'))).encode(),
+                  json.dumps(dict(self.identity, private_note='SENTINEL_PRIVATE')).encode()]
+        for raw in values:
+            self.path.write_bytes(raw)
+            with self.assertRaises(ValueError): diagnostics.read_identity('iPhoneLarge')
+
+    def test_both_entry_and_retainer_use_reader_before_commands_or_private_retention(self):
+        import io
+        import palette_lifecycle_diagnostics as lifecycle
+        raw = json.dumps(dict(self.identity, private_note='SENTINEL_PRIVATE'))
+        self.path.write_text(raw)
+        with patch.object(sys, 'argv', ['diagnostic', 'iPhoneLarge']), patch.object(diagnostics, 'collect') as collect:
+            with self.assertRaises(ValueError): diagnostics.main()
+            collect.assert_not_called()
+        self.assertFalse(Path('build/iPhoneLarge-runtime-command-uncertain').exists())
+        with patch.object(lifecycle, 'source_identity') as source, patch.object(sys, 'stdin', io.TextIOWrapper(io.BytesIO(b''))), patch.object(sys, 'stdout', io.TextIOWrapper(io.BytesIO())):
+            lifecycle.retain('iPhoneLarge')
+            source.assert_not_called()
+        value = json.loads(Path('build/iPhoneLarge-palette-case.json').read_text())
+        self.assertEqual(value['status'], 'rejected-case-metadata')
+        self.assertIsNone(value['identity'])
+        self.assertNotIn('SENTINEL', json.dumps(value))
+        self.assertEqual(self.path.read_text(), raw)
+
+    def test_shared_service_capture_preserves_existing_deadlines_and_signal_protocol(self):
+        import palette_lifecycle_diagnostics as lifecycle
+        value = subprocess.CompletedProcess([], 0, b'fixture', b'')
+        with patch.object(lifecycle, 'capture', return_value=value) as capture:
+            result = diagnostics.service_runner(['owned'], timeout=3, text=True)
+        capture.assert_called_once_with(['owned'], seconds=3, cap=65536, cleanup_grace=10)
+        self.assertEqual(result.stdout, 'fixture')
 
 if __name__ == '__main__':
     unittest.main()

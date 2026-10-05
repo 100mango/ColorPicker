@@ -416,6 +416,7 @@
 				"CLANG_ENABLE_MODULES" = "YES";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "TouchColorWatchUITests/TCWatchListDragGeometry.h";
 				"ONLY_ACTIVE_ARCH" = "YES";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
@@ -444,6 +445,7 @@
 				"CLANG_ENABLE_MODULES" = "YES";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "TouchColorWatchUITests/TCWatchListDragGeometry.h";
 				"ONLY_ACTIVE_ARCH" = "NO";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
@@ -538,6 +540,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
 				"TEST_TARGET_NAME" = "TouchColorWatch";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "TouchColorWatchUITests/TCWatchListDragGeometry.h";
 				"ONLY_ACTIVE_ARCH" = "YES";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
@@ -565,6 +568,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
 				"CLANG_ENABLE_MODULES" = "YES";
 				"TEST_TARGET_NAME" = "TouchColorWatch";
+				"SWIFT_OBJC_BRIDGING_HEADER" = "TouchColorWatchUITests/TCWatchListDragGeometry.h";
 				"ONLY_ACTIVE_ARCH" = "NO";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";

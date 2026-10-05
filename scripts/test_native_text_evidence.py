@@ -61,7 +61,7 @@ class Fixture:
         self.manifests = {}; self.images = []
         (root/'architecture.txt').write_text('Actual source diagnostic remains unchanged\n')
         if platform == 'watch':
-            hosted = summary(51, 1); self.write('watch-summary.json', hosted)
+            hosted = summary(52, 1); self.write('watch-summary.json', hosted)
             self.runtime['xctest_summary'] = {key: hosted[key] for key in ('result','passedTests','failedTests','skippedTests','totalTestCount')}
             self.runtime['xctest_summary']['failures'] = []
             self.runtime['stages'].append(stage('build/watch-tests.xcresult', ['-only-testing:TouchColorWatchTests']))
@@ -144,14 +144,24 @@ class NativeTextEvidenceTests(unittest.TestCase):
         for path, raw in before.items(): self.assertEqual((self.root/path).read_bytes(), raw)
         self.assertEqual(result['omissions'], {})
 
-    def test_hosted_all_51_pass_or_one_encoder_skip_are_both_allowed(self):
+    def test_hosted_all_52_pass_or_one_encoder_skip_are_both_allowed(self):
         for skipped in [0,1,2,True]:
             with self.subTest(skipped=skipped),tempfile.TemporaryDirectory() as tmp:
-                root=Path(tmp);f=Fixture(root);v=summary(51,skipped)
+                root=Path(tmp);f=Fixture(root);v=summary(52,skipped)
                 f.write('watch-summary.json',v)
                 f.runtime['xctest_summary']={key:v[key] for key in ('result','passedTests','failedTests','skippedTests','totalTestCount')}
                 f.runtime['xctest_summary']['failures']=[];f.save()
                 self.assertEqual(keep.retain(root)['complete'],type(skipped) is int and skipped in (0,1))
+
+    def test_watch_hosted_inventory_rejects_old_or_extra_case_counts(self):
+        # One new test-only geometry case raises the exact hosted inventory.
+        for total in (51, 53):
+            with self.subTest(total=total), tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);f=Fixture(root);v=summary(total,1)
+                f.write('watch-summary.json',v)
+                f.runtime['xctest_summary']={key:v[key] for key in ('result','passedTests','failedTests','skippedTests','totalTestCount')}
+                f.runtime['xctest_summary']['failures']=[];f.save()
+                self.assertFalse(keep.retain(root)['complete'])
 
     def test_watch_normal_is_separate_and_retains_other_existing_method_pixels(self):
         fixture = Fixture(self.root, phase='normal')

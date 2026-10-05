@@ -111,12 +111,16 @@ class WatchDiagnosticsTests(unittest.TestCase):
         self.assertIn("'--last',lookback", driver)
         self.assertIn('subsystem == "com.mango.touchColor.WatchDiagnostics"', driver)
 
-    def test_original_crown_and_fresh_touch_have_identical_functional_suffixes(self):
+    def test_original_crown_and_fresh_touch_preserve_palette_actions_and_assertions(self):
         source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
-        crown = source.split('func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder()', 1)[1].split('    func testTouch', 1)[0]
+        crown = source.split('func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder()', 1)[1].split('    @MainActor func testTouch', 1)[0]
         touch = source.split('func testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder()', 1)[1].rsplit('\n}', 1)[0]
         crown_suffix = crown[crown.index('        func back()'):].replace('try reach(', 'reach(').strip()
-        touch_suffix = touch[touch.index('        func back()'):].replace('Native Watch touch edit', 'Native Watch edit').strip()
+        touch_suffix = touch[touch.index('        func back()'):].replace('Native Watch touch edit', 'Native Watch edit').replace('try reach(', 'reach(').strip()
+        # Only the touch home-List reset/readback navigation changes. Palette
+        # actions, exact values, duplicate deletion and relaunch assertions match.
+        crown_suffix = crown_suffix.replace('        for _ in 0..<4 { app.swipeDown() }\n', '')
+        crown_suffix = crown_suffix.replace('for _ in 0..<6 where !app.buttons["watch.color.1"].exists { app.swipeUp() }', 'try reachSavedColorByTouch("watch.color.1", tap: false)')
         self.assertEqual(crown_suffix, touch_suffix)
         self.assertIn('for attempt in 0..<12', crown)
         self.assertIn('rotateDigitalCrown(delta: above ? 0.1 : -0.1)', crown)

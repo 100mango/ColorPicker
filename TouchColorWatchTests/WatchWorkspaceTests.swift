@@ -8,6 +8,39 @@ import ColorPaletteLegacy
 @testable import TouchColorWatch
 
 @MainActor final class WatchWorkspaceTests: XCTestCase {
+    func testTouchListDragGeometryUsesCurrentContentAndRejectsAmbiguity() {
+        for (width, height, navigationHeight) in [(211.0, 257.0, 66.0), (162.0, 197.0, 47.5)] {
+            let viewport = TCWatchListRect(x: 0, y: 0, width: width, height: height)
+            let navigation = TCWatchListRect(x: 0, y: 0, width: width, height: navigationHeight)
+            let header = TCWatchListRow(index: -1,
+                frame: TCWatchListRect(x: 2, y: navigationHeight, width: width - 4, height: 44))
+            var rows = [header], plan = TCWatchListDrag()
+            var decision = rows.withUnsafeBufferPointer {
+                TCWatchListPlan(viewport, viewport, navigation, 0, 0, TCWatchListRect(), $0.baseAddress, $0.count, &plan)
+            }
+            XCTAssertEqual(decision, TCWatchListLater)
+            XCTAssertEqual(plan.content.y, navigationHeight)
+            XCTAssertEqual(plan.content.height, height - navigationHeight)
+            XCTAssertGreaterThan(plan.start.y, plan.end.y)
+            XCTAssertLessThanOrEqual(plan.start.y - plan.end.y, 32)
+            XCTAssertGreaterThan(plan.end.y, navigationHeight)
+            XCTAssertLessThan(plan.start.y, height)
+            // A missing target between an observed header and later color is not
+            // permission to guess a direction or tap a synthetic selection.
+            rows.append(TCWatchListRow(index: 1,
+                frame: TCWatchListRect(x: 2, y: navigationHeight + 48, width: width - 4, height: 44)))
+            decision = rows.withUnsafeBufferPointer {
+                TCWatchListPlan(viewport, viewport, navigation, 0, 0, TCWatchListRect(), $0.baseAddress, $0.count, &plan)
+            }
+            XCTAssertEqual(decision, TCWatchListAmbiguous)
+            let clipped = TCWatchListRect(x: 2, y: height - 20, width: width - 4, height: 44)
+            XCTAssertEqual(TCWatchListPlan(viewport, viewport, navigation, 0, 1, clipped, nil, 0, &plan), TCWatchListLater)
+            XCTAssertEqual(TCWatchListPlan(viewport, viewport, navigation, 0, 1, header.frame, nil, 0, &plan), TCWatchListReady)
+            let invalid = TCWatchListRect(x: .nan, y: 0, width: width, height: height)
+            XCTAssertEqual(TCWatchListPlan(invalid, viewport, navigation, 0, 0, TCWatchListRect(), nil, 0, &plan), TCWatchListAmbiguous)
+        }
+    }
+
     func testReceiptWithoutPendingFileRecoversOnlyItsExactQueuedPayloadAfterRelaunch() throws {
         final class Queued: WatchQueuedPaletteRequest {
             let userInfo: [String: Any]

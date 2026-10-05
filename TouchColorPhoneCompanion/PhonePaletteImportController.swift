@@ -21,19 +21,32 @@ import ColorPaletteLegacy
     init(defaults: UserDefaults = .standard) { self.defaults = defaults; super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 #if DEBUG
+    private let lifecyclePresentation = UUID().uuidString
+    private var lifecycleSequence = 0
     // Read-only observations for the failing import cases. No data, object
     // addresses or accessibility mutations; absent from Release and audits.
     private func tracePresentation(_ event: String) {
         guard ProcessInfo.processInfo.arguments.contains("--ui-test-palette-lifecycle") else { return }
         func typeName(_ value: UIViewController?) -> String { value.map { String(describing: type(of: $0)) } ?? "none" }
         let navigation = navigationController
-        let fields: [String: Any] = ["event": event, "controller": typeName(self),
+        var fields: [String: Any] = ["event": event, "controller": typeName(self),
             "presenter": typeName(presentingViewController), "presented": typeName(presentedViewController),
             "navigationPresenter": typeName(navigation?.presentingViewController),
             "navigationPresented": typeName(navigation?.presentedViewController),
             "visible": viewIfLoaded?.window != nil, "dismissing": isBeingDismissed,
             "navigationDismissing": navigation?.isBeingDismissed ?? false,
             "transition": transitionCoordinator != nil, "busy": busy, "finished": finished]
+        // Correlation is test-owned metadata only. Existing lifecycle semantics stay unchanged.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--ui-test-palette-lifecycle-token"),
+           arguments.indices.contains(index + 1), let token = UUID(uuidString: arguments[index + 1]) {
+            lifecycleSequence += 1
+            fields["presentation"] = lifecyclePresentation
+            fields["sequence"] = lifecycleSequence
+            fields["token"] = token.uuidString
+            fields["pid"] = ProcessInfo.processInfo.processIdentifier
+            fields["epoch"] = Date().timeIntervalSince1970
+        }
         if let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
            let text = String(data: data, encoding: .utf8) { NSLog("PALETTE_LIFECYCLE %@", text) }
     }

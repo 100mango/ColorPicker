@@ -55,6 +55,7 @@ for name,kind,files in [('TouchColorWatch','application',apprefs),('TouchColorWa
         # Xcode27's XCTest/XCUIAutomation require watchOS10. Keep the actual
         # Watch app's deployment target at9; only test bundles use the SDK floor.
         settings['WATCHOS_DEPLOYMENT_TARGET']='10.0'
+        settings['SWIFT_OBJC_BRIDGING_HEADER']='TouchColorWatchUITests/TCWatchListDragGeometry.h'
         proxy=add(name+'proxy','PBXContainerItemProxy',containerPortal=uid('Project'),proxyType=1,remoteGlobalIDString=uid('TouchColorWatch'),remoteInfo='TouchColorWatch')
         dependencies=[add(name+'dependency','PBXTargetDependency',target=uid('TouchColorWatch'),targetProxy=proxy)]
         testattrs[uid(name)]=dict(TestTargetID=uid('TouchColorWatch'))

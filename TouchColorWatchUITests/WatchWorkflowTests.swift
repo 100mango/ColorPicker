@@ -281,6 +281,90 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["BackButton"].exists)
     }
 
+    /// A fresh bounded snapshot scopes each gesture to the actual home List.
+    /// This helper is used only by the separately launched touch workflow.
+    @MainActor private func reachSavedColorByTouch(_ identifier: String, tap: Bool = true) throws {
+        func rect(_ value: CGRect) -> TCWatchListRect {
+            TCWatchListRect(x: Double(value.origin.x), y: Double(value.origin.y), width: Double(value.size.width), height: Double(value.size.height))
+        }
+        guard identifier.hasPrefix("watch.color."),
+              let targetIndex = Int32(identifier.dropFirst("watch.color.".count)), targetIndex >= 0 else {
+            XCTFail("Touch List navigation requires an exact saved-color identifier"); return
+        }
+        // A final observation after gesture 12 can succeed; gesture 13 is forbidden.
+        for attempt in 0...12 {
+            let root = try app.snapshot()
+            var pending: [(any XCUIElementSnapshot, Bool)] = [(root, false)]
+            var lists: [CGRect] = [], navigation: [CGRect] = [], rows: [TCWatchListRow] = []
+            var targetFrame: CGRect?, seen = Set<String>(), visited = 0
+            while let (element, inList) = pending.popLast() {
+                visited += 1
+                guard visited <= 512 else { XCTFail("Touch List snapshot exceeded 512 nodes"); return }
+                let isList = element.elementType == .collectionView
+                if isList { lists.append(element.frame) }
+                if element.elementType == .navigationBar {
+                    guard element.identifier == "TouchColor" else { XCTFail("Touch List is not the home destination"); return }
+                    navigation.append(element.frame)
+                }
+                guard element.identifier != "BackButton" else { XCTFail("Touch List still has a pushed destination"); return }
+                if inList {
+                    let id = element.identifier
+                    var index: Int32?
+                    if ["watch.editor", "watch.photo", "watch.count"].contains(id) { index = -1 }
+                    else if ["watch.transfer.open", "watch.privacy"].contains(id) { index = Int32.max }
+                    else if id.hasPrefix("watch.color.") {
+                        guard let parsed = Int32(id.dropFirst("watch.color.".count)), parsed >= 0,
+                              id == "watch.color.\(parsed)" else { XCTFail("Invalid observed color identity"); return }
+                        index = parsed
+                    }
+                    if let index {
+                        guard seen.insert(id).inserted, rows.count < 24 else { XCTFail("Ambiguous or oversized touch List snapshot"); return }
+                        rows.append(TCWatchListRow(index: index, frame: rect(element.frame)))
+                        if id == identifier { targetFrame = element.frame }
+                    }
+                }
+                pending.append(contentsOf: element.children.map { ($0, inList || isList) })
+            }
+            XCTAssertEqual(lists.count, 1, "Require one actual home List")
+            XCTAssertEqual(navigation.count, 1, "Require one current home navigation bar")
+            let listFrame = try XCTUnwrap(lists.first), navigationFrame = try XCTUnwrap(navigation.first)
+            var plan = TCWatchListDrag()
+            let decision = rows.withUnsafeBufferPointer {
+                TCWatchListPlan(rect(root.frame), rect(listFrame), rect(navigationFrame), targetIndex,
+                    targetFrame == nil ? 0 : 1, rect(targetFrame ?? .zero), $0.baseAddress, $0.count, &plan)
+            }
+            let listQuery = app.collectionViews
+            XCTAssertEqual(listQuery.count, 1)
+            let list = listQuery.element(boundBy: 0), button = app.buttons[identifier]
+            // Bind the captured geometry back to live public elements immediately
+            // before either tap or drag. No stale coordinates cross a navigation.
+            XCTAssertEqual(app.frame, root.frame)
+            XCTAssertEqual(list.frame, listFrame)
+            XCTAssertEqual(app.navigationBars["TouchColor"].frame, navigationFrame)
+            if decision == TCWatchListReady {
+                XCTAssertTrue(button.exists); XCTAssertTrue(button.isHittable)
+                XCTAssertEqual(button.frame, try XCTUnwrap(targetFrame))
+                XCTAssertTrue(TCWatchListContains(plan.content, rect(button.frame)) != 0)
+                if tap { button.tap() }
+                return
+            }
+            guard decision == TCWatchListEarlier || decision == TCWatchListLater else {
+                XCTFail("Touch List direction/geometry is ambiguous for \(identifier), attempt \(attempt)"); return
+            }
+            guard attempt < 12 else { XCTFail("Saved color remained unreachable after 12 bounded touch drags"); return }
+            XCTAssertTrue(list.isHittable)
+            let origin = list.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: CGFloat(plan.start.x) - listFrame.minX, dy: CGFloat(plan.start.y) - listFrame.minY))
+            let end = origin.withOffset(CGVector(dx: CGFloat(plan.end.x) - listFrame.minX, dy: CGFloat(plan.end.y) - listFrame.minY))
+            XCTAssertEqual(start.screenPoint, CGPoint(x: CGFloat(plan.start.x), y: CGFloat(plan.start.y)))
+            XCTAssertEqual(end.screenPoint, CGPoint(x: CGFloat(plan.end.x), y: CGFloat(plan.end.y)))
+            XCTAssertEqual(list.frame, listFrame)
+            // Public XCUIAutomation API, documented for watchOS. Exact Xcode 27
+            // compilation and 40/49mm runtime behavior remain native proof gates.
+            start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
+        }
+    }
+
     @MainActor func testEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() throws {
         func reach(_ identifier: String) throws {
             let button = app.buttons[identifier]
@@ -332,23 +416,17 @@ final class WatchWorkflowTests: XCTestCase {
         image.name = "Native Watch edit copy and delete preserve palette order"; image.lifetime = .keepAlways; add(image)
     }
 
-    func testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() {
-        func reach(_ identifier: String) {
+    @MainActor func testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder() throws {
+        func reach(_ identifier: String) throws {
+            if identifier.hasPrefix("watch.color.") {
+                try reachSavedColorByTouch(identifier)
+                return
+            }
+            // Preserve the existing successful editor/detail gesture path.
             let button = app.buttons[identifier]
             for _ in 0..<12 {
                 if button.exists && button.isHittable { break }
-                var above = button.exists && button.frame.midY < app.frame.midY
-                if !button.exists, let targetIndex = Int(identifier.replacingOccurrences(of: "watch.color.", with: "")) {
-                    // Lists virtualize offscreen rows. A fast full-screen swipe can
-                    // skip color 0 on the 40mm display; use the actual neighboring
-                    // row identities to reverse direction instead of scrolling
-                    // farther toward the end after every unsuccessful query.
-                    let indices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "watch.color."))
-                        .allElementsBoundByIndex.compactMap { Int($0.identifier.dropFirst("watch.color.".count)) }
-                    if let first = indices.min() { above = targetIndex < first }
-                }
-                // This separate, freshly launched case qualifies the complete
-                // touch workflow. It never runs as a fallback from the Crown case.
+                let above = button.exists && button.frame.midY < app.frame.midY
                 if above { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
             }
             XCTAssertTrue(button.isHittable, app.debugDescription); button.tap()
@@ -356,19 +434,18 @@ final class WatchWorkflowTests: XCTestCase {
         func back() { app.buttons["BackButton"].tap() }
         app.buttons["watch.editor"].tap(); app.buttons["watch.component.down"].tap()
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
-        reach("watch.save"); app.buttons["watch.save"].tap(); back()
-        reach("watch.color.1")
+        try reach("watch.save"); app.buttons["watch.save"].tap(); back()
+        try reach("watch.color.1")
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fe0000")
-        reach("watch.edit.copy")
+        try reach("watch.edit.copy")
         app.buttons["watch.component.down"].tap()
         XCTAssertEqual(app.staticTexts["watch.hex"].label, "#fd0000")
-        reach("watch.save"); back(); back()
-        for _ in 0..<4 { app.swipeDown() }
-        reach("watch.color.0"); reach("watch.delete.0")
+        try reach("watch.save"); back(); back()
+        try reach("watch.color.0"); try reach("watch.delete.0")
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
         XCTAssertTrue(app.staticTexts["watch.count"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["watch.count"].label, "2")
-        for _ in 0..<6 where !app.buttons["watch.color.1"].exists { app.swipeUp() }
+        try reachSavedColorByTouch("watch.color.1", tap: false)
         XCTAssertTrue(app.buttons["watch.color.0"].label.contains("#fe0000"), app.debugDescription)
         XCTAssertTrue(app.buttons["watch.color.1"].label.contains("#fd0000"), app.debugDescription)
         let image = XCTAttachment(screenshot: app.screenshot())

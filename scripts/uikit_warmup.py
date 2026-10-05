@@ -218,8 +218,13 @@ class Warmup:
         # reported it already booted. Keep that observed path within the cap.
         self.command(['xcrun', 'simctl', 'boot', device], 180, optional=True)
         self.command(['xcrun', 'simctl', 'bootstatus', device, '-b'], 240)
+        # Successful 0eda installs took 276s/208s on the Large profiles,
+        # 179s on Mini and 89.204s by outer log timestamps on Compact.
+        # Compact's whole-second markers span 90s, not proof of exceeding it.
+        # This command still receives only the 600s remainder minus cleanup.
+        install_seconds = 300  # self.family is one of the four closed, validated profiles.
         self.command(['xcrun', 'simctl', 'install', device,
-                      'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], 90)
+                      'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], install_seconds)
         self.command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device, 'com.mango.touchColor'], 60)
         self.command(['xcrun', 'simctl', 'terminate', device, 'com.mango.touchColor'], 30)
         if suite == 'prepare-unit':
