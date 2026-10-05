@@ -124,4 +124,79 @@ static inline int TCWatchListTouchAnchorReady(const TCWatchListDrag *plan,
         && captured.width == live.width && captured.height == live.height
         && TCWatchListTouchAnchorIndex(plan, &live, 1) == 0;
 }
+/* Gap-only adaptation. The accepted planner/validators above remain unchanged.
+   The input plan is immutable; separate output is written only on success.
+   Public semantic frames include leaves outside the List so they can veto a
+   start, never qualify as an anchor. Border contact is not a genuine gap. */
+static inline int TCWatchListPointTouches(TCWatchListRect frame, TCWatchListPoint point) {
+    return TCWatchListValid(frame) && isfinite(point.x) && isfinite(point.y)
+        && point.x >= frame.x && point.x <= frame.x + frame.width
+        && point.y >= frame.y && point.y <= frame.y + frame.height;
+}
+static inline int TCWatchListSameRect(TCWatchListRect a, TCWatchListRect b) {
+    return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+}
+static inline int TCWatchListSingleSemanticStart(TCWatchListRect row, TCWatchListPoint start,
+                                                 const TCWatchListRect *leaves, size_t count) {
+    size_t covers = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (!TCWatchListPointTouches(leaves[i], start)) continue;
+        if (!TCWatchListSameRect(row, leaves[i]) || !TCWatchListPointInside(leaves[i], start)) return 0;
+        ++covers;
+    }
+    return covers == 1;
+}
+static inline int TCWatchListSelectTouch(const TCWatchListDrag *original,
+                                         const TCWatchListRect *frames, size_t count,
+                                         const TCWatchListRect *leaves, size_t leafCount,
+                                         TCWatchListDrag *output, int *usedGap) {
+    if (!original || !output || original == output || !usedGap || !frames || !count || count > 24
+        || !leaves || !leafCount || leafCount > 512
+        || (original->direction != TCWatchListEarlier && original->direction != TCWatchListLater)
+        || !TCWatchListPointInside(original->content, original->start)
+        || !TCWatchListPointInside(original->content, original->end)
+        || original->start.x != original->end.x) return -1;
+    double delta = original->end.y - original->start.y;
+    double cap = fmin(32.0, original->content.height * 0.22);
+    /* Use the unchanged planner's own endpoint arithmetic for fractional caps.
+       Never accept a larger representable delta or an absolute size over 32pt. */
+    double centerY = original->content.y + original->content.height * 0.5;
+    double maximumDelta = (centerY + cap * 0.5) - (centerY - cap * 0.5);
+    if (!isfinite(delta) || delta == 0 || fabs(delta) > maximumDelta || fabs(delta) > 32.0
+        || (original->direction == TCWatchListLater ? delta >= 0 : delta <= 0)) return -1;
+    for (size_t i = 0; i < count; ++i) if (!TCWatchListValid(frames[i])) return -1;
+    for (size_t i = 0; i < leafCount; ++i) if (!TCWatchListValid(leaves[i])) return -1;
+    int originalIndex = TCWatchListTouchAnchorIndex(original, frames, count);
+    if (originalIndex >= 0) {
+        if (!TCWatchListSingleSemanticStart(frames[originalIndex], original->start, leaves, leafCount)) return -1;
+        *output = *original;
+        *usedGap = 0;
+        return originalIndex;
+    }
+    /* A clipped, covered, overlapping or border start cannot trigger fallback. */
+    for (size_t i = 0; i < count; ++i)
+        if (TCWatchListPointTouches(frames[i], original->start)) return -1;
+    for (size_t i = 0; i < leafCount; ++i)
+        if (TCWatchListPointTouches(leaves[i], original->start)) return -1;
+    int selected = -1, tied = 0;
+    double nearest = INFINITY;
+    TCWatchListDrag best = *original;
+    for (size_t i = 0; i < count; ++i) {
+        if (!TCWatchListContains(original->content, frames[i])) continue;
+        TCWatchListDrag candidate = *original;
+        candidate.start.y = frames[i].y + frames[i].height * 0.5;
+        candidate.end.y = candidate.start.y + delta;
+        if (!isfinite(candidate.end.y) || candidate.end.y - candidate.start.y != delta
+            || TCWatchListTouchAnchorIndex(&candidate, frames, count) != (int)i
+            || !TCWatchListSingleSemanticStart(frames[i], candidate.start, leaves, leafCount)) continue;
+        double distance = fabs(candidate.start.y - original->start.y);
+        if (!isfinite(distance)) return -1;
+        if (distance < nearest) { nearest = distance; selected = (int)i; best = candidate; tied = 0; }
+        else if (distance == nearest) tied = 1;
+    }
+    if (selected < 0 || tied) return -1;
+    *output = best;
+    *usedGap = 1;
+    return selected;
+}
 #endif

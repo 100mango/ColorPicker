@@ -14,6 +14,13 @@ allowed_root.update((f'{p}-{suffix}.json' for p in ('vision', 'watch', 'tv') for
 allowed_root.add('mac-modal-probe-summary.json')
 allowed_root.add('job-budget.json')
 allowed_root.add('mac-evidence-selection.json')
+# This optional projection requires the existing exact Mac selection/source proof.
+if (root/'mac-passive-lifecycle.json').exists():
+    if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')!='mac' or maximum_total!=3000000 or not (root/'mac-evidence-selection.json').is_file():
+        raise RuntimeError('Unbound passive Mac projection')
+    if (root/'mac-passive-lifecycle.json').lstat().st_size>128*1024:
+        raise RuntimeError('Oversize passive Mac projection')
+    allowed_root.add('mac-passive-lifecycle.json')
 allowed_root.add('native-text-evidence.json')
 allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vision-ui-screenshots', 'vision-screenshots', 'watch-screenshots', 'watch-ui-screenshots', 'tv-screenshots'}
 allowed_dirs.add('modal-probe-screenshots')

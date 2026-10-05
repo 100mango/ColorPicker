@@ -40,6 +40,9 @@ REQUESTED = {
 PROOF_PREFIX = 'Native Mac accessibility issue screenshot proof '
 FRAME_PREFIX = 'Native Mac audit state '
 SUMMARY_PREFIX = 'Native Mac accessibility issue audit summary '
+LIFECYCLE_PREFIX = 'Native Mac accessibility issue lifecycle identity '
+LIFECYCLE_FILE = 'mac-passive-lifecycle.json'
+LIFECYCLE_LIMIT = 128 * 1024
 
 
 def require(value, message):
@@ -203,12 +206,21 @@ def retain(root, source, *, limit=LIMIT):
     require(limit == LIMIT, 'Mac evidence ceiling must remain 3000000 bytes')
     require(root.is_dir() and not root.is_symlink(), 'Unsafe evidence root')
     require(not (root / REPORT).exists(), 'Selection already exists; do not repeat mutation')
+    # Eligibility is established before any mutation by the existing strict parser.
+    # A malformed or uncorrelated lifecycle-looking title never demotes raw text.
+    from mac_passive_lifecycle import identities
+    try: eligible_identities = {row['receipt_file']: row for row in identities(root)}
+    except (ValueError, OSError, TypeError, KeyError, UnicodeError): eligible_identities = {}
     budget = limit - RESERVE
     manifests = {}; items = []; outputs = {}; originals = {}; present = set()
     for path in root.iterdir():
         if path.is_file() or path.is_symlink():
             raw = read_file(path); outputs[path.name] = raw; originals[path.name] = digest(raw); present.add(path.name)
         else: require(path.name in FOLDERS and path.is_dir() and not path.is_symlink(), 'Unexpected Mac export directory')
+    lifecycle = outputs.pop(LIFECYCLE_FILE, None)
+    if lifecycle is not None:
+        require(len(lifecycle) <= LIFECYCLE_LIMIT, 'Passive lifecycle receipt exceeds bounded projection')
+        present.remove(LIFECYCLE_FILE)
     for folder in FOLDERS:
         path = root / folder / 'manifest.json'
         if not path.exists(): continue
@@ -239,15 +251,22 @@ def retain(root, source, *, limit=LIMIT):
                     # issue descriptions, API errors, ownership, or proof records.
                     item['prefix'] = prefix if marker else raw
                     item['hierarchy'] = marker + hierarchy if marker else b''
-                    outputs[item['relative']] = item['prefix']; item['selected'] = True
+                    item['passiveLifecycle'] = item['relative'] in eligible_identities
+                    if not item['passiveLifecycle']:
+                        outputs[item['relative']] = item['prefix']; item['selected'] = True
                 attachment['retention'] = facts if oversized else {'sourceSHA256': digest(raw), 'sourceBytes': len(raw)}
                 if file.suffix == '.txt': attachment['retention']['producerTruncated'] = b'[Producer truncated diagnostic' in raw
+                if item.get('passiveLifecycle'):
+                    row=eligible_identities[item['relative']]
+                    attachment['retention']['lifecycleIdentity'] = {'schema':1,'source_sha':source['sha'],
+                        'raw_sha256':digest(raw),'case':row['case'],'token':row['token'],'ordinal':row['ordinal'],'pid':row['pid'],
+                        'folder':folder,'sandbox':row['sandbox']}
         unmanifested = {p.name for p in path.parent.iterdir() if p.name != 'manifest.json'} - seen
         require(not unmanifested, 'Unmanifested Mac attachment')
         manifests[folder] = groups
     result = {'schema': 1, 'source': source, 'limit': limit, 'metadataReserve': RESERVE,
               'rootFiles': {name: {'sha256': originals[name], 'bytes': len(outputs[name])} for name in sorted(present) if name != 'job-budget.json'},
-              'attachmentInventory': {item['relative']: {**item['attachment']['retention'], 'mandatoryText': item['path'].suffix == '.txt'} for item in items},
+              'attachmentInventory': {item['relative']: {**item['attachment']['retention'], 'mandatoryText': item['path'].suffix == '.txt' and not item.get('passiveLifecycle', False)} for item in items},
               'requested': {state: {'status': 'missing', 'reason': 'No correlated pre-audit capture'} for state in REQUESTED},
               'missingMandatory': sorted(set(REQUIRED_ROOT) - present), 'complete': False,
               'policy': 'mandatory raw findings/results/source, requested original PNGs, other PNGs, optional whole hierarchies'}
@@ -302,6 +321,37 @@ def retain(root, source, *, limit=LIMIT):
         if admit(item, 'Requested original PNG could not fit after mandatory raw evidence'):
             result['requested'][state] = {'status': 'retained', 'file': item['relative'], **item['correlation']}
         else: result['requested'][state] = {'status': 'omitted', 'reason': item['omission']}
+    # Passive lifecycle cannot displace mandatory findings or the five requested original PNGs.
+    projection_error = None
+    if lifecycle is not None:
+        from mac_passive_lifecycle import validate_projection
+        try:
+            projection=validate_projection(lifecycle,source)
+            require(all(row['identity']==eligible_identities.get(row['identity']['receipt_file']) for row in projection['records']), 'Uncorrelated projected identity')
+        except (ValueError, OSError, TypeError, KeyError, UnicodeError): projection_error = 'Invalid or unbound passive projection; mandatory evidence unchanged'
+    diagnostic_bytes = 0
+    result['passiveLifecycle'] = {'status': 'absent', 'limit': LIFECYCLE_LIMIT}
+    if lifecycle is not None:
+        facts = {'sha256': digest(lifecycle), 'bytes': len(lifecycle)}
+        outputs[LIFECYCLE_FILE] = lifecycle
+        result['rootFiles'][LIFECYCLE_FILE] = facts
+        result['passiveLifecycle'] = {'status': 'retained', 'limit': LIFECYCLE_LIMIT, **facts}
+        if projection_error is not None or materialize() > budget - ADMISSION_MARGIN:
+            del outputs[LIFECYCLE_FILE]; del result['rootFiles'][LIFECYCLE_FILE]
+            result['passiveLifecycle'] = {'status': 'omitted', 'limit': LIFECYCLE_LIMIT, **facts,
+                'reason': projection_error or 'No space after mandatory findings and requested original audit PNGs'}
+            materialize()
+        else: diagnostic_bytes += len(lifecycle)
+    for item in items:
+        if not item.get('passiveLifecycle'): continue
+        raw = item['raw']
+        item['omission'] = 'Passive identity exceeds remaining diagnostic or artifact allowance'
+        if diagnostic_bytes + len(raw) > LIFECYCLE_LIMIT: continue
+        outputs[item['relative']] = raw
+        if materialize() > budget - ADMISSION_MARGIN:
+            del outputs[item['relative']]; materialize()
+        else: diagnostic_bytes += len(raw)
+    result['passiveLifecycle']['combinedRetainedBytes'] = diagnostic_bytes
     # General workflow pixels may help context, but never claim an audit state.
     for item in sorted(items, key=lambda item: (FOLDERS.index(item['folder']), item['attachment'].get('timestamp', 0), item['relative'])):
         if item['path'].suffix != '.png' or item['relative'] in outputs: continue
@@ -314,7 +364,7 @@ def retain(root, source, *, limit=LIMIT):
             item['omission'] = 'Invalid PNG bytes'; continue
         admit(item, 'Optional image exceeds remaining existing budget')
     for item in items:
-        if not item.get('hierarchy'): continue
+        if item.get('passiveLifecycle') or not item.get('hierarchy'): continue
         outputs[item['relative']] = item['raw']
         if materialize() > budget - ADMISSION_MARGIN: outputs[item['relative']] = item['prefix']
     result['complete'] = not result['missingMandatory'] and all(row['status'] == 'retained' for row in result['requested'].values())
@@ -322,6 +372,7 @@ def retain(root, source, *, limit=LIMIT):
     require(materialize() <= budget, 'Final manifest/report overhead exceeds unchanged budget')
     for item in items:
         if item['relative'] not in outputs: item['path'].unlink()
+    if lifecycle is not None and LIFECYCLE_FILE not in outputs: (root / LIFECYCLE_FILE).unlink()
     for relative, raw in outputs.items(): (root / relative).write_bytes(raw)
     return result
 
@@ -350,9 +401,22 @@ def validate_selection(root, *, require_complete=False):
         raw = read_file(root / relative)
         require(len(raw) == facts['bytes'] and digest(raw) == facts['sha256'], 'Mandatory root evidence changed')
     require(report['missingMandatory'] == sorted(set(REQUIRED_ROOT) - set(report['rootFiles'])), 'Mandatory result inventory changed')
+    lifecycle = report.get('passiveLifecycle')
+    if lifecycle is not None:
+        require(lifecycle.get('status') in ('absent','omitted','retained') and lifecycle.get('limit') == LIFECYCLE_LIMIT,
+                'Invalid passive lifecycle retention')
+        require(type(lifecycle.get('combinedRetainedBytes')) is int and 0 <= lifecycle['combinedRetainedBytes'] <= LIFECYCLE_LIMIT,
+                'Unbounded combined diagnostic retention')
+        if lifecycle['status'] == 'retained':
+            require(report['rootFiles'].get(LIFECYCLE_FILE) == {key:lifecycle[key] for key in ('sha256','bytes')}, 'Passive receipt identity mismatch')
+            from mac_passive_lifecycle import validate_projection
+            validate_projection(read_file(root/LIFECYCLE_FILE,LIFECYCLE_LIMIT),source)
+        else: require(LIFECYCLE_FILE not in report['rootFiles'] and not (root/LIFECYCLE_FILE).exists(), 'Omitted passive receipt still present')
     inventory = report.get('attachmentInventory')
     require(isinstance(inventory, dict) and len(inventory) <= 512, 'Missing original attachment inventory')
     seen = set(); items = []; frames = {}; retained_count = 0
+    diagnostic_bytes = report['rootFiles'].get(LIFECYCLE_FILE,{}).get('bytes',0)
+    retained_identities = {}
     for folder in FOLDERS:
         path = root / folder / 'manifest.json'
         if not path.exists(): continue
@@ -365,6 +429,21 @@ def validate_selection(root, *, require_complete=False):
                     seen.add(relative); facts = item['retention']; original = inventory[relative]
                     require(original.get('sourceSHA256') == facts.get('sourceSHA256') and original.get('sourceBytes') == facts.get('sourceBytes'),
                             'Original attachment provenance changed')
+                    mandatory = original.get('mandatoryText')
+                    require(type(mandatory) is bool and (name.endswith('.txt') or mandatory is False), 'Mandatory text classification changed')
+                    if name.endswith('.txt') and not mandatory:
+                        from mac_passive_lifecycle import identity_scope
+                        scope=identity_scope(group,item);witness=facts.get('lifecycleIdentity')
+                        require(scope is not None and isinstance(witness,dict) and set(witness)=={'schema','source_sha','raw_sha256','case','token','ordinal','pid','folder','sandbox'}
+                                and type(witness['schema']) is int and witness['schema']==1 and witness['source_sha']==source['sha']
+                                and witness==original.get('lifecycleIdentity') and witness['raw_sha256']==original['sourceSHA256'] and type(witness['pid']) is int and 1<=witness['pid']<=2**31-1
+                                and folder in ('screenshots','sandbox-screenshots') and witness['folder']==folder
+                                and witness['sandbox'] is (folder=='sandbox-screenshots')
+                                and type(witness['ordinal']) is int and witness['ordinal'] in (1,2)
+                                and all(witness.get(key)==value for key,value in scope.items()), 'Unproven optional lifecycle identity')
+                        if not omitted: retained_identities[relative]=witness
+                    elif name.endswith('.txt'):
+                        require('lifecycleIdentity' not in facts, 'Mandatory text has contradictory optional identity witness')
                     if omitted:
                         require(original.get('mandatoryText') is False and not (path.parent/name).exists()
                                 and isinstance(item.get('omissionReason'), str) and item['omissionReason'],
@@ -375,6 +454,7 @@ def validate_selection(root, *, require_complete=False):
                     if 'rawPrefixBytes' in facts:
                         require(type(facts['rawPrefixBytes']) is int and 0 <= facts['rawPrefixBytes'] <= len(raw)
                                 and digest(raw[:facts['rawPrefixBytes']]) == facts['rawPrefixSHA256'], 'Raw finding prefix changed')
+                    if relative in retained_identities: diagnostic_bytes += len(raw)
                     if name.endswith('.png'): retained_count += 1
                     row = {'folder': folder, 'group': group, 'attachment': item, 'raw': raw,
                            'path': path.parent/name, 'relative': relative}
@@ -384,7 +464,16 @@ def validate_selection(root, *, require_complete=False):
                         require(png_dimensions(raw) == facts['auditCorrelation']['dimensions'], 'Audit PNG dimensions changed')
                         frames[relative] = facts['auditCorrelation']
     require(seen == set(inventory), 'An original finding/attachment disappeared without an omission record')
+    if retained_identities:
+        from mac_passive_lifecycle import identities
+        verified={row['receipt_file']:row for row in identities(root,only_files=set(retained_identities))}
+        require(set(verified)==set(retained_identities),'Retained identity inventory changed')
+        for name,witness in retained_identities.items():
+            row=verified[name]
+            require(row['receipt_sha256']==witness['raw_sha256'] and all(row[key]==witness[key] for key in ('case','token','ordinal','pid')), 'Retained identity schema/provenance changed')
     require(retained_count <= MAX_IMAGES, 'Retained image count exceeds bound')
+    if lifecycle is not None:
+        require(diagnostic_bytes == lifecycle['combinedRetainedBytes'] and diagnostic_bytes <= LIFECYCLE_LIMIT, 'Combined passive receipt byte count changed')
     summary = strict_json(read_file(root/'mac-ui-summary.json')) if (root/'mac-ui-summary.json').exists() else {}
     proven = {}; app_hashes = set()
     for item in items:

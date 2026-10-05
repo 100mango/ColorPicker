@@ -14,6 +14,11 @@ import ApplicationServices
     private var suite = ""
     private var expectedUID: Int?
     private var expectsSandbox = false
+    private var lifecycleToken: String?
+    private var lifecycleStarted = 0.0
+    private let lifecycleCases = ["testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail",
+        "testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail",
+        "testNativeFileSamplingZoomPalettePersistenceAndPrivacy", "testSimplifiedChineseNativeSamplingFlowAndScreenshot"]
     private var actionDiagnosticKeys = Set<String>()
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -62,6 +67,9 @@ import ApplicationServices
         } else if name.contains("testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail") {
             app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         }
+        lifecycleToken = lifecycleCases.contains(where: { name == "-[TouchColorMacUITests \($0)]" }) ? UUID().uuidString : nil
+        if let lifecycleToken { app.launchEnvironment["TOUCHCOLOR_MAC_LIFECYCLE"] = lifecycleToken }
+        lifecycleStarted = Date().timeIntervalSince1970
         app.launch()
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
         XCTAssertEqual(running.count, 1)
@@ -72,8 +80,51 @@ import ApplicationServices
         let debugDylib = applicationURL.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
         let logicDigest = SHA256.hash(data: try Data(contentsOf: debugDylib)).map { String(format: "%02x", $0) }.joined()
         print("NATIVE_UI_LOGIC_SHA256: \(logicDigest)")
+        lifecycleReceipt(actual: actual, applicationURL: applicationURL, executable: executable,
+                         digest: digest, logicDigest: logicDigest, ordinal: 1)
         XCTAssertTrue(app.menuBars.menuBarItems["TouchColor"].waitForExistence(timeout: 5), app.debugDescription)
         print("NATIVE_UI_RUNNING_APP path=\(actual.bundleURL?.path ?? "") executable=\(executable.path) sha256=\(digest)")
+    }
+    // Receipt only: no AX query, wait, activation or launch is added.
+    private func lifecycleReceipt(actual: NSRunningApplication, applicationURL: URL, executable: URL,
+                                  digest: String, logicDigest: String, ordinal: Int) {
+        guard let token = lifecycleToken else { return }
+        let row: [String: Any] = ["v": 1, "token": token, "pid": actual.processIdentifier,
+            "test": name, "ordinal": ordinal, "started": lifecycleStarted, "captured": Date().timeIntervalSince1970,
+            "args": app.launchArguments, "sandbox": expectsSandbox,
+            "bundle": actual.bundleIdentifier ?? "", "applicationPath": actual.bundleURL?.path ?? "",
+            "expectedPath": applicationURL.path, "executable": executable.path,
+            "executableSHA256": digest, "logicSHA256": logicDigest,
+            "xctestPID": NSNull(), "xctestPIDReason": "No public PID query; correlate retained failure hierarchy independently"]
+        guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]), data.count <= 4096,
+              let text = String(data: data, encoding: .utf8) else { return }
+        let attachment = XCTAttachment(string: text)
+        attachment.name = "Native Mac accessibility issue lifecycle identity \(token) \(ordinal)"
+        attachment.lifetime = .keepAlways; add(attachment)
+    }
+    private func lifecycleRelaunchReceipt() {
+        guard lifecycleToken != nil else { return }
+        // This is the already-existing Chinese relaunch. Observe its new PID and exact product once.
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
+        guard running.count == 1, let actual = running.first, let url = actual.bundleURL,
+              let executable = actual.executableURL else { return }
+        var products = Bundle(for: Self.self).bundleURL
+        for _ in 0..<4 { products.deleteLastPathComponent() }
+        let expected = products.appendingPathComponent("TouchColor.app")
+        guard url.resolvingSymlinksInPath() == expected.resolvingSymlinksInPath() else { return }
+        let logic = expected.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
+        func boundedDigest(_ path: URL) -> String? {
+            guard let properties = try? path.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
+                  properties.isRegularFile == true, properties.isSymbolicLink == false,
+                  let size = properties.fileSize, size > 0, size <= 16 * 1024 * 1024,
+                  let handle = try? FileHandle(forReadingFrom: path) else { return nil }
+            defer { try? handle.close() }
+            guard let data = try? handle.read(upToCount: 16 * 1024 * 1024 + 1), data.count == size else { return nil }
+            return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        guard let digest = boundedDigest(executable), let logicDigest = boundedDigest(logic) else { return }
+        lifecycleReceipt(actual: actual, applicationURL: expected, executable: executable,
+                         digest: digest, logicDigest: logicDigest, ordinal: 2)
     }
     override func tearDownWithError() throws {
         defer {
@@ -353,7 +404,9 @@ import ApplicationServices
     func testSimplifiedChineseNativeSamplingFlowAndScreenshot() {
         app.terminate()
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        lifecycleStarted = Date().timeIntervalSince1970
         app.launch()
+        lifecycleRelaunchReceipt()
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
         XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 10), app.debugDescription)

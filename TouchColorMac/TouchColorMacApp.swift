@@ -1,9 +1,15 @@
 import SwiftUI
 import AppKit
+#if DEBUG
+import OSLog
+#endif
 
 @main struct TouchColorMacApp: App {
     @StateObject private var library: PaletteLibrary
     init() {
+        #if DEBUG
+        MacPassiveLifecycle.startIfEnabled()
+        #endif
         var defaults = UserDefaults.standard
         #if DEBUG
         if let suite = ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_DEFAULTS"] {
@@ -74,12 +80,23 @@ struct ColorCommands: Commands {
 /// Keep the minimum on the actual NSWindow. A SwiftUI flexible root frame feeds its
 /// ideal height back into NavigationSplitView when an AppKit canvas is inserted.
 struct NativeWindowMinimumSize: NSViewRepresentable {
-    func makeNSView(context: Context) -> MinimumSizeView { MinimumSizeView() }
+    func makeNSView(context: Context) -> MinimumSizeView {
+        #if DEBUG
+        let view = MinimumSizeView()
+        MacPassiveLifecycle.shared?.markerCreated()
+        return view
+        #else
+        MinimumSizeView()
+        #endif
+    }
     func updateNSView(_ view: MinimumSizeView, context: Context) {}
 }
 final class MinimumSizeView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        #if DEBUG
+        MacPassiveLifecycle.shared?.markerMapped(window)
+        #endif
         #if DEBUG
         if NativeModalAuditProbe.enabled, let original = window {
             DispatchQueue.main.async { NativeModalAuditProbe.shared.start(replacing: original) }
@@ -139,3 +156,136 @@ final class PaneAccessibilityView: NSView {
         }
     }
 }
+
+#if DEBUG
+/// Passive, synthetic test correlation only. No activation, scene creation or restoration writes.
+@MainActor final class MacPassiveLifecycle {
+    static var shared: MacPassiveLifecycle?
+    private let token: String
+    private let launch = UUID().uuidString
+    private let started = ProcessInfo.processInfo.systemUptime
+    private let logger = Logger(subsystem: "com.mango.touchColor.MacLifecycle", category: "passive")
+    private var observers: [NSObjectProtocol] = []
+    private var sequence = 0
+    private var bytes = 0
+    private var omitted = 0
+    private var stopped = false
+    private final class WindowIdentity {
+        weak var window: NSWindow?
+        let identifier: Int
+        init(_ window: NSWindow, _ identifier: Int) { self.window = window; self.identifier = identifier }
+    }
+    private var identities: [WindowIdentity] = []
+    private weak var workspace: NSWindow?
+
+    static func startIfEnabled() {
+        let environment = ProcessInfo.processInfo.environment
+        guard shared == nil,
+              let token = environment["TOUCHCOLOR_MAC_LIFECYCLE"], UUID(uuidString: token)?.uuidString == token,
+              let suite = environment["TOUCHCOLOR_TEST_DEFAULTS"], suite.hasPrefix("TouchColor.mac-ui."),
+              UUID(uuidString: String(suite.dropFirst("TouchColor.mac-ui.".count))) != nil,
+              ProcessInfo.processInfo.arguments.contains("--ui-test-reset") else { return }
+        let value = MacPassiveLifecycle(token: token); shared = value; value.start()
+    }
+    private init(token: String) { self.token = token }
+    private func start() {
+        let appEvents: [(Notification.Name, String)] = [
+            (NSApplication.willFinishLaunchingNotification, "willFinishLaunching"),
+            (NSApplication.didFinishRestoringWindowsNotification, "didFinishRestoringWindows"),
+            (NSApplication.didFinishLaunchingNotification, "didFinishLaunching"),
+            (NSApplication.didBecomeActiveNotification, "didBecomeActive"),
+            (NSApplication.didResignActiveNotification, "didResignActive"),
+            (NSApplication.didHideNotification, "didHide"), (NSApplication.didUnhideNotification, "didUnhide")]
+        let windowEvents: [(Notification.Name, String)] = [
+            (NSWindow.didBecomeKeyNotification, "windowKey"), (NSWindow.didResignKeyNotification, "windowResignKey"),
+            (NSWindow.didMiniaturizeNotification, "windowMiniaturized"), (NSWindow.didDeminiaturizeNotification, "windowDeminiaturized"),
+            (NSWindow.didChangeOcclusionStateNotification, "windowOcclusion"), (NSWindow.willCloseNotification, "windowWillClose")]
+        for (name, event) in appEvents {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let own = NSApp, let observed = note.object as? NSApplication, observed === own else { return }
+                    self?.record(event)
+                }
+            })
+        }
+        for (name, event) in windowEvents {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let window = note.object as? NSWindow, NSApp?.windows.contains(where: { $0 === window }) == true else { return }
+                    self?.record(event)
+                }
+            })
+        }
+        record("appInit", header: true)
+        for seconds in [1.0, 5.0, 10.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+                guard let self else { return }
+                if seconds == 10 { self.finish() } else { self.record("census") }
+            }
+        }
+    }
+    func markerCreated() { record("markerCreated") }
+    func markerMapped(_ window: NSWindow?) {
+        workspace = window
+        record(window == nil ? "markerDetached" : "markerMapped")
+    }
+    private func identity(_ window: NSWindow?) -> Any {
+        guard let window else { return NSNull() }
+        if let value = identities.first(where: { $0.window === window }) { return value.identifier }
+        guard identities.count < 16 else { return NSNull() }
+        let value = identities.count + 1; identities.append(WindowIdentity(window, value)); return value
+    }
+    private func census() -> [String: Any] {
+        guard let app = NSApp else { return ["present": false] }
+        let windows = app.windows
+        return ["present": true, "running": app.isRunning, "active": app.isActive, "hidden": app.isHidden,
+                "policy": app.activationPolicy().rawValue, "count": windows.count, "omitted": max(0, windows.count - 4),
+                "key": identity(app.keyWindow), "main": identity(app.mainWindow),
+                "windows": windows.prefix(4).map { window -> [String: Any] in
+                    let frame = window.frame
+                    return ["id": identity(window), "number": window.windowNumber,
+                            "frame": [frame.minX, frame.minY, frame.width, frame.height],
+                            "visible": window.isVisible, "miniaturized": window.isMiniaturized,
+                            "key": window.isKeyWindow, "main": window.isMainWindow,
+                            "occlusion": window.occlusionState.rawValue, "restorable": window.isRestorable,
+                            "restorationClass": window.restorationClass != nil,
+                            "autosaveName": !window.frameAutosaveName.isEmpty,
+                            "sheet": window.attachedSheet != nil, "workspace": window === workspace]
+                }]
+    }
+    private func record(_ event: String, header: Bool = false, final: Bool = false) {
+        guard !stopped else { return }
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        // Delayed callbacks never extend observation. The final record reports omission honestly.
+        if elapsed > 10 && !final { omitted += 1; return }
+        guard final || sequence < 23 else { omitted += 1; return }
+        var row: [String: Any] = ["v": 1, "token": token, "launch": launch,
+            "pid": ProcessInfo.processInfo.processIdentifier, "epoch": Date().timeIntervalSince1970,
+            "elapsed": elapsed, "sequence": sequence + 1, "event": event,
+            "omittedRecords": omitted, "late": elapsed > 10]
+        if elapsed <= 10 { row["app"] = census() }
+        if header {
+            let info = ProcessInfo.processInfo; let arguments = info.arguments
+            let language = arguments.firstIndex(of: "-AppleLanguages").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+            let locale = arguments.firstIndex(of: "-AppleLocale").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+            row["product"] = ["bundle": Bundle.main.bundleIdentifier ?? "", "path": Bundle.main.bundleURL.path,
+                "executable": Bundle.main.executableURL?.path ?? "", "reset": true,
+                "language": ["(en)", "(zh-Hans)"].contains(language ?? "") ? (language ?? "") as Any : NSNull(),
+                "locale": ["en_US", "zh_CN"].contains(locale ?? "") ? (locale ?? "") as Any : NSNull(),
+                "suitePresent": true, "modalPresent": info.environment["TOUCHCOLOR_NATIVE_MODAL_PROBE"] != nil,
+                "sandboxProbePresent": info.environment["TOUCHCOLOR_SANDBOX_PROBE_FILE"] != nil]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]),
+              data.count + 22 <= 4096, bytes + data.count + 22 <= (final ? 12288 : 8192),
+              let text = String(data: data, encoding: .utf8) else { omitted += 1; return }
+        sequence += 1; bytes += data.count + 22
+        logger.log("MAC_PASSIVE_LIFECYCLE \(text, privacy: .public)")
+    }
+    private func finish() {
+        guard !stopped else { return }
+        record("final", final: true); stopped = true
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers.removeAll()
+    }
+}
+#endif
