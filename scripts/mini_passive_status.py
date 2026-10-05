@@ -1,8 +1,9 @@
-"""One advisory staging-only console mirror of the bounded Mini receipt.
+"""One advisory live-process console mirror of the in-memory Mini receipt.
 
 No capture/runtime imports, subprocesses, file reads, retries, waits or writes
 other than one nonblocking atomic stdout-pipe attempt. The original receipt is
-primary; missing/mismatched/invalid fields stay unknown, never successful.
+primary; memory fields do not establish persistence or durable delivery.
+Missing/mismatched/invalid fields stay unknown, never successful.
 """
 import json
 import os
@@ -11,7 +12,6 @@ import stat
 
 PREFIX = 'MINI_PASSIVE_STATUS '
 MAX_LINE_BYTES = 512  # Includes prefix and newline; Darwin's PIPE_BUF floor.
-MAX_RECEIPT_BYTES = 8192
 REF = 'refs/heads/codex/mini-passive-compatibility'
 WORKFLOW = '100mango/ColorPicker/.github/workflows/mini-passive-compatibility.yml@' + REF
 
@@ -39,24 +39,9 @@ def _context(env):
     return sha, run, attempt
 
 
-def _receipt(raw, identity):
-    if raw is None:
+def _receipt(value, identity):
+    if value is None:
         return 'missing', {}
-    if not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_RECEIPT_BYTES:
-        return 'invalid', {}
-    def pairs(items):
-        value = {}
-        for key, item in items:
-            if key in value:
-                raise ValueError('Duplicate receipt key')
-            value[key] = item
-        return value
-    def nonfinite(_):
-        raise ValueError('Nonfinite receipt')
-    try:
-        value = json.loads(raw, object_pairs_hook=pairs, parse_constant=nonfinite)
-    except (ValueError, UnicodeError, RecursionError):
-        return 'invalid', {}
     if (not isinstance(value, dict) or type(value.get('schema')) is not int or value['schema'] != 1 or
             value.get('purpose') != 'isolated-compatibility-only'):
         return 'invalid', {}
@@ -91,9 +76,9 @@ def _reason(value):
     return 'cancelled' if type(cancelled) is int and 1 <= cancelled <= 64 else None
 
 
-def status_line(raw, env=os.environ):
+def status_line(receipt, env=os.environ):
     identity = _context(env)
-    binding, value = _receipt(raw, identity) if identity is not None else ('invalid-context', {})
+    binding, value = _receipt(receipt, identity) if identity is not None else ('invalid-context', {})
     sha, run, attempt = identity if identity is not None else (None, None, None)
     processes = value.get('processes')
     processes = processes if isinstance(processes, dict) else {}
@@ -105,6 +90,7 @@ def status_line(raw, env=os.environ):
         'phase': phase, 'reason': _reason(value), 'help': help_row, 'stream': stream_row,
         'cleanup': _boolean(value.get('host_cleanup_confirmed')),
         'state': state if state in ('not_started', 'failed_or_incomplete', 'bounded_observation_finished') else None,
+        'source': 'memory', 'durability': 'unconfirmed',
         'reader': 'unconfirmed' if value.get('reader_completion') == 'unconfirmed' else None,
         'warmup': False if value.get('warmup_admitted') is False else None, 'delivery': 'best_effort'}
     encoded = (PREFIX + json.dumps(value, separators=(',', ':'), allow_nan=False) + '\n').encode('ascii')
@@ -131,11 +117,11 @@ def _write_nonblocking(raw):
                 pass
 
 
-def emit_summary(raw, env=os.environ):
-    """Return a tiny local omission count; never retry or alter the receipt."""
+def emit_summary(receipt, env=os.environ):
+    """Attempt once from memory; never retry, persist, or alter the receipt."""
     result = {'attempts': 1, 'omitted': 1, 'record_bytes': 0}
     try:
-        line = status_line(raw, env)
+        line = status_line(receipt, env)
         if line is not None:
             result['record_bytes'] = len(line)
             if _write_nonblocking(line):

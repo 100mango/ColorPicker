@@ -27,6 +27,7 @@ import sys
 from atomic_json import write_json
 from bounded_process import group_exists
 from job_budget import enabled_budget, fail_record
+from mini_passive_status import emit_summary
 from uikit_runtime_diagnostics import read_identity
 from uikit_warmup import Warmup
 
@@ -445,12 +446,17 @@ class CompatibilityCapture:
                 elif folder_created:
                     self._persist()
             finally:
-                self.selector.close()
-                for process in self.processes.values():
-                    process.stdout.close()
-                    process.stderr.close()
-                for signum, handler in previous.items():
-                    signal.signal(signum, handler)
+                try:
+                    self.selector.close()
+                    for process in self.processes.values():
+                        process.stdout.close()
+                        process.stderr.close()
+                    for signum, handler in previous.items():
+                        signal.signal(signum, handler)
+                finally:
+                    # Same live process, finalized memory only. This advisory
+                    # write neither claims persistence nor changes acceptance.
+                    emit_summary(self.receipt)
         if failure is not None:
             raise failure
         return self.receipt

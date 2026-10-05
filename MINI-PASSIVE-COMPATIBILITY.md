@@ -2,7 +2,7 @@
 
 This is an isolated, runnable measurement recipe, not a production warmup change. The dedicated workflow is materialized for exact source review; publication and native execution remain separately gated. The two historical install-success/launch-60-second-timeout observations (1410 job 111593678852 and e980 job 111611786255) motivate obtaining missing tool evidence; they do not prove an app regression.
 
-The six source additions relative to e980 are this document, `scripts/mini_passive_compatibility.py` and its portable tests, `scripts/mini_passive_status.py` and its staging tests, and `.github/workflows/mini-passive-compatibility.yml`. All 357 e980 baseline files, including active UIKit warmup, workflows, watch touch and Crown code, stay byte-identical. No existing launch argv, app argument, environment, acceptance rule, or 60/600/20 warmup limit changes.
+The six source additions relative to e980 are this document, `scripts/mini_passive_compatibility.py` and its portable tests, `scripts/mini_passive_status.py` and its live-summary tests, and `.github/workflows/mini-passive-compatibility.yml`. All 357 e980 baseline files, including active UIKit warmup, workflows, watch touch and Crown code, stay byte-identical. No existing launch argv, app argument, environment, acceptance rule, or 60/600/20 warmup limit changes.
 
 ## Exactly what it can do
 
@@ -24,7 +24,7 @@ The measurement never installs or launches an app, enables app logging, attaches
 
 This YAML is byte-identical to the dedicated checked-in workflow. The candidate must be separately source/capacity-admitted before publication or use. The `xcode-27` label must resolve to a fresh disposable GitHub-hosted VM with `/Applications/Xcode_27.app`; the script refuses self-hosted runners. If that label does not have that contract, allocation is blocked until the runner owner supplies an eligible VM. Never relabel or reuse an uncertain VM. The existing global capacity ceiling remains TouchColor 3 + QRCatcher 1 + Celluloid 1 <= 5: this needs its own later source/capacity GO and an admitted free TouchColor slot. Existing TouchColor allocation does not authorize an extra job.
 
-Publish the proposed workflow only after a separate source/capacity GO, on the dedicated push-only `codex/mini-passive-compatibility` branch in `100mango/ColorPicker`, as `.github/workflows/mini-passive-compatibility.yml`. Hold this measurement behind the separately admitted Crown work. Do not publish it on either canonical branch: that could trigger unrelated canonical cohorts. The reviewed candidate commit has exact e980 as its source parent. `github.sha`, `github.workflow_sha`, checked-out HEAD and the initialized budget SHA must agree. Do not dispatch e980 and download an uncommitted script over it. The local source snapshot in the freeze packet is not a public commit.
+Publish the proposed workflow only after a separate source/capacity GO, on the dedicated push-only `codex/mini-passive-compatibility` branch in `100mango/ColorPicker`, as `.github/workflows/mini-passive-compatibility.yml`. Hold this measurement behind the separately admitted Crown work. Do not publish it on either canonical branch: that could trigger unrelated canonical cohorts. This local successor is based on the exact published 07921 source tree; its baseline still contains all 357 e980 files unchanged. `github.sha`, `github.workflow_sha`, checked-out HEAD and the initialized budget SHA must agree. Do not dispatch e980 and download an uncommitted script over it. The local source snapshot in the freeze packet is not a public commit.
 
 ```yaml
 name: Mini passive compatibility (isolated proposal)
@@ -82,9 +82,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import json, os, stat, sys
-          sys.path.insert(0, 'scripts')
-          from mini_passive_status import emit_summary
+          import stat
           root = Path('build')
           if root.is_symlink(): raise SystemExit('Unsafe build root')
           target = root / 'mini-passive-upload'
@@ -100,7 +98,6 @@ jobs:
               'job-budget-incomplete.json': 4096,
               'job-budget-cleanup-unconfirmed.json': 4096,
           }
-          receipt = None
           for relative, cap in caps.items():
               source = root / relative
               if any(p.is_symlink() for p in (source, *source.parents)):
@@ -111,11 +108,7 @@ jobs:
                   raise SystemExit('Unbounded evidence')
               with source.open('rb') as stream: data = stream.read(cap + 1)
               if len(data) > cap: raise SystemExit('Growing evidence')
-              if relative == 'iPadMini-passive-compatibility/receipt.json': receipt = data
               (target / relative.replace('/', '-')).write_bytes(data)
-          summary = json.dumps(emit_summary(receipt), separators=(',', ':')).encode()
-          if len(summary) > 128: raise SystemExit('Unbounded console metadata')
-          (target / 'console-summary.json').write_bytes(summary)
           PY
       - name: Verify upload reserve, using local budget only
         id: upload_reserve
@@ -144,10 +137,10 @@ Synchronous OS file writes or process creation can themselves stall; Python cann
 
 Primary public mechanism reference: [Apple WWDC22, Optimize your use of Core Data and CloudKit](https://developer.apple.com/videos/play/wwdc2022/10119/), application-process `log stream --predicate` example. It does not specify iOS 27 readiness text or simctl-spawn containment.
 
-## Staging-only console fallback
+## Live-process console fallback
 
-The existing filesystem-only staging step emits one advisory `MINI_PASSIVE_STATUS` line from the receipt bytes it already read. The entire ASCII-encoded line, prefix and newline included, is at most 512 bytes. It is attempted once on an actual stdout pipe with a sufficient reported PIPE_BUF, using nonblocking mode; full/error/unsupported stdout is omitted without waiting or retrying. A <=128-byte `console-summary.json` stages the attempted/omitted counts when possible. Neither console acceptance nor artifact upload is guaranteed. The unchanged receipt remains primary evidence.
+The existing capture completion/error boundary emits one advisory `MINI_PASSIVE_STATUS` line directly from its existing in-memory receipt, after the existing cleanup/persistence attempt. It does not start another shell or Python process, import the helper late, reread a receipt file, or wait for staging. The entire ASCII-encoded line, prefix and newline included, is at most 512 bytes. It is attempted once on an actual stdout pipe with a sufficient reported PIPE_BUF, using nonblocking mode; full/error/unsupported stdout is omitted without waiting or retrying. Staging only retains existing files, with no second summary or extra metadata file. Neither console acceptance nor artifact upload is guaranteed. The receipt remains primary evidence.
 
-The fixed schema carries the current exact source SHA/run/attempt, receipt binding state, last attempted help/stream phase, allowlisted failure reason, and actual nullable owned-cleanup values. `help` and `stream` are `[persisted state, exit code, host_cleanup_confirmed]`; `cleanup` is the persisted aggregate host result. Missing fields stay null. Mismatched, invalid or missing receipts expose no phase/result/cleanup fields. Exact repository, dedicated push branch, workflow reference, job and source/run context are validated before labeling receipt fields. No arbitrary error text, argv, raw stream, app data or additional native command is printed. Reader completion remains unconfirmed and warmup acceptance is never made true.
+The fixed schema carries the current exact source SHA/run/attempt, receipt binding state, last attempted help/stream phase, allowlisted failure reason, and actual nullable owned-cleanup values. `help` and `stream` are `[in-memory state, exit code, host_cleanup_confirmed]`; `cleanup` is the in-memory aggregate host result. Every line explicitly has `source=memory` and `durability=unconfirmed`, even after a successful save. A save/cleanup error can leave earlier receipt fields unchanged; the advisory summary does not manufacture an error or prove that those final fields reached disk. Missing fields stay null. Mismatched, invalid or missing receipts expose no phase/result/cleanup fields. Exact repository, dedicated push branch, workflow reference, job and source/run context are validated before labeling receipt fields. No arbitrary error text, argv, raw stream, app data or additional native command is printed. Reader completion remains unconfirmed and warmup acceptance is never made true.
 
-This fallback does not modify capture/runtime code, 5-second windows, 20-second cleanup, 600-second preparation, 20-minute job, staging/upload time limits or existing byte caps. The failed 723798 run and its absent artifact remain unknown for help-versus-stream phase and actual reader cleanup; this successor cannot reconstruct that missing evidence.
+The single advisory write cannot change capture return/error behavior or acceptance. It creates no new observation or cleanup allowance: 5-second windows, 20-second cleanup, 600-second preparation, 20-minute job, staging/upload limits and existing byte caps are unchanged. If capture never reaches its boundary, its process is terminated, or stdout cannot accept the one write, there may still be no summary. The failed 723798 and 07921 runs and their absent artifacts remain unknown for help-versus-stream phase and actual reader cleanup; this successor cannot reconstruct that missing evidence.

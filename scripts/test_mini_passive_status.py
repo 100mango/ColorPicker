@@ -1,7 +1,6 @@
-"""Staging-only console mirror tests; no simulator or capture timing changes."""
+"""Live-process console mirror tests; no simulator or capture timing changes."""
 import ast
 import copy
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +14,7 @@ from unittest.mock import patch
 
 import mini_passive_status as status
 from test_mini_passive_compatibility import Harness
+import mini_passive_compatibility as mini
 
 
 def decode(raw):
@@ -31,15 +31,18 @@ def staging_body():
 
 class SummaryTests(Harness):
     def generated(self, *, help_timeout=False):
-        if help_timeout:
-            self.engine.help_duration = 10
-            self.failed('absolute-deadline')
-        else:
-            self.run_capture()
-        return Path('build/iPadMini-passive-compatibility/receipt.json').read_bytes()
+        operation = self.operation()
+        with patch.object(status, '_write_nonblocking', return_value=False):
+            if help_timeout:
+                self.engine.help_duration = 10
+                with self.assertRaisesRegex(mini.CaptureFailed, 'absolute-deadline'):
+                    operation.run()
+            else:
+                operation.run()
+        return operation.receipt
 
     def test_actual_generated_timeout_is_help_with_actual_cleanup(self):
-        raw = self.generated(help_timeout=True); original = bytes(raw)
+        raw = self.generated(help_timeout=True); original = copy.deepcopy(raw)
         result = decode(status.status_line(raw))
         self.assertEqual(result['receipt'], 'bound')
         self.assertEqual(result['phase'], 'help')
@@ -70,51 +73,51 @@ class SummaryTests(Harness):
         self.assertEqual(result['help'], [None, None, None]); self.assertEqual(result['stream'], [None, None, None])
 
     def test_missing_boolean_fields_are_null_not_inferred_from_exit(self):
-        value = json.loads(self.generated())
+        value = self.generated()
         value.pop('host_cleanup_confirmed')
         value['processes']['collector'].pop('host_cleanup_confirmed')
         value['processes']['help']['host_cleanup_confirmed'] = 'true'
         value['processes']['help']['exit'] = True
-        result = decode(status.status_line(json.dumps(value).encode()))
+        result = decode(status.status_line(value))
         self.assertIsNone(result['cleanup'])
         self.assertEqual(result['help'], ['owned', None, None])
         self.assertEqual(result['stream'], ['owned', -15, None])
 
     def test_actual_false_cleanup_is_not_replaced_with_unknown_or_success(self):
-        value = json.loads(self.generated()); value['host_cleanup_confirmed'] = False
+        value = self.generated(); value['host_cleanup_confirmed'] = False
         for row in value['processes'].values(): row['host_cleanup_confirmed'] = False
-        result = decode(status.status_line(json.dumps(value).encode()))
+        result = decode(status.status_line(value))
         self.assertIs(result['cleanup'], False)
         self.assertIs(result['help'][2], False); self.assertIs(result['stream'][2], False)
 
     def test_unsupported_error_text_and_raw_logs_are_never_printed(self):
-        value = json.loads(self.generated()); private = 'SECRET-PATH\n::warning::' + 'x' * 1000
+        value = self.generated(); private = 'SECRET-PATH\n::warning::' + 'x' * 1000
         value['failure'] = private; value['raw_stream'] = private
         value['processes']['collector']['argv'] = [private]
-        line = status.status_line(json.dumps(value).encode())
+        line = status.status_line(value)
         self.assertNotIn(b'SECRET', line); self.assertNotIn(b'::warning', line)
         self.assertEqual(decode(line)['reason'], 'other')
 
     def test_allowlisted_reason_keeps_late_read_distinct_from_generic_deadline(self):
-        value = json.loads(self.generated())
+        value = self.generated()
         for reason in ('CaptureFailed: Pipe read returned after its absolute deadline',
                        'Pipe read returned after its absolute deadline'):
             value['failure'] = reason
-            self.assertEqual(decode(status.status_line(json.dumps(value).encode()))['reason'], 'late-read')
+            self.assertEqual(decode(status.status_line(value))['reason'], 'late-read')
 
     def test_cancelled_reason_uses_only_actual_typed_signal(self):
-        value = json.loads(self.generated()); value['cancelled_signal'] = 15
-        self.assertEqual(decode(status.status_line(json.dumps(value).encode()))['reason'], 'cancelled')
+        value = self.generated(); value['cancelled_signal'] = 15
+        self.assertEqual(decode(status.status_line(value))['reason'], 'cancelled')
         value['cancelled_signal'] = True
-        self.assertIsNone(decode(status.status_line(json.dumps(value).encode()))['reason'])
+        self.assertIsNone(decode(status.status_line(value))['reason'])
 
     def test_wrong_receipt_sha_run_attempt_or_family_exposes_no_result(self):
-        original = json.loads(self.generated())
+        original = self.generated()
         for key, bad in (('source_sha', 'b' * 40), ('workflow_sha', 'b' * 40),
                          ('run_id', '124'), ('run_attempt', '2'), ('device', {'family': 'iPhoneLarge'})):
             with self.subTest(key=key):
                 value = copy.deepcopy(original); value[key] = bad
-                result = decode(status.status_line(json.dumps(value).encode()))
+                result = decode(status.status_line(value))
                 self.assertEqual(result['receipt'], 'mismatch')
                 self.assertIsNone(result['phase']); self.assertIsNone(result['cleanup'])
                 self.assertEqual(result['stream'], [None, None, None])
@@ -132,21 +135,21 @@ class SummaryTests(Harness):
                 self.assertIsNone(result['sha']); self.assertIsNone(result['run']); self.assertIsNone(result['try'])
                 self.assertIsNone(result['cleanup']); self.assertIsNone(result['phase'])
 
-    def test_invalid_duplicate_oversized_or_nonfinite_receipt_is_unknown(self):
-        for raw in (b'', b'{', b'\xff', b'[]', b'{"schema":1,"schema":1}', b'{"v":NaN}', b'x' * 8193):
-            with self.subTest(raw=raw[:20]):
+    def test_invalid_receipt_and_serialized_bytes_are_unknown(self):
+        for raw in (b'', b'{', b'\xff', [], {'schema': True}, {'schema': 1}, b'x' * 8193):
+            with self.subTest(raw=repr(raw)[:40]):
                 result = decode(status.status_line(raw))
                 self.assertEqual(result['receipt'], 'invalid')
                 self.assertIsNone(result['phase']); self.assertIsNone(result['cleanup'])
 
     def test_maximum_generated_fields_fit_darwin_512_with_no_omission(self):
-        value = json.loads(self.generated()); env = dict(os.environ)
+        value = self.generated(); env = dict(os.environ)
         env['GITHUB_RUN_ID'] = env['GITHUB_RUN_ATTEMPT'] = '9' * 20
         value.update(run_id='9' * 20, run_attempt='9' * 20, status='bounded_observation_finished',
                      failure='CaptureFailed: absolute-deadline', host_cleanup_confirmed=False)
         value['processes'] = {name: {'state': 'attempted', 'exit': -255, 'host_cleanup_confirmed': False}
                               for name in ('help', 'collector')}
-        raw = json.dumps(value).encode(); sent = []
+        raw = value; sent = []
         with patch.object(status.os, 'fstat', return_value=types.SimpleNamespace(st_mode=stat.S_IFIFO)), \
              patch.object(status.os, 'fpathconf', return_value=512), \
              patch.object(status.os, 'get_blocking', return_value=True), \
@@ -173,30 +176,148 @@ class SummaryTests(Harness):
         self.assertEqual(result, {'attempts': 1, 'omitted': 0, 'record_bytes': len(expected)})
         self.assertEqual(decode(received)['reason'], 'absolute-deadline')
 
-    def test_actual_staging_uses_already_read_receipt_and_preserves_its_bytes(self):
-        raw = self.generated(help_timeout=True); before = hashlib.sha256(raw).hexdigest(); sent = []
+    def test_staging_preserves_receipt_and_never_repeats_the_live_summary(self):
+        receipt = self.generated(help_timeout=True)
+        raw = Path('build/iPadMini-passive-compatibility/receipt.json').read_bytes()
         old_path = list(sys.path)
         try:
-            with patch.object(status, '_write_nonblocking', side_effect=lambda data: sent.append(data) or True):
+            with patch.object(status, '_write_nonblocking') as writer:
                 exec(compile(staging_body(), '<actual Mini staging>', 'exec'), {})
         finally: sys.path[:] = old_path
-        self.assertEqual(len(sent), 1); self.assertEqual(decode(sent[0])['phase'], 'help')
-        self.assertEqual(hashlib.sha256(Path('build/iPadMini-passive-compatibility/receipt.json').read_bytes()).hexdigest(), before)
+        writer.assert_not_called()
+        self.assertEqual(Path('build/iPadMini-passive-compatibility/receipt.json').read_bytes(), raw)
         self.assertEqual(Path('build/mini-passive-upload/iPadMini-passive-compatibility-receipt.json').read_bytes(), raw)
-        note = Path('build/mini-passive-upload/console-summary.json')
-        self.assertLessEqual(note.stat().st_size, 128)
-        self.assertEqual(json.loads(note.read_bytes()), {'attempts': 1, 'omitted': 0, 'record_bytes': len(sent[0])})
+        self.assertFalse(Path('build/mini-passive-upload/console-summary.json').exists())
 
-    def test_staging_records_omission_without_retry_when_receipt_missing(self):
-        old_path = list(sys.path)
-        try:
-            with patch.object(status, '_write_nonblocking', return_value=False) as writer:
-                exec(compile(staging_body(), '<actual Mini staging>', 'exec'), {})
-        finally: sys.path[:] = old_path
+    def test_staging_with_missing_receipt_does_not_create_a_summary(self):
+        with patch.object(status, '_write_nonblocking') as writer:
+            exec(compile(staging_body(), '<actual Mini staging>', 'exec'), {})
+        writer.assert_not_called()
+        self.assertEqual(list(Path('build/mini-passive-upload').glob('*receipt*')), [])
+        self.assertFalse(Path('build/mini-passive-upload/console-summary.json').exists())
+
+
+class LiveBoundaryTests(Harness):
+    def boundary(self, operation, action=None):
+        sent = []
+        original = mini.emit_summary
+        def summarize(receipt):
+            self.assertIs(receipt, operation.receipt)
+            before = copy.deepcopy(receipt)
+            # Prove summary formatting/emission itself starts no subprocess and
+            # performs no file open/read, even when saving the receipt failed.
+            with patch.object(status.os, 'open', side_effect=AssertionError('second open')), \
+                 patch.object(status.os, 'read', side_effect=AssertionError('second read')), \
+                 patch.object(Path, 'read_bytes', side_effect=AssertionError('second file read')), \
+                 patch.object(mini.subprocess, 'Popen', side_effect=AssertionError('new process')):
+                result = original(receipt)
+            self.assertEqual(receipt, before)
+            return result
+        with patch.object(mini, 'emit_summary', side_effect=summarize) as emitter, \
+             patch.object(status, '_write_nonblocking', side_effect=lambda line: sent.append(line) or True):
+            if action is None:
+                result = operation.run()
+                self.assertIs(result, operation.receipt)
+            else:
+                action(operation)
+        self.assertEqual(emitter.call_count, 1)
+        self.assertEqual(len(sent), 1)
+        value = decode(sent[0])
+        self.assertEqual(value['source'], 'memory')
+        self.assertEqual(value['durability'], 'unconfirmed')
+        self.assertEqual(value['reader'], 'unconfirmed')
+        self.assertIs(value['warmup'], False)
+        self.assertTrue(self.warmup.pending.exists())
+        return value
+
+    def test_live_success_emits_same_final_object_once_after_cleanup(self):
+        operation = self.operation()
+        value = self.boundary(operation)
+        self.assertEqual(value['phase'], 'stream')
+        self.assertIs(value['cleanup'], True)
+        self.assertEqual(value['state'], 'bounded_observation_finished')
+        self.assertEqual([call[0][-2:] for call in self.engine.calls],
+                         [['help', 'stream'], ['--predicate', 'process == "TouchColor"']])
+        self.assertEqual(self.budget.calls, [(5, 5, 25), (5, 5, 20)])
+        self.no_later_command()
+
+    def test_live_help_failure_emits_once_and_preserves_exception(self):
+        self.engine.help_duration = 10
+        def fails(operation):
+            with self.assertRaisesRegex(mini.CaptureFailed, 'absolute-deadline'):
+                operation.run()
+        value = self.boundary(self.operation(), fails)
+        self.assertEqual(value['phase'], 'help')
+        self.assertEqual(value['reason'], 'absolute-deadline')
+        self.assertEqual(value['help'], ['owned', -15, True])
+        self.assertEqual(value['stream'], [None, None, None])
+        self.no_later_command()
+
+    def test_final_save_failure_still_emits_memory_without_durability_claim(self):
+        operation = self.operation(); persist = operation._persist
+        error = OSError('synthetic final receipt save failure')
+        def save():
+            if 'cleanup_finished' in operation.receipt['events']:
+                raise error
+            return persist()
+        def fails(operation):
+            with self.assertRaises(OSError) as caught:
+                operation.run()
+            self.assertIs(caught.exception, error)
+        with patch.object(operation, '_persist', side_effect=save):
+            value = self.boundary(operation, fails)
+        self.assertIs(value['cleanup'], True)
+        self.assertIsNone(value['reason'])  # Do not invent receipt fields.
+        saved = self.receipt()
+        self.assertNotIn('host_cleanup_confirmed', saved)
+        self.assertNotEqual(saved, operation.receipt)
+
+    def test_final_cleanup_failure_still_emits_unknown_cleanup(self):
+        operation = self.operation(); error = OSError('synthetic cleanup failure')
+        def fails(operation):
+            with self.assertRaises(OSError) as caught:
+                operation.run()
+            self.assertIs(caught.exception, error)
+        with patch.object(operation, '_cleanup', side_effect=error):
+            value = self.boundary(operation, fails)
+        self.assertIsNone(value['cleanup'])
+        self.assertIsNone(value['stream'][2])
+
+    def test_output_failure_does_not_replace_capture_success_or_failure(self):
+        operation = self.operation()
+        with patch.object(status, '_write_nonblocking', side_effect=OSError('broken output')) as writer:
+            result = operation.run()
+        self.assertIs(result, operation.receipt)
         self.assertEqual(writer.call_count, 1)
-        self.assertEqual(decode(writer.call_args.args[0])['receipt'], 'missing')
-        note = json.loads(Path('build/mini-passive-upload/console-summary.json').read_bytes())
-        self.assertEqual(note['omitted'], 1); self.assertEqual(note['attempts'], 1)
+
+    def test_output_failure_does_not_replace_original_capture_failure(self):
+        self.engine.help_duration = 10
+        with patch.object(status, '_write_nonblocking', side_effect=OSError('broken output')) as writer:
+            self.failed('absolute-deadline')
+        self.assertEqual(writer.call_count, 1)
+        self.no_later_command()
+
+    def test_serialization_failure_does_not_replace_capture_failure(self):
+        self.engine.help_duration = 10
+        with patch.object(status, 'status_line', side_effect=ValueError('format failure')) as formatter, \
+             patch.object(status, '_write_nonblocking') as writer:
+            self.failed('absolute-deadline')
+        self.assertEqual(formatter.call_count, 1)
+        writer.assert_not_called()
+
+    def test_existing_main_return_remains_three_without_staging(self):
+        operation = self.operation()
+        with patch.object(mini, 'Warmup', return_value=self.warmup), \
+             patch.object(mini, 'prepare_compatibility', return_value='synthetic toolchain'), \
+             patch.object(mini, 'CompatibilityCapture', return_value=operation), \
+             patch.object(mini, 'enabled_budget', return_value=self.budget), \
+             patch.object(mini, 'fail_record') as fail_record, \
+             patch.object(mini.sys, 'argv', ['mini_passive_compatibility.py', 'compatibility-only']), \
+             patch.object(status, '_write_nonblocking', return_value=False) as writer:
+            self.assertEqual(mini.main(), 3)
+        self.assertEqual(writer.call_count, 1)
+        fail_record.assert_called_once()
+        self.assertTrue(fail_record.call_args.kwargs['cleanup_unconfirmed'])
 
 
 class PipeWriterTests(unittest.TestCase):
@@ -244,7 +365,7 @@ receipt={'schema':1,'purpose':'isolated-compatibility-only','source_sha':'a'*40,
 'run_id':'123','run_attempt':'1','device':{'family':'iPadMini'},'status':'failed_or_incomplete',
 'failure':'CaptureFailed: absolute-deadline','host_cleanup_confirmed':None,'reader_completion':'unconfirmed',
 'warmup_admitted':False,'processes':{'help':{'state':'owned','exit':None,'host_cleanup_confirmed':None}}}
-raw=json.dumps(receipt).encode();line=status_line(raw,env)
+raw=receipt;line=status_line(raw,env)
 if not line or len(line)>512:raise RuntimeError('Generated record exceeds Darwin bound')
 r,w=os.pipe();os.dup2(w,1);os.set_blocking(1,False)
 for _ in range(4096):
