@@ -455,8 +455,8 @@ class SafeFiles(Temporary):
 
 
 class SourceContracts(unittest.TestCase):
-    def test_exact_original_build_argv(self):
-        self.assertEqual(m.BUILD, ['xcodebuild', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor',
+    def test_exact_build_argv_with_logging_only_quiet(self):
+        self.assertEqual(m.BUILD, ['xcodebuild', '-quiet', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor',
                                  '-configuration', 'Debug', '-destination', 'generic/platform=iOS Simulator',
                                  '-derivedDataPath', 'build/simulator', 'build-for-testing'])
         self.assertFalse(any('CODE_SIGNING' in part for part in m.BUILD))
@@ -502,6 +502,54 @@ class SourceContracts(unittest.TestCase):
             branches = value['on']['push']['branches']
             self.assertNotIn('codex/mini-direct-xctest', branches)
             self.assertFalse(any('*' in branch or '!' in branch for branch in branches))
+
+
+class BuildQuietRegression(Temporary):
+    def test_real_byte_limit_fixture_and_only_logging_delta(self):
+        raw = (SOURCE / 'scripts/fixtures/mini-direct-67ba9e-byte-limit.json').read_bytes()
+        fixture = json.loads(raw)
+        self.assertEqual(fixture['sha'], '67ba9e823c817679fc40f7fcd2f83a79d13d0d37')
+        self.assertEqual(fixture['run_id'], '37342854262')
+        stage = fixture['preparation_commands'][-1]
+        self.assertEqual(stage['reason'], 'byte-limit')
+        self.assertIsNone(stage['exit'])
+        self.assertTrue(stage['host_cleanup_confirmed'])
+        self.assertEqual(stage['elapsed_seconds'], 95.797)
+        self.assertEqual(stage['allowance_seconds'], 300)
+        self.assertEqual([part for part in m.BUILD if part != '-quiet'], fixture['build_argv'])
+        self.assertEqual(m.BUILD.count('-quiet'), 1)
+        self.assertNotIn('-quiet', m.test_argv(IDENTITY['udid']))
+
+    def test_build_byte_limit_still_stops_before_device_or_xctest(self):
+        d = self.diagnostic(); commands = []
+        def capture(command, **kwargs):
+            commands.append(command)
+            self.assertEqual(kwargs['cap'], 1_000_000)
+            self.assertEqual(kwargs['cleanup_grace'], 10)
+            if command == m.BUILD: raise m.CaptureStopped('byte-limit', True)
+            output = b'a' * 40 + b'\n' if command[:2] == ['git', 'rev-parse'] else (
+                b'Xcode 27.0\nBuild version 27A266a\n' if command == ['xcodebuild', '-version'] else b'')
+            return subprocess.CompletedProcess(command, 0, output, b'')
+        with patch.object(m, 'capture', side_effect=capture), patch.object(d, 'execute') as execute:
+            self.assertEqual(d.run(), 3)
+        self.assertEqual(commands[-1], m.BUILD)
+        self.assertEqual(len(commands), 4)
+        execute.assert_not_called()
+        self.assertTrue(m.PENDING.exists()); self.assertTrue(m.STOP.exists())
+        self.assertFalse(d.report['warmup_accepted']); self.assertFalse(d.report['full_row_accepted'])
+        self.assertEqual(d.report['preparation_commands'][-1]['reason'], 'byte-limit')
+
+    def test_quiet_build_retains_nonzero_exit_and_warning_error_bytes(self):
+        d = self.diagnostic()
+        value = subprocess.CompletedProcess(m.BUILD, 65, b'warning: test warning\n', b'error: test error\n')
+        with patch.object(m, 'capture', return_value=value) as capture:
+            result = d.setup_runner(m.BUILD, timeout=300)
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual((m.ROOT / 'build-stdout.bin').read_bytes(), b'warning: test warning\n')
+        self.assertEqual((m.ROOT / 'build-stderr.bin').read_bytes(), b'error: test error\n')
+        self.assertEqual(capture.call_args.kwargs['cap'], 1_000_000)
+        self.assertLessEqual(capture.call_args.kwargs['seconds'], 300)
+        self.assertEqual(d.report['preparation_commands'][-1]['exit'], 65)
 
 
 if __name__ == '__main__': unittest.main()

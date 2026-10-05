@@ -29,7 +29,7 @@ REF = 'refs/heads/codex/mini-direct-xctest'
 WORKFLOW = '100mango/ColorPicker/.github/workflows/mini-direct-xctest.yml@' + REF
 CASE = 'TouchColorUITests/TouchColorIPadUITests/testPalettePasteReviewAcceptAndRelaunch'
 CASE_LABEL = '-[TouchColorIPadUITests testPalettePasteReviewAcceptAndRelaunch]'
-BUILD = ['xcodebuild', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor',
+BUILD = ['xcodebuild', '-quiet', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor',
          '-configuration', 'Debug', '-destination', 'generic/platform=iOS Simulator',
          '-derivedDataPath', 'build/simulator', 'build-for-testing']
 PREPARATION_SECONDS, TEST_SECONDS, CLEANUP_SECONDS = 600, 300, 20

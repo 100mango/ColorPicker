@@ -1,0 +1,162 @@
+{
+  "schema": 1,
+  "purpose": "single_existing_mini_case_diagnostic",
+  "sha": "67ba9e823c817679fc40f7fcd2f83a79d13d0d37",
+  "workflow_sha": "67ba9e823c817679fc40f7fcd2f83a79d13d0d37",
+  "run_id": "37342854262",
+  "run_attempt": "1",
+  "case": "TouchColorUITests/TouchColorIPadUITests/testPalettePasteReviewAcceptAndRelaunch",
+  "build_argv": [
+    "xcodebuild",
+    "-project",
+    "TouchColor.xcodeproj",
+    "-scheme",
+    "TouchColor",
+    "-configuration",
+    "Debug",
+    "-destination",
+    "generic/platform=iOS Simulator",
+    "-derivedDataPath",
+    "build/simulator",
+    "build-for-testing"
+  ],
+  "warmup_accepted": false,
+  "full_row_accepted": false,
+  "release_accepted": false,
+  "vm_disposal_required": true,
+  "summary": {
+    "status": "unavailable_not_requested"
+  },
+  "status": "failed_or_incomplete",
+  "preparation_commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "allowance_seconds": 3,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 917.953319,
+      "capture_seconds": 2.9991783749999286,
+      "elapsed_seconds": 0.012
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--quiet",
+        "HEAD",
+        "--"
+      ],
+      "allowance_seconds": 3,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 917.966093708,
+      "capture_seconds": 2.998811250000017,
+      "elapsed_seconds": 0.049
+    },
+    {
+      "argv": [
+        "xcodebuild",
+        "-version"
+      ],
+      "allowance_seconds": 5,
+      "exit": 0,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 920.015356875,
+      "capture_seconds": 4.999436666999941,
+      "elapsed_seconds": 0.407
+    },
+    {
+      "argv": [
+        "xcodebuild",
+        "-project",
+        "TouchColor.xcodeproj",
+        "-scheme",
+        "TouchColor",
+        "-configuration",
+        "Debug",
+        "-destination",
+        "generic/platform=iOS Simulator",
+        "-derivedDataPath",
+        "build/simulator",
+        "build-for-testing"
+      ],
+      "allowance_seconds": 300,
+      "exit": null,
+      "host_cleanup_confirmed": true,
+      "absolute_deadline": 1215.4249090409999,
+      "capture_seconds": 299.99934608299986,
+      "reason": "byte-limit",
+      "elapsed_seconds": 95.797
+    }
+  ],
+  "budget": {
+    "schema": 1,
+    "platform": "ios",
+    "minutes": 20,
+    "started_epoch": 1791218548.386292,
+    "started_monotonic": 912.027880916,
+    "lane": "mini-direct-xctest",
+    "sha": "67ba9e823c817679fc40f7fcd2f83a79d13d0d37",
+    "run_id": "37342854262",
+    "reserves": {
+      "cleanup": 130,
+      "evidence": 180,
+      "validation": 60,
+      "upload": 60,
+      "overhead": 20
+    },
+    "startup_margin": 30,
+    "phase": "work",
+    "remaining_seconds": 620.79,
+    "cleanup_unconfirmed": false,
+    "events": [
+      {
+        "phase": "work",
+        "label": "UIKit preparation: git rev-parse HEAD",
+        "requested_seconds": 3,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 3,
+        "remaining_seconds": 717.075,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: git diff --quiet",
+        "requested_seconds": 3,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 3,
+        "remaining_seconds": 717.062,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcodebuild -version",
+        "requested_seconds": 5,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 5,
+        "remaining_seconds": 717.013,
+        "admitted": true
+      },
+      {
+        "phase": "work",
+        "label": "UIKit preparation: xcodebuild -project TouchColor.xcodeproj",
+        "requested_seconds": 300,
+        "minimum_seconds": 1,
+        "cleanup_reserve_seconds": 20,
+        "granted_seconds": 300,
+        "remaining_seconds": 716.605,
+        "admitted": true
+      }
+    ],
+    "result": "budget_only_not_test_acceptance"
+  },
+  "toolchain": "Xcode 27.0\nBuild version 27A266a\n",
+  "reason": "byte-limit"
+}
