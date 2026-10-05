@@ -2,7 +2,7 @@
 
 This is an isolated, runnable measurement recipe, not a production warmup change. The dedicated workflow is materialized for exact source review; publication and native execution remain separately gated. The two historical install-success/launch-60-second-timeout observations (1410 job 111593678852 and e980 job 111611786255) motivate obtaining missing tool evidence; they do not prove an app regression.
 
-The four source additions are this document, `scripts/mini_passive_compatibility.py`, its portable tests, and `.github/workflows/mini-passive-compatibility.yml`. All 357 e980 baseline files, including active UIKit warmup, workflows, watch touch and Crown code, stay byte-identical. No existing launch argv, app argument, environment, acceptance rule, or 60/600/20 warmup limit changes.
+The six source additions relative to e980 are this document, `scripts/mini_passive_compatibility.py` and its portable tests, `scripts/mini_passive_status.py` and its staging tests, and `.github/workflows/mini-passive-compatibility.yml`. All 357 e980 baseline files, including active UIKit warmup, workflows, watch touch and Crown code, stay byte-identical. No existing launch argv, app argument, environment, acceptance rule, or 60/600/20 warmup limit changes.
 
 ## Exactly what it can do
 
@@ -82,7 +82,9 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import os, stat
+          import json, os, stat, sys
+          sys.path.insert(0, 'scripts')
+          from mini_passive_status import emit_summary
           root = Path('build')
           if root.is_symlink(): raise SystemExit('Unsafe build root')
           target = root / 'mini-passive-upload'
@@ -98,6 +100,7 @@ jobs:
               'job-budget-incomplete.json': 4096,
               'job-budget-cleanup-unconfirmed.json': 4096,
           }
+          receipt = None
           for relative, cap in caps.items():
               source = root / relative
               if any(p.is_symlink() for p in (source, *source.parents)):
@@ -108,7 +111,11 @@ jobs:
                   raise SystemExit('Unbounded evidence')
               with source.open('rb') as stream: data = stream.read(cap + 1)
               if len(data) > cap: raise SystemExit('Growing evidence')
+              if relative == 'iPadMini-passive-compatibility/receipt.json': receipt = data
               (target / relative.replace('/', '-')).write_bytes(data)
+          summary = json.dumps(emit_summary(receipt), separators=(',', ':')).encode()
+          if len(summary) > 128: raise SystemExit('Unbounded console metadata')
+          (target / 'console-summary.json').write_bytes(summary)
           PY
       - name: Verify upload reserve, using local budget only
         id: upload_reserve
@@ -136,3 +143,11 @@ Retain the exact raw help and stream/stderr files with receipt SHA/run/UUID/runt
 Synchronous OS file writes or process creation can themselves stall; Python cannot preempt a kernel-blocked syscall. This code includes their elapsed time in the same absolute clocks and rejects late returns without starting another simulator command. The outer disposable-VM job deadline remains the final containment bound. No Linux fixture or fake process model proves native scheduling, simctl-daemon cancellation, or durable filesystem latency.
 
 Primary public mechanism reference: [Apple WWDC22, Optimize your use of Core Data and CloudKit](https://developer.apple.com/videos/play/wwdc2022/10119/), application-process `log stream --predicate` example. It does not specify iOS 27 readiness text or simctl-spawn containment.
+
+## Staging-only console fallback
+
+The existing filesystem-only staging step emits one advisory `MINI_PASSIVE_STATUS` line from the receipt bytes it already read. The entire ASCII-encoded line, prefix and newline included, is at most 512 bytes. It is attempted once on an actual stdout pipe with a sufficient reported PIPE_BUF, using nonblocking mode; full/error/unsupported stdout is omitted without waiting or retrying. A <=128-byte `console-summary.json` stages the attempted/omitted counts when possible. Neither console acceptance nor artifact upload is guaranteed. The unchanged receipt remains primary evidence.
+
+The fixed schema carries the current exact source SHA/run/attempt, receipt binding state, last attempted help/stream phase, allowlisted failure reason, and actual nullable owned-cleanup values. `help` and `stream` are `[persisted state, exit code, host_cleanup_confirmed]`; `cleanup` is the persisted aggregate host result. Missing fields stay null. Mismatched, invalid or missing receipts expose no phase/result/cleanup fields. Exact repository, dedicated push branch, workflow reference, job and source/run context are validated before labeling receipt fields. No arbitrary error text, argv, raw stream, app data or additional native command is printed. Reader completion remains unconfirmed and warmup acceptance is never made true.
+
+This fallback does not modify capture/runtime code, 5-second windows, 20-second cleanup, 600-second preparation, 20-minute job, staging/upload time limits or existing byte caps. The failed 723798 run and its absent artifact remain unknown for help-versus-stream phase and actual reader cleanup; this successor cannot reconstruct that missing evidence.

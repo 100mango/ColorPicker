@@ -53,7 +53,9 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import os, stat
+          import json, os, stat, sys
+          sys.path.insert(0, 'scripts')
+          from mini_passive_status import emit_summary
           root = Path('build')
           if root.is_symlink(): raise SystemExit('Unsafe build root')
           target = root / 'mini-passive-upload'
@@ -69,6 +71,7 @@ jobs:
               'job-budget-incomplete.json': 4096,
               'job-budget-cleanup-unconfirmed.json': 4096,
           }
+          receipt = None
           for relative, cap in caps.items():
               source = root / relative
               if any(p.is_symlink() for p in (source, *source.parents)):
@@ -79,7 +82,11 @@ jobs:
                   raise SystemExit('Unbounded evidence')
               with source.open('rb') as stream: data = stream.read(cap + 1)
               if len(data) > cap: raise SystemExit('Growing evidence')
+              if relative == 'iPadMini-passive-compatibility/receipt.json': receipt = data
               (target / relative.replace('/', '-')).write_bytes(data)
+          summary = json.dumps(emit_summary(receipt), separators=(',', ':')).encode()
+          if len(summary) > 128: raise SystemExit('Unbounded console metadata')
+          (target / 'console-summary.json').write_bytes(summary)
           PY
       - name: Verify upload reserve, using local budget only
         id: upload_reserve
