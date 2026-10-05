@@ -288,7 +288,8 @@ final class WatchWorkflowTests: XCTestCase {
             TCWatchListRect(x: Double(value.origin.x), y: Double(value.origin.y), width: Double(value.size.width), height: Double(value.size.height))
         }
         guard identifier.hasPrefix("watch.color."),
-              let targetIndex = Int32(identifier.dropFirst("watch.color.".count)), targetIndex >= 0 else {
+              let targetIndex = Int32(identifier.dropFirst("watch.color.".count)), targetIndex >= 0,
+              identifier == "watch.color.\(targetIndex)" else {
             XCTFail("Touch List navigation requires an exact saved-color identifier"); return
         }
         // A final observation after gesture 12 can succeed; gesture 13 is forbidden.
@@ -297,9 +298,16 @@ final class WatchWorkflowTests: XCTestCase {
             var pending: [(any XCUIElementSnapshot, Bool)] = [(root, false)]
             var lists: [CGRect] = [], navigation: [CGRect] = [], rows: [TCWatchListRow] = []
             var targetFrame: CGRect?, seen = Set<String>(), visited = 0
+            var anchors: [(id: String, type: XCUIElement.ElementType, frame: CGRect)] = []
+            var semanticLeaves: [(id: String, type: XCUIElement.ElementType, frame: CGRect)] = []
+            let semanticTypes: [XCUIElement.ElementType] = [.button, .staticText, .image, .slider, .switch, .link]
             while let (element, inList) = pending.popLast() {
                 visited += 1
                 guard visited <= 512 else { XCTFail("Touch List snapshot exceeded 512 nodes"); return }
+                if element.children.isEmpty,
+                   semanticTypes.contains(element.elementType) {
+                    semanticLeaves.append((element.identifier, element.elementType, element.frame))
+                }
                 let isList = element.elementType == .collectionView
                 if isList { lists.append(element.frame) }
                 if element.elementType == .navigationBar {
@@ -319,6 +327,11 @@ final class WatchWorkflowTests: XCTestCase {
                     }
                     if let index {
                         guard seen.insert(id).inserted, rows.count < 24 else { XCTFail("Ambiguous or oversized touch List snapshot"); return }
+                        let expectedType: XCUIElement.ElementType = id == "watch.count" ? .staticText : .button
+                        guard element.elementType == expectedType, element.children.isEmpty else {
+                            XCTFail("Touch List identity is not a unique semantic leaf: \(id)"); return
+                        }
+                        anchors.append((id, expectedType, element.frame))
                         rows.append(TCWatchListRow(index: index, frame: rect(element.frame)))
                         if id == identifier { targetFrame = element.frame }
                     }
@@ -352,13 +365,61 @@ final class WatchWorkflowTests: XCTestCase {
                 XCTFail("Touch List direction/geometry is ambiguous for \(identifier), attempt \(attempt)"); return
             }
             guard attempt < 12 else { XCTFail("Saved color remained unreachable after 12 bounded touch drags"); return }
-            XCTAssertTrue(list.isHittable)
+            // CollectionView itself need not expose a hit point. Require exactly
+            // one fully visible identified descendant covering the unchanged start.
+            // Snapshot frames do not establish hittability; re-query the same List.
+            var liveAnchorState = "not-queried"
+            func failAnchor(_ reason: String) {
+                let details = anchors.map { "\($0.id)=\($0.frame)" }.joined(separator: ";")
+                let diagnostic = "WATCH_TOUCH_ANCHOR_REJECT reason=\(reason) attempt=\(attempt) target=\(identifier) "
+                    + "viewport=\(root.frame) list=\(listFrame) navigation=\(navigationFrame) "
+                    + "start=(\(plan.start.x),\(plan.start.y)) end=(\(plan.end.x),\(plan.end.y)) live=\(liveAnchorState) rows=\(details)"
+                print(String(diagnostic.prefix(4096))); fflush(stdout)
+                XCTFail("Touch List anchor rejected: \(reason)")
+            }
+            let frames = anchors.map { rect($0.frame) }
+            let anchorIndex = frames.withUnsafeBufferPointer {
+                TCWatchListTouchAnchorIndex(&plan, $0.baseAddress, $0.count)
+            }
+            guard anchorIndex >= 0 else { failAnchor("missing-clipped-or-ambiguous-start"); return }
+            let captured = anchors[Int(anchorIndex)]
+            let coveringLeaves = semanticLeaves.filter { TCWatchListPointInside(rect($0.frame), plan.start) != 0 }
+            liveAnchorState = "semantic-covers=\(coveringLeaves.count)"
+            guard coveringLeaves.count == 1, coveringLeaves[0].id == captured.id,
+                  coveringLeaves[0].type == captured.type, coveringLeaves[0].frame == captured.frame else {
+                failAnchor("overlapping-snapshot-leaf"); return
+            }
+            let anchorQuery = list.descendants(matching: .any).matching(identifier: captured.id)
+            guard anchorQuery.count == 1 else { failAnchor("duplicate-or-missing-live-identity"); return }
+            let anchor = anchorQuery.element
+            func currentHome() -> Bool {
+                listQuery.count == 1 && app.frame == root.frame && list.frame == listFrame
+                    && app.navigationBars.count == 1 && app.navigationBars["TouchColor"].exists
+                    && app.navigationBars["TouchColor"].frame == navigationFrame
+                    && !app.buttons["BackButton"].exists && app.alerts.count == 0 && app.sheets.count == 0
+            }
+            func anchorReady() -> Bool {
+                liveAnchorState = "revalidating-home"
+                guard currentHome() else { return false }
+                let matches = anchorQuery.count
+                liveAnchorState = "matches=\(matches);revalidating-identity"
+                guard matches == 1, anchor.exists, anchor.identifier == captured.id,
+                      anchor.elementType == captured.type else { return false }
+                let hittable = anchor.isHittable, liveFrame = anchor.frame
+                liveAnchorState = "id=\(captured.id);matches=\(matches);hittable=\(hittable);frame=\(liveFrame)"
+                return TCWatchListTouchAnchorReady(&plan, rect(captured.frame), rect(liveFrame),
+                    matches, 1, hittable ? 1 : 0, 1) != 0
+            }
+            guard anchorReady() else { failAnchor("occluded-stale-or-wrong-home"); return }
             let origin = list.coordinate(withNormalizedOffset: .zero)
             let start = origin.withOffset(CGVector(dx: CGFloat(plan.start.x) - listFrame.minX, dy: CGFloat(plan.start.y) - listFrame.minY))
             let end = origin.withOffset(CGVector(dx: CGFloat(plan.end.x) - listFrame.minX, dy: CGFloat(plan.end.y) - listFrame.minY))
             XCTAssertEqual(start.screenPoint, CGPoint(x: CGFloat(plan.start.x), y: CGFloat(plan.start.y)))
             XCTAssertEqual(end.screenPoint, CGPoint(x: CGFloat(plan.end.x), y: CGFloat(plan.end.y)))
             XCTAssertEqual(list.frame, listFrame)
+            // Revalidate after coordinate resolution, immediately before dispatch.
+            // isHittable is public element-level evidence, not pixel hit-testing.
+            guard anchorReady() else { failAnchor("anchor-changed-before-drag"); return }
             // Public XCUIAutomation API, documented for watchOS. Exact Xcode 27
             // compilation and 40/49mm runtime behavior remain native proof gates.
             start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)

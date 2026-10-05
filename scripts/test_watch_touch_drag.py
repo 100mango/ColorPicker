@@ -169,5 +169,157 @@ for(int w=40;w<300;w+=7)for(int h=100;h<350;h+=11)for(int n=10;n<h-60;n+=13) {
             self.assertNotIn('TCWatchList', path.read_text())
 
 
+    def test_exact_1410_failures_select_only_geometry_without_inventing_hittability(self):
+        fixture = json.loads((ROOT / 'TouchColorWatchUITests/Fixtures/home-list-1410-touch-anchor.json').read_text())
+        self.assertEqual(fixture['observed_source_commit'], '1410ed01f0d153be79cbd688c3385320670d7367')
+        self.assertEqual(fixture['proposal_base_commit'], 'e9805ac4f497f19fb7ab4002d5a1aeaaf04ee700')
+        self.assertEqual(fixture['proposal_base_tree'], 'ef1f72f98d01cc59a2cdc54e22a89df89474bf61')
+        self.assertEqual([(c['watch_mm'], c['job_id'], c['artifact_id'], c['failure_seconds']) for c in fixture['cases']],
+            [(40, 111596149429, 11324518289, 10.630), (49, 111596149454, 11324284355, 9.400)])
+        for case in fixture['cases']:
+            self.assertFalse(case['collection_view_hittable'])
+            self.assertFalse(case['descendant_hittability_observed'])
+            self.assertFalse(case['target_in_snapshot'])
+            self.assertEqual(case['target_identifier'], 'watch.color.0')
+            self.assertEqual(case['geometric_anchor_identifier'], 'watch.photo')
+            self.assertEqual([r['identifier'] for r in case['rows']], ['watch.editor', 'watch.photo', 'watch.count'])
+            for key in ('source_log_sha256', 'artifact_sha256', 'summary_sha256', 'screenshot_sha256'):
+                self.assertRegex(case[key], r'^[a-f0-9]{64}$')
+            # The exact failure hierarchy, not a guessed post-scroll hierarchy.
+            for row in case['rows']:
+                self.assertIsNone(row['live_hittable'])
+                match = re.search(row['type'] + r', .*?\{\{([-.\d]+), ([-.\d]+)\}, \{([-.\d]+), ([-.\d]+)\}\}, identifier: '
+                    + re.escape("'" + row['identifier'] + "'"), case['failure_ax_excerpt'])
+                self.assertIsNotNone(match)
+                self.assertEqual([float(x) for x in match.groups()], row['frame'])
+            rect = lambda values: '(TCWatchListRect){' + ','.join(map(str, values)) + '}'
+            frames = ','.join(rect(row['frame']) for row in case['rows'])
+            rows = ','.join('{-1,' + rect(row['frame']) + '}' for row in case['rows'])
+            start, end = case['expected_plan']['start'], case['expected_plan']['end']
+            self.execute('TCWatchListDrag p={0}; TCWatchListRect frames[]={' + frames + '};\n'
+                + 'TCWatchListRow rows[]={' + rows + '};\n'
+                + 'assert(TCWatchListPlan(' + ','.join(rect(case[key]) for key in ('viewport', 'collection_view', 'navigation'))
+                + ',0,0,(TCWatchListRect){0},rows,3,&p)==TCWatchListLater);\n'
+                + f'assert(p.start.x=={start[0]}&&p.start.y=={start[1]}&&p.end.x=={end[0]}&&p.end.y=={end[1]});\n'
+                + '''TCWatchListDrag before=p;
+assert(TCWatchListTouchAnchorIndex(&p,frames,3)==1);
+/* Historical evidence has no live descendant observation. Simulated false/true
+   state only exercises the actual validation helper, not native acceptance. */
+assert(!TCWatchListTouchAnchorReady(&p,frames[1],frames[1],1,1,0,1));
+assert(TCWatchListTouchAnchorReady(&p,frames[1],frames[1],1,1,1,1));
+assert(p.start.x==before.start.x&&p.start.y==before.start.y);
+assert(p.end.x==before.end.x&&p.end.y==before.end.y&&p.direction==before.direction);
+assert(p.content.x==before.content.x&&p.content.y==before.content.y);
+assert(p.content.width==before.content.width&&p.content.height==before.content.height);
+''')
+
+    def test_touch_anchor_gap_none_ambiguous_duplicate_and_clipped_fail_closed(self):
+        self.execute('''
+TCWatchListDrag p={{0,47.5,162,149.5},{81,138.25},{81,106.25},1};
+TCWatchListRect photo={2,95.5,158,47},frames[]={photo,photo};
+assert(TCWatchListTouchAnchorIndex(&p,frames,1)==0);
+assert(TCWatchListTouchAnchorIndex(&p,frames,2)==-1); /* duplicate */
+frames[1]=(TCWatchListRect){40,130,80,25};
+assert(TCWatchListTouchAnchorIndex(&p,frames,2)==-1); /* distinct overlap */
+frames[0]=(TCWatchListRect){2,47.5,158,44};frames[1]=(TCWatchListRect){2,181,158,44};
+assert(TCWatchListTouchAnchorIndex(&p,frames,2)==-1); /* planned start in gap */
+frames[0]=(TCWatchListRect){2,40,158,110};
+assert(TCWatchListTouchAnchorIndex(&p,frames,1)==-1); /* clipped by navigation */
+frames[0]=(TCWatchListRect){2,130,158,100};
+assert(TCWatchListTouchAnchorIndex(&p,frames,1)==-1); /* clipped by bottom */
+frames[0]=photo;p.start.y=photo.y;
+assert(TCWatchListTouchAnchorIndex(&p,frames,1)==-1); /* border is not interior */
+p.start.y=photo.y+photo.height;
+assert(TCWatchListTouchAnchorIndex(&p,frames,1)==-1);
+assert(TCWatchListTouchAnchorIndex(&p,NULL,0)==-1);
+assert(TCWatchListTouchAnchorIndex(&p,frames,0)==-1);
+assert(TCWatchListTouchAnchorIndex(&p,frames,25)==-1);
+assert(TCWatchListTouchAnchorIndex(NULL,frames,1)==-1);
+''')
+
+    def test_touch_anchor_malformed_frames_points_and_decisions_fail_closed(self):
+        self.execute('''
+TCWatchListDrag p={{0,47.5,162,149.5},{81,138.25},{81,106.25},1},good=p;
+TCWatchListRect photo={2,95.5,158,47};
+TCWatchListRect bad[]={{NAN,95.5,158,47},{2,INFINITY,158,47},{2,95.5,0,47},
+ {2,95.5,158,-1},{1e308,0,1e308,47}};
+for(size_t i=0;i<sizeof(bad)/sizeof(*bad);i++) {
+ assert(TCWatchListTouchAnchorIndex(&p,&bad[i],1)==-1);
+ assert(!TCWatchListTouchAnchorReady(&p,photo,bad[i],1,1,1,1));
+}
+p.start.x=NAN;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+p=good;p.end.y=INFINITY;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+p=good;p.content.width=-1;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+p=good;p.start.y=20;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+p=good;p.end.y=20;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+p=good;p.direction=TCWatchListReady;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+p=good;p.direction=TCWatchListAmbiguous;assert(TCWatchListTouchAnchorIndex(&p,&photo,1)==-1);
+assert(!TCWatchListTouchAnchorReady(NULL,photo,photo,1,1,1,1));
+''')
+
+    def test_touch_anchor_occluded_stale_duplicate_missing_and_wrong_home_are_rejected(self):
+        self.execute('''
+TCWatchListDrag p={{0,47.5,162,149.5},{81,138.25},{81,106.25},1};
+TCWatchListRect photo={2,95.5,158,47},live=photo;
+assert(TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,1));
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,0,1,1,1));
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,2,1,1,1));
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,0,1,1));
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,0,1)); /* occluded/not hittable */
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,0)); /* wrong home or overlay */
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,2,1,1));
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,2,1));
+assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,2));
+live.x+=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,1));
+live=photo;live.y+=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,1));
+live=photo;live.width-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,1));
+live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,1,1,1));
+''')
+
+    def test_touch_anchor_live_xcui_binding_and_overlay_checks_precede_only_dispatch(self):
+        source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
+        helper = source.split('private func reachSavedColorByTouch(', 1)[1].split('    @MainActor func testEditSavedCopy', 1)[0]
+        for expected in ('element.children.isEmpty', 'element.elementType == expectedType',
+                         'identifier == "watch.color.\\(targetIndex)"',
+                         'TCWatchListTouchAnchorIndex(&plan, $0.baseAddress, $0.count)',
+                         'guard anchorIndex >= 0', 'coveringLeaves.count == 1',
+                         'coveringLeaves[0].id == captured.id', 'coveringLeaves[0].type == captured.type',
+                         'coveringLeaves[0].frame == captured.frame',
+                         'list.descendants(matching: .any).matching(identifier: captured.id)',
+                         'guard anchorQuery.count == 1', 'let anchor = anchorQuery.element',
+                         'anchor.exists', 'anchor.identifier == captured.id', 'anchor.elementType == captured.type',
+                         'anchor.isHittable', 'liveFrame = anchor.frame',
+                         'app.navigationBars.count == 1', 'app.navigationBars["TouchColor"].exists',
+                         '!app.buttons["BackButton"].exists', 'app.alerts.count == 0', 'app.sheets.count == 0',
+                         'guard currentHome() else { return false }',
+                         'TCWatchListTouchAnchorReady(&plan, rect(captured.frame), rect(liveFrame)',
+                         'WATCH_TOUCH_ANCHOR_REJECT', 'diagnostic.prefix(4096)', 'live=\\(liveAnchorState)'):
+            self.assertIn(expected, helper)
+        self.assertEqual(helper.count('guard anchorReady() else'), 2)
+        self.assertLess(helper.rindex('guard anchorReady() else'), helper.index('start.press('))
+        self.assertGreater(helper.rindex('guard anchorReady() else'), helper.index('XCTAssertEqual(end.screenPoint'))
+        self.assertEqual(helper.count('app.snapshot()'), 1)
+        for forbidden in ('XCTAssertTrue(list.isHittable)', '.firstMatch', 'anchor.tap()', 'anchor.press(',
+                          'hitPoint', 'value(forKey:', 'perform(', 'plan.start =', 'plan.end ='):
+            self.assertNotIn(forbidden, helper)
+        # Unknown semantic leaves can reject an overlap, never become a fallback.
+        self.assertIn('semanticLeaves.filter { TCWatchListPointInside(rect($0.frame), plan.start) != 0 }', helper)
+        self.assertIn('failAnchor("overlapping-snapshot-leaf"); return', helper)
+
+    def test_touch_anchor_delta_preserves_all_other_methods_and_original_geometry(self):
+        import hashlib
+        source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
+        begin = source.index('    @MainActor private func reachSavedColorByTouch(')
+        end = source.index('    @MainActor func testEditSavedCopy', begin)
+        self.assertEqual(hashlib.sha256((source[:begin] + source[end:]).encode()).hexdigest(),
+            'b20ea327a2f1d6e3cd9a5963738e1c5aeb064d92f99c27a13c7e54635f582793')
+        header = HEADER.read_text()
+        original = header.split('/* Validation only: keep the already planned path byte-for-byte unchanged.', 1)[0] + '#endif\n'
+        self.assertEqual(hashlib.sha256(original.encode()).hexdigest(),
+            '2ce0ef79c234888cdf500257fa84a6a6123bc3070c769dd356c202cecec30894')
+        validation = header[len(original) - len('#endif\n'):]
+        self.assertNotRegex(validation, r'plan->\w+(?:\.\w+)?\s*=(?!=)')
+
+
 if __name__ == '__main__':
     unittest.main()

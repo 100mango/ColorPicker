@@ -11,6 +11,7 @@ CONTACT_LABEL = "Contact the developer about privacy"
 class MacAccessibilitySemanticsContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.window = (ROOT / "TouchColorMac/ColorWindow.swift").read_text()
         cls.camera = (ROOT / "TouchColorMac/CameraSheet.swift").read_text()
         cls.privacy = (ROOT / "TouchColorMac/PrivacyView.swift").read_text()
         cls.hosted = (ROOT / "TouchColorMacTests/CameraTests.swift").read_text()
@@ -26,6 +27,88 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
         self.assertEqual(sum('-O' in command for command in commands), 1)
         for command in commands:
             self.assertEqual(command.count('test_mac_accessibility_semantics'), 1)
+
+    def test_selected_color_swatch_keeps_pixels_and_exposes_only_image_semantics(self):
+        swatch = self.window.split('                if let color = session.selectedColor {', 1)[1].split(
+            '                    VStack(alignment: .leading)', 1)[0]
+        self.assertEqual(swatch.strip(), '\n'.join([
+            'Color(red: Double(color.red) / 255, green: Double(color.green) / 255, blue: Double(color.blue) / 255)',
+            '                        .frame(width: 38, height: 38).border(.gray.opacity(0.6))',
+            '                        .accessibilityElement(children: .ignore)',
+            '                        .accessibilityAddTraits(.isImage)',
+            '                        .accessibilityLabel("Selected color")',
+            '                        .accessibilityValue(Text(verbatim: "\\(color.hex), \\(color.rgbDescription)"))',
+            '                        .accessibilityIdentifier("sample.swatch")']))
+        self.assertEqual(self.window.count('.accessibilityIdentifier("sample.swatch")'), 1)
+        for forbidden in ('.accessibilityHidden', '.accessibilityAction', 'Button(', '.onTapGesture', '.isButton'):
+            self.assertNotIn(forbidden, swatch)
+
+    def test_selected_color_label_is_localized_and_numeric_value_is_live_verbatim(self):
+        for language, expected in [('en', 'Selected color'), ('zh-Hans', '所选颜色')]:
+            source = (ROOT / 'TouchColorMac' / (language + '.lproj') / 'Localizable.strings').read_text()
+            entries = re.findall(r'^"((?:\\.|[^"\\])*)"\s*=\s*"((?:\\.|[^"\\])*)";', source, re.M)
+            self.assertEqual(len(entries), len(dict(entries)), language)
+            self.assertEqual(dict(entries).get('Selected color'), expected)
+        self.assertIn('Text(color.hex).font(.title2.monospaced()).accessibilityIdentifier("sample.hex")', self.window)
+        self.assertIn('Text(color.rgbDescription).font(.callout.monospacedDigit()).accessibilityIdentifier("sample.rgb")', self.window)
+        self.assertIn('if let color = session.selectedColor {', self.window)
+        self.assertIn('.accessibilityValue(Text(verbatim: "\\(color.hex), \\(color.rgbDescription)"))', self.window)
+
+    def test_selected_color_checks_reuse_existing_sampling_cases_without_new_launches(self):
+        setup = self.ui.split('override func setUpWithError()', 1)[1].split('override func tearDownWithError()', 1)[0]
+        self.assertEqual(setup.count('app.launch()'), 1)
+        self.assertNotIn('testSelectedColorSwatch', self.ui)
+        self.assertNotIn('sample.swatch', setup)
+        self.assertIn('app = XCUIApplication(url: applicationURL)', setup)
+        english = self.ui.split('func testNativeFileSamplingZoomPalettePersistenceAndPrivacy()', 1)[1].split(
+            'private func makePhotosFixture(', 1)[0]
+        chinese = self.ui.split('func testSimplifiedChineseNativeSamplingFlowAndScreenshot()', 1)[1].split(
+            'func testPasteImageAndOpenCancelRetainSource()', 1)[0]
+        for case in (english, chinese):
+            self.assertEqual(case.count('app.launch()'), 1)
+            self.assertEqual(case.count('app.terminate()'), 1)
+        self.assertIn('app.launchArguments = ["--ui-test-reset", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]', chinese)
+
+    def test_selected_color_ui_requires_unique_image_exact_label_value_and_size(self):
+        check = self.ui.split('private func assertSelectedColorSwatch(label: String, hex: String, rgb: String)', 1)[1].split(
+            'func testNativeFileSamplingZoomPalettePersistenceAndPrivacy()', 1)[0]
+        for required in ('app.images.matching(identifier: "sample.swatch")',
+                         'swatch.waitForExistence(timeout: 5)', 'XCTAssertEqual(swatches.count, 1)',
+                         'XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "sample.swatch").count, 1)',
+                         'XCTAssertEqual(swatch.elementType, .image)', 'XCTAssertEqual(swatch.label, label)',
+                         'let expected = "\\(hex), \\(rgb)"', 'NSPredicate(format: "value == %@", expected)',
+                         'XCTWaiter.wait(for: [updated], timeout: 5)', 'XCTAssertEqual(swatch.value as? String, expected)',
+                         'XCTAssertEqual(swatch.frame.width, 38, accuracy: 0.5)',
+                         'XCTAssertEqual(swatch.frame.height, 38, accuracy: 0.5)',
+                         'app.staticTexts["sample.rgb"]', 'XCTAssertEqual(visibleRGB.value as? String ?? visibleRGB.label, rgb)'):
+            self.assertIn(required, check)
+        self.assertNotIn('swatch.click()', check)
+        self.assertNotIn('swatch.tap()', check)
+
+    def test_selected_color_ui_follows_existing_pointer_keyboard_and_chinese_changes(self):
+        english = self.ui.split('func testNativeFileSamplingZoomPalettePersistenceAndPrivacy()', 1)[1].split(
+            'private func makePhotosFixture(', 1)[0]
+        chinese = self.ui.split('func testSimplifiedChineseNativeSamplingFlowAndScreenshot()', 1)[1].split(
+            'func testPasteImageAndOpenCancelRetainSource()', 1)[0]
+        self.assertIn('XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sample.swatch").element.exists)', english)
+        pattern = r'assertSelectedColorSwatch\(label: "([^"]+)", hex: "([^"]+)", rgb: "([^"]+)"\)'
+        self.assertEqual(re.findall(pattern, english), [
+            ('Selected color', '#ff00ff', 'R 255   G 0   B 255'), ('Selected color', '#ff0000', 'R 255   G 0   B 0'),
+            ('Selected color', '#00ff00', 'R 0   G 255   B 0'), ('Selected color', '#ff0000', 'R 255   G 0   B 0'),
+            ('Selected color', '#ff00ff', 'R 255   G 0   B 255'), ('Selected color', '#ff00ff', 'R 255   G 0   B 255')])
+        self.assertEqual(re.findall(pattern, chinese), [
+            ('所选颜色', '#ff00ff', 'R 255   G 0   B 255'), ('所选颜色', '#00ff00', 'R 0   G 255   B 0')])
+        for required in ('openFile(fixture)', 'app.images["image.canvas"]',
+                         'canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).click()',
+                         'app.typeKey(.rightArrow, modifierFlags: [])', 'app.typeKey(.leftArrow, modifierFlags: [])',
+                         'app.buttons["sample.copy"].click()', 'app.buttons["sample.save"].click()',
+                         'app.buttons["sample.center"].click()'):
+            self.assertIn(required, english)
+        self.assertIn('app.buttons["image.paste"].click(); assertHex("#ff00ff")', chinese)
+        self.assertIn('app.buttons["sample.above"].click(); assertHex("#00ff00")', chinese)
+        for case in (english, chinese):
+            for forbidden in ('swatch.click()', 'swatch.tap()', 'XCTSkip', 'selectedColor ='):
+                self.assertNotIn(forbidden, case)
 
     def test_empty_camera_is_static_status_and_nonempty_picker_keeps_busy_guards_and_binding(self):
         selection = self.camera.split('            if camera.devices.isEmpty {', 1)[1].split(

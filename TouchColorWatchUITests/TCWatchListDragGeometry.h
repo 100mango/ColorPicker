@@ -93,4 +93,35 @@ static inline int TCWatchListPlan(TCWatchListRect viewport, TCWatchListRect list
     plan->direction = direction;
     return direction;
 }
+/* Validation only: keep the already planned path byte-for-byte unchanged.
+   Identified semantic leaves are candidates, not their overlapping containers.
+   A clipped/ambiguous start, missing identity or stale/occluded live element fails. */
+static inline int TCWatchListPointInside(TCWatchListRect frame, TCWatchListPoint point) {
+    return TCWatchListValid(frame) && isfinite(point.x) && isfinite(point.y)
+        && point.x > frame.x && point.x < frame.x + frame.width
+        && point.y > frame.y && point.y < frame.y + frame.height;
+}
+static inline int TCWatchListTouchAnchorIndex(const TCWatchListDrag *plan,
+                                             const TCWatchListRect *frames, size_t count) {
+    if (!plan || !frames || !count || count > 24
+        || (plan->direction != TCWatchListEarlier && plan->direction != TCWatchListLater)
+        || !TCWatchListPointInside(plan->content, plan->start)
+        || !TCWatchListPointInside(plan->content, plan->end)) return -1;
+    int match = -1;
+    for (size_t i = 0; i < count; ++i) {
+        if (!TCWatchListValid(frames[i])) return -1;
+        if (!TCWatchListPointInside(frames[i], plan->start)) continue;
+        if (match >= 0 || !TCWatchListContains(plan->content, frames[i])) return -1;
+        match = (int)i;
+    }
+    return match;
+}
+static inline int TCWatchListTouchAnchorReady(const TCWatchListDrag *plan,
+                                              TCWatchListRect captured, TCWatchListRect live,
+                                              size_t matches, int exists, int hittable, int currentHome) {
+    return plan && matches == 1 && exists == 1 && hittable == 1 && currentHome == 1
+        && captured.x == live.x && captured.y == live.y
+        && captured.width == live.width && captured.height == live.height
+        && TCWatchListTouchAnchorIndex(plan, &live, 1) == 0;
+}
 #endif

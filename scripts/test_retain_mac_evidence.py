@@ -19,7 +19,10 @@ import retain_mac_evidence as keep
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = {'sha': 'a' * 40, 'tree': 'b' * 40, 'workflow_sha': 'a' * 40, 'run_id': '1',
           'run_attempt': '1', 'job': 'native-platform', 'tracked_source_clean': True,
-          'workflow_file_sha256': 'c' * 64, 'test_file_sha256': 'd' * 64}
+          'workflow_file_sha256': 'c' * 64, 'test_file_sha256': 'd' * 64,
+          'repository': '100mango/ColorPicker', 'ref': 'refs/heads/codex/platform-integration',
+          'workflow_ref': '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/codex/platform-integration',
+          'workflow_file': '.github/workflows/apple-platforms.yml', 'event_name': 'push'}
 DEVICE = 'actual-mac-device'
 
 
@@ -345,6 +348,101 @@ class RetentionTests(unittest.TestCase):
         self.assertIn("if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0)", workflow)
         self.assertIn('- platform: mac\n            minutes: 40\n            evidence_bytes: 3000000', workflow)
         self.assertEqual(workflow.count('evidence_bytes: 3000000'), 1)
+
+
+class WorkflowIdentityTests(unittest.TestCase):
+    def environment(self, dedicated=False, event='push'):
+        branch = 'codex/mac-watch-repair' if dedicated else 'codex/platform-integration'
+        path = '.github/workflows/mac-watch-repair.yml' if dedicated else '.github/workflows/apple-platforms.yml'
+        return {'GITHUB_REPOSITORY': '100mango/ColorPicker', 'GITHUB_REF': 'refs/heads/' + branch,
+                'GITHUB_WORKFLOW_REF': '100mango/ColorPicker/' + path + '@refs/heads/' + branch,
+                'GITHUB_EVENT_NAME': event, 'GITHUB_SHA': SOURCE['sha'],
+                'GITHUB_WORKFLOW_SHA': SOURCE['sha'], 'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1',
+                'GITHUB_JOB': 'native-platform'}
+
+    def source(self, dedicated=False):
+        env = self.environment(dedicated)
+        identity = keep.workflow_identity(env)
+        return {**SOURCE, **identity, 'workflow_file_sha256': keep.digest((ROOT / identity['workflow_file']).read_bytes()),
+                'test_file_sha256': keep.digest((ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_bytes())}
+
+    def test_only_two_exact_workflow_identities_and_original_events_are_admitted(self):
+        self.assertEqual(len(keep.WORKFLOW_IDENTITIES), 2)
+        for dedicated, event in [(False, 'push'), (False, 'workflow_dispatch'), (True, 'push')]:
+            with self.subTest(dedicated=dedicated, event=event):
+                value = keep.workflow_identity(self.environment(dedicated, event))
+                self.assertEqual(value['workflow_file'], '.github/workflows/' + ('mac-watch-repair.yml' if dedicated else 'apple-platforms.yml'))
+                self.assertEqual(value['event_name'], event)
+        for dedicated in (False, True):
+            for field in ('GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_WORKFLOW_REF', 'GITHUB_EVENT_NAME'):
+                for value in ('', 'other', self.environment(not dedicated)[field] + '-suffix'):
+                    with self.subTest(dedicated=dedicated, field=field, value=value), self.assertRaises(ValueError):
+                        keep.workflow_identity({**self.environment(dedicated), field: value})
+        for event in ('workflow_dispatch', 'pull_request', 'workflow_run', 'schedule'):
+            with self.subTest(event=event), self.assertRaises(ValueError):
+                keep.workflow_identity(self.environment(True, event))
+
+    def test_crossed_repository_branch_workflow_and_paths_are_rejected(self):
+        for dedicated in (False, True):
+            for field in ('GITHUB_REF', 'GITHUB_WORKFLOW_REF'):
+                with self.subTest(dedicated=dedicated, field=field), self.assertRaises(ValueError):
+                    keep.workflow_identity({**self.environment(dedicated), field: self.environment(not dedicated)[field]})
+            for ref in ('100mango/ColorPicker/.github/workflows/../workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair',
+                        'other/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair',
+                        self.environment(dedicated)['GITHUB_WORKFLOW_REF'].replace('@refs/heads/', '@refs/tags/')):
+                with self.subTest(ref=ref), self.assertRaises(ValueError):
+                    keep.workflow_identity({**self.environment(dedicated), 'GITHUB_WORKFLOW_REF': ref})
+
+    def test_provenance_hashes_actual_selected_workflow_and_preserves_sha_clean_guards(self):
+        def command(args, **kwargs):
+            self.assertEqual(kwargs, {'timeout': 10})
+            return {('git', 'rev-parse', 'HEAD'): SOURCE['sha'],
+                    ('git', 'diff', '--exit-code', 'HEAD', '--'): '',
+                    ('git', 'rev-parse', 'HEAD^{tree}'): SOURCE['tree']}[tuple(args)]
+        original = Path.read_bytes
+        def read(path): return original(ROOT / path)
+        for dedicated in (False, True):
+            with self.subTest(dedicated=dedicated), patch.object(keep, 'check_output', side_effect=command) as run, patch.object(Path, 'read_bytes', read):
+                result = keep.provenance(self.environment(dedicated))
+                expected = self.source(dedicated)
+                for key, value in expected.items(): self.assertEqual(result[key], value, key)
+                self.assertEqual(run.call_count, 3)
+                for update in ({'GITHUB_SHA': ''}, {'GITHUB_WORKFLOW_SHA': '0' * 40},
+                               {'GITHUB_SHA': '0' * 40, 'GITHUB_WORKFLOW_SHA': '0' * 40}):
+                    with self.assertRaises(ValueError): keep.provenance({**self.environment(dedicated), **update})
+        with patch.object(keep, 'check_output', side_effect=subprocess.CalledProcessError(1, 'git diff')):
+            with self.assertRaises(subprocess.CalledProcessError): keep.provenance(self.environment(True))
+        with patch.object(keep, 'check_output') as run:
+            with self.assertRaises(ValueError): keep.provenance({**self.environment(True), 'GITHUB_REF': 'refs/heads/arbitrary'})
+            run.assert_not_called()
+
+    def test_retained_packet_requires_consistent_exact_workflow_metadata(self):
+        for dedicated in (False, True):
+            with self.subTest(dedicated=dedicated), tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'GITHUB_SHA': ''}):
+                root = Path(tmp); Fixture(root); source = self.source(dedicated)
+                keep.retain(root, source)
+                self.assertTrue(keep.validate_selection(root, require_complete=True)['complete'])
+                original = (root / keep.REPORT).read_bytes()
+                for key in ('repository', 'ref', 'workflow_ref', 'workflow_file', 'event_name'):
+                    report = json.loads(original); report['source'][key] += '-changed'
+                    (root / keep.REPORT).write_text(json.dumps(report))
+                    with self.subTest(key=key), self.assertRaises(ValueError): keep.validate_selection(root)
+                (root / keep.REPORT).write_bytes(original)
+
+    def test_live_validation_rejects_cross_workflow_and_changed_workflow_hash(self):
+        original = Path.read_bytes
+        def read(path): return original(path if path.is_absolute() else ROOT / path)
+        for dedicated in (False, True):
+            with self.subTest(dedicated=dedicated), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); Fixture(root); source = self.source(dedicated); keep.retain(root, source)
+                with patch.dict(os.environ, self.environment(dedicated)), patch.object(Path, 'read_bytes', read):
+                    self.assertTrue(keep.validate_selection(root, require_complete=True)['complete'])
+                with patch.dict(os.environ, self.environment(not dedicated)):
+                    with self.assertRaisesRegex(ValueError, 'another workflow'): keep.validate_selection(root)
+                report = json.loads((root / keep.REPORT).read_bytes()); report['source']['workflow_file_sha256'] = '0' * 64
+                (root / keep.REPORT).write_text(json.dumps(report))
+                with patch.dict(os.environ, self.environment(dedicated)), patch.object(Path, 'read_bytes', read):
+                    with self.assertRaisesRegex(ValueError, 'workflow file hash changed'): keep.validate_selection(root)
 
 
 if __name__ == '__main__': unittest.main()

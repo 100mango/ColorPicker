@@ -102,16 +102,37 @@ def png_dimensions(data):
     return [width, height]
 
 
+WORKFLOW_IDENTITIES = {
+    ('100mango/ColorPicker', 'refs/heads/codex/platform-integration',
+     '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/codex/platform-integration'):
+        ('.github/workflows/apple-platforms.yml', ('push', 'workflow_dispatch')),
+    ('100mango/ColorPicker', 'refs/heads/codex/mac-watch-repair',
+     '100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair'):
+        ('.github/workflows/mac-watch-repair.yml', ('push',)),
+}
+
+
+def workflow_identity(environ):
+    identity = tuple(environ.get(key) for key in ('GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_WORKFLOW_REF'))
+    require(identity in WORKFLOW_IDENTITIES, 'Unapproved exact Mac evidence workflow identity')
+    path, events = WORKFLOW_IDENTITIES[identity]
+    event = environ.get('GITHUB_EVENT_NAME')
+    require(event in events, 'Unapproved Mac evidence workflow event')
+    return {'repository': identity[0], 'ref': identity[1], 'workflow_ref': identity[2],
+            'workflow_file': path, 'event_name': event}
+
+
 def provenance(environ=os.environ):
+    identity = workflow_identity(environ)
     sha = environ.get('GITHUB_SHA', '')
     require(re.fullmatch('[0-9a-f]{40}', sha), 'Missing exact source SHA')
     require(environ.get('GITHUB_WORKFLOW_SHA') == sha, 'Workflow/source SHA mismatch')
     require(check_output(['git', 'rev-parse', 'HEAD'], timeout=10).strip() == sha, 'HEAD/source SHA mismatch')
     check_output(['git', 'diff', '--exit-code', 'HEAD', '--'], timeout=10)
-    return {'sha': sha, 'tree': check_output(['git', 'rev-parse', 'HEAD^{tree}'], timeout=10).strip(),
+    return {**identity, 'sha': sha, 'tree': check_output(['git', 'rev-parse', 'HEAD^{tree}'], timeout=10).strip(),
             'workflow_sha': sha, 'run_id': environ.get('GITHUB_RUN_ID'), 'run_attempt': environ.get('GITHUB_RUN_ATTEMPT'),
             'job': environ.get('GITHUB_JOB'), 'tracked_source_clean': True,
-            'workflow_file_sha256': digest(Path('.github/workflows/apple-platforms.yml').read_bytes()),
+            'workflow_file_sha256': digest(Path(identity['workflow_file']).read_bytes()),
             'test_file_sha256': digest(Path('TouchColorMacUITests/TouchColorMacUITests.swift').read_bytes())}
 
 
@@ -315,7 +336,15 @@ def validate_selection(root, *, require_complete=False):
             'Missing exact-source provenance')
     for key in ('workflow_file_sha256', 'test_file_sha256'):
         require(re.fullmatch('[0-9a-f]{64}', source.get(key, '')), 'Missing source-file hash')
-    if os.environ.get('GITHUB_SHA'): require(source['sha'] == os.environ['GITHUB_SHA'], 'Evidence belongs to another source')
+    identity = workflow_identity({
+        'GITHUB_REPOSITORY': source.get('repository'), 'GITHUB_REF': source.get('ref'),
+        'GITHUB_WORKFLOW_REF': source.get('workflow_ref'), 'GITHUB_EVENT_NAME': source.get('event_name')})
+    require(source.get('workflow_file') == identity['workflow_file'], 'Evidence workflow file identity changed')
+    if os.environ.get('GITHUB_SHA'):
+        require(source['sha'] == os.environ['GITHUB_SHA'], 'Evidence belongs to another source')
+        require(identity == workflow_identity(os.environ), 'Evidence belongs to another workflow')
+        require(source['workflow_file_sha256'] == digest(Path(identity['workflow_file']).read_bytes()),
+                'Evidence workflow file hash changed')
     for relative, facts in report['rootFiles'].items():
         require(Path(relative).name == relative and relative != REPORT, 'Unsafe root evidence path')
         raw = read_file(root / relative)

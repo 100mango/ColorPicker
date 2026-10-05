@@ -111,15 +111,37 @@ import ApplicationServices
         let outcome = XCTWaiter.wait(for: [expectedValue], timeout: 8)
         XCTAssertEqual(outcome, .completed, "Expected \(expected), actual value \(String(describing: value.value)), label \(value.label). \(app.debugDescription)")
     }
+    private func assertSelectedColorSwatch(label: String, hex: String, rgb: String) {
+        let swatches = app.images.matching(identifier: "sample.swatch")
+        let swatch = swatches.element
+        XCTAssertTrue(swatch.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(swatches.count, 1)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "sample.swatch").count, 1)
+        XCTAssertEqual(swatch.elementType, .image)
+        XCTAssertEqual(swatch.label, label)
+        let expected = "\(hex), \(rgb)"
+        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", expected), object: swatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 5), .completed, swatch.debugDescription)
+        XCTAssertEqual(swatch.value as? String, expected)
+        XCTAssertEqual(swatch.frame.width, 38, accuracy: 0.5)
+        XCTAssertEqual(swatch.frame.height, 38, accuracy: 0.5)
+        let visibleRGB = app.staticTexts["sample.rgb"]
+        XCTAssertEqual(visibleRGB.value as? String ?? visibleRGB.label, rgb)
+    }
     func testNativeFileSamplingZoomPalettePersistenceAndPrivacy() {
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sample.swatch").element.exists)
         openFile(fixture)
         assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         let canvas = app.images["image.canvas"]
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).click()
         assertHex("#ff0000")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff0000", rgb: "R 255   G 0   B 0")
         app.typeKey(.rightArrow, modifierFlags: []); assertHex("#00ff00")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#00ff00", rgb: "R 0   G 255   B 0")
         app.typeKey(.leftArrow, modifierFlags: []); assertHex("#ff0000")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff0000", rgb: "R 255   G 0   B 0")
         app.buttons["sample.save"].click(); app.buttons["sample.save"].click()
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
         app.buttons["sample.copy"].click()
@@ -129,10 +151,12 @@ import ApplicationServices
         XCTAssertGreaterThan(canvas.frame.width, unzoomedFrame.width * 1.5)
         XCTAssertTrue(app.staticTexts["sample.zoom.value"].exists)
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         let window = app.windows.firstMatch
         let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1)).withOffset(CGVector(dx: -2, dy: -2))
         edge.click(forDuration: 0.2, thenDragTo: edge.withOffset(CGVector(dx: -120, dy: -60)))
         app.buttons["sample.center"].click(); assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Mac sampled source and ordered palette"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
@@ -334,12 +358,14 @@ import ApplicationServices
         NSPasteboard.general.setData(try! Data(contentsOf: fixture), forType: .png)
         XCTAssertTrue(app.buttons["image.paste"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
+        assertSelectedColorSwatch(label: "所选颜色", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         app.buttons["sample.save"].click()
         XCTAssertTrue(app.staticTexts["调色板"].exists)
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
         XCTAssertTrue(app.windows.firstMatch.frame.contains(app.buttons["sample.above"].frame), app.debugDescription)
         XCTAssertTrue(app.buttons["sample.above"].isHittable, app.debugDescription)
         app.buttons["sample.above"].click(); assertHex("#00ff00")
+        assertSelectedColorSwatch(label: "所选颜色", hex: "#00ff00", rgb: "R 0   G 255   B 0")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "Native Mac Simplified Chinese sampling and palette"
         shot.lifetime = .keepAlways; add(shot)
