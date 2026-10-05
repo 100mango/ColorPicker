@@ -66,11 +66,53 @@ class ContractTests(unittest.TestCase):
             command=test_command(method,'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE')
             self.assertEqual(command.count('test-without-building'),1)
             self.assertEqual([v for v in command if v.startswith('-only-testing:')],['-only-testing:'+method['target']+'/'+method['case']])
-            self.assertEqual(command[command.index('-test-iterations')+1],'1')
+            self.assertNotIn('-test-iterations',command)
+            self.assertNotIn('-run-tests-until-failure',command)
             self.assertNotIn('-retry-tests-on-failure',command)
             self.assertEqual(command[command.index('-maximum-test-execution-time-allowance')+1],'120')
             self.assertEqual(command[command.index('-parallel-testing-enabled')+1],'NO')
         self.assertEqual([v['key'] for v in METHODS],['actual_cold','isolated_static','rgb_positive'])
+
+    def test_native_exit64_fixture_exactly_explains_removed_argument(self):
+        fixture=json.loads((ROOT/'review/CROWN-090986-ARGV-FAILURE.json').read_text())
+        self.assertEqual(fixture['source']['sha'],'090986ab0a77f6d7cd75a5b7f5b3df10cb7c01f4')
+        self.assertEqual(fixture['source']['run_id'],'37290510464')
+        self.assertEqual(fixture['toolchain']['xcode'],'Xcode 27.0\nBuild version 27A266a')
+        self.assertEqual(fixture['console'],'xcodebuild: error: Must specify -test-iterations with more than 1 iteration.\n')
+        self.assertEqual(fixture['lifecycle'],'\n')
+        stage=fixture['test_stage'];self.assertEqual(stage['raw_exit'],64)
+        self.assertFalse(stage['timed_out']);self.assertFalse(fixture['cleanup']['confirmed'])
+        self.assertTrue(fixture['uncertainty']['device_commands_forbidden'])
+        old=list(stage['command']);i=old.index('-test-iterations');self.assertEqual(old[i+1],'1')
+        del old[i:i+2]
+        device=stage['command'][stage['command'].index('-destination')+1].split('id=')[1]
+        self.assertEqual(test_command(METHODS[0],device),old)
+        # Even a future correctly formed command cannot turn usage exit64 into a test outcome.
+        from watch_crown_contract import method_scheduling_status
+        corrected=dict(stage,command=old)
+        with self.assertRaisesRegex(ValueError,'Missing genuine terminal test exit'):
+            method_scheduling_status(METHODS[0],device,fixture['source']['sha'],corrected,{},'')
+
+    def test_independent_argv_expectation_and_all_single_case_controls(self):
+        from watch_crown_result import expected_command
+        device='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
+        forbidden=('-test-iterations','-retry-tests-on-failure','-run-tests-until-failure',
+                   '-test-repetition-relaunch-enabled')
+        for method in METHODS:
+            actual=test_command(method,device)
+            self.assertEqual(actual,expected_command(method['key'],device))
+            self.assertFalse(any(flag in actual for flag in forbidden))
+            self.assertEqual(actual.count('test-without-building'),1)
+            self.assertEqual(sum(x.startswith('-only-testing:') for x in actual),1)
+            for flag,value in (('-default-test-execution-time-allowance','120'),
+                               ('-maximum-test-execution-time-allowance','120'),
+                               ('-maximum-concurrent-test-simulator-destinations','1'),
+                               ('-parallel-testing-enabled','NO')):
+                self.assertEqual(actual[actual.index(flag)+1],value)
+        canonical=(ROOT/'scripts/test_extra_platforms.py').read_text()
+        self.assertNotIn('-test-iterations',canonical)
+        self.assertNotIn('-retry-tests-on-failure',canonical)
+        self.assertNotIn('-run-tests-until-failure',canonical)
 
     def test_source_and_original_assertions_frozen(self):
         values={'.github/workflows/apple-platforms.yml':'8c4e6fff2438d42838e718107a16db951629febd8a9cbe43e346c90e0f78e8e7',

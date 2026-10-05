@@ -54,7 +54,7 @@ def test_command(method, device):
             '-derivedDataPath', method['derived_data'], '-parallel-testing-enabled', 'NO',
             '-maximum-concurrent-test-simulator-destinations', '1', '-collect-test-diagnostics', 'never',
             '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '120',
-            '-maximum-test-execution-time-allowance', '120', '-test-iterations', '1',
+            '-maximum-test-execution-time-allowance', '120',
             '-resultBundlePath', 'build/watch-crown-'+method['key']+'.xcresult',
             '-only-testing:'+method['target']+'/'+method['case'], 'ARCHS=arm64', 'CODE_SIGNING_ALLOWED=NO']
 

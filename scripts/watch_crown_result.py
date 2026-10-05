@@ -87,7 +87,7 @@ def expected_command(name, device):
             '-derivedDataPath', case['derived_data'], '-parallel-testing-enabled', 'NO',
             '-maximum-concurrent-test-simulator-destinations', '1', '-collect-test-diagnostics', 'never',
             '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '120',
-            '-maximum-test-execution-time-allowance', '120', '-test-iterations', '1',
+            '-maximum-test-execution-time-allowance', '120',
             '-resultBundlePath', case['result_bundle'], '-only-testing:' + case['identifier'],
             'ARCHS=arm64', 'CODE_SIGNING_ALLOWED=NO']
 
