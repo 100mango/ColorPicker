@@ -1,0 +1,96 @@
+name: Mini passive compatibility (isolated proposal)
+on:
+  push:
+    branches: [codex/mini-passive-compatibility]
+permissions:
+  contents: read
+concurrency:
+  group: mini-passive-compatibility-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  mini-passive-compatibility:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_JOB_PLATFORM: ios
+      TOUCHCOLOR_JOB_LANE: mini-passive-compatibility
+      TOUCHCOLOR_JOB_MINUTES: '20'
+      TOUCHCOLOR_BUDGET_PHASE: work
+      TOUCHCOLOR_EVIDENCE_LIMIT: '1000000'
+    steps:
+      - name: Start the original job clock
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, time
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('TOUCHCOLOR_JOB_STARTED_EPOCH=' + str(time.time()) + '\n')
+              output.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC=' + str(time.monotonic()) + '\n')
+          PY
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Initialize the original source-bound job budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
+          test "$GITHUB_REF" = refs/heads/codex/mini-passive-compatibility
+          test "$GITHUB_EVENT_NAME" = push
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mini-passive-compatibility.yml@refs/heads/codex/mini-passive-compatibility
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          python3 scripts/job_budget.py initialize
+      - name: Prepare exact Mini and observe the installed reader, then stop
+        shell: bash
+        run: python3 scripts/mini_passive_compatibility.py compatibility-only
+      - name: Stage bounded existing files only
+        id: stage
+        timeout-minutes: 1
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, stat
+          root = Path('build')
+          if root.is_symlink(): raise SystemExit('Unsafe build root')
+          target = root / 'mini-passive-upload'
+          target.mkdir(exist_ok=False)
+          caps = {
+              'iPadMini-passive-compatibility/stream.bin': 65536,
+              'iPadMini-passive-compatibility/collector_stderr.bin': 4096,
+              'iPadMini-passive-compatibility/help.bin': 8192,
+              'iPadMini-passive-compatibility/receipt.json': 8192,
+              'iPadMini-simulator.json': 8192,
+              'iPadMini-runtime-command-uncertain': 4096,
+              'job-budget.json': 8192,
+              'job-budget-incomplete.json': 4096,
+              'job-budget-cleanup-unconfirmed.json': 4096,
+          }
+          for relative, cap in caps.items():
+              source = root / relative
+              if any(p.is_symlink() for p in (source, *source.parents)):
+                  raise SystemExit('Linked evidence')
+              if not source.exists(): continue
+              info = source.stat()
+              if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > cap:
+                  raise SystemExit('Unbounded evidence')
+              with source.open('rb') as stream: data = stream.read(cap + 1)
+              if len(data) > cap: raise SystemExit('Growing evidence')
+              (target / relative.replace('/', '-')).write_bytes(data)
+          PY
+      - name: Verify upload reserve, using local budget only
+        id: upload_reserve
+        timeout-minutes: 1
+        if: always()
+        run: python3 scripts/job_budget.py check-upload
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        timeout-minutes: 1
+        if: always() && steps.stage.outcome == 'success' && steps.upload_reserve.outcome == 'success'
+        with:
+          name: mini-passive-compatibility-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/mini-passive-upload
+          if-no-files-found: warn
+          retention-days: 7
