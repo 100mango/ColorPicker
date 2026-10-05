@@ -70,6 +70,25 @@ class StaticCrownProjectTests(unittest.TestCase):
         self.assertEqual(app_config['buildSettings']['PRODUCT_BUNDLE_IDENTIFIER'], 'com.mango.touchColor.watchCrownControl')
         self.assertNotIn('INFOPLIST_KEY_WKCompanionAppBundleIdentifier', app_config['buildSettings'])
 
+    def test_standalone_watch_only_packaging_omits_companion_independence_key(self):
+        # Apple WKWatchOnly is the topology for this standalone app. The failed
+        # 932adf install treated presence of both keys as ambiguous. Require
+        # absence of the companion key, rather than substituting a false value.
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);objects=generate(root)
+            project=(root/(APP+'.xcodeproj/project.pbxproj')).read_text()
+        configs=[v['buildSettings'] for v in objects.values() if v['isa']=='XCBuildConfiguration']
+        app_settings=[v for v in configs if v.get('PRODUCT_MODULE_NAME')==APP]
+        self.assertEqual(len(app_settings),1)
+        self.assertEqual(app_settings[0]['INFOPLIST_KEY_WKWatchOnly'],'YES')
+        self.assertEqual(app_settings[0]['INFOPLIST_KEY_WKApplication'],'YES')
+        for settings in configs:
+            self.assertNotIn('INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp',settings)
+            self.assertNotIn('INFOPLIST_KEY_WKCompanionAppBundleIdentifier',settings)
+        self.assertNotIn('WKRunsIndependentlyOfCompanionApp',project)
+        self.assertNotIn('WKCompanionAppBundleIdentifier',project)
+        self.assertNotIn('WKRunsIndependentlyOfCompanionApp',(ROOT/'scripts/generate_watch_crown_control_project.py').read_text())
+
     def test_static_application_has_no_product_state_focus_or_crown_handler(self):
         source = (ROOT / APP / 'StaticCrownControlApp.swift').read_text()
         self.assertEqual(re.findall(r'^import (\w+)$', source, re.M), ['SwiftUI'])

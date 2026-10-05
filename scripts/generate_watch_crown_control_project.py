@@ -57,7 +57,7 @@ def generate(root=ROOT):
         dependencies = []
         if is_app:
             settings.update(INFOPLIST_KEY_CFBundleDisplayName='Crown Control', INFOPLIST_KEY_WKApplication='YES',
-                            INFOPLIST_KEY_WKWatchOnly='YES', INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp='YES',
+                            INFOPLIST_KEY_WKWatchOnly='YES',
                             MARKETING_VERSION='1.0', CURRENT_PROJECT_VERSION='1')
         else:
             settings.update(TEST_TARGET_NAME=APP, SWIFT_OBJC_BRIDGING_HEADER=UI + '/TCStaticListGeometry.h')
