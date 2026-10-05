@@ -9,7 +9,7 @@ import re
 import sys
 import time
 
-from palette_lifecycle_diagnostics import capture, CaptureStopped, confirmed_help, valid_uuid
+from palette_lifecycle_diagnostics import capture, CaptureStopped, valid_uuid
 from retain_mac_evidence import read_file, strict_json, workflow_identity
 
 PREFIX = 'MAC_PASSIVE_LIFECYCLE '
@@ -18,6 +18,7 @@ OUTPUT = 'mac-passive-lifecycle.json'
 RAW_LIMIT = 512 * 1024
 OUTPUT_LIMIT = 128 * 1024
 SECONDS = 30
+CONTRACT = 'fixed-app-scoped-log-show-v1'
 CASES = ('testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail',
          'testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail',
          'testNativeFileSamplingZoomPalettePersistenceAndPrivacy',
@@ -170,12 +171,53 @@ def project(raw, receipts):
                        'status':'records-retained' if events else 'observation-gap','absence_is_not_proof':True})
     require(len(encode(result))<=OUTPUT_LIMIT-4096,'projected evidence too large');return result
 
+def stderr_classification(raw):
+    """Only verified diagnostic prefixes indicate failure; other stderr is evidence, not readiness."""
+    text=raw.decode('utf-8',errors='replace')
+    if re.search(r'^(?:log:\s*)?(?:permission denied|operation not permitted|access denied)\b',text,re.I|re.M):
+        return 'permission-denied'
+    if re.search(r'^(?:log:\s*)?(?:error:|failed to\b|unable to\b|unknown (?:option|command)\b|unrecognized option\b|invalid option\b)',text,re.I|re.M):
+        return 'verified-error'
+    return 'empty' if not raw else 'unclassified'
+
+
+def validate_commands(value):
+    commands=value['commands']
+    require(isinstance(commands,list) and len(commands)<=3,'unbounded command facts')
+    stages=('source-head','source-clean','query')
+    known=0
+    for index,row in enumerate(commands):
+        require(isinstance(row,dict) and set(row)=={'stage','returned','exit','cleanup_confirmed','stdout_bytes','stderr_bytes','stderr_classification','elapsed_seconds','timely'},'unknown command fields')
+        require(row['stage']==stages[index] and type(row['returned']) is bool,'unplanned command stage')
+        require(row['exit'] is None or integer(row['exit'],-255,255),'invalid command exit')
+        require(row['cleanup_confirmed'] is None or type(row['cleanup_confirmed']) is bool,'invalid owned cleanup')
+        require(number(row['elapsed_seconds']) and row['elapsed_seconds']>=0 and type(row['timely']) is bool,'invalid command timing')
+        require(row['stderr_classification'] in ('unobserved','empty','unclassified','permission-denied','verified-error'),'invalid stderr classification')
+        if row['returned']:
+            require(integer(row['stdout_bytes'],0,RAW_LIMIT) and integer(row['stderr_bytes'],0,RAW_LIMIT)
+                    and row['exit'] is not None and row['cleanup_confirmed'] is True,'incomplete returned command')
+            require(row['stderr_classification']!='unobserved'
+                    and (row['stderr_classification']=='empty')==(row['stderr_bytes']==0),'inconsistent stderr facts')
+            known+=row['stdout_bytes']+row['stderr_bytes']
+        else:
+            require(row['exit'] is None and row['stdout_bytes'] is None and row['stderr_bytes'] is None
+                    and row['stderr_classification']=='unobserved','invented interrupted output')
+        successful=row['returned'] and row['exit']==0 and row['cleanup_confirmed'] is True and row['timely']
+        if index<len(commands)-1:require(successful,'continued after command uncertainty/failure')
+    require(known==value['raw_bytes'],'command byte accounting mismatch')
+    require(value['host_cleanup_confirmed']==(commands[-1]['cleanup_confirmed'] if commands else None),'aggregate cleanup contradiction')
+    if value['status']=='observation-only':
+        require(value['reason']=='missing-records-and-restoration-notifications-are-not-proof-of-window-cause','observation reason contradiction')
+        require(len(commands)==3 and all(row['returned'] and row['exit']==0 and row['cleanup_confirmed'] is True and row['timely'] for row in commands),'observation without completed fixed command sequence')
+        require(commands[-1]['stderr_classification'] in ('empty','unclassified'),'observation after verified query error')
+
+
 def validate_projection(raw, source):
     """Closed observation schema tied to the already verified Mac retention source."""
     value=strict_json(raw)
-    required={'schema','status','acceptance','source','records','host_cleanup_confirmed','raw_bytes','omissions','budget_seconds','elapsed_seconds','reason'}
+    required={'schema','status','acceptance','source','records','host_cleanup_confirmed','raw_bytes','omissions','budget_seconds','elapsed_seconds','reason','contract','commands'}
     require(isinstance(value,dict) and required<=set(value)<=required|{'detail','missing_process_receipts'},'unknown projection schema')
-    require(type(value['schema']) is int and value['schema']==1 and value['acceptance'] is False and value['budget_seconds']==30
+    require(type(value['schema']) is int and value['schema']==2 and value['contract']==CONTRACT and value['acceptance'] is False and value['budget_seconds']==30
             and type(value['budget_seconds']) is int and value['status'] in ('unavailable','observation-only'),'invalid projection status')
     binding={key:source[key] for key in ('repository','ref','workflow_ref','workflow_file','event_name','sha','run_id')}
     binding['attempt']=source['run_attempt']
@@ -183,7 +225,8 @@ def validate_projection(raw, source):
     require(integer(value['raw_bytes'],0,RAW_LIMIT) and number(value['elapsed_seconds']) and value['elapsed_seconds']>=0
             and (value['host_cleanup_confirmed'] is None or type(value['host_cleanup_confirmed']) is bool)
             and value['omissions']==[],'invalid projection bounds')
-    reasons={'no-current-process-receipts','documented-route-unconfirmed','log-query-failed',
+    validate_commands(value)
+    reasons={'no-current-process-receipts','log-query-failed','log-query-permission-denied','log-query-verified-error',
              'missing-records-and-restoration-notifications-are-not-proof-of-window-cause',
              'owned-capture-stopped','invalid-or-unavailable-evidence'}
     require(value['reason'] in reasons,'unknown projection reason')
@@ -232,23 +275,40 @@ def validate_projection(raw, source):
 
 def collect(root, env=os.environ, runner=capture, clock=time.monotonic):
     started=clock();deadline=started+SECONDS;spent=0
-    result={'schema':1,'status':'unavailable','acceptance':False,'source':None,'records':[],
+    result={'schema':2,'contract':CONTRACT,'commands':[],'status':'unavailable','acceptance':False,'source':None,'records':[],
             'host_cleanup_confirmed':None,'raw_bytes':0,'omissions':[],'budget_seconds':SECONDS}
-    def invoke(argv,cap):
+    def invoke(stage,argv,cap):
         nonlocal spent
-        remaining=deadline-clock()-4
-        require(remaining>0 and spent<RAW_LIMIT,'collection deadline exhausted')
-        granted=remaining;began=clock();response=runner(argv,seconds=granted,cap=min(cap,RAW_LIMIT-spent))
-        require(clock()-began<=granted and clock()<deadline,'late collection command')
-        spent+=len(response.stdout)+len(response.stderr);require(spent<=RAW_LIMIT,'raw evidence ceiling exceeded')
-        return response
+        command_deadline=deadline-4
+        require(clock()<command_deadline and spent<RAW_LIMIT,'collection deadline exhausted')
+        began=clock();row={'stage':stage,'returned':False,'exit':None,'cleanup_confirmed':None,
+            'stdout_bytes':None,'stderr_bytes':None,'stderr_classification':'unobserved','elapsed_seconds':0,'timely':False}
+        result['commands'].append(row)
+        result['host_cleanup_confirmed']=None
+        try:
+            remaining=command_deadline-clock()
+            require(remaining>0,'collection deadline expired before capture')
+            response=runner(argv,seconds=remaining,cap=min(cap,RAW_LIMIT-spent))
+            row.update(returned=True,exit=response.returncode,cleanup_confirmed=True,
+                stdout_bytes=len(response.stdout),stderr_bytes=len(response.stderr),
+                stderr_classification=stderr_classification(response.stderr))
+            result['host_cleanup_confirmed']=True
+            spent+=len(response.stdout)+len(response.stderr)
+            row['timely']=clock()<command_deadline
+            require(row['timely'],'late collection command')
+            require(spent<=RAW_LIMIT,'raw evidence ceiling exceeded')
+            return response
+        except CaptureStopped as error:
+            row['cleanup_confirmed']=error.cleanup_confirmed
+            raise
+        finally:row['elapsed_seconds']=clock()-began
     try:
         identity=workflow_identity(env);require(identity['workflow_file']=='.github/workflows/mac-watch-repair.yml','dedicated Mac workflow required')
         sha=env.get('GITHUB_SHA','');require(re.fullmatch('[0-9a-f]{40}',sha) and env.get('GITHUB_WORKFLOW_SHA')==sha,'wrong source')
         require(env.get('TOUCHCOLOR_JOB_PLATFORM')=='mac' and env.get('TOUCHCOLOR_EVIDENCE_LIMIT')=='3000000','wrong lane/budget')
         require(all(re.fullmatch('[1-9][0-9]*',env.get(k,'')) for k in ('GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT')),'missing run binding')
-        for argv,expected in [(['git','rev-parse','HEAD'],sha),(['git','status','--porcelain','--untracked-files=all'],'')]:
-            response=invoke(argv,8192);require(response.returncode==0 and response.stdout.decode().strip()==expected,'unclean source')
+        for stage,argv,expected in [('source-head',['git','rev-parse','HEAD'],sha),('source-clean',['git','status','--porcelain','--untracked-files=all'],'')]:
+            response=invoke(stage,argv,8192);require(response.returncode==0 and response.stdout.decode().strip()==expected,'unclean source')
         result['source']={**identity,'sha':sha,'run_id':env['GITHUB_RUN_ID'],'attempt':env['GITHUB_RUN_ATTEMPT']}
         receipts=identities(root);require(clock()<deadline-4,'identity reading exceeded deadline')
         observed={(row['case'],row['sandbox'],row['ordinal']) for row in receipts}
@@ -257,10 +317,11 @@ def collect(root, env=os.environ, runner=capture, clock=time.monotonic):
             for lane in (False,True) for case in CASES for ordinal in ((1,2) if case==CASES[3] else (1,))
             if (case,lane,ordinal) not in observed]
         if not receipts:result['reason']='no-current-process-receipts';return result
-        for kind in ('show','predicates'):
-            response=invoke(['/usr/bin/log','help',kind],32768)
-            if not confirmed_help(kind,response):result['reason']='documented-route-unconfirmed';return result
-        response=invoke(command(receipts),RAW_LIMIT-spent)
+        # Fixed public compatibility attempt, not a help-layout inference.
+        response=invoke('query',command(receipts),RAW_LIMIT-spent)
+        diagnostic=result['commands'][-1]['stderr_classification']
+        if diagnostic=='permission-denied':result['reason']='log-query-permission-denied';return result
+        if diagnostic=='verified-error':result['reason']='log-query-verified-error';return result
         if response.returncode!=0:result['reason']='log-query-failed';return result
         projected=project(response.stdout,receipts);require(clock()<deadline,'projection exceeded deadline')
         result.update(status='observation-only',records=projected,host_cleanup_confirmed=True,

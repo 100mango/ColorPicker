@@ -52,8 +52,14 @@ def bound():
 def projection_fixture():
     source={key:SOURCE[key] for key in ('repository','ref','workflow_ref','workflow_file','event_name','sha','run_id')}
     source['attempt']=SOURCE['run_attempt']
-    return dict(schema=1,status='unavailable',acceptance=False,source=source,records=[],host_cleanup_confirmed=None,
+    return dict(schema=2,contract=observe.CONTRACT,commands=[],status='unavailable',acceptance=False,source=source,records=[],host_cleanup_confirmed=None,
                 raw_bytes=0,omissions=[],budget_seconds=30,elapsed_seconds=.1,reason='no-current-process-receipts')
+
+def completed_commands():
+    return [dict(stage=stage,returned=True,exit=0,cleanup_confirmed=True,stdout_bytes=0,stderr_bytes=0,
+                 stderr_classification='empty',elapsed_seconds=.1,timely=True)
+            for stage in ('source-head','source-clean','query')]
+
 
 def add_valid_identity(root,fixture):
     group={'testIdentifier':'TouchColorMacUITests/'+observe.CASES[0]+'()',
@@ -149,10 +155,10 @@ class CollectionTests(unittest.TestCase):
                 if behavior:return behavior(argv,kwargs)
                 data=b'a'*40+b'\n' if argv==['git','rev-parse','HEAD'] else b'[]' if argv[:2]==['/usr/bin/log','show'] else b''
                 return subprocess.CompletedProcess(argv,0,data,b'')
-            with patch.object(observe,'confirmed_help',return_value=True):return observe.collect(root,self.env,runner,lambda:self.time)
+            return observe.collect(root,self.env,runner,lambda:self.time)
     def test_single_joint_collection_clock_and_scope(self):
         result=self.run_collect();self.assertEqual(result['status'],'observation-only');self.assertFalse(result['acceptance'])
-        self.assertEqual(len(self.calls),5);self.assertEqual(self.calls[-1][0][:2],['/usr/bin/log','show'])
+        self.assertEqual(len(self.calls),3);self.assertEqual(self.calls[-1][0][:2],['/usr/bin/log','show'])
         self.assertEqual(len(result['missing_process_receipts']),9)
         self.assertTrue(all(x[1]['seconds']<=26 for x in self.calls));self.assertLess(result['elapsed_seconds'],30)
     def test_no_receipt_stops_before_help_or_query(self):
@@ -259,6 +265,7 @@ class GuardIntegrationTests(unittest.TestCase):
     def test_closed_projection_schema_reconstructs_actual_typed_events(self):
         value=projection_fixture();value.update(status='observation-only',host_cleanup_confirmed=True,
              reason='missing-records-and-restoration-notifications-are-not-proof-of-window-cause',records=observe.project(json.dumps([envelope(event())]).encode(),[bound()]))
+        value['commands']=completed_commands()
         # Use a real exported filename shape in the synthetic identity.
         value['records'][0]['identity']['receipt_file']='screenshots/'+TOKEN+'.txt'
         observe.validate_projection(observe.encode(value),SOURCE)
@@ -288,5 +295,109 @@ class SourceTests(unittest.TestCase):
         self.assertLess(targeted.index('scripts/mac_passive_lifecycle.py'),targeted.index('scripts/retain_mac_evidence.py'))
         self.assertIn("--seconds 180 --phase evidence",targeted)
         for text in [targeted,canonical]:self.assertIn('TOUCHCOLOR_MAC_LIFECYCLE|MAC_PASSIVE_LIFECYCLE|com.mango.touchColor.MacLifecycle',text)
+
+
+class FixedQueryContractTests(CollectionTests):
+    def test_actual_fixed_query_is_attempted_without_help_layout(self):
+        result=self.run_collect()
+        self.assertEqual(result['schema'],2);self.assertEqual(result['contract'],observe.CONTRACT)
+        self.assertEqual([row['stage'] for row in result['commands']],['source-head','source-clean','query'])
+        self.assertFalse(any('help' in argv for argv,_ in self.calls))
+        observe.validate_commands(result)
+        self.assertEqual(result['records'][0]['status'],'observation-gap')
+        self.assertTrue(result['host_cleanup_confirmed'])
+
+    def query_behavior(self,stdout=b'[]',stderr=b'',exit_code=0,late=False,stopped=None):
+        def behavior(argv,kwargs):
+            if argv[0]=='git':return subprocess.CompletedProcess(argv,0,b'a'*40+b'\n' if argv[1]=='rev-parse' else b'',b'')
+            if stopped:raise observe.CaptureStopped('duration-limit',stopped[0])
+            if late:self.time+=27
+            return subprocess.CompletedProcess(argv,exit_code,stdout,stderr)
+        return behavior
+
+    def test_typed_positive_record_and_unclassified_stderr_are_retained(self):
+        result=self.run_collect(self.query_behavior(json.dumps([envelope(event())]).encode(),b'informational tool notice\n'))
+        self.assertEqual(result['status'],'observation-only');self.assertTrue(result['records'][0]['app_header_observed'])
+        self.assertEqual(result['commands'][-1]['stderr_classification'],'unclassified');observe.validate_commands(result)
+
+    def test_verified_permissions_and_errors_cannot_be_accepted_at_zero_exit(self):
+        for raw,classification in [(b'log: Permission denied\n','permission-denied'),(b'Operation not permitted\n','permission-denied'),
+                (b'log: error: unknown option\n','verified-error'),(b'log: Unable to open local log store\n','verified-error')]:
+            with self.subTest(raw=raw):
+                self.setUp();value=self.run_collect(self.query_behavior(stderr=raw))
+                self.assertEqual(value['status'],'unavailable');self.assertEqual(value['commands'][-1]['stderr_classification'],classification)
+                self.assertTrue(value['commands'][-1]['cleanup_confirmed']);self.assertEqual(len(self.calls),3)
+                self.assertEqual(value['records'],[]);observe.validate_commands(value)
+
+    def test_nonzero_unsupported_route_and_foreign_malformed_output_fail_closed(self):
+        for output,code in [(b'usage: log show',64),(b'{bad-json',0),(json.dumps([envelope(event(pid=999))]).encode(),0)]:
+            with self.subTest(output=output):
+                self.setUp();value=self.run_collect(self.query_behavior(output,exit_code=code))
+                self.assertEqual(value['status'],'unavailable');self.assertEqual(value['records'],[]);self.assertEqual(len(self.calls),3)
+
+    def test_late_query_and_unknown_cleanup_preserve_no_observation(self):
+        value=self.run_collect(self.query_behavior(late=True));self.assertEqual(value['status'],'unavailable')
+        self.assertFalse(value['commands'][-1]['timely']);self.assertTrue(value['commands'][-1]['returned'])
+        self.assertEqual(value['records'],[]);observe.validate_commands(value)
+        self.setUp();value=self.run_collect(self.query_behavior(stopped=(False,)))
+        self.assertFalse(value['host_cleanup_confirmed']);self.assertFalse(value['commands'][-1]['cleanup_confirmed'])
+        self.assertIsNone(value['commands'][-1]['exit']);self.assertIsNone(value['commands'][-1]['stdout_bytes'])
+        self.assertEqual(len(self.calls),3);observe.validate_commands(value)
+
+    def test_query_byte_limit_stops_with_unknown_output_and_confirmed_owned_cleanup(self):
+        def runner(argv,kwargs):
+            if argv[0]=='git':return subprocess.CompletedProcess(argv,0,b'a'*40+b'\n' if argv[1]=='rev-parse' else b'',b'')
+            raise observe.CaptureStopped('byte-limit',True)
+        value=self.run_collect(runner)
+        self.assertEqual(value['status'],'unavailable');self.assertEqual(value['reason'],'owned-capture-stopped')
+        self.assertEqual(len(self.calls),3);self.assertTrue(value['host_cleanup_confirmed'])
+        self.assertIsNone(value['commands'][-1]['stdout_bytes']);self.assertEqual(value['raw_bytes'],41)
+        observe.validate_commands(value)
+
+    def test_expired_pre_capture_entry_never_starts_command(self):
+        ticks=iter([0.,0.,27.,27.,27.,27.]);calls=[]
+        with tempfile.TemporaryDirectory() as d:
+            value=observe.collect(Path(d),self.env,lambda *a,**kw:calls.append(a),lambda:next(ticks))
+        self.assertEqual(calls,[]);self.assertEqual(value['status'],'unavailable')
+        self.assertFalse(value['commands'][0]['returned']);self.assertIsNone(value['commands'][0]['cleanup_confirmed'])
+
+    def test_historical_native_help_receipt_is_never_upgraded(self):
+        value=json.loads((ROOT/'scripts/fixtures/mac-a6558c-help-unavailable.json').read_bytes())
+        self.assertEqual(value['schema'],1);self.assertEqual(value['reason'],'documented-route-unconfirmed')
+        self.assertEqual(value['source']['sha'],'a6558c8ffa1cf86b499bcfa00f02f8d7bcb1de2b')
+        self.assertEqual(value['records'],[]);self.assertEqual(value['raw_bytes'],2832)
+        source={**SOURCE,**value['source'],'run_attempt':value['source']['attempt']}
+        with self.assertRaises(ValueError):observe.validate_projection(observe.encode(value),source)
+
+    def test_actual_query_projection_retention_and_final_guard(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);fixture=Fixture(root);add_valid_identity(root,fixture)
+            calls=[]
+            def runner(argv,**kwargs):
+                calls.append(argv)
+                data=b'a'*40+b'\n' if argv==['git','rev-parse','HEAD'] else json.dumps([envelope(event())]).encode() if argv[:2]==['/usr/bin/log','show'] else b''
+                return subprocess.CompletedProcess(argv,0,data,b'informational notice\n' if argv[0]=='/usr/bin/log' else b'')
+            value=observe.collect(root,self.env,runner,lambda:0.)
+            self.assertEqual(value['status'],'observation-only');self.assertEqual(len(calls),3)
+            source={**SOURCE,**observe.workflow_identity(self.env)}
+            observe.validate_projection(observe.encode(value),source)
+            (root/keep.LIFECYCLE_FILE).write_bytes(observe.encode(value))
+            result=keep.retain(root,source);self.assertTrue(result['complete'])
+            self.assertEqual(result['passiveLifecycle']['status'],'retained')
+            self.assertEqual(sum(x['status']=='retained' for x in result['requested'].values()),5)
+            keep.validate_selection(root,require_complete=True)
+            guard=GuardIntegrationTests().guard(root);self.assertEqual(guard.returncode,0,guard.stderr)
+
+    def test_closed_acquisition_fields_reject_old_relabel_and_contradictions(self):
+        value=projection_fixture();value['commands']=completed_commands();value['host_cleanup_confirmed']=True
+        for kind in ('old','contract','stage','extra','byte','timely','cleanup','exit'):
+            wrong=copy.deepcopy(value)
+            if kind=='old':wrong['schema']=1
+            elif kind=='contract':wrong['contract']='old-help-layout'
+            elif kind=='stage':wrong['commands'][2]['stage']='query-all-logs'
+            elif kind=='extra':wrong['commands'][2]['raw']='unbounded'
+            elif kind=='byte':wrong['raw_bytes']=1
+            else:wrong['commands'][0][{'timely':'timely','cleanup':'cleanup_confirmed','exit':'exit'}[kind]]=False if kind!='exit' else 65
+            with self.subTest(kind=kind),self.assertRaises(ValueError):observe.validate_projection(observe.encode(wrong),SOURCE)
 
 if __name__=='__main__':unittest.main()

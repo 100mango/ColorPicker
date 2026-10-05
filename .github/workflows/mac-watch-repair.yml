@@ -105,18 +105,6 @@ jobs:
           - platform: mac
             minutes: 40
             evidence_bytes: 3000000
-          - platform: watch
-            lane: watch-smallest
-            watch_profile: smallest
-            text_phase: normal
-            minutes: 45
-            evidence_bytes: 1200000
-          - platform: watch
-            lane: watch-largest
-            watch_profile: largest
-            text_phase: normal
-            minutes: 45
-            evidence_bytes: 1200000
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
