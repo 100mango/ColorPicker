@@ -40,12 +40,12 @@ import OSLog
 
 /// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.
 private extension Scene {
-    @SceneBuilder func workspaceDefaultLaunchPolicy() -> some Scene {
+    func workspaceDefaultLaunchPolicy() -> some Scene {
+        var scene = SceneBuilder.buildLimitedAvailability(self)
         if #available(macOS 15.0, *) {
-            self.defaultLaunchBehavior(.presented)
-        } else {
-            self
+            scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))
         }
+        return SceneBuilder.buildOptional(scene)
     }
 }
 

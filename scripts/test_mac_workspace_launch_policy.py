@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib
 import unittest
 ROOT=Path(__file__).resolve().parents[1]
-HELPER='/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.\nprivate extension Scene {\n    @SceneBuilder func workspaceDefaultLaunchPolicy() -> some Scene {\n        if #available(macOS 15.0, *) {\n            self.defaultLaunchBehavior(.presented)\n        } else {\n            self\n        }\n    }\n}\n\n'
+HELPER='/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.\nprivate extension Scene {\n    func workspaceDefaultLaunchPolicy() -> some Scene {\n        var scene = SceneBuilder.buildLimitedAvailability(self)\n        if #available(macOS 15.0, *) {\n            scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))\n        }\n        return SceneBuilder.buildOptional(scene)\n    }\n}\n\n'
 BASE_HASH='659b63b9802f317ec8f8d2f472a243053cfa4512c0dbf3b8908131d304fe6f26'
 
 class WorkspaceLaunchPolicy(unittest.TestCase):
@@ -16,10 +16,18 @@ class WorkspaceLaunchPolicy(unittest.TestCase):
         self.assertLess(self.source.index('.workspaceDefaultLaunchPolicy()'),self.source.index('Settings { PrivacyView() }'))
     def test_private_availability_guard_retains_older_system_behavior(self):
         self.assertIn('private extension Scene',HELPER)
-        self.assertIn('@SceneBuilder func workspaceDefaultLaunchPolicy() -> some Scene',HELPER)
+        self.assertIn('func workspaceDefaultLaunchPolicy() -> some Scene',HELPER)
+        self.assertNotIn('@SceneBuilder', HELPER)
         self.assertIn('if #available(macOS 15.0, *)',HELPER)
-        self.assertIn('self.defaultLaunchBehavior(.presented)',HELPER)
-        self.assertIn('} else {\n            self\n',HELPER)
+        self.assertIn('var scene = SceneBuilder.buildLimitedAvailability(self)', HELPER)
+        self.assertIn('scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))', HELPER)
+        self.assertEqual(HELPER.count('return '), 1)
+        self.assertIn('return SceneBuilder.buildOptional(scene)', HELPER)
+        self.assertNotIn('#unavailable', HELPER)
+        self.assertNotIn('_LimitedAvailabilitySceneMarker', HELPER)
+        self.assertNotIn('else', HELPER)
+        self.assertLess(HELPER.index('var scene = '), HELPER.index('if #available'))
+        self.assertLess(HELPER.index('if #available'), HELPER.index('return SceneBuilder.buildOptional'))
         self.assertNotIn('#if DEBUG',HELPER)
     def test_no_forced_activation_retry_or_restoration_mutation(self):
         for forbidden in ['NSApp','openWindow','activate(','.restorationBehavior','UserDefaults','Timer','DispatchQueue','while ','for ','removePersistentDomain','id:']:

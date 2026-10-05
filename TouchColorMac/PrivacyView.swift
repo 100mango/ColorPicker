@@ -60,7 +60,7 @@ struct SelectablePrivacyText: NSViewRepresentable {
         init(text: String, identifier: String, label: String) {
             let storage = NSTextStorage()
             let manager = NSLayoutManager()
-            let container = NSTextContainer(size: NSSize(width: 0, height: .greatestFiniteMagnitude))
+            let container = NSTextContainer(size: NSSize(width: CGFloat.zero, height: CGFloat.greatestFiniteMagnitude))
             storage.addLayoutManager(manager)
             manager.addTextContainer(container)
             super.init(frame: .zero, textContainer: container)
@@ -73,7 +73,7 @@ struct SelectablePrivacyText: NSViewRepresentable {
             drawsBackground = false
             textContainerInset = .zero
             container.lineFragmentPadding = 0
-            container.lineBreakMode = .byWordWrapping
+            container.lineBreakMode = NSLineBreakMode.byWordWrapping
             container.widthTracksTextView = true
             container.heightTracksTextView = false
             isHorizontallyResizable = false
@@ -102,7 +102,7 @@ struct SelectablePrivacyText: NSViewRepresentable {
             // Speculative layout must never alter the displayed container or selection.
             let storage = NSTextStorage(attributedString: liveStorage)
             let manager = NSLayoutManager()
-            let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
+            let container = NSTextContainer(size: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude))
             container.lineFragmentPadding = liveContainer.lineFragmentPadding
             container.lineBreakMode = liveContainer.lineBreakMode
             storage.addLayoutManager(manager)

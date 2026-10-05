@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib
 import unittest
 ROOT=Path(__file__).resolve().parents[1]
-# Inverse-baseline PrivacyView/UI hashes refer to admitted bridge tree 8c4034ee59b2015e5257b8c78a15a66b087e4131.
+# Inverse-baseline UI hash remains admitted bridge 8c4034; PrivacyView additionally pins the root-admitted explicit type spellings.
 # Camera/palette remain exact collector baseline; all original group/menu assertions are retained.
 CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d2a5fc53ca68123008ebdac46d4e741af',
                                      [('        }.padding(20).frame(width: 560)\n'
@@ -13,7 +13,7 @@ CHANGES = {'TouchColorMac/CameraSheet.swift': ('aedefc2617434530e882b26c9c369e4d
                                        '            .accessibilityLabel("Camera")\n'
                                        '            .accessibilityIdentifier("camera.content")\n'
                                        '            .onDisappear { camera.stop() }\n')]),
- 'TouchColorMac/PrivacyView.swift': ('d958f49324837c062418cb0c43e2345da30ecfb3a65edb1c195c30ce386abe24',
+ 'TouchColorMac/PrivacyView.swift': ('6d43689e9cd6fe21605aa77905b9386d08012b7d472918494753316c3bfea427',
                                      [('        }.padding(24).frame(width: 600, height: 540)\n    }\n',
                                        '        }.padding(24).frame(width: 600, height: 540)\n'
                                        '            .accessibilityElement(children: .contain)\n'

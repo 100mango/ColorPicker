@@ -262,7 +262,8 @@ class MacSelectablePrivacyTextContracts(unittest.TestCase):
         for required in ['isEditable = false', 'isSelectable = true', 'isRichText = false',
                          'isAutomaticLinkDetectionEnabled = false', 'isAutomaticDataDetectionEnabled = false',
                          'enabledTextCheckingTypes = 0', 'drawsBackground = false', 'textContainerInset = .zero',
-                         'container.lineFragmentPadding = 0', 'container.lineBreakMode = .byWordWrapping',
+                         'container.lineFragmentPadding = 0', 'container.lineBreakMode = NSLineBreakMode.byWordWrapping',
+                         'NSSize(width: CGFloat.zero, height: CGFloat.greatestFiniteMagnitude)',
                          'container.widthTracksTextView = true', 'container.heightTracksTextView = false',
                          'font = NSFont.preferredFont(forTextStyle: .body)', 'textColor = .labelColor']:
             self.assertIn(required, initial)
@@ -286,7 +287,7 @@ class MacSelectablePrivacyTextContracts(unittest.TestCase):
     def test_sizing_uses_actual_wrapped_layout_for_finite_positive_proposed_width(self):
         self.assertIn('guard let width = proposal.width else { return nil }', self.privacy)
         self.assertIn('return nsView.measuredSize(width: width)', self.privacy)
-        for required in ['guard width.isFinite, width > 0', 'let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))',
+        for required in ['guard width.isFinite, width > 0', 'let container = NSTextContainer(size: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude))',
                          'manager.ensureLayout(for: container)', 'manager.usedRect(for: container).height',
                          'manager.defaultLineHeight(for: font)', 'guard height.isFinite, height > 0',
                          'return CGSize(width: width, height: height)']:
