@@ -40,7 +40,7 @@ class SetupReplayTests(unittest.TestCase):
     def tearDown(self):self.quiet.stop();os.chdir(self.old);self.temp.cleanup()
     def install(self,boot=E107_BOOT,*,activate=False,final_seconds=FINAL_READ,final_state='Booted',durations_override=None):
         clock=self.clock;commands=self.commands;allowances=self.allowances
-        durations=list(PRELUDE[:6])+([.200] if activate else [])+[PRELUDE[6]]+list(boot)+[final_seconds]
+        durations=list(PRELUDE[:6])+([.200] if activate else [])+[PRELUDE[6]]+list(boot)
         if durations_override is not None:durations=list(durations_override)
         self.expected_durations=durations
         class Process:
@@ -49,8 +49,8 @@ class SetupReplayTests(unittest.TestCase):
             def __init__(self,command,**kwargs):
                 commands.append(command);self.command=command;self.index=len(commands)-1
                 op=command[2]
-                if op=='create':raw=PHONE if len(Process.created)==0 else WATCH
-                elif op=='pair':raw=PAIR
+                if op=='create':raw=(PHONE if len(Process.created)==0 else WATCH)+'\n'
+                elif op=='pair':raw=PAIR+'\n'
                 elif command[2:4]==['list','pairs']:
                     pairs={PAIR:{'watch':{'udid':WATCH},'phone':{'udid':PHONE},'state':'(active, connected)' if Process.active else '(inactive, connected)'}} if Process.paired else {}
                     raw=json.dumps({'pairs':pairs})
@@ -61,6 +61,7 @@ class SetupReplayTests(unittest.TestCase):
                         devices[IOS].append({'name':'owned phone','udid':PHONE,'isAvailable':True,'deviceTypeIdentifier':PHONE_TYPE,'state':final_state})
                         devices[WATCHOS].append({'name':'owned Watch','udid':WATCH,'isAvailable':True,'deviceTypeIdentifier':WATCH_TYPE,'state':final_state})
                     raw=json.dumps({'devices':devices})
+                elif op=='bootstatus':raw='synthetic monitor completed\n'
                 else:raw=''
                 self.stdout=io.BytesIO(raw.encode())
             def wait(self,timeout=None):
@@ -81,7 +82,7 @@ class SetupReplayTests(unittest.TestCase):
                 ['xcrun','simctl','pair',WATCH,PHONE],['xcrun','simctl','list','pairs','-j']]
         if activate:result.append(['xcrun','simctl','pair_activate',PAIR])
         result.extend([['xcrun','simctl','list','pairs','-j'],['xcrun','simctl','boot',PHONE],['xcrun','simctl','bootstatus',PHONE,'-b'],
-                       ['xcrun','simctl','boot',WATCH],['xcrun','simctl','bootstatus',WATCH,'-b'],['xcrun','simctl','list','devices','available','-j']])
+                       ['xcrun','simctl','boot',WATCH],['xcrun','simctl','bootstatus',WATCH,'-b']])
         return result
     def assert_full_setup(self,activate=False):
         observed=copy.deepcopy(self.commands)
@@ -96,20 +97,21 @@ class SetupReplayTests(unittest.TestCase):
             self.assertAlmostEqual(stage['timeout_seconds'],min(CAPS[stage['command'][2]],remaining))
             self.assertLessEqual(stage['deadline_monotonic'],phase['started_monotonic']+SETUP)
             self.assertLessEqual(stage['deadline_monotonic'],self.d.budget.record['started_monotonic']+1020)
-        self.assertEqual({r['udid'] for r in self.d.report['setup_readback']},{PHONE,WATCH})
-        self.assertTrue(all(r['state']=='Booted' for r in self.d.report['setup_readback']))
+        self.assertNotIn('setup_readback',self.d.report)
+        self.assertEqual({r['udid'] for r in self.d.report['setup_proof']['events']},{PHONE,WATCH})
+        self.assertEqual(self.d.report['setup_proof']['simultaneous_state'],'unobserved')
         self.assertEqual(self.d.report['cases'],[]);self.assertFalse(self.d.simulator_uncertain)
     def test_full_e107_setup_with_successful19_second_final_readback(self):
         self.install()
         self.clock.advance(.775+45.689)
         with patch.object(driver,'stop_group',return_value=True):self.d.setup()
-        self.assert_full_setup();self.assertAlmostEqual(self.allowances[-1],30)
+        self.assert_full_setup();self.assertEqual(self.commands[-1][2],'bootstatus')
         self.assertAlmostEqual(self.clock.mono-100,.775+45.689+sum(self.expected_durations))
     def test_full_canonical419_second_setup_clips_all_caps_and_preserves_readback(self):
         self.install(CANONICAL_BOOT)
         with patch.object(driver,'stop_group',return_value=True):self.d.setup()
-        self.assert_full_setup();self.assertGreater(self.allowances[-1],FINAL_READ);self.assertEqual(self.allowances[-1],30)
-        self.assertAlmostEqual(self.clock.mono-100,sum(PRELUDE)+419.381+FINAL_READ)
+        self.assert_full_setup();self.assertGreater(self.allowances[-1],CANONICAL_BOOT[-1]);self.assertLessEqual(self.allowances[-1],420)
+        self.assertAlmostEqual(self.clock.mono-100,sum(PRELUDE)+419.381)
         self.assertEqual(self.d.budget.record['started_monotonic'],100)
     def test_conditional_pair_activation_keeps_same_order_and60_second_cap(self):
         self.install(activate=True)
@@ -117,37 +119,37 @@ class SetupReplayTests(unittest.TestCase):
         self.assert_full_setup(activate=True)
         activation=next(s for s in self.d.report['stages'] if s['command'][2]=='pair_activate')
         self.assertEqual(activation['timeout_seconds'],60)
-    def test_final_inventory_timeout_keeps_fsync_barrier_and_zero_later_commands(self):
-        self.install(final_seconds=31)
+    def test_any_inventory_timeout_keeps_fsync_barrier_and_zero_later_commands(self):
+        self.install(durations_override=[31])
         with patch.object(driver,'stop_group',return_value=True):
             with self.assertRaises(RuntimeError):self.d.setup()
-        self.assertEqual(len(self.commands),12);self.assertEqual(self.d.report['stages'][-1]['timeout_seconds'],30)
+        self.assertEqual(len(self.commands),1);self.assertEqual(self.d.report['stages'][-1]['timeout_seconds'],30)
         self.assertTrue(self.d.simulator_uncertain)
         self.assertEqual(self.d.report['simulator_uncertainty']['marker_durability'],'fsync_confirmed')
         before=len(self.commands);self.d.cleanup();self.d.evidence()
         with self.assertRaises(ValueError):self.d.run(['git','rev-parse','HEAD'],3)
         self.assertEqual(len(self.commands),before)
-    def test_final_read_clipped_by_setup_ceiling_cannot_borrow_reserves(self):
-        self.install([6.637,123.119,99.743,SETUP-240.000])
+    def test_final_bootstatus_clipped_by_setup_ceiling_cannot_borrow_reserves(self):
+        self.install([6.637,123.119,99.743,SETUP-220.000])
         with patch.object(driver,'stop_group',return_value=True):
             with self.assertRaises(RuntimeError):self.d.setup()
         last=self.d.report['stages'][-1]
-        self.assertEqual(last['command'],['xcrun','simctl','list','devices','available','-j'])
-        self.assertLess(last['timeout_seconds'],FINAL_READ);self.assertTrue(self.d.simulator_uncertain)
+        self.assertEqual(last['command'],['xcrun','simctl','bootstatus',WATCH,'-b'])
+        self.assertLess(last['timeout_seconds'],SETUP-220.000);self.assertTrue(self.d.simulator_uncertain)
         self.assertAlmostEqual(last['deadline_monotonic'],100+SETUP)
-    def test_final_read_with_subsecond_remainder_never_starts(self):
+    def test_no_extra_query_is_started_after_last_timely_bootstatus(self):
         pre=sum(PRELUDE)+6.637+123.119+99.743
         self.install([6.637,123.119,99.743,SETUP-.5-pre])
-        with patch.object(driver,'stop_group',return_value=True):
-            with self.assertRaises(ValueError):self.d.setup()
+        with patch.object(driver,'stop_group',return_value=True):self.d.setup()
         self.assertEqual(len(self.commands),11);self.assertFalse(self.d.simulator_uncertain)
         self.assertNotIn('setup_readback',self.d.report)
-    def test_positive_booted_proof_is_required_even_after_successful_commands(self):
+        self.assertEqual(self.d.report['setup_proof']['inventory'],'not_requested')
+    def test_no_simultaneous_booted_state_is_invented(self):
         self.install(final_state='Shutdown')
-        with patch.object(driver,'stop_group',return_value=True):
-            with self.assertRaises(ValueError):self.d.setup()
-        self.assertEqual(len(self.commands),12);self.assertNotIn('setup_readback',self.d.report)
-        self.assertFalse(self.d.report['phases'][0]['completed'])
+        with patch.object(driver,'stop_group',return_value=True):self.d.setup()
+        self.assertEqual(len(self.commands),11);self.assertNotIn('setup_readback',self.d.report)
+        self.assertEqual(self.d.report['setup_proof']['simultaneous_state'],'unobserved')
+        self.assertTrue(self.d.report['phases'][0]['completed'])
     def test_later_ui_still_requires_full_original_phase_allowance(self):
         self.install(CANONICAL_BOOT);self.clock.advance(46.464)
         with patch.object(driver,'stop_group',return_value=True):self.d.setup()
@@ -155,7 +157,7 @@ class SetupReplayTests(unittest.TestCase):
         with self.d.phase('isolated_static',180):self.clock.advance(180)
         with self.assertRaises(BudgetExhausted):
             with self.d.phase('rgb_positive',180):self.fail('Must not start shortened RGB phase')
-        self.assertEqual(len(self.commands),12);self.assertEqual(self.d.budget.record['minutes'],25)
+        self.assertEqual(len(self.commands),11);self.assertEqual(self.d.budget.record['minutes'],25)
 
 
 class CanonicalMapTests(unittest.TestCase):
@@ -185,15 +187,14 @@ class CanonicalMapTests(unittest.TestCase):
     def test_independent_validator_rejects_shortened_or_expanded_canonical_map(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);receipt=fixture(root)
-            for family,cap in CAPS.items():
+            self.assertTrue(result.validate_result(receipt,root)['complete'])
+            for index,original in enumerate(receipt['stages']):
+                if original['phase']!='setup':continue
+                family=original['command'][2];cap=CAPS[family]
                 for bad in (cap-1,cap+1,None):
                     with self.subTest(family=family,bad=bad):
-                        value=copy.deepcopy(receipt);stage=value['stages'][2]
-                        stage['command']=['xcrun','simctl',family];stage['setup_command_cap_seconds']=bad
+                        value=copy.deepcopy(receipt);value['stages'][index]['setup_command_cap_seconds']=bad
                         answer=result.validate_result(value,root)
                         self.assertFalse(answer['complete']);self.assertNotEqual(answer['result'],'passed')
-                value=copy.deepcopy(receipt);stage=value['stages'][2]
-                stage['command']=['xcrun','simctl',family];stage['setup_command_cap_seconds']=cap
-                self.assertTrue(result.validate_result(value,root)['complete'])
 
 if __name__=='__main__':unittest.main()

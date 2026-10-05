@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 import watch_crown_result as result
+from watch_crown_setup_events import SCHEMA, PROTOCOL
 
 WATCH = '11111111-1111-4111-8111-111111111111'
 PHONE = '22222222-2222-4222-8222-222222222222'
@@ -32,6 +33,42 @@ def stage(command, phase, start, duration=1, timeout=5, raw=None, exit=0):
     return record
 
 
+def setup_fixture(root, report):
+    # New schema has real synthetic setup receipts, not a placeholder command.
+    roles={row['role']:row for row in report['owned_devices']}
+    report['owned_devices']=[roles['phone'],roles['watch']]
+    source=report['source'];phone,watch=report['owned_devices'];pair=report['pair']['id']
+    report['initial_inventory']['devices'].setdefault(phone['runtime'],[{
+        'udid':'original-phone','name':'iPhone template','isAvailable':True,
+        'deviceTypeIdentifier':phone['deviceTypeIdentifier']}])
+    commands=[['xcrun','simctl','list','devices','available','-j'],['xcrun','simctl','list','pairs','-j']]
+    for device in (phone,watch):
+        commands.append(['xcrun','simctl','create','TouchColor-Crown-'+device['role']+'-aabbccdd',device['deviceTypeIdentifier'],device['runtime']])
+    commands.extend([['xcrun','simctl','pair',watch['udid'],phone['udid']],
+        ['xcrun','simctl','list','pairs','-j'],['xcrun','simctl','list','pairs','-j']])
+    for device in (phone,watch):
+        commands.extend([['xcrun','simctl','boot',device['udid']],['xcrun','simctl','bootstatus',device['udid'],'-b']])
+    events=[];caps={'list':30,'create':60,'pair':60,'boot':180,'bootstatus':420}
+    for i,command in enumerate(commands):
+        start=41+i*.25;cap=caps[command[2]];entry=stage(command,'setup',start,.1,cap)
+        entry.update(source_sha=source['sha'],budget_phase='work',setup_command_cap_seconds=cap,
+                     deadline_monotonic=100+start+cap)
+        if i in (2,3,4):
+            raw=((phone['udid'],watch['udid'],pair)[i-2]+'\n').encode()
+            entry.update(stdout_bytes=len(raw),stdout_sha256=hashlib.sha256(raw).hexdigest())
+        if command[2]=='bootstatus':
+            device=phone if command[3]==phone['udid'] else watch
+            name='setup-'+device['role']+'-bootstatus.log'
+            raw=retain(root,report,name,'synthetic boot progress completed\n','setup_bootstatus',device['role'])
+            entry.update(stdout_bytes=raw['bytes'],stdout_sha256=raw['sha256'])
+            events.append({**device,'source_sha':source['sha'],'run_id':source['run_id'],'attempt':source['attempt'],
+                'boot_stage_index':len(report['stages'])-1,'bootstatus_stage_index':len(report['stages']),
+                'bootstatus_file':name,'completed_epoch':entry['finished_epoch'],'completed_monotonic':entry['finished_monotonic']})
+        report['stages'].append(entry)
+    report['setup_proof']={'kind':PROTOCOL,'inventory':'not_requested','simultaneous_state':'unobserved',
+        'connectivity':'unobserved','continued_readiness':'unobserved','events':events}
+
+
 def fixture(root, statuses=('passed', 'passed', 'passed')):
     source = dict(sha='a'*40, tree='b'*40, workflow_sha256='c'*64, ref='refs/heads/codex/watch-crown-diagnostic',
                   repository='100mango/ColorPicker', run_id='12345', attempt='1')
@@ -40,7 +77,7 @@ def fixture(root, statuses=('passed', 'passed', 'passed')):
                   text_phase='normal', owned=True)
     pair_record = {'state': '(active, connected)', 'watch': {'udid': WATCH}, 'phone': {'udid': PHONE}}
     products = {name: {'sha256': c*64, 'files': 10, 'bytes': 100} for name,c in [('actual_cold','d'),('isolated_static','e')]}
-    report = dict(schema=1, source=source, source_before=copy.deepcopy(snapshot), source_after=copy.deepcopy(snapshot),
+    report = dict(schema=SCHEMA, protocol=PROTOCOL, source=source, source_before=copy.deepcopy(snapshot), source_after=copy.deepcopy(snapshot),
         source_verified=True, run_id='12345', attempt='1', acceptance=False,
         toolchain={'xcode': 'Xcode 27.0\nBuild version 27A266a', 'macos': '26A428', 'architecture': 'arm64'},
         device=device, owned_devices=[{'role':'watch', **{k:device[k] for k in ('udid','runtime','deviceTypeIdentifier')}},
@@ -60,8 +97,9 @@ def fixture(root, statuses=('passed', 'passed', 'passed')):
     for i,(name,limit) in enumerate(limits.items()):
         report['phases'].append(dict(name=name,limit_seconds=limit,started_epoch=1000+i*20,finished_epoch=1018+i*20,
             started_monotonic=100+i*20,finished_monotonic=118+i*20,completed=True))
-    for i, name in enumerate(('preflight','builds','setup')):
+    for i, name in enumerate(('preflight','builds')):
         report['stages'].append(stage(['fixture',name],name,i*20+1))
+    setup_fixture(root, report)
     for i,(name,status) in enumerate(zip(result.CASE_NAMES,statuses)):
         case = result.CASES[name]; base=(i+3)*20+1
         row = {key:case[key] for key in ('identifier','project','scheme','result_bundle')}

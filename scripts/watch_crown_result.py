@@ -16,6 +16,8 @@ import stat
 import sys
 import time
 
+from watch_crown_setup_events import SCHEMA, PROTOCOL, validate_setup_events
+
 MAX_EVIDENCE_BYTES = 1_200_000
 MAX_RECEIPT_BYTES = 300_000
 MAX_OBSERVATION_BYTES = 16_384
@@ -231,7 +233,8 @@ def _identity(report, expected_source=None):
     require(not isinstance(report.get('stages'),list) or not any(isinstance(s,dict) and s.get('simulator_command_completion')=='unconfirmed'
                     for s in report['stages']),
             'Stage records unresolved simulator command completion')
-    require(report.get('schema') == 1 and type(report.get('schema')) is int, 'unsupported receipt schema')
+    require(report.get('schema') == SCHEMA and type(report.get('schema')) is int and
+            report.get('protocol') == PROTOCOL, 'unsupported receipt schema/protocol')
     require(report.get('acceptance', False) is False, 'receipt claims product acceptance')
     source = report.get('source')
     require(isinstance(source, dict), 'missing source identity')
@@ -590,6 +593,7 @@ def validate_result(report, evidence_dir, *, expected_source=None, expected_budg
     try:
         source, device = _identity(report, expected_source)
         _budget_identity(report, source)
+        validate_setup_events(report, blobs, manifest)
         if expected_budget is not None:
             require(all(report['budget'].get(k) == v for k, v in expected_budget.items()), 'receipt clock or budget differs from original persisted budget')
     except (ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError, RecursionError) as error:

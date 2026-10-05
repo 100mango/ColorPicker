@@ -101,16 +101,16 @@ class RedistributionTests(unittest.TestCase):
         t.d.run=timed
         with patch.object(driver,'stop_group',return_value=True):t.d.setup()
         t.assert_full_setup()
-        self.assertAlmostEqual(t.clock.mono-setup_local,450+LATE+replay.FINAL_READ,places=9)
+        self.assertAlmostEqual(t.clock.mono-setup_local,450+LATE,places=9)
         self.assertEqual(t.d.report['cases'],[]);self.assertFalse(t.d.report['acceptance'])
-        self.assertTrue(all(row['state']=='Booted' for row in t.d.report['setup_readback']))
+        self.assertEqual(t.d.report['setup_proof']['simultaneous_state'],'unobserved')
         for row in t.d.report['stages']:
             self.assertLessEqual(row['deadline_monotonic'],100+1020)
         with t.d.phase('actual_cold',240):t.clock.advance(240)
         with t.d.phase('isolated_static',180):t.clock.advance(180)
         with self.assertRaises(BudgetExhausted):
             with t.d.phase('rgb_positive',180):self.fail('No shortened RGB control is allowed')
-        self.assertEqual(len(t.commands),12);self.assertEqual(t.d.report['cases'],[])
+        self.assertEqual(len(t.commands),11);self.assertEqual(t.d.report['cases'],[])
     def test_full_setup_admission_latest420_seconds_or_no_commands(self):
         for offset in (420,420.001):
             with self.subTest(offset=offset):

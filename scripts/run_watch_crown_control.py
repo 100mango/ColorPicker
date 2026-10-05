@@ -22,6 +22,7 @@ from atomic_json import write_json
 from bounded_process import stop_group
 from job_budget import JobBudget, create_record, RESERVES, STATE, fail_record
 from watch_crown_contract import (binding, require, test_command, method_scheduling_status, METHODS, PHASES, WORKFLOW, CAP)
+from watch_crown_setup_events import SCHEMA, PROTOCOL, BOOT_OUTPUT_LIMIT, validate_setup_events
 from watch_profiles import select_profile
 from watch_runtime_pair import phone_template, verify_new_device, verify_pair, activate_owned_pair
 from watch_home_diagnostics import summarize_home_notifications
@@ -143,7 +144,7 @@ class Driver:
     def __init__(self, env=os.environ, *, clock=time.monotonic, wall=time.time, process_factory=subprocess.Popen):
         self.env, self.clock, self.wall, self.process_factory = env, clock, wall, process_factory
         self.budget = JobBudget(create_record(env, wall, clock), wall=wall, monotonic=clock)
-        self.report = {'schema': 1, 'source': binding(env), 'run_id': env['GITHUB_RUN_ID'],
+        self.report = {'schema': SCHEMA, 'protocol': PROTOCOL, 'source': binding(env), 'run_id': env['GITHUB_RUN_ID'],
                        'attempt': env['GITHUB_RUN_ATTEMPT'], 'source_verified': False,
                        'toolchain': {}, 'stages': [], 'phases': [], 'cases': [], 'evidence': [],
                        'owned_devices': [], 'cleanup': {'confirmed': False}, 'errors': [],
@@ -492,13 +493,28 @@ class Driver:
             self.device=watch_id
             self.report['device']={'udid':watch_id,'runtime':runtime,'profile':'smallest','millimeters':40,
                     'deviceTypeIdentifier':watch['deviceTypeIdentifier'],'text_phase':'normal','owned':True}
-            for identifier in (phone_id,watch_id):
+            events=[]; event_bytes={}
+            for owned in self.owned:
+                identifier=owned['udid']; boot_index=len(self.report['stages'])
                 self.setup_text(['xcrun','simctl','boot',identifier])
-                self.setup_text(['xcrun','simctl','bootstatus',identifier,'-b'])
-            inventory=self.setup_value(['xcrun','simctl','list','devices','available','-j'])['devices']
-            rows=[v for group in inventory.values() for v in group if v['udid'] in (phone_id,watch_id)]
-            require(len(rows)==2 and all(v['state']=='Booted' for v in rows), 'Owned pair readiness unconfirmed')
-            self.report['setup_readback']=rows
+                status_index=len(self.report['stages'])
+                stage, output=self.run(['xcrun','simctl','bootstatus',identifier,'-b'],
+                    SETUP_COMMAND_CAPS['bootstatus'],clip_setup=True)
+                raw=output.encode('utf-8')
+                require(len(raw)<=BOOT_OUTPUT_LIMIT and len(raw)==stage['stdout_bytes'] and
+                        digest(raw)==stage['stdout_sha256'], 'Bootstatus evidence cannot be retained exactly')
+                name=self.retain('setup-'+owned['role']+'-bootstatus.log',raw,'setup_bootstatus',
+                                 owned['role'],limit=BOOT_OUTPUT_LIMIT)
+                event_bytes[name]=raw
+                events.append({**{key:owned[key] for key in ('role','udid','runtime','deviceTypeIdentifier')},
+                    'source_sha':self.report['source']['sha'],'run_id':self.report['run_id'],'attempt':self.report['attempt'],
+                    'boot_stage_index':boot_index,'bootstatus_stage_index':status_index,'bootstatus_file':name,
+                    'completed_epoch':stage['finished_epoch'],'completed_monotonic':stage['finished_monotonic']})
+            # Versioned event-only admission. No post-boot inventory is requested,
+            # and no simultaneous/current Booted state or connectivity is claimed.
+            self.report['setup_proof']={'kind':PROTOCOL,'inventory':'not_requested','simultaneous_state':'unobserved',
+                'connectivity':'unobserved','continued_readiness':'unobserved','events':events}
+            validate_setup_events(self.report,event_bytes,{v['path']:v for v in self.report['evidence']})
 
     def stop_apps(self, method):
         key='isolated_static' if method['key']=='isolated_static' else 'actual_cold'
