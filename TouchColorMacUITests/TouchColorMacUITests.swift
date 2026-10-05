@@ -211,10 +211,41 @@ import ApplicationServices
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Mac sampled source and ordered palette"; shot.lifetime = .keepAlways; add(shot)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+        let privacyContent = app.groups.matching(identifier: "privacy.content")
+        XCTAssertEqual(privacyContent.count, 1)
+        XCTAssertEqual(privacyContent.element.label, "Privacy Policy / 应用隐私政策")
+        XCTAssertTrue(privacyContent.element.buttons["privacy.close"].exists)
+        XCTAssertTrue(privacyContent.element.links["privacy.contact"].exists)
+        assertSelectablePrivacyParagraphs()
         app.buttons["privacy.close"].click()
         app.terminate(); app.launchArguments = []; app.launch()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
+    }
+    private func assertSelectablePrivacyParagraphs() {
+        let paragraphs = [("privacy.policy.zh-Hans", "Privacy policy in Simplified Chinese", "Celluloid、QRCatcher 和 TouchColor 在设备本地处理照片、相机画面、二维码或颜色数据，开发者不收集或上传这些数据。用户主动分享、打开链接，以及系统 iCloud 同步等行为由相应服务处理。如有隐私问题，请联系 100mango@gmail.com。本地数据可通过相应应用或系统删除，权限可在系统设置中撤回。"),
+                          ("privacy.policy.en", "Privacy policy in English", "Celluloid, QRCatcher, and TouchColor process photos, camera images, QR codes, or color data locally on your device. The developer does not collect or upload this data. Actions you choose to take, such as sharing or opening links, and system services such as iCloud sync are handled by the respective services. For privacy questions, contact 100mango@gmail.com. Local data can be deleted through the relevant app or system, and permissions can be revoked in system settings.")]
+        for (identifier, label, expected) in paragraphs {
+            let texts = app.textViews.matching(identifier: identifier)
+            XCTAssertEqual(texts.count, 1, app.debugDescription)
+            let paragraph = texts.element
+            XCTAssertEqual(paragraph.elementType, .textView)
+            XCTAssertEqual(paragraph.label, label)
+            XCTAssertEqual(paragraph.value as? String, expected)
+        }
+        XCTAssertEqual(app.links.count, 2, "Only the explicit published policy and contact Links remain")
+        XCTAssertEqual(app.links.matching(identifier: "privacy.contact").count, 1)
+        XCTAssertFalse(app.links.matching(identifier: "mailto:100mango@gmail.com").element.exists)
+        let chinese = app.textViews["privacy.policy.zh-Hans"]
+        XCTAssertTrue(chinese.isHittable, app.debugDescription)
+        chinese.click()
+        chinese.typeKey("a", modifierFlags: [.command])
+        NSPasteboard.general.clearContents()
+        XCTAssertTrue(NSPasteboard.general.setString("TouchColor privacy Copy regression sentinel", forType: .string))
+        chinese.typeKey("c", modifierFlags: [.command])
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), paragraphs[0].2)
+        XCTAssertEqual(chinese.value as? String, paragraphs[0].2)
+        XCTAssertTrue(app.buttons["privacy.close"].isEnabled)
     }
     private func makePhotosFixture(at url: URL) throws {
         let colors: [[UInt8]] = [[255,0,0,255], [0,255,0,255], [0,0,255,255],
@@ -382,7 +413,17 @@ import ApplicationServices
         let count = app.staticTexts["palette.count"]
         expectation(for: NSPredicate(format: "value == '4' OR label == '4'"), evaluatedWith: count)
         waitForExpectations(timeout: 5)
-        app.menuButtons["palette.actions.1"].click()
+        let actions = app.menuButtons["palette.actions.1"]
+        XCTAssertTrue(actions.isEnabled); XCTAssertTrue(actions.isHittable)
+        NSPasteboard.general.clearContents()
+        XCTAssertTrue(NSPasteboard.general.setString("TouchColor palette Copy regression sentinel", forType: .string))
+        actions.click()
+        let copy = app.menuItems["Copy Color"]
+        XCTAssertTrue(copy.exists); XCTAssertTrue(copy.isEnabled)
+        copy.click()
+        XCTAssertEqual(NSPasteboard.general.string(forType: .string), "#ff00ff")
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "4")
+        actions.click()
         app.menuItems["palette.delete.1"].click()
         XCTAssertEqual(count.value as? String ?? count.label, "3")
         app.buttons["image.export"].click(); saveFile(imageURL)
@@ -449,6 +490,12 @@ import ApplicationServices
             app.buttons["camera.open"].click()
             let status = app.staticTexts["camera.status"]
             XCTAssertTrue(status.waitForExistence(timeout: 5), app.debugDescription)
+            let cameraContent = app.groups.matching(identifier: "camera.content")
+            XCTAssertEqual(cameraContent.count, 1)
+            XCTAssertEqual(cameraContent.element.label, "Camera")
+            XCTAssertTrue(cameraContent.element.buttons["camera.close"].exists)
+            XCTAssertTrue(cameraContent.element.buttons["camera.start"].exists)
+            XCTAssertTrue(cameraContent.element.staticTexts["camera.no-device"].exists)
             XCTAssertTrue((status.value as? String ?? status.label).contains("No camera is available"))
             let unavailable = app.staticTexts["camera.no-device"]
             XCTAssertTrue(unavailable.exists, app.debugDescription)

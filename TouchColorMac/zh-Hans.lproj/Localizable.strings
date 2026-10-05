@@ -94,3 +94,7 @@
 "Contact the developer about privacy" = "联系开发者咨询隐私问题";
 
 "Selected color" = "所选颜色";
+
+// Selectable offline policy paragraphs.
+"Privacy policy in Simplified Chinese" = "简体中文隐私政策";
+"Privacy policy in English" = "英文隐私政策";

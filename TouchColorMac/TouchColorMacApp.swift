@@ -33,7 +33,19 @@ import OSLog
         }
         .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }
+        .workspaceDefaultLaunchPolicy()
         Settings { PrivacyView() }
+    }
+}
+
+/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.
+private extension Scene {
+    @SceneBuilder func workspaceDefaultLaunchPolicy() -> some Scene {
+        if #available(macOS 15.0, *) {
+            self.defaultLaunchBehavior(.presented)
+        } else {
+            self
+        }
     }
 }
 

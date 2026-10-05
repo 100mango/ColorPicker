@@ -187,8 +187,9 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
 
     def test_approved_bilingual_policy_text_is_unchanged(self):
         # Fingerprints of the two approved Text statements in source tree a7bd322.
-        statements = [line.strip() for line in self.privacy.splitlines()
-                      if line.strip().startswith('Text("Celluloid')]
+        # Reconstruct the approved source statements from unchanged paragraph literals.
+        literals = re.findall(r'^    static let (?:simplifiedChinese|english) = (".*")$', self.privacy, re.M)
+        statements = ['Text(' + literal + ')' for literal in literals]
         self.assertEqual([hashlib.sha256(line.encode()).hexdigest() for line in statements], [
             '7297a918bc728a3870ece616c831952ef06d67787be8e3049f01cdc6150e7310',
             'e5f6f88f0908c01aabf80cee6892710ffd57deab41000ad2b04ca315143b9a3a'])
@@ -237,6 +238,111 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
             self.assertIn(required, test)
         for forbidden in ('contact.click()', 'contact.tap()', 'app.launch', 'app.terminate', 'for '):
             self.assertNotIn(forbidden, test)
+
+
+class MacSelectablePrivacyTextContracts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.privacy = (ROOT / 'TouchColorMac/PrivacyView.swift').read_text()
+        cls.native = (ROOT / 'TouchColorMacTests/PrivacyTextTests.swift').read_text()
+        cls.ui = (ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
+
+    def test_only_two_approved_paragraphs_use_native_selectable_text_and_localized_keys(self):
+        self.assertEqual(self.privacy.count('SelectablePrivacyText(text: NSLocalizedString(PrivacyPolicyCopy.'), 2)
+        for member, identifier, label in [('simplifiedChinese', 'privacy.policy.zh-Hans', 'Privacy policy in Simplified Chinese'),
+                                          ('english', 'privacy.policy.en', 'Privacy policy in English')]:
+            self.assertIn('NSLocalizedString(PrivacyPolicyCopy.' + member + ', comment: "Approved offline privacy policy")', self.privacy)
+            self.assertIn('identifier: "' + identifier + '", label: NSLocalizedString("' + label + '"', self.privacy)
+        self.assertIn('.textSelection(.enabled)', self.privacy)
+        self.assertNotIn('Text(verbatim:', self.privacy)
+        self.assertEqual(self.privacy.count('.frame(maxWidth: .infinity, alignment: .leading)'), 2)
+
+    def test_native_plain_text_disables_detectors_before_assigning_content(self):
+        initial = self.privacy.split('init(text: String, identifier: String, label: String) {', 1)[1].split('required init?', 1)[0]
+        for required in ['isEditable = false', 'isSelectable = true', 'isRichText = false',
+                         'isAutomaticLinkDetectionEnabled = false', 'isAutomaticDataDetectionEnabled = false',
+                         'enabledTextCheckingTypes = 0', 'drawsBackground = false', 'textContainerInset = .zero',
+                         'container.lineFragmentPadding = 0', 'container.lineBreakMode = .byWordWrapping',
+                         'container.widthTracksTextView = true', 'container.heightTracksTextView = false',
+                         'font = NSFont.preferredFont(forTextStyle: .body)', 'textColor = .labelColor']:
+            self.assertIn(required, initial)
+            self.assertLess(initial.index(required), initial.index('update(text: text'))
+        self.assertIn('textStorage?.setAttributes([.font: NSFont.preferredFont(forTextStyle: .body),', self.privacy)
+        self.assertIn('.foregroundColor: NSColor.labelColor]', self.privacy)
+        for forbidden in ['.accessibilityHidden', 'children: .ignore', 'children: .combine', '.accessibilityAction',
+                          'AXUIElement', 'makeFirstResponder', 'NSEvent', '.activate(', 'NSWorkspace']:
+            self.assertNotIn(forbidden, self.privacy)
+
+    def test_native_update_preserves_selected_range_when_string_does_not_change(self):
+        update = self.privacy.split('func update(text: String, identifier: String, label: String) {', 1)[1].split('func measuredSize', 1)[0]
+        self.assertEqual(update.count('string = text'), 1)
+        self.assertLess(update.index('guard string != text else { return }'), update.index('string = text'))
+        self.assertLess(update.index('guard string != text else { return }'), update.index('textStorage?.setAttributes'))
+        self.assertNotIn('setSelectedRange', update)
+        for required in ['for _ in 0..<3', 'XCTAssertEqual(view.selectedRange(), selection)',
+                         'view.update(text: paragraphs[1]', 'try assertNoInlineLinks(view)']:
+            self.assertIn(required, self.native)
+
+    def test_sizing_uses_actual_wrapped_layout_for_finite_positive_proposed_width(self):
+        self.assertIn('guard let width = proposal.width else { return nil }', self.privacy)
+        self.assertIn('return nsView.measuredSize(width: width)', self.privacy)
+        for required in ['guard width.isFinite, width > 0', 'let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))',
+                         'manager.ensureLayout(for: container)', 'manager.usedRect(for: container).height',
+                         'manager.defaultLineHeight(for: font)', 'guard height.isFinite, height > 0',
+                         'return CGSize(width: width, height: height)']:
+            self.assertIn(required, self.privacy)
+        for required in ['let probes: [(CGFloat, CGFloat, CGFloat)] = [(280, 552, 280), (552, 280, 552),', 'manager.numberOfGlyphs',
+                         'manager.characterRange(forGlyphRange: laidOut, actualGlyphRange: nil).length',
+                         'XCTAssertGreaterThanOrEqual(try XCTUnwrap(heights[280]), try XCTUnwrap(heights[552]))', 'XCTAssertNil(view.measuredSize(width: width))']:
+            self.assertIn(required, self.native)
+        measurement = self.privacy.split('func measuredSize(width: CGFloat)', 1)[1]
+        for required in ['let storage = NSTextStorage(attributedString: liveStorage)',
+                         'container.lineFragmentPadding = liveContainer.lineFragmentPadding',
+                         'container.lineBreakMode = liveContainer.lineBreakMode',
+                         'storage.addLayoutManager(manager)', 'manager.addTextContainer(container)']:
+            self.assertIn(required, measurement)
+        for forbidden in ['liveContainer.size =', 'setFrameSize(', 'setBoundsSize(', 'string =', 'setSelectedRange(']:
+            self.assertNotIn(forbidden, measurement)
+        for required in ['XCTAssertEqual(container.size, before, "Speculative probes cannot mutate the live container")',
+                         'let committed = committedWidth == firstWidth ? first : second',
+                         'XCTAssertEqual(container.size.width, view.bounds.width)',
+                         'XCTAssertLessThanOrEqual(manager.usedRect(for: container).maxY, view.bounds.height)',
+                         'XCTAssertEqual(view.selectedRange(), selection)']:
+            self.assertIn(required, self.native)
+
+    def test_five_new_hosted_cases_are_in_project_and_no_native_ui_case_is_added(self):
+        self.assertEqual(len(re.findall(r'func test\w+\(', self.native)), 5)
+        project = (ROOT / 'TouchColorMac.xcodeproj/project.pbxproj').read_text()
+        self.assertEqual(project.count('"path" = "TouchColorMacTests/PrivacyTextTests.swift";'), 1)
+        self.assertIn("unitrefs=sources('TouchColorMacTests')", (ROOT / 'scripts/generate_mac_project.py').read_text())
+        self.assertEqual(len(re.findall(r'func test\w+\(', self.ui)), 14)
+        for forbidden in ['XCTSkip', 'app.launch(', 'performAccessibilityAudit', 'requestAccess']:
+            self.assertNotIn(forbidden, self.native)
+
+    def test_existing_privacy_flow_requires_complete_text_actual_copy_and_only_explicit_links(self):
+        section = self.ui.split('private func assertSelectablePrivacyParagraphs()', 1)[1].split('private func makePhotosFixture', 1)[0]
+        for required in ['app.textViews.matching(identifier: identifier)', 'XCTAssertEqual(texts.count, 1',
+                         'XCTAssertEqual(paragraph.elementType, .textView)', 'XCTAssertEqual(paragraph.value as? String, expected)',
+                         'XCTAssertEqual(app.links.count, 2', 'app.links.matching(identifier: "privacy.contact").count, 1',
+                         'XCTAssertFalse(app.links.matching(identifier: "mailto:100mango@gmail.com").element.exists)',
+                         'chinese.click()', 'chinese.typeKey("a", modifierFlags: [.command])',
+                         'NSPasteboard.general.clearContents()', 'XCTAssertTrue(NSPasteboard.general.setString("TouchColor privacy Copy regression sentinel", forType: .string))',
+                         'chinese.typeKey("c", modifierFlags: [.command])', 'NSPasteboard.general.string(forType: .string), paragraphs[0].2']:
+            self.assertIn(required, section)
+        self.assertLess(section.index('Copy regression sentinel'), section.index('chinese.typeKey("c"'))
+        for forbidden in ['.links["privacy.contact"].click', 'app.launch', 'app.terminate']:
+            self.assertNotIn(forbidden, section)
+        self.assertEqual(self.ui.count('assertSelectablePrivacyParagraphs()'), 2)
+
+    def test_paragraph_accessibility_labels_have_exact_bilingual_resources(self):
+        expected = {'en': ['Privacy policy in Simplified Chinese', 'Privacy policy in English'],
+                    'zh-Hans': ['简体中文隐私政策', '英文隐私政策']}
+        for language, labels in expected.items():
+            source = (ROOT / 'TouchColorMac' / (language + '.lproj') / 'Localizable.strings').read_text()
+            entries = re.findall(r'^"((?:\\.|[^"\\])*)"\s*=\s*"((?:\\.|[^"\\])*)";', source, re.M)
+            self.assertEqual(len(entries), len(dict(entries)), language)
+            for key, value in zip(expected['en'], labels): self.assertEqual(dict(entries).get(key), value)
+        self.assertIn('NSLocalizedString(text, bundle: bundle, comment: ""), text', self.native)
 
 
 if __name__ == '__main__':
