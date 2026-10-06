@@ -19,6 +19,22 @@ import palette_lifecycle_diagnostics as d
 PRODUCER_PID_PUBLICATION = ('Path("producer.pid.tmp").write_text(str(os.getpid()))\n'
                             'os.replace("producer.pid.tmp", "producer.pid")\n')
 
+# Synthetic driver observer: acknowledge only after the actual capture handler
+# returns. Different pending signals need not run in the parent's send order.
+FIRST_SIGNAL_OBSERVER = r'''
+original_signal = signal.signal
+def observe_signal(number, handler):
+    if getattr(handler, '__name__', None) == 'interrupted':
+        def handled(signum, frame):
+            handler(signum, frame)
+            if not Path('signal.handled').exists():
+                Path('signal.handled.tmp').write_text(str(signum))
+                os.replace('signal.handled.tmp', 'signal.handled')
+        return original_signal(number, handled)
+    return original_signal(number, handler)
+signal.signal = observe_signal
+'''
+
 TOKEN = '11111111-1111-4111-8111-111111111111'
 PRESENTATION = '22222222-2222-4222-8222-222222222222'
 IDENTITY = {'family': 'iPhoneLarge', 'udid': 'D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5',
@@ -153,6 +169,259 @@ class RetentionTests(unittest.TestCase):
                     with self.assertRaises(ValueError): d.load_case(IDENTITY)
             finally:
                 os.chdir(previous)
+
+
+class RejectionReasonTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.previous = Path.cwd(); os.chdir(self.directory.name)
+        Path('build').mkdir()
+        self.path = Path('build/iPhoneLarge-palette-case.json')
+        self.identity_path = Path('build/iPhoneLarge-simulator.json')
+        self.identity_path.write_text(json.dumps(IDENTITY))
+        self.addCleanup(self.cleanup)
+
+    def cleanup(self):
+        os.chdir(self.previous); self.directory.cleanup()
+
+    def retain(self, text='', source=SOURCE):
+        options = {'side_effect': source} if isinstance(source, BaseException) else {'return_value': source}
+        with patch.object(d, 'source_identity', **options), \
+                patch.object(sys, 'stdin', io.TextIOWrapper(io.BytesIO(text.encode()))), \
+                patch.object(sys, 'stdout', io.TextIOWrapper(io.BytesIO())):
+            d.retain('iPhoneLarge')
+        raw = self.path.read_bytes()
+        self.assertLessEqual(len(raw), 12 * 1024)
+        self.assertNotIn(b'SENTINEL_PRIVATE', raw)
+        return json.loads(raw)
+
+    def collect(self, value=None, source=SOURCE):
+        if value is not None:
+            self.path.write_text(json.dumps(value))
+        calls = []
+        def runner(command, **options):
+            calls.append(command)
+            raise AssertionError('Rejection must not run help/query')
+        options = {'side_effect': source} if isinstance(source, BaseException) else {'return_value': source}
+        with patch.object(d, 'source_identity', **options), patch.object(d, 'command_interval') as interval:
+            result = d.collect_lifecycle(IDENTITY, runner)
+        self.assertEqual(calls, [])
+        interval.assert_not_called()
+        self.assertEqual(result['status'], 'unavailable')
+        self.assertEqual(result['events'], [])
+        self.assertNotIn('query_argv', result)
+        self.assertNotIn('SENTINEL_PRIVATE', json.dumps(result))
+        return result
+
+    def rejected(self, reason='retainer-case-parse-rejected'):
+        return {'status': 'rejected-case-metadata', 'rejection_reason': reason,
+                'identity': IDENTITY, 'source': SOURCE, 'capture_started': 98., 'capture_ended': 501.}
+
+    def test_each_retainer_stage_emits_only_a_closed_reason_and_consumer_checks_ownership(self):
+        started = "Test Case '" + d.XCTEST_CASE + "' started.\n"
+        fixtures = [
+            ('retainer-stale-metadata', '', SOURCE, 'case-identity-unverified'),
+            ('retainer-identity-rejected', '', SOURCE, 'case-identity-unverified'),
+            ('retainer-source-rejected', '', ValueError('SENTINEL_PRIVATE'), 'case-source-unverified'),
+            ('retainer-source-exit-unconfirmed', '', d.CaptureStopped('SENTINEL_PRIVATE', False), 'case-source-unverified'),
+            ('retainer-case-parse-rejected', marker(CASE) + '\n', SOURCE, 'retainer-case-parse-rejected'),
+            ('retainer-case-incomplete', started, SOURCE, 'retainer-case-incomplete'),
+        ]
+        self.assertEqual({row[0] for row in fixtures}, d.RETENTION_REJECTIONS)
+        for reason, text, source, consumer_reason in fixtures:
+            with self.subTest(reason=reason):
+                self.path.unlink(missing_ok=True)
+                self.identity_path.write_text(json.dumps(IDENTITY))
+                if reason == 'retainer-stale-metadata': self.path.write_text('{}')
+                if reason == 'retainer-identity-rejected': self.identity_path.write_text('{"SENTINEL_PRIVATE":true}')
+                value = self.retain(text, source)
+                self.assertEqual(value['status'], 'rejected-case-metadata')
+                self.assertEqual(value['rejection_reason'], reason)
+                result = self.collect()
+                self.assertEqual(result['reason'], consumer_reason)
+                self.assertTrue(result['simulator_commands_completed'])
+                if reason in d.UNVERIFIED_SOURCE_REJECTIONS | d.UNVERIFIED_IDENTITY_REJECTIONS:
+                    self.assertEqual(result['reported_unverified_retention_reason'], reason)
+                else:
+                    self.assertNotIn('reported_unverified_retention_reason', result)
+
+    def test_historical_absence_stays_unknown_and_other_existing_fallbacks_stay_closed(self):
+        value = self.rejected(); del value['rejection_reason']
+        self.assertEqual(self.collect(value)['reason'], 'retainer-rejection-unknown')
+        self.path.unlink()
+        self.assertEqual(self.collect()['reason'], 'no-current-case-metadata')
+        self.path.write_text('{')
+        self.assertEqual(self.collect()['reason'], 'invalid-or-unavailable-evidence')
+        self.assertEqual(self.collect(self.rejected(), ValueError('SENTINEL_PRIVATE'))['reason'],
+                         'invalid-or-unavailable-evidence')
+        passed = dict(retained(), status='no-target-failure')
+        self.assertEqual(self.collect(passed)['reason'], 'invalid-or-unavailable-evidence')
+
+    def test_unknown_malformed_reasons_and_forged_downgrades_are_rejected(self):
+        for reason in (None, True, 7, [], {}, 'SENTINEL_PRIVATE', 'retainer-rejection-unknown'):
+            with self.subTest(reason=reason):
+                self.assertEqual(self.collect(self.rejected(reason))['reason'], 'invalid-retention-rejection')
+        # Reasons cannot decorate a success/failure envelope, erase its failed
+        # row with a status edit, or claim a source-stage failure after binding.
+        values = [dict(retained(), rejection_reason='retainer-case-parse-rejected'),
+                  dict(retained(), status='rejected-case-metadata', rejection_reason='retainer-case-parse-rejected'),
+                  dict(self.rejected(), cases=[]), dict(self.rejected(), extra='SENTINEL_PRIVATE')]
+        values += [self.rejected(reason) for reason in d.RETENTION_REJECTIONS
+                   if reason not in {'retainer-case-parse-rejected', 'retainer-case-incomplete'}]
+        for value in values:
+            with self.subTest(value=value):
+                self.assertEqual(self.collect(value)['reason'], 'invalid-retention-rejection')
+
+    def test_owned_reason_requires_exact_source_identity_and_current_capture_interval(self):
+        for key, replacement, expected in (
+                ('identity', None, 'case-identity-unverified'),
+                ('identity', dict(IDENTITY, udid=TOKEN), 'case-identity-unverified'),
+                ('source', None, 'case-source-unverified'),
+                ('source', dict(SOURCE, sha='b' * 40), 'case-source-unverified'),
+                ('source', dict(SOURCE, files={'changed': 'b' * 64}), 'case-source-unverified'),
+                ('source', dict(SOURCE, run={'GITHUB_RUN_ID': '124', 'GITHUB_RUN_ATTEMPT': '1'}), 'case-source-unverified'),
+                ('capture_started', 0., 'invalid-or-unavailable-evidence'),
+                ('capture_ended', 97., 'invalid-or-unavailable-evidence'),
+                ('capture_ended', float('inf'), 'invalid-or-unavailable-evidence')):
+            with self.subTest(key=key, replacement=replacement):
+                self.assertEqual(self.collect(dict(self.rejected(), **{key: replacement}))['reason'], expected)
+
+    def test_failed_invalid_then_passed_normal_retains_original_failed_case_without_reason(self):
+        second = dict(CASE, case=d.CASES[1], token='33333333-3333-4333-8333-333333333333',
+                      event='started', started=375., epoch=375., pid=0)
+        parser = ready_retainer()
+        parser.line(marker(CASE)); parser.line("Test Case '" + d.XCTEST_CASE + "' failed (34.330 seconds).")
+        parser.line("Test Case '" + d.XCTEST_CASES[d.CASES[1]] + "' started.")
+        parser.line(marker(second)); parser.line("Test Case '" + d.XCTEST_CASES[d.CASES[1]] + "' passed (25.000 seconds).")
+        value = parser.result()
+        self.assertEqual(value, {'status': 'bound-failure', 'cases': [
+            {'case': CASE['case'], 'status': 'bound-failure', 'failure': CASE},
+            {'case': d.CASES[1], 'status': 'no-target-failure'}]})
+        value.update(identity=IDENTITY, source=SOURCE, capture_started=98., capture_ended=501.)
+        self.path.write_text(json.dumps(value))
+        with patch.object(d, 'source_identity', return_value=SOURCE), patch.object(d, 'command_interval', return_value=INTERVAL):
+            self.assertEqual(d.failed_cases(d.load_case(IDENTITY)), [CASE])
+
+    def test_cancellation_and_unconfirmed_capture_do_not_become_reason_only_success(self):
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            for cleanup in (False, True):
+                with self.subTest(signal=signum, cleanup=cleanup):
+                    error = d.CaptureStopped('SENTINEL_PRIVATE', cleanup, signum)
+                    with self.assertRaises(d.CaptureStopped) as raised:
+                        self.retain(source=error)
+                    self.assertIs(raised.exception, error)
+                    self.assertFalse(self.path.exists())
+                    result = self.collect(self.rejected(), source=error)
+                    self.assertEqual(result['reason'], 'command-exit-unconfirmed')
+                    self.assertFalse(result['simulator_commands_completed'])
+                    self.assertIs(result['host_client_cleanup_confirmed'], cleanup)
+                    self.path.unlink()
+
+    def test_verified_rejection_reaches_existing_runtime_frame_without_new_capture(self):
+        import uikit_runtime_diagnostics as runtime
+        self.path.write_text(json.dumps(self.rejected()))
+        with patch.object(d, 'source_identity', return_value=SOURCE), \
+                patch.object(runtime, 'owned_crashes', return_value={'reports': []}), \
+                patch.object(runtime, 'service_runner', side_effect=AssertionError('No service capture')):
+            result = runtime.collect(IDENTITY, Path(self.directory.name))
+        frame = runtime.framed_record(result)
+        self.assertLessEqual(len(frame.encode()) + 128, runtime.MAX_OUTPUT_BYTES)
+        emitted = json.loads(frame[len(runtime.FRAME):])
+        self.assertEqual(emitted['palette_lifecycle'], {
+            'status': 'unavailable', 'reason': 'retainer-case-parse-rejected',
+            'simulator_commands_completed': True, 'events': []})
+        self.assertTrue(emitted['simulator_commands_completed'])
+
+    def test_null_source_hint_preserves_source_checks_and_unavailable_runtime_frame(self):
+        import uikit_runtime_diagnostics as runtime
+        for path in d.SOURCES:
+            target = Path(path); target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('source fixture')
+        for reason in d.UNVERIFIED_SOURCE_REJECTIONS:
+            with self.subTest(reason=reason):
+                self.path.write_text(json.dumps(dict(self.rejected(reason), source=None)))
+                calls = []
+                def runner(command, **options):
+                    calls.append((command, options))
+                    self.assertEqual(command[0], 'git')
+                    return subprocess.CompletedProcess(command, 0, SOURCE['sha'].encode()
+                        if command == ['git', 'rev-parse', 'HEAD'] else b'', b'')
+                with patch.dict(os.environ, {'GITHUB_SHA': SOURCE['sha'], 'GITHUB_WORKFLOW_SHA': SOURCE['sha'],
+                        **SOURCE['run']}), patch.object(d, 'command_interval', side_effect=AssertionError('No command proof')):
+                    result = d.collect_lifecycle(IDENTITY, runner)
+                self.assertEqual([row[0] for row in calls], [
+                    ['git', 'rev-parse', 'HEAD'], ['git', 'diff', '--quiet', 'HEAD', '--']])
+                self.assertEqual([row[1] for row in calls], [{'seconds': 3, 'cap': 4096}] * 2)
+                self.assertEqual(result, {'status': 'unavailable', 'events': [], 'simulator_commands_completed': True,
+                    'reason': 'case-source-unverified', 'reported_unverified_retention_reason': reason})
+                with patch.object(d, 'collect_lifecycle', return_value=result), \
+                        patch.object(runtime, 'owned_crashes', return_value={'reports': []}):
+                    framed = runtime.framed_record(runtime.collect(IDENTITY, Path(self.directory.name)))
+                self.assertEqual(json.loads(framed[len(runtime.FRAME):])['palette_lifecycle'], result)
+                self.assertLessEqual(len(framed.encode()) + 128, runtime.MAX_OUTPUT_BYTES)
+                self.assertEqual(d.MAX_RECORD, 12 * 1024)
+
+    def test_unverified_hint_drops_foreign_malformed_historical_and_forged_records(self):
+        base = dict(self.rejected('retainer-source-rejected'), source=None)
+        changes = [
+            {'identity': None}, {'identity': dict(IDENTITY, udid=TOKEN)},
+            {'source': SOURCE}, {'source': dict(SOURCE, sha='b' * 40)}, {'source': {}},
+            {'status': 'bound-failure'}, {'cases': []}, {'extra': 'SENTINEL_PRIVATE'},
+            {'capture_started': 0.}, {'capture_started': True}, {'capture_ended': 97.},
+            {'capture_ended': time.time() + 3600}, {'capture_ended': float('inf')},
+        ] + [{'rejection_reason': reason} for reason in (
+            None, [], {}, True, 'SENTINEL_PRIVATE', 'retainer-rejection-unknown',
+            'retainer-case-incomplete', 'retainer-case-parse-rejected', 'retainer-identity-rejected', 'retainer-stale-metadata')]
+        values = [dict(base, **change) for change in changes]
+        values += [{key: value for key, value in base.items() if key != missing}
+                   for missing in ('source', 'identity', 'capture_started', 'capture_ended', 'rejection_reason')]
+        for value in values:
+            with self.subTest(value=value):
+                self.assertNotIn('reported_unverified_retention_reason', self.collect(value))
+        for source in (ValueError('SENTINEL_PRIVATE'), d.CaptureStopped('SENTINEL_PRIVATE', False, signal.SIGTERM)):
+            result = self.collect(base, source=source)
+            self.assertNotIn('reported_unverified_retention_reason', result)
+            if isinstance(source, d.CaptureStopped):
+                self.assertFalse(result['simulator_commands_completed'])
+                self.assertEqual(result['reason'], 'command-exit-unconfirmed')
+
+    def test_null_identity_hints_keep_identity_rejected_without_source_or_simulator_query(self):
+        import uikit_runtime_diagnostics as runtime
+        for reason in d.UNVERIFIED_IDENTITY_REJECTIONS:
+            with self.subTest(reason=reason):
+                value = dict(self.rejected(reason), identity=None, source=None)
+                self.path.write_text(json.dumps(value))
+                with patch.object(d, 'source_identity', side_effect=AssertionError('Unowned source check')) as source, \
+                        patch.object(d, 'command_interval', side_effect=AssertionError('No command proof')):
+                    result = d.collect_lifecycle(IDENTITY, runner=lambda *a, **k: self.fail('No query'))
+                source.assert_not_called()
+                self.assertEqual(result, {'status': 'unavailable', 'events': [], 'simulator_commands_completed': True,
+                    'reason': 'case-identity-unverified', 'reported_unverified_retention_reason': reason})
+                with patch.object(d, 'collect_lifecycle', return_value=result), \
+                        patch.object(runtime, 'owned_crashes', return_value={'reports': []}):
+                    framed = runtime.framed_record(runtime.collect(IDENTITY, Path(self.directory.name)))
+                self.assertEqual(json.loads(framed[len(runtime.FRAME):])['palette_lifecycle'], result)
+                self.assertLessEqual(len(framed.encode()) + 128, runtime.MAX_OUTPUT_BYTES)
+
+    def test_null_identity_hint_rejects_inconsistent_stages_bindings_envelopes_and_times(self):
+        for reason in d.UNVERIFIED_IDENTITY_REJECTIONS:
+            base = dict(self.rejected(reason), identity=None, source=None)
+            changes = [
+                {'identity': IDENTITY}, {'identity': dict(IDENTITY, udid=TOKEN)}, {'identity': {}},
+                {'source': SOURCE}, {'source': dict(SOURCE, sha='b' * 40)}, {'source': {}},
+                {'status': 'bound-failure'}, {'cases': []}, {'extra': 'SENTINEL_PRIVATE'},
+                {'capture_started': 0.}, {'capture_started': True}, {'capture_ended': 97.},
+                {'capture_ended': time.time() + 3600}, {'capture_ended': float('inf')},
+            ] + [{'rejection_reason': label} for label in (
+                None, [], {}, True, 'SENTINEL_PRIVATE', 'retainer-rejection-unknown',
+                'retainer-case-incomplete', 'retainer-case-parse-rejected',
+                'retainer-source-rejected', 'retainer-source-exit-unconfirmed')]
+            values = [dict(base, **change) for change in changes]
+            values += [{key: item for key, item in base.items() if key != missing}
+                       for missing in ('source', 'identity', 'capture_started', 'capture_ended', 'rejection_reason')]
+            for value in values:
+                with self.subTest(reason=reason, value=value):
+                    self.assertNotIn('reported_unverified_retention_reason', self.collect(value))
 
 
 class ReceiptTests(unittest.TestCase):
@@ -712,6 +981,40 @@ class CancellationTests(unittest.TestCase):
             finally:
                 os.chdir(old)
 
+    def test_first_signal_ack_follows_real_handler_and_preserves_first_observation(self):
+        from types import SimpleNamespace
+        old = Path.cwd(); calls = []; registered = {}
+        def register(number, handler):
+            prior = registered.get(number); registered[number] = handler; return prior
+        signal_fixture = SimpleNamespace(signal=register)
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                os.chdir(directory)
+                exec(FIRST_SIGNAL_OBSERVER, {'signal': signal_fixture, 'Path': Path, 'os': os})
+                def interrupted(number, frame):
+                    if not calls: self.assertFalse(Path('signal.handled').exists())
+                    calls.append(number)
+                signal_fixture.signal(signal.SIGTERM, interrupted)
+                self.assertFalse(Path('signal.handled').exists())
+                original_write = Path.write_text
+                def publication(path, value):
+                    self.assertEqual(calls, [signal.SIGTERM])
+                    self.assertFalse(Path('signal.handled').exists())
+                    return original_write(path, value)
+                with patch.object(Path, 'write_text', new=publication):
+                    registered[signal.SIGTERM](signal.SIGTERM, None)
+                self.assertEqual(Path('signal.handled').read_text(), str(signal.SIGTERM.value))
+                signal_fixture.signal(signal.SIGINT, interrupted)
+                registered[signal.SIGINT](signal.SIGINT, None)
+                self.assertEqual(calls, [signal.SIGTERM, signal.SIGINT])
+                self.assertEqual(Path('signal.handled').read_text(), str(signal.SIGTERM.value))
+                sentinel = lambda *arguments: None
+                signal_fixture.signal(signal.SIGINT, sentinel)
+                self.assertIs(registered[signal.SIGINT], sentinel)
+                self.assertFalse(Path('signal.handled.tmp').exists())
+            finally:
+                os.chdir(old)
+
     def probe(self, phase, first_signal, *, entry=False):
         """Own both driver and producer; never signal an inventory-derived PID."""
         import ctypes
@@ -812,6 +1115,10 @@ result.update(elapsed=time.monotonic()-started,cleanup_calls=cleanup_calls,calls
               handlers_restored=all(signal.getsignal(number)==handler for number,handler in before.items()))
 Path('result.json').write_text(json.dumps(result))
 ''')
+            source = driver.read_text()
+            marker = 'before={number:signal.getsignal(number)'
+            self.assertEqual(source.count(marker), 1)
+            driver.write_text(source.replace(marker, FIRST_SIGNAL_OBSERVER + '\n' + marker, 1))
             environment = dict(os.environ, PYTHONPATH=str(Path(d.__file__).parent))
             if entry:
                 environment['PATH'] = str(root/'tools') + os.pathsep + environment['PATH']
@@ -833,6 +1140,14 @@ Path('result.json').write_text(json.dumps(result))
                 self.assertTrue((root/'cleanup.started').exists())
                 if phase in ('timeout', 'bytes'):
                     process.send_signal(first_signal)
+                # Keep the original parent deadline. Do not send a different
+                # signal until the real first callback has actually completed.
+                acknowledgement = root/'signal.handled'
+                while not acknowledgement.exists() and time.monotonic() < deadline:
+                    if process.poll() is not None: break
+                    time.sleep(.01)
+                self.assertTrue(acknowledgement.exists())
+                self.assertEqual(int(acknowledgement.read_text()), int(first_signal))
                 # Repeat both cancellation signals during the TERM-ignoring
                 # producer's finite cleanup phase. They must neither abort it
                 # nor start another cleanup allowance.

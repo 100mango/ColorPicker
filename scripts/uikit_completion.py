@@ -1,11 +1,11 @@
-"""Four closed original-iOS remaining-failure groups, never a full-profile receipt.
+"""Three closed original-iOS groups execute five remaining functional cases.
 
-Historical 212 hosted and 36 UI points, plus 48 selected UI passes and four distinct
-new hosted profile points from 2d65c7321990eae57b7c9b661a1d5d1180dffc03,
-run 37501950379 attempt 1, remain external per-case provenance. This route executes
-nine functional failures and one audit failure, plus a fresh two-case bootstrap on
-each of four owned devices. It does not qualify a 54-case hosted target or migrate
-any retained result to this source. The former split iPad identities are retired.
+Prior results retain their original source/run/attempt/device provenance: 212
+hosted, four distinct Add Colors hosted profile points, 36 earlier UI points and
+53 of the 58 selected UI points. This route runs only the five remaining UI cases
+plus two existing nonmodal bootstrap cases on each of three fresh owned devices.
+It does not qualify a full hosted target or migrate retained results to this source.
+The completed Large iPad and all audit selections are retired from this route.
 """
 import os
 from palette_lifecycle_diagnostics import require
@@ -24,20 +24,13 @@ def group(identity, family, names, audits, images, photos):
 
 GROUPS = {
     'iphone-compact': group('iphone-compact', 'iPhoneCompact',
-        ('testInvalidPalettePastePreservesHistory',
-         'testPalettePasteReviewAcceptAndRelaunch'), (), 2, False),
+        ('testInvalidPalettePastePreservesHistory',), (), 2, False),
     'iphone-large': group('iphone-large', 'iPhoneLarge',
         ('testInvalidPalettePastePreservesHistory',
          'testLargestTextPaletteReviewAndImportHelp',
          'testPalettePasteReviewAcceptAndRelaunch'), (), 2, False),
     'ipad-mini': group('ipad-mini', 'iPadMini',
-        ('testPaletteFileCancellationAndImportReturn',
-         'testPrivacyCloseRetainsPhotoSelection'),
-        ('TouchColorUITests/TouchColorAccessibilityUITests/testAccessibilityLiveCameraUnavailable',), 2, True),
-    'ipad-large': group('ipad-large', 'iPadLarge',
-        ('testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState',
-         'testPalettePasteReviewAcceptAndRelaunch',
-         'testLiveCanvasPickerCancellationAndSceneLifecycle'), (), 4, True),
+        ('testPaletteFileCancellationAndImportReturn',), (), 2, False),
 }
 
 def completion_group(family):
@@ -66,12 +59,12 @@ def selection(family, suite):
 
 
 def resource_selection(family):
-    """Reconstruct preparation dependencies only for the four closed selections.
+    """Reconstruct dependencies only for these three closed selections.
 
-    Files cancellation never selects PaletteFixtures JSON. Phone cases use Paste
-    and the in-app image; both iPad groups call importFixture, including after
-    cancellation/Home in the Large live-canvas case. Full targets use their
-    existing Files and Photos preparation, outside this selected receipt branch.
+    Files cancellation never selects PaletteFixtures JSON. The remaining phone
+    cases use Paste and the in-app image; the remaining iPad cancellation case
+    does not import a photo. Full targets keep their original Files and Photos
+    preparation outside this selected receipt branch.
     """
     selected = completion_group(family)
     if selected is None:

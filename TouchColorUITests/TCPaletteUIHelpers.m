@@ -6,6 +6,7 @@
 
 static char TCPaletteReadinessExpiryKey;
 static char TCPaletteCenteredAcceptKey;
+static char TCPaletteIPadCaseStartedKey;
 
 static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NSString *location) {
     if (!snapshot) return TCFilesRouteNone;
@@ -26,6 +27,11 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 // Explicit test-wrapper opt-in. Other testcases keep XCUIElement's default tap.
 - (BOOL)tcPaletteCenteredAccept { return [objc_getAssociatedObject(self,&TCPaletteCenteredAcceptKey) boolValue]; }
 - (void)setTcPaletteCenteredAccept:(BOOL)value { objc_setAssociatedObject(self,&TCPaletteCenteredAcceptKey,value ? @YES : nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+- (NSTimeInterval)tcPaletteIPadCaseStarted {
+    id value=objc_getAssociatedObject(self,&TCPaletteIPadCaseStartedKey);
+    return [value isKindOfClass:NSNumber.class] ? [value doubleValue] : NAN;
+}
+- (void)setTcPaletteIPadCaseStarted:(NSTimeInterval)value { objc_setAssociatedObject(self,&TCPaletteIPadCaseStartedKey,@(value),OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 - (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName {
     if (![app.launchArguments containsObject:@"--ui-test-palette-lifecycle"]) return;
     BOOL fileCase=[caseName containsString:@"testPaletteFileCancellationAndImportReturn"] || [caseName containsString:@"testPaletteFileSelectionReviewAndRelaunch"];
@@ -493,7 +499,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     [self openPaletteAction:@"palette.import.open" app:app];
     XCUIElement *file=[self paletteElement:@"palette.import.file" app:app];[self tapReadyPaletteElement:file timeout:10 existenceTimeout:5];
     if (self.tcPaletteReadinessExpired) return;
-    if (![self waitForPaletteFilesPresentation:app]) return;
+    if (![self waitForPaletteFilesCancellationPresentation:app]) return;
     // Observed system navigation owners differ between the wide sidebar and
     // phone picker. Scope positively to those owners, not a global exclusion.
     XCUIElementQuery *pickerBars=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]];
@@ -567,6 +573,33 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     XCTAssertTrue(appeared,@"The real system Files presentation must attach");
     XCTAssertLessThanOrEqual(elapsed,budget,@"Files remote attachment must stay within its presentation budget");
     return appeared && elapsed<=budget;
+}
+- (BOOL)waitForPaletteFilesCancellationPresentation:(XCUIApplication *)app {
+    if (self.tcPaletteReadinessExpired) return NO;
+    if (UIDevice.currentDevice.userInterfaceIdiom!=UIUserInterfaceIdiomPad) return [self waitForPaletteFilesPresentation:app];
+    // Mini's one system attachment returned true at 22.329s. Admit a complete
+    // 30s only inside this case's original 180s; XCTest keeps its separate cap.
+    // This external preparation gate does not change app action allowances.
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, caseStarted=self.tcPaletteIPadCaseStarted;
+    NSTimeInterval deadline=started+30, caseDeadline=caseStarted+180;
+    BOOL admitted=isfinite(caseStarted) && caseStarted>0 && isfinite(started) && started>=caseStarted &&
+        isfinite(deadline) && isfinite(caseDeadline) && caseDeadline-started>=30 && deadline<=caseDeadline;
+    if (!admitted) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Files cancellation attachment requires its complete 30s inside the original case allowance"); return NO; }
+    XCUIElement *picker=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]].firstMatch;
+    NSTimeInterval grant=deadline-NSProcessInfo.processInfo.systemUptime;
+    if (grant<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Files cancellation attachment expired before its single wait"); return NO; }
+    BOOL appeared=[picker waitForExistenceWithTimeout:grant];
+    NSTimeInterval returned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"PALETTE_FILES_CANCELLATION_PRESENTATION appeared=%d elapsed=%.3f budget=30 responsiveness20=%@",
+          appeared,returned-started,returned-started<=20 ? @"within" : @"missed");
+    // The actual return and local logging share the admitted deadline. Latch
+    // before XCTest failure hooks can ask for screenshots or another AX query.
+    BOOL timely=returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely || !appeared) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Files cancellation attachment returned after its original preparation deadline");
+    if (!timely) return NO;
+    XCTAssertTrue(appeared,@"The real system Files presentation must attach before cancellation");
+    return appeared;
 }
 - (void)selectSyntheticPaletteFile:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];

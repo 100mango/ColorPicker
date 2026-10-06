@@ -3,6 +3,7 @@
 @interface XCTestCase (TCPaletteUIHelpers)
 @property (nonatomic) BOOL tcPaletteReadinessExpired; // Testcase-local, sticky until setUp.
 @property (nonatomic) BOOL tcPaletteCenteredAccept; // Explicit phone-wrapper input experiment only.
+@property (nonatomic) NSTimeInterval tcPaletteIPadCaseStarted; // Monotonic setUp start; Files cancellation admission only.
 - (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName;
 - (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
@@ -15,6 +16,7 @@
 - (BOOL)pastePalette:(NSString *)JSON app:(XCUIApplication *)app;
 - (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app;
 - (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app;
+- (BOOL)waitForPaletteFilesCancellationPresentation:(XCUIApplication *)app;
 - (void)verifyOriginalPaletteSources:(XCUIApplication *)app;
 - (void)verifyInitialPaletteImportControls:(XCUIApplication *)app;
 - (void)exercisePalettePasteReviewAcceptAndRelaunch:(XCUIApplication *)app;

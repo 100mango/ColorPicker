@@ -20,7 +20,6 @@ class CompletionEvidenceTests(unittest.TestCase):
         'iphone-compact': ('iPhoneCompact', 2),
         'iphone-large': ('iPhoneLarge', 2),
         'ipad-mini': ('iPadMini', 2),
-        'ipad-large': ('iPadLarge', 4),
     }
 
     def setUp(self):
@@ -76,7 +75,7 @@ class CompletionEvidenceTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, '', '')
         return run
 
-    def test_four_groups_share_exactly_ten_slots_and_reserve_nine_suites_of_output(self):
+    def test_three_groups_keep_six_slots_and_reserve_six_suites_without_redistribution(self):
         for identity, (family, allocation) in self.GROUPS.items():
             with self.subTest(group=identity), patch.dict(os.environ, {
                     'TC_COMPLETION_GROUP': identity, 'TC_TEST_FAMILY': family}):
@@ -85,19 +84,19 @@ class CompletionEvidenceTests(unittest.TestCase):
                 self.assertEqual(module['limit'], allocation)
                 self.assertEqual(module['COMPLETION_EVIDENCE_GROUPS'], self.GROUPS)
                 self.assertEqual(budget['allocations'], {key: value[1] for key, value in self.GROUPS.items()})
-                self.assertEqual(sum(budget['allocations'].values()), 10)
+                self.assertEqual(sum(budget['allocations'].values()), 6)
                 self.assertEqual(budget['maximum_image_bytes'], 500 * 1024)
                 self.assertEqual(budget['completion_group'], identity)
-                self.assertEqual(budget['diagnostic_groups'], 4)
-                image_bytes = 10 * (4 * ((500 * 1024 + 2) // 3) + 16 * 1024)
+                self.assertEqual(budget['diagnostic_groups'], 3)
+                image_bytes = 6 * (4 * ((500 * 1024 + 2) // 3) + 16 * 1024)
                 per_host = 2 * (4 * 1024 + 512) + 24 * 1024 + 32 * 1024 + 4 * 1024
-                self.assertEqual(module['RESERVED_LOG_BYTES'], image_bytes + 4 * per_host + 9 * 36 * 1024 + 2 * 136 * 1024)
-                self.assertEqual(module['RESERVED_LOG_BYTES'], 7_883_448)
+                self.assertEqual(module['RESERVED_LOG_BYTES'], image_bytes + 3 * per_host + 6 * 36 * 1024 + 2 * 136 * 1024)
+                self.assertEqual(module['RESERVED_LOG_BYTES'], 4_905_992)
                 self.assertEqual(budget['phone_help_groups'], 2)
                 self.assertEqual(budget['maximum_phone_help_bytes'], 136 * 1024)
-                self.assertEqual(module['COMPLETION_SUITE_INVOCATIONS'], 9)
+                self.assertEqual(module['COMPLETION_SUITE_INVOCATIONS'], 6)
                 self.assertEqual(sum(bool(group[suite]) for group in completion.GROUPS.values()
-                                     for suite in ('bootstrap', 'functional', 'audits')), 9)
+                                     for suite in ('bootstrap', 'functional', 'audits')), 6)
                 self.assertEqual(budget['maximum_selected_result_bytes'], 36 * 1024)
                 self.assertLess(module['RESERVED_LOG_BYTES'], 8_282_808)
                 self.assertLessEqual(module['RESERVED_LOG_BYTES'], 20_000_000)
@@ -108,7 +107,7 @@ class CompletionEvidenceTests(unittest.TestCase):
 
     def test_wrong_group_family_workflow_or_source_fails_before_export(self):
         bad_values = [('TC_COMPLETION_GROUP', value) for value in ('ipad-mini-palette',
-                      'ipad-mini-canvas', 'ipad-large-palette', 'ipad-large-canvas', '')] + [
+                      'ipad-mini-canvas', 'ipad-large-palette', 'ipad-large-canvas', 'ipad-large', '')] + [
                       ('TC_TEST_FAMILY', 'iPadLarge'), ('TC_TEST_FAMILY', 'Unknown'),
                       ('GITHUB_REF', managed.REF), ('GITHUB_WORKFLOW_REF', managed.WORKFLOW),
                       ('GITHUB_JOB', 'compatibility'), ('GITHUB_SHA', 'b' * 40),
@@ -159,15 +158,15 @@ class CompletionEvidenceTests(unittest.TestCase):
     def test_existing_result_rejects_stale_group_or_source_binding_before_export(self):
         stored = managed.require_job('iPadMini')
         self.bundle()
-        os.environ.update(TC_COMPLETION_GROUP='ipad-large', TC_TEST_FAMILY='iPadLarge')
-        current = managed.require_job('iPadLarge')
+        os.environ.update(TC_COMPLETION_GROUP='iphone-large', TC_TEST_FAMILY='iPhoneLarge')
+        current = managed.require_job('iPhoneLarge')
         self.bundle()
         for context in (stored, {**current, 'sha': 'b' * 40, 'workflow_sha': 'b' * 40}):
             with self.subTest(context=context), patch.object(managed, 'read_binding',
                     return_value={'context': context}) as binding, patch('subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'result ownership differs'):
                     self.load()
-                binding.assert_called_once_with('iPadLarge')
+                binding.assert_called_once_with('iPhoneLarge')
                 run.assert_not_called()
                 self.assertNotIn('SCREENSHOT_META:', self.output.getvalue())
         with patch.object(managed, 'read_binding', side_effect=ValueError('Foreign source/workflow/run/attempt/family binding')), \
@@ -201,7 +200,7 @@ class CompletionEvidenceTests(unittest.TestCase):
 
     def test_group_or_source_change_during_export_emits_no_image(self):
         self.bundle()
-        for change in ({'TC_COMPLETION_GROUP': 'ipad-large', 'TC_TEST_FAMILY': 'iPadLarge'},
+        for change in ({'TC_COMPLETION_GROUP': 'iphone-large', 'TC_TEST_FAMILY': 'iPhoneLarge'},
                        {'GITHUB_SHA': 'b' * 40, 'GITHUB_WORKFLOW_SHA': 'b' * 40}):
             with self.subTest(change=change), patch.dict(os.environ, dict(os.environ)):
                 with patch('subprocess.run', side_effect=self.exporter(

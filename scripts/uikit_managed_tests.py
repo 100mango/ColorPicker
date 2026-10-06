@@ -62,17 +62,29 @@ class ProductInventoryError(ValueError):
         super().__init__('Product inventory ' + observation['reason'])
 
 
-def product_identity(clock=time.monotonic, *, post_test_deadline=None, observation=None):
+def product_identity(clock=time.monotonic, *, post_test_deadline=None,
+                     preparation_reread_deadline=None, observation=None):
     """Hash the unchanged full product trees; diagnostics are not identity bytes.
 
-    Only the post-command host scan receives 20 seconds, clipped to the caller's
-    original phase minus its summary/cleanup tail. Initial scans retain 10.
+    Post-command scans retain 20 seconds and initial scans retain 10. Only the
+    completion fixture tail accepts an already-admitted 30-second deadline;
+    metadata before this scan consumes that same original allowance.
     File reads remain cooperative: a late read is rejected before hashing or
     further work, and a late final hash is rejected before returning an identity.
     """
-    began = clock(); seconds = 10 if post_test_deadline is None else 20
-    deadline = min(began + seconds, post_test_deadline) if post_test_deadline is not None else began + seconds
-    value = {'schema': 1, 'stage': 'initial' if post_test_deadline is None else 'post_test',
+    if preparation_reread_deadline is not None:
+        require(post_test_deadline is None and type(preparation_reread_deadline) in (int, float) and
+                math.isfinite(preparation_reread_deadline) and preparation_reread_deadline >= 0,
+                'Invalid completion preparation reread deadline or mixed scan modes')
+        family = os.environ.get('TC_TEST_FAMILY')
+        require(resource_selection(family) is not None, 'Preparation reread requires exact completion selection')
+        require_job(family)
+    began = clock()
+    seconds = 30 if preparation_reread_deadline is not None else (10 if post_test_deadline is None else 20)
+    ceiling = preparation_reread_deadline if preparation_reread_deadline is not None else post_test_deadline
+    deadline = min(began + seconds, ceiling) if ceiling is not None else began + seconds
+    stage = 'preparation_reread' if preparation_reread_deadline is not None else ('initial' if post_test_deadline is None else 'post_test')
+    value = {'schema': 1, 'stage': stage,
              'status': 'scanning', 'complete': False, 'reason': None, 'safety_detail': None,
              'files': 0, 'bytes': 0, 'directories': 0, 'directory_entries': 0,
              'started_monotonic': began, 'deadline_monotonic': deadline,
@@ -92,8 +104,7 @@ def product_identity(clock=time.monotonic, *, post_test_deadline=None, observati
     def check_time():
         now = clock(); value['elapsed_seconds'] = max(0., now - began)
         if now >= deadline:
-            fail('phase_deadline' if post_test_deadline is not None and
-                 post_test_deadline <= began + seconds else 'elapsed_limit')
+            fail('phase_deadline' if ceiling is not None and ceiling <= began + seconds else 'elapsed_limit')
     def safe(condition, detail):
         if not condition: fail('safety', detail)
     def walk_error(error):
@@ -133,8 +144,10 @@ def product_identity(clock=time.monotonic, *, post_test_deadline=None, observati
         fail('interrupted')
     except (ValueError, OSError):
         fail('safety', 'unreadable_tree')
+    tree_sha256 = digest.hexdigest()
+    if preparation_reread_deadline is not None: check_time()
     value.update(status='complete', complete=True); publish()
-    return {'tree_sha256': digest.hexdigest(), 'files': value['files'], 'bytes': value['bytes'],
+    return {'tree_sha256': tree_sha256, 'files': value['files'], 'bytes': value['bytes'],
             'claim': 'built_product_bytes_only'}
 
 
@@ -142,12 +155,18 @@ def record_path(family, suffix):
     return Path('build') / (family + '-managed-' + suffix + '.json')
 
 
-def load_setup(family):
+def load_setup(family, *, preparation_reread_deadline=None, clock=time.monotonic):
+    if preparation_reread_deadline is not None:
+        require(resource_selection(family) is not None, 'Preparation reread requires exact completion selection')
     binding = read_binding(family)
     value = strict_json(read_regular(record_path(family, 'setup'), 16384))
     require(set(value) == {'schema', 'binding', 'products'} and type(value['schema']) is int and value['schema'] == 1 and
             value['binding'] == binding, 'Configured setup belongs to another binding')
-    require(value['products'] == product_identity(), 'Built test/fixture products changed')
+    products = (product_identity(clock=clock, preparation_reread_deadline=preparation_reread_deadline)
+                if preparation_reread_deadline is not None else product_identity())
+    require(value['products'] == products, 'Built test/fixture products changed')
+    if preparation_reread_deadline is not None:
+        require(clock() < preparation_reread_deadline, 'Completion preparation reread returned after its deadline')
     return value
 
 
@@ -488,7 +507,16 @@ def fixture_seed(family, started=STARTED, *, clock=time.monotonic):
     if selected is None or selected['required']['photos']:
         warmup.seed(device)
     warmup.require_identity()
-    require(load_setup(family) == setup, 'Setup changed during fixture preparation')
+    if selected is None:
+        reread = load_setup(family)
+    else:
+        admitted = warmup.clock()
+        require(admitted + 30 + CLEANUP <= warmup.deadline,
+                'Full completion setup reread and cleanup cannot fit')
+        reread_deadline = admitted + 30
+        reread = load_setup(family, preparation_reread_deadline=reread_deadline, clock=warmup.clock)
+        require(warmup.clock() < reread_deadline, 'Completion preparation reread returned after its deadline')
+    require(reread == setup, 'Setup changed during fixture preparation')
     value = {'schema': 2, 'setup': setup, 'complete': True, 'readiness': warmup.fixture_readiness}
     if selected is not None:
         value.update(schema=3, selection=selected, resources={

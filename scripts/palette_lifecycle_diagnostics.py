@@ -41,11 +41,35 @@ MAX_RECORD = 12 * 1024
 MAX_HELP_LOG_BYTES = 136 * 1024
 HELP_FRAME = 'PALETTE_HELP_RECEIPT:'
 MAX_ACQUISITION_BYTES = 360 * 1024
+RETENTION_REJECTIONS = frozenset({
+    'retainer-stale-metadata', 'retainer-identity-rejected', 'retainer-source-rejected',
+    'retainer-source-exit-unconfirmed', 'retainer-case-parse-rejected',
+    'retainer-case-incomplete',
+})
+UNVERIFIED_SOURCE_REJECTIONS = frozenset({'retainer-source-rejected', 'retainer-source-exit-unconfirmed'})
+UNVERIFIED_IDENTITY_REJECTIONS = frozenset({'retainer-stale-metadata', 'retainer-identity-rejected'})
+CASE_REJECTIONS = RETENTION_REJECTIONS | frozenset({
+    'retainer-rejection-unknown', 'case-identity-unverified', 'case-source-unverified',
+    'invalid-retention-rejection',
+})
 
 
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+class CaseEvidenceRejected(ValueError):
+    """Closed diagnostic labels only; never retain exception text or paths."""
+    def __init__(self, reason, reported_unverified_reason=None):
+        require(type(reason) is str and reason in CASE_REJECTIONS, 'Invalid rejection reason')
+        require(reported_unverified_reason is None or (type(reported_unverified_reason) is str and
+                ((reason == 'case-source-unverified' and reported_unverified_reason in UNVERIFIED_SOURCE_REJECTIONS) or
+                 (reason == 'case-identity-unverified' and reported_unverified_reason in UNVERIFIED_IDENTITY_REJECTIONS))),
+                'Invalid unverified rejection reason')
+        super().__init__(reason)
+        self.reason = reason
+        self.reported_unverified_reason = reported_unverified_reason
 
 
 def strict_json(raw):
@@ -210,6 +234,12 @@ class CaseRetainer:
         self.states = {case: {'seen': False, 'begin': None, 'failure': None, 'ended': False}
                        for case in CASES}
         self.rejected = False
+        self.rejection_reason = None
+
+    def reject(self, reason):
+        require(type(reason) is str and reason in RETENTION_REJECTIONS, 'Invalid retention reason')
+        self.rejected = True
+        self.rejection_reason = reason
 
     def line(self, line):
         if self.rejected:
@@ -245,11 +275,12 @@ class CaseRetainer:
                         self.active = None
                         state['ended'] = True
         except (ValueError, TypeError, KeyError):
-            self.rejected = True
+            self.reject('retainer-case-parse-rejected')
 
     def result(self):
         if self.rejected or self.active is not None:
-            return {'status': 'rejected-case-metadata'}
+            return {'status': 'rejected-case-metadata',
+                    'rejection_reason': self.rejection_reason if self.rejected else 'retainer-case-incomplete'}
         cases = []
         for case, state in self.states.items():
             row = {'case': case, 'status': 'not-observed'}
@@ -270,18 +301,21 @@ def retain(family):
     started = time.time()
     parser = CaseRetainer()
     identity, source = None, None
+    rejection = 'retainer-stale-metadata'
     try:
         require(not path.exists() and not path.is_symlink(), 'Refusing stale case metadata')
+        rejection = 'retainer-identity-rejected'
         identity = read_identity(family)
+        rejection = 'retainer-source-rejected'
         source = source_identity()
     except CaptureStopped as error:
         if error.cancelled_signal is not None:
             raise  # Explicit cancellation must not become a long-lived drain.
-        parser.rejected = True
+        parser.reject('retainer-source-exit-unconfirmed')
     except (ValueError, OSError, TypeError, KeyError, UnicodeError):
         # Still drain the pipe so a metadata failure never terminates xcodebuild.
         # Replace any stale regular record below with rejected metadata.
-        parser.rejected = True
+        parser.reject(rejection)
     # A line is bounded independently of arbitrary raw xcodebuild output. Oversize
     # lines are passed through but never parsed as metadata.
     fragment = bytearray()
@@ -356,6 +390,21 @@ def command_interval(identity, source):
             'started': timing['command_wall_started'], 'ended': timing['command_wall_finished']}
 
 
+def unverified_retention_reason(value, identity):
+    # A producer claim with missing provenance never becomes verified evidence.
+    if (set(value) != {'status', 'identity', 'source', 'capture_started', 'capture_ended', 'rejection_reason'} or
+            value['status'] != 'rejected-case-metadata' or value['source'] is not None or
+            type(value['rejection_reason']) is not str or
+            not number(value['capture_started']) or not number(value['capture_ended']) or
+            not identity['started'] <= value['capture_started'] <= value['capture_ended'] <= time.time()):
+        return None
+    reason = value['rejection_reason']
+    if ((value['identity'] is None and reason in UNVERIFIED_IDENTITY_REJECTIONS) or
+            (value['identity'] == identity and reason in UNVERIFIED_SOURCE_REJECTIONS)):
+        return reason
+    return None
+
+
 def load_case(identity, runner=capture):
     from uikit_managed_tests import read_regular
     path = Path('build') / (identity['family'] + '-palette-case.json')
@@ -363,8 +412,27 @@ def load_case(identity, runner=capture):
         return None
     value = strict_json(read_regular(path, MAX_RECORD))
     require(isinstance(value, dict), 'Malformed case retention')
-    require(value.get('identity') == identity, 'Case belongs to another owned simulator')
-    require(value.get('source') == source_identity(runner), 'Case belongs to another source')
+    if 'rejection_reason' in value and (value.get('status') != 'rejected-case-metadata' or
+            type(value['rejection_reason']) is not str or value['rejection_reason'] not in RETENTION_REJECTIONS):
+        raise CaseEvidenceRejected('invalid-retention-rejection')
+    if value.get('identity') != identity:
+        raise CaseEvidenceRejected('case-identity-unverified', unverified_retention_reason(value, identity))
+    if value.get('source') != source_identity(runner):
+        raise CaseEvidenceRejected('case-source-unverified', unverified_retention_reason(value, identity))
+    if value.get('status') == 'rejected-case-metadata':
+        keys = {'status', 'identity', 'source', 'capture_started', 'capture_ended'}
+        if 'rejection_reason' in value:
+            keys.add('rejection_reason')
+        reason = value.get('rejection_reason', 'retainer-rejection-unknown')
+        # Early retention failures have no verified source/identity. Never trust
+        # their claimed reason as source-bound, or downgrade retained case rows.
+        if set(value) != keys or reason not in {'retainer-case-parse-rejected',
+                'retainer-case-incomplete', 'retainer-rejection-unknown'}:
+            raise CaseEvidenceRejected('invalid-retention-rejection')
+        require(number(value['capture_started']) and number(value['capture_ended']) and
+                identity['started'] <= value['capture_started'] <= value['capture_ended'] <= time.time(),
+                'Invalid rejected retention interval')
+        raise CaseEvidenceRejected(reason)
     require(value.get('status') == 'bound-failure', 'Case unavailable')
     rows = value.get('cases')
     require(isinstance(rows, list) and len(rows) == 2 and all(isinstance(row, dict) for row in rows) and
@@ -665,6 +733,10 @@ def collect_lifecycle(identity, runner=capture):
     except CaptureStopped as error:
         result.update({'reason': 'command-exit-unconfirmed', 'simulator_commands_completed': False,
                        'host_client_cleanup_confirmed': error.cleanup_confirmed})
+    except CaseEvidenceRejected as error:
+        result['reason'] = error.reason
+        if error.reported_unverified_reason is not None:
+            result['reported_unverified_retention_reason'] = error.reported_unverified_reason
     except (ValueError, OSError, TypeError, KeyError, UnicodeError):
         result['reason'] = 'invalid-or-unavailable-evidence'
     finally:

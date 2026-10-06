@@ -542,6 +542,12 @@ class RunTests(unittest.TestCase):
 
 
 class ProductInventoryTests(unittest.TestCase):
+    def completion_environment(self):
+        from test_uikit_managed_device import ENV
+        from uikit_completion import REF, WORKFLOW
+        return patch.dict(os.environ, {**ENV, 'GITHUB_REF': REF, 'GITHUB_WORKFLOW_REF': WORKFLOW,
+            'GITHUB_JOB': 'completion', 'TC_COMPLETION_GROUP': 'ipad-mini'}, clear=True)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.old=Path.cwd();os.chdir(self.tmp.name)
         self.tick=0.;self.observation={}
@@ -589,6 +595,125 @@ class ProductInventoryTests(unittest.TestCase):
         with patch.object(m,'read_regular',side_effect=slow):value=self.failure('elapsed_limit')
         self.assertEqual(value['allowance_seconds'],10);self.assertEqual(value['elapsed_seconds'],10)
         self.assertEqual(value['files'],1);self.assertEqual(value['bytes'],len(b'configuration'))
+
+    def test_preparation_reread_accepts_before_thirty_and_rejects_exact_deadline(self):
+        original = m.read_regular
+        with self.completion_environment():
+            identity = self.scan()
+            for returned in (10.695, math.nextafter(30, -math.inf), 30):
+                self.tick = 0.
+                def slow(*args, **kwargs):
+                    raw = original(*args, **kwargs); self.tick = returned; return raw
+                with self.subTest(returned=returned), patch.object(m, 'read_regular', side_effect=slow):
+                    if returned == 30:
+                        value = self.failure('phase_deadline', preparation_reread_deadline=30)
+                        self.assertEqual(value['files'], 1)
+                    else:
+                        self.assertEqual(self.scan(preparation_reread_deadline=30), identity)
+                    self.assertEqual(self.observation['allowance_seconds'], 30)
+                    self.assertEqual(self.observation['deadline_monotonic'], 30)
+                    self.assertEqual(self.observation['stage'], 'preparation_reread')
+
+    def test_preparation_metadata_uses_the_already_admitted_deadline(self):
+        with self.completion_environment():
+            setup = {**SETUP, 'products': self.scan()}
+            m.write_json(m.record_path('iPadMini', 'setup'), setup)
+            original = m.read_regular
+            for metadata_finished in (29., 30.):
+                self.tick = 0.; product_reads = []
+                def read(path, *args, **kwargs):
+                    raw = original(path, *args, **kwargs)
+                    if path == m.record_path('iPadMini', 'setup'):
+                        self.tick = metadata_finished
+                    else:
+                        product_reads.append(path)
+                    return raw
+                with self.subTest(metadata_finished=metadata_finished), \
+                        patch.object(m, 'read_binding', return_value=SETUP['binding']), \
+                        patch.object(m, 'read_regular', side_effect=read):
+                    if metadata_finished == 30:
+                        with self.assertRaises(m.ProductInventoryError) as raised:
+                            m.load_setup('iPadMini', preparation_reread_deadline=30, clock=lambda: self.tick)
+                        self.assertEqual(raised.exception.observation['granted_seconds'], 0)
+                        self.assertFalse(product_reads)
+                    else:
+                        self.assertEqual(m.load_setup('iPadMini', preparation_reread_deadline=30,
+                                                      clock=lambda: self.tick), setup)
+                        self.assertTrue(product_reads)
+
+    def test_preparation_metadata_then_file_read_cannot_restart_thirty_seconds(self):
+        with self.completion_environment():
+            setup = {**SETUP, 'products': self.scan()}
+            m.write_json(m.record_path('iPadMini', 'setup'), setup)
+            original = m.read_regular
+            def read(path, *args, **kwargs):
+                raw = original(path, *args, **kwargs)
+                self.tick = 29 if path == m.record_path('iPadMini', 'setup') else 30
+                return raw
+            with patch.object(m, 'read_binding', return_value=SETUP['binding']), \
+                    patch.object(m, 'read_regular', side_effect=read), self.assertRaises(m.ProductInventoryError) as raised:
+                m.load_setup('iPadMini', preparation_reread_deadline=30, clock=lambda: self.tick)
+            value = raised.exception.observation
+            self.assertEqual(value['started_monotonic'], 29)
+            self.assertEqual(value['deadline_monotonic'], 30)
+            self.assertEqual(value['granted_seconds'], 1)
+            self.assertEqual(value['files'], 1)
+            self.assertFalse(value['complete'])
+
+    def test_preparation_late_hash_update_and_final_digest_cannot_return_identity(self):
+        for stage in ('update', 'hexdigest'):
+            self.tick = 0.; real = hashlib.sha256()
+            class SlowDigest:
+                def update(inner, data):
+                    real.update(data)
+                    if stage == 'update': self.tick = 30
+                def hexdigest(inner):
+                    result = real.hexdigest()
+                    if stage == 'hexdigest': self.tick = 30
+                    return result
+            with self.subTest(stage=stage), self.completion_environment(), \
+                    patch.object(m.hashlib, 'sha256', return_value=SlowDigest()):
+                self.failure('phase_deadline', preparation_reread_deadline=30)
+
+    def test_preparation_mode_rejects_original_foreign_or_mixed_scan_routes(self):
+        with self.completion_environment():
+            changes = ({'GITHUB_REF': 'refs/heads/codex/ios-original-release'},
+                       {'GITHUB_WORKFLOW_SHA': 'b'*40}, {'GITHUB_REPOSITORY': 'other/ColorPicker'},
+                       {'TC_COMPLETION_GROUP': 'ipad-large'}, {'GITHUB_JOB': 'compatibility'})
+            for changed in changes:
+                with self.subTest(changed=changed), patch.dict(os.environ, changed), \
+                        patch.object(m, 'read_regular') as read, self.assertRaises(ValueError):
+                    self.scan(preparation_reread_deadline=30)
+                read.assert_not_called()
+            with self.assertRaises(ValueError): self.scan(post_test_deadline=100, preparation_reread_deadline=30)
+            for deadline in (True, -1, float('inf'), float('nan'), '30'):
+                with self.subTest(deadline=deadline), self.assertRaises(ValueError):
+                    self.scan(preparation_reread_deadline=deadline)
+        with patch.dict(os.environ, {}, clear=True), patch.object(m, 'read_binding') as binding:
+            with self.assertRaises(ValueError): self.scan(preparation_reread_deadline=30)
+            with self.assertRaises(ValueError): m.load_setup('iPadMini', preparation_reread_deadline=30)
+            binding.assert_not_called()
+
+    def test_preparation_identity_and_entire_built_product_scope_stay_identical(self):
+        auxiliary = self.roots[0]/'unselected.swiftmodule'; auxiliary.write_bytes(b'auxiliary')
+        identity = self.scan(); limits = dict(self.observation['limits'])
+        with self.completion_environment():
+            self.assertEqual(self.scan(preparation_reread_deadline=30), identity)
+            self.assertEqual(self.observation['limits'], limits)
+            for path in (auxiliary, self.bundles[0]/'binary', self.bundles[1]/'binary', self.bundles[2]/'binary'):
+                before = path.read_bytes(); path.write_bytes(b'changed')
+                self.assertNotEqual(self.scan(preparation_reread_deadline=30), identity)
+                path.write_bytes(before)
+            self.assertEqual(limits, {'directory_entries':8192, 'files':8192,
+                                     'bytes':1024**3, 'file_bytes':128*1024*1024})
+
+    def test_original_setup_reread_still_uses_default_ten_second_scan(self):
+        setup = {**SETUP, 'products': self.scan()}
+        m.write_json(m.record_path('iPadMini', 'setup'), setup)
+        with patch.object(m, 'read_binding', return_value=SETUP['binding']), \
+                patch.object(m, 'product_identity', return_value=setup['products']) as scan:
+            self.assertEqual(m.load_setup('iPadMini'), setup)
+        scan.assert_called_once_with()
     def test_post_scan_accepts_ten_but_rejects_twenty_seconds(self):
         original=m.read_regular
         def slow(*args,**kw):

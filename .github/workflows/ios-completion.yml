@@ -110,8 +110,7 @@ jobs:
         include:
           - {group: iphone-compact, family: iPhoneCompact, audits: false}
           - {group: iphone-large, family: iPhoneLarge, audits: false}
-          - {group: ipad-mini, family: iPadMini, audits: true}
-          - {group: ipad-large, family: iPadLarge, audits: false}
+          - {group: ipad-mini, family: iPadMini, audits: false}
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}
     env:

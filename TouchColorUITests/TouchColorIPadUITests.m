@@ -56,6 +56,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
 - (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }
 - (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)setUp {
+    self.tcPaletteIPadCaseStarted=NSProcessInfo.processInfo.systemUptime;
     self.tcPaletteReadinessExpired=NO;
     [super setUp];
     // Install before launch; known dialog controls stay in their explicit tests.

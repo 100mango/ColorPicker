@@ -17,8 +17,8 @@ import uikit_completion as c
 import uikit_managed_device as d
 import uikit_managed_tests as m
 from palette_lifecycle_diagnostics import CaptureStopped
-from test_uikit_managed_tests import DEVICE, ROOT, SETUP
-from test_uikit_managed_device import ManagedFixture, NEW
+from test_uikit_managed_tests import DEVICE, ROOT, SETUP, summary as full_summary
+from test_uikit_managed_device import ManagedFixture, NEW, ENV as FULL_ENV
 FULL_OR_SELECTED_HOSTED = m.require_hosted
 
 
@@ -55,7 +55,10 @@ class ClosedGroups(unittest.TestCase):
         phone_setup = method('TouchColorUITests.m', 'setUp')
         self.assertIn('@"--ui-test-image"', phone_setup)
         cancellation = method(helpers, 'exercisePaletteFileCancelAndImportReturn')
-        self.assertIn('waitForPaletteFilesPresentation:', cancellation)
+        self.assertIn('waitForPaletteFilesCancellationPresentation:', cancellation)
+        cancellation_attachment = (ROOT/'TouchColorUITests'/helpers).read_text().split(
+            '- (BOOL)waitForPaletteFilesCancellationPresentation:', 1)[1].split('\n- (', 1)[0]
+        self.assertIn('waitForPaletteFilesPresentation:', cancellation_attachment)
         self.assertIn('[cancel tap]', cancellation)
         self.assertNotIn('selectSyntheticPaletteFile:', cancellation)
         file_consumer = method(helpers, 'exercisePaletteFileSelectionReviewAndRelaunch')
@@ -74,7 +77,7 @@ class ClosedGroups(unittest.TestCase):
         for key, group in c.GROUPS.items():
             with patch.dict(os.environ, environment(key), clear=True):
                 resources = c.resource_selection(group['family'])
-                self.assertEqual(resources['required'], {'files': False, 'photos': key.startswith('ipad-')})
+                self.assertEqual(resources['required'], {'files': False, 'photos': False})
                 self.assertEqual(resources['functional'], list(group['functional']))
                 self.assertEqual(resources['audits'], list(group['audits']))
                 self.assertEqual(resources['bootstrap'], list(c.BOOTSTRAP))
@@ -82,21 +85,18 @@ class ClosedGroups(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(c.resource_selection('iPadMini'))
 
-    def test_ten_missing_and_one_affected_recheck_are_the_exact_closed_source_inventory(self):
+    def test_five_remaining_cases_are_the_exact_closed_source_inventory(self):
         expected = {
-            'iphone-compact': ('iPhoneCompact', ('testInvalidPalettePastePreservesHistory', 'testPalettePasteReviewAcceptAndRelaunch'), ()),
+            'iphone-compact': ('iPhoneCompact', ('testInvalidPalettePastePreservesHistory',), ()),
             'iphone-large': ('iPhoneLarge', ('testInvalidPalettePastePreservesHistory',
                 'testLargestTextPaletteReviewAndImportHelp', 'testPalettePasteReviewAcceptAndRelaunch'), ()),
-            'ipad-mini': ('iPadMini', ('testPaletteFileCancellationAndImportReturn',
-                'testPrivacyCloseRetainsPhotoSelection'), ('testAccessibilityLiveCameraUnavailable',)),
-            'ipad-large': ('iPadLarge', ('testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState',
-                'testPalettePasteReviewAcceptAndRelaunch', 'testLiveCanvasPickerCancellationAndSceneLifecycle'), ()),
+            'ipad-mini': ('iPadMini', ('testPaletteFileCancellationAndImportReturn',), ()),
         }
         self.assertEqual(list(c.GROUPS), list(expected))
         self.assertEqual([(len(g['functional']),len(g['audits'])) for g in c.GROUPS.values()],
-                         [(2,0),(3,0),(2,1),(3,0)])
-        self.assertEqual(sum(len(g['functional']) for g in c.GROUPS.values()), 10)
-        self.assertEqual(sum(len(g['audits']) for g in c.GROUPS.values()), 1)
+                         [(1,0),(3,0),(1,0)])
+        self.assertEqual(sum(len(g['functional']) for g in c.GROUPS.values()), 5)
+        self.assertEqual(sum(len(g['audits']) for g in c.GROUPS.values()), 0)
         for identity, (family, functional, audits) in expected.items():
             selected = c.GROUPS[identity]
             cls = 'TouchColorIPadUITests' if family.startswith('iPad') else 'TouchColorUITests'
@@ -116,8 +116,8 @@ class ClosedGroups(unittest.TestCase):
             'TouchColorTests/PhonePaletteImportTests/testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead'))
         for case in c.BOOTSTRAP:self.assertEqual(hosted.count('func '+case.rsplit('/',1)[1]+'('),1)
         executions=[(g['family'],case) for g in c.GROUPS.values() for case in g['bootstrap']]
-        self.assertEqual(len(executions),8);self.assertEqual(len(set(executions)),8)
-        self.assertEqual(212+36+47+4+11,310)  # Compact normal-paste is affected; old48 remain historical,47 reusable here.
+        self.assertEqual(len(executions),6);self.assertEqual(len(set(executions)),6)
+        self.assertEqual(212+36+53+4+5,310)  # Per-case provenance, never a synthetic whole-row pass.
 
     def test_nonmodal_bootstrap_is_existing_hosted_source_not_new_business_qualification(self):
         source=(ROOT/'TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift').read_text()
@@ -137,7 +137,7 @@ class ClosedGroups(unittest.TestCase):
     def test_retired_split_groups_reject_in_all_route_guards(self):
         for family in ('iPadMini', 'iPadLarge'):
             for identity in ('ipad-mini-palette', 'ipad-mini-canvas',
-                             'ipad-large-palette', 'ipad-large-canvas'):
+                             'ipad-large-palette', 'ipad-large-canvas', 'ipad-large'):
                 with self.subTest(family=family, group=identity), patch.dict(os.environ,
                         {**environment(), 'TC_COMPLETION_GROUP':identity, 'TC_TEST_FAMILY':family}, clear=True):
                     with self.assertRaises(ValueError):c.completion_group(family)
@@ -154,7 +154,7 @@ class ClosedGroups(unittest.TestCase):
                 self.assertEqual(context['completion_group'],key)
                 self.assertFalse(context['full_original_row'])
                 names.append(d.owned_name(context))
-        self.assertEqual(len(set(names)),4)
+        self.assertEqual(len(set(names)),3)
 
     def test_foreign_source_ref_workflow_job_group_and_attempt_reject(self):
         mutations={'GITHUB_REPOSITORY':'other/ColorPicker','GITHUB_REF':d.REF,'GITHUB_WORKFLOW_REF':d.WORKFLOW,
@@ -188,7 +188,7 @@ class ClosedGroups(unittest.TestCase):
             self.assertEqual([v for v in m.test_argv('iPadMini','TouchColorTests',DEVICE) if v.startswith('-only-testing:')],
                              ['-only-testing:TouchColorTests'])
 
-    def test_workflow_has_four_closed_groups_and_original_finite_ceiling(self):
+    def test_workflow_has_three_closed_groups_and_reduced_finite_ceiling(self):
         text=(ROOT/'.github/workflows/ios-completion.yml').read_text()
         self.assertIn('branches: [codex/ios-original-completion]',text)
         self.assertIn('group: touchcolor-ios-refs/heads/codex/ios-original-release',text)
@@ -197,7 +197,7 @@ class ClosedGroups(unittest.TestCase):
         for key,g in c.GROUPS.items():self.assertIn('{group: '+key+', family: '+g['family']+', audits: '+str(bool(g['audits'])).lower()+'}',text)
         matrix = re.findall(r'\{group: ([a-z-]+), family: ([A-Za-z]+), audits: (true|false)\}', text)
         self.assertEqual(matrix, [(key,g['family'],str(bool(g['audits'])).lower()) for key,g in c.GROUPS.items()])
-        for retired in ('ipad-mini-palette','ipad-mini-canvas','ipad-large-palette','ipad-large-canvas'):
+        for retired in ('ipad-mini-palette','ipad-mini-canvas','ipad-large-palette','ipad-large-canvas','group: ipad-large,'):
             self.assertNotIn(retired,text)
         self.assertLess(text.index('- name: Execute required selected StrictAll audits'),text.index('- name: Read bounded app diagnostics after required UI and audits'))
         audit=text.split('- name: Execute required selected StrictAll audits',1)[1].split('- name:',1)[0]
@@ -205,9 +205,9 @@ class ClosedGroups(unittest.TestCase):
         self.assertNotIn("functional-tests.outcome == 'success'",audit)
         self.assertIn('test_uikit_completion test_uikit_completion_evidence',text)
         self.assertIn("timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}",text)
-        self.assertEqual(sum(70 if g['family']=='iPadMini' else 60 for g in c.GROUPS.values()),250)
-        self.assertEqual(sum((800 if g['family']=='iPadMini' else 500)+1100+(620 if g['audits'] else 0) for g in c.GROUPS.values()),7320)
-        self.assertEqual(sum((960 if g['family']=='iPadMini' else 600)+1200+(720 if g['audits'] else 0) for g in c.GROUPS.values()),8280)
+        self.assertEqual(sum(70 if g['family']=='iPadMini' else 60 for g in c.GROUPS.values()),190)
+        self.assertEqual(sum((800 if g['family']=='iPadMini' else 500)+1100+(620 if g['audits'] else 0) for g in c.GROUPS.values()),5100)
+        self.assertEqual(sum((960 if g['family']=='iPadMini' else 600)+1200+(720 if g['audits'] else 0) for g in c.GROUPS.values()),5760)
 
 
 class SelectedExecution(unittest.TestCase):
@@ -281,19 +281,20 @@ class SelectedExecution(unittest.TestCase):
             r=copy.deepcopy(original);mutate(r)
             with self.subTest(mutate=mutate),self.assertRaises(ValueError):m.require_selected_bootstrap(self.family,self.setup,r,selected)
 
-    def test_complete_failed65_remains_failed_and_allows_required_audits(self):
+    def test_complete_failed65_remains_failed_without_uncertainty_or_audit_selection(self):
         self.suite='TouchColorUITests';self.failures=1
         self.assertEqual(self.execute(),65);self.assertFalse(self.receipt()['qualified']);self.assertFalse(self.pending())
         self.assertEqual(self.receipt()['summary']['fields']['failedTests'],1)
-        self.suite='AccessibilityAudits';self.tick=0.;self.failures=0
-        self.assertEqual(self.execute(),0);self.assertEqual(len(self.calls),2)
-        self.assertEqual(self.receipt()['summary']['fields']['totalTestCount'],1)
+        self.suite='AccessibilityAudits'
+        with self.assertRaisesRegex(ValueError, 'no such suite'): self.execute()
+        self.assertEqual(len(self.calls),1); self.assertFalse(self.pending())
+        m.ManagedWarmup(self.family,started=0,clock=lambda:self.tick)
 
     def test_unknown_xctest_stops_before_readers_and_every_later_device_command(self):
         self.suite='TouchColorUITests'
         self.runner_change=lambda r:r.update(status='incomplete',host_cleanup_confirmed=True)
         self.assertEqual(self.execute(),3);self.assertTrue(self.pending());self.assertFalse(self.reads)
-        self.suite='AccessibilityAudits'
+        self.suite='TouchColorTests'
         with self.assertRaises(m.WarmupFailed):self.execute()
         self.assertEqual(len(self.calls),1)
         with self.assertRaises(m.WarmupFailed):m.ManagedWarmup(self.family,started=0,clock=lambda:self.tick)
@@ -486,12 +487,13 @@ class SelectedExecution(unittest.TestCase):
 class SelectedResources(ManagedFixture):
     """Run the actual receipt producer/reader with synthetic process responses."""
     @contextlib.contextmanager
-    def rig(self, group, state='Booted'):
+    def rig(self, group, state='Booted', *, original=False):
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as folder, contextlib.ExitStack() as stack:
             os.chdir(folder)
             stack.callback(os.chdir, previous)
-            stack.enter_context(patch.dict(os.environ, environment(group), clear=True))
+            stack.enter_context(patch.dict(os.environ,
+                {**FULL_ENV, 'TC_TEST_FAMILY': c.GROUPS[group]['family']} if original else environment(group), clear=True))
             self.family = c.GROUPS[group]['family']
             self.tick = 100.
             self.create(family=self.family)
@@ -521,7 +523,8 @@ class SelectedResources(ManagedFixture):
                 'deadline_monotonic': deadline, 'simulator_completion': 'xcode_command_returned_only'}
 
     def bootstrap_reader(self, argv, **kwargs):
-        value = summary(c.selection(self.family, 'TouchColorTests'))
+        selected = c.selection(self.family, 'TouchColorTests')
+        value = summary(selected) if selected else full_summary(self.family)
         value.update(startTime=1000+self.tick-.9, finishTime=1000+self.tick-.1)
         value['devicesAndConfigurations'][0]['device']['deviceId'] = NEW
         return subprocess.CompletedProcess(argv, 0, json.dumps(value).encode(), b'')
@@ -556,13 +559,13 @@ class SelectedResources(ManagedFixture):
     def receipt(self):
         return json.loads(m.record_path(self.family, 'fixtures').read_text())
 
-    def test_all_four_skip_files_and_only_ipads_seed_photos(self):
+    def test_three_remaining_groups_skip_unconsumed_files_and_photos(self):
         for group in c.GROUPS:
             with self.subTest(group=group), self.rig(group), patch.object(self.controller, 'fixture') as fixture:
                 before = self.binding
                 self.seed(); value = self.receipt()
                 fixture.assert_not_called()
-                photos = group.startswith('ipad-')
+                photos = False
                 self.assertEqual(self.operations(), ['git', 'git', 'list'] + (['addmedia'] if photos else []))
                 self.assertEqual(value['schema'], 3)
                 self.assertEqual(value['selection'], c.resource_selection(self.family))
@@ -579,8 +582,7 @@ class SelectedResources(ManagedFixture):
         for group in c.GROUPS:
             with self.subTest(group=group), self.rig(group, state='Shutdown'):
                 self.seed()
-                self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus'] +
-                                 (['addmedia'] if group.startswith('ipad-') else []))
+                self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus'])
                 grants = [grant for argv, grant in self.calls if argv[2:3] in (['boot'], ['bootstatus'])]
                 self.assertEqual(len(grants), 2)
                 for grant, cap in zip(grants, (180, 240)): self.assertAlmostEqual(grant, cap)
@@ -597,7 +599,7 @@ class SelectedResources(ManagedFixture):
                     lambda r: r['selection'].update(group='ipad-large'),
                     lambda r: r['selection']['functional'].append(
                         'TouchColorUITests/TouchColorIPadUITests/testPaletteFileSelectionReviewAndRelaunch'),
-                    lambda r: r['selection']['required'].update(photos=not group.startswith('ipad-')),
+                    lambda r: r['selection']['required'].update(photos=True),
                     lambda r: r['selection']['required'].update(files=0),
                     lambda r: r.update(complete=False), lambda r: r.update(schema=2),
                     lambda r: r['setup']['binding']['context'].update(sha='b'*40),
@@ -609,13 +611,14 @@ class SelectedResources(ManagedFixture):
                     with self.subTest(mutation=mutate), self.assertRaises(ValueError):
                         m.require_fixtures(self.family, self.setup)
                 value = copy.deepcopy(original)
-                value['resources']['photos'] = 'not-required-by-exact-selection' if group.startswith('ipad-') else 'performed-success'
+                value['resources']['photos'] = 'performed-success'
                 m.write_json(m.record_path(self.family, 'fixtures'), value)
                 with self.assertRaises(ValueError): m.require_fixtures(self.family, self.setup)
 
     def test_required_photo_marker_cannot_be_missing_or_foreign(self):
-        for group in ('ipad-mini', 'ipad-large'):
-            with self.subTest(group=group), self.rig(group):
+        for group in ('ipad-mini',):
+            with self.subTest(group=group), self.rig(group, original=True), \
+                    patch.object(self.controller, 'fixture'):
                 self.seed(); marker = Path('build', self.family+'-fixture-seeded')
                 marker.unlink()
                 with self.assertRaises(OSError): m.require_fixtures(self.family, self.setup)
@@ -658,7 +661,7 @@ class SelectedResources(ManagedFixture):
                 self.assertFalse(m.record_path(self.family, 'fixtures').exists())
 
     def test_handoff_and_photo_work_share_original_remaining_preparation_budget(self):
-        with self.rig('ipad-large', state='Shutdown'):
+        with self.rig('ipad-mini', state='Shutdown', original=True), patch.object(self.controller, 'fixture'):
             def spend(argv, timeout):
                 if argv[2:3] == ['boot']: self.tick += 170
                 if argv[2:3] == ['bootstatus']: self.tick += 230
@@ -674,17 +677,73 @@ class SelectedResources(ManagedFixture):
             with self.subTest(group=group), self.rig(group):
                 original = m.load_setup
                 count = []
-                def slow(family):
-                    value = original(family); count.append(family)
+                def slow(family, **kwargs):
+                    value = original(family, **kwargs); count.append(family)
                     if len(count) == 2: self.tick = self.controller.deadline-20
                     return value
-                with patch.object(m, 'load_setup', side_effect=slow), self.assertRaises(m.WarmupFailed):
+                with patch.object(m, 'load_setup', side_effect=slow), self.assertRaisesRegex(ValueError, 'reread returned after'):
                     self.seed()
                 self.assertFalse(m.record_path(self.family, 'fixtures').exists())
 
+    def test_only_completion_final_reread_receives_original_thirty_second_deadline(self):
+        for group in c.GROUPS:
+            with self.subTest(group=group), self.rig(group):
+                original = m.load_setup; reads = []
+                def observe(family, **kwargs):
+                    reads.append((self.tick, dict(kwargs)))
+                    return original(family, **kwargs)
+                with patch.object(m, 'load_setup', side_effect=observe): self.seed()
+                self.assertEqual(len(reads), 2); self.assertEqual(reads[0][1], {})
+                admitted, arguments = reads[1]
+                self.assertEqual(set(arguments), {'preparation_reread_deadline', 'clock'})
+                self.assertEqual(arguments['preparation_reread_deadline'], admitted+30)
+                self.assertIs(arguments['clock'], self.controller.clock)
+                self.assertLessEqual(admitted+30+20, self.started+600)
+
+    def test_reread_requires_full_thirty_plus_twenty_at_original_phase_boundary(self):
+        for remaining in (math.nextafter(50, -math.inf), 50, 51):
+            with self.subTest(remaining=remaining), self.rig('iphone-large'):
+                # Choose the admission instant directly; compare original
+                # ceiling arithmetic, never subtraction with a tolerance.
+                admitted = self.controller.deadline-50
+                if remaining < 50: admitted = math.nextafter(admitted, math.inf)
+                if remaining > 50: admitted -= 1
+                handoff = self.controller.fixture_device
+                def spend(setup):
+                    device = handoff(setup); self.tick = admitted; return device
+                with patch.object(self.controller, 'fixture_device', side_effect=spend), \
+                        patch.object(m, 'load_setup', wraps=m.load_setup) as rereads:
+                    if remaining < 50:
+                        with self.assertRaisesRegex(ValueError, 'Full completion setup reread and cleanup cannot fit'):
+                            self.seed()
+                        self.assertEqual(rereads.call_count, 1)
+                        self.assertFalse(m.record_path(self.family, 'fixtures').exists())
+                    else:
+                        self.seed(); self.assertEqual(rereads.call_count, 2)
+                        self.assertEqual(rereads.call_args.kwargs['preparation_reread_deadline'], admitted+30)
+                self.assertEqual(self.controller.deadline, self.started+600)
+
+    def test_reread_wrapper_cannot_return_at_or_after_its_admitted_deadline(self):
+        for late in (False, True):
+            with self.subTest(late=late), self.rig('iphone-large'):
+                original = m.load_setup
+                def spend(family, **kwargs):
+                    result = original(family, **kwargs)
+                    if kwargs:
+                        deadline = kwargs['preparation_reread_deadline']
+                        self.tick = deadline if late else math.nextafter(deadline, -math.inf)
+                    return result
+                with patch.object(m, 'load_setup', side_effect=spend):
+                    if late:
+                        with self.assertRaisesRegex(ValueError, 'reread returned after'): self.seed()
+                        self.assertFalse(m.record_path(self.family, 'fixtures').exists())
+                    else:
+                        self.seed(); m.require_fixtures(self.family, self.setup)
+
     def test_uncertain_boot_or_photos_never_publish_or_allow_later_commands(self):
-        for operation, group in (('boot', 'iphone-compact'), ('bootstatus', 'ipad-mini'), ('addmedia', 'ipad-large')):
-            with self.subTest(operation=operation), self.rig(group, state='Shutdown'):
+        for operation, group in (('boot', 'iphone-compact'), ('bootstatus', 'ipad-mini'), ('addmedia', 'ipad-mini')):
+            with self.subTest(operation=operation), self.rig(group, state='Shutdown', original=operation=='addmedia'), \
+                    patch.object(self.controller, 'fixture'):
                 def fail(argv, timeout):
                     if argv[2:3] == [operation]:
                         error = subprocess.TimeoutExpired(argv, timeout); error.cleanup_confirmed = True

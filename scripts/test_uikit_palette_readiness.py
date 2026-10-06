@@ -52,10 +52,34 @@ def restore_center_helper(text):
     if text.count(revised)!=1: raise ValueError('Unexpected center dispatch scope')
     return text.replace(revised,'    [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];\n')
 
+IPAD_FILES_SETUP_CLOCK='    self.tcPaletteIPadCaseStarted=NSProcessInfo.processInfo.systemUptime;\n'
+
+def restore_ipad_files_attachment(text, filename):
+    """Exact narrow inverse before the existing, unchanged source locks."""
+    if filename=='TouchColorIPadUITests.m':
+        added='- (void)setUp {\n'+IPAD_FILES_SETUP_CLOCK
+        if text.count(added)!=1: raise ValueError('Changed iPad Files setup clock scope')
+        return text.replace(added,'- (void)setUp {\n')
+    if filename!='TCPaletteUIHelpers.m': return text
+    revised='    if (![self waitForPaletteFilesCancellationPresentation:app]) return;\n'
+    if text.count(revised)!=1: raise ValueError('Changed cancellation-only attachment scope')
+    text=text.replace(revised,'    if (![self waitForPaletteFilesPresentation:app]) return;\n')
+    key='static char TCPaletteIPadCaseStartedKey;\n'
+    if text.count(key)!=1: raise ValueError('Changed Files setup clock storage')
+    text=text.replace(key,'')
+    for start,end in (
+        ('- (NSTimeInterval)tcPaletteIPadCaseStarted {','- (void)observeFailedPalettePresentation:'),
+        ('- (BOOL)waitForPaletteFilesCancellationPresentation:','- (void)selectSyntheticPaletteFile:')):
+        if text.count(start)!=1: raise ValueError('Changed Files attachment helper scope')
+        begin=text.index(start)
+        finish=text.index(end,begin)
+        text=text[:begin]+text[finish:]
+    return text
+
 class ReadinessSourceContracts(unittest.TestCase):
     def test_untouched_method_bytes(self):
         for name,expected in LOCKS.items():
-            methods=dict(re.findall(r'(?ms)^(- \([^\n]+)\n(.*?)(?=^- \(|^@end)',restore_common_action_budget(restore_center_phone_wrappers((ROOT/'TouchColorUITests'/name).read_text()),name)))
+            methods=dict(re.findall(r'(?ms)^(- \([^\n]+)\n(.*?)(?=^- \(|^@end)',restore_common_action_budget(restore_center_phone_wrappers(restore_ipad_files_attachment((ROOT/'TouchColorUITests'/name).read_text(),name)),name)))
             for signature,digest in expected.items():
                 with self.subTest(file=name,signature=signature):
                     body=without_query_guards(methods[signature])
@@ -66,7 +90,7 @@ class ReadinessSourceContracts(unittest.TestCase):
                                           '[self tapReadyPaletteElement:close timeout:5]')
                     self.assertEqual(hashlib.sha256(body.encode()).hexdigest(),digest)
     def test_only_ipad_cancel_action_allowance_changes_with_original_body_retained(self):
-        text=restore_common_action_budget((ROOT/'TouchColorUITests/TouchColorIPadUITests.m').read_text(),'TouchColorIPadUITests.m')
+        text=restore_common_action_budget(restore_ipad_files_attachment((ROOT/'TouchColorUITests/TouchColorIPadUITests.m').read_text(),'TouchColorIPadUITests.m'),'TouchColorIPadUITests.m')
         call='[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'
         self.assertEqual(text.count(call),1)
         body=text.split('- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {',1)[1].split('- (void)',1)[0]
@@ -86,7 +110,7 @@ class ReadinessSourceContracts(unittest.TestCase):
         body=section('- (void)exerciseInvalidPalettePastePreservesHistory:', '- (void)exercisePaletteFileCancelAndImportReturn:')
         call='[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'
         self.assertEqual(body.count(call),1)
-        prior=restore_common_action_budget(restore_center_helper(HELPER),'TCPaletteUIHelpers.m').replace('[self acceptPalette:app readinessTimeout:10]','[self acceptPalette:app readinessTimeout:5]')
+        prior=restore_common_action_budget(restore_center_helper(restore_ipad_files_attachment(HELPER,'TCPaletteUIHelpers.m')),'TCPaletteUIHelpers.m').replace('[self acceptPalette:app readinessTimeout:10]','[self acceptPalette:app readinessTimeout:5]')
         self.assertEqual(prior.count(call),1)
         restored=prior.replace(call,'[self tapReadyPaletteElement:close timeout:5]')
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'52dce95cc03624cc17ecb8791802dbdfb7226b14dca284d3aa85c72b853d8488')
@@ -177,7 +201,7 @@ class ReadinessSourceContracts(unittest.TestCase):
         self.assertIn('objc_getAssociatedObject(self,&TCPaletteReadinessExpiryKey)',HELPER)
         self.assertIn('objc_setAssociatedObject(self,&TCPaletteReadinessExpiryKey',HELPER)
         for name in ['TouchColorUITests.m','TouchColorIPadUITests.m']:
-            text=(ROOT/'TouchColorUITests'/name).read_text()
+            text=restore_ipad_files_attachment((ROOT/'TouchColorUITests'/name).read_text(),name)
             self.assertIn('- (void)setUp {\n    self.tcPaletteReadinessExpired=NO;\n    [super setUp];',text)
     def test_failure_hooks_preserve_issue_without_own_ax(self):
         for name in ['TouchColorUITests.m','TouchColorIPadUITests.m']:
@@ -213,6 +237,195 @@ class ReadinessSourceContracts(unittest.TestCase):
                 text=(ROOT/'TouchColorUITests'/file).read_text()
                 self.assertIn(name,text)
                 self.assertIn('[self exercisePalettePasteReviewAcceptAndRelaunch:self.app]',text)
+class IPadFilesCancellationAttachmentTests(unittest.TestCase):
+    """Portable source/compiled control-flow checks, not a native XCTest pass."""
+    def body(self):
+        return section('- (BOOL)waitForPaletteFilesCancellationPresentation:(XCUIApplication *)app {',
+                       '- (void)selectSyntheticPaletteFile:')
+
+    def test_only_cancellation_calls_new_helper_and_original_wait_is_unchanged(self):
+        revised='[self waitForPaletteFilesCancellationPresentation:app]'
+        self.assertEqual(HELPER.count(revised),1)
+        cancel=section('- (void)exercisePaletteFileCancelAndImportReturn:', '- (BOOL)waitForPaletteFilesPresentation:')
+        self.assertIn(revised,cancel)
+        self.assertLess(cancel.index('if (!'+revised+') return;'),cancel.index('XCUIElementQuery *pickerBars='))
+        original=section('- (BOOL)waitForPaletteFilesPresentation:', '- (BOOL)waitForPaletteFilesCancellationPresentation:')
+        self.assertIn('UIUserInterfaceIdiomPhone ? 25 : 20',original)
+        self.assertIn('return appeared && elapsed<=budget;',original)
+        selection=section('- (void)selectSyntheticPaletteFile:', '- (void)exercisePaletteFileSelectionReviewAndRelaunch:')
+        self.assertIn('[self waitForPaletteFilesPresentation:app]',selection)
+        self.assertNotIn(revised,selection)
+        body=self.body()
+        self.assertIn('userInterfaceIdiom!=UIUserInterfaceIdiomPad) return [self waitForPaletteFilesPresentation:app];',body)
+        self.assertLess(body.index('if (self.tcPaletteReadinessExpired) return NO;'),body.index('userInterfaceIdiom'))
+        for token in ('[app launch]','[app activate]','[picker tap]','selectSyntheticPaletteFile:', 'executionTimeAllowance'):
+            self.assertNotIn(token,body)
+
+    def test_one_setup_start_is_declared_stored_and_invalid_storage_refuses(self):
+        header=(ROOT/'TouchColorUITests/TCPaletteUIHelpers.h').read_text()
+        ipad=(ROOT/'TouchColorUITests/TouchColorIPadUITests.m').read_text()
+        phone=(ROOT/'TouchColorUITests/TouchColorUITests.m').read_text()
+        self.assertIn('@property (nonatomic) NSTimeInterval tcPaletteIPadCaseStarted;',header)
+        self.assertIn('- (BOOL)waitForPaletteFilesCancellationPresentation:(XCUIApplication *)app;',header)
+        self.assertIn('#import "TCPaletteUIHelpers.h"',ipad)
+        self.assertEqual(ipad.count(IPAD_FILES_SETUP_CLOCK),1)
+        self.assertIn('- (void)setUp {\n'+IPAD_FILES_SETUP_CLOCK+'    self.tcPaletteReadinessExpired=NO;\n    [super setUp];',ipad)
+        self.assertNotIn('tcPaletteIPadCaseStarted',phone)
+        self.assertIn('objc_getAssociatedObject(self,&TCPaletteIPadCaseStartedKey)',HELPER)
+        self.assertIn('return [value isKindOfClass:NSNumber.class] ? [value doubleValue] : NAN;',HELPER)
+        self.assertIn('objc_setAssociatedObject(self,&TCPaletteIPadCaseStartedKey,@(value),OBJC_ASSOCIATION_RETAIN_NONATOMIC)',HELPER)
+
+    def test_full_thirty_admission_precedes_owned_query_and_one_wait(self):
+        body=self.body()
+        self.assertEqual(body.count('deadline=started+30, caseDeadline=caseStarted+180;'),1)
+        self.assertIn('isfinite(caseStarted) && caseStarted>0 && isfinite(started) && started>=caseStarted',body)
+        self.assertIn('isfinite(deadline) && isfinite(caseDeadline) && caseDeadline-started>=30 && deadline<=caseDeadline',body)
+        self.assertLess(body.index('if (!admitted)'),body.index('XCUIElement *picker='))
+        self.assertLess(body.index('if (grant<=0)'),body.index('BOOL appeared='))
+        self.assertEqual(body.count('waitForExistenceWithTimeout:'),1)
+        self.assertIn('grant=deadline-NSProcessInfo.processInfo.systemUptime;',body)
+        self.assertIn('@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]',body)
+        self.assertNotIn('MIN(',body)  # Refuse partial admission instead of shrinking 30s to case remainder.
+        for token in ('picker.exists','picker.identifier','picker.label','picker.frame','debugDescription','screenshot','while (','for ('):
+            self.assertNotIn(token,re.sub(r'//[^\n]*','',body))
+
+    def test_actual_return_and_logging_share_deadline_and_latch_before_failure(self):
+        body=self.body()
+        wait=body.index('BOOL appeared=')
+        log=body.index('NSLog(',wait)
+        timely=body.index('BOOL timely=returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline;',log)
+        latch=body.index('if (!timely || !appeared) self.tcPaletteReadinessExpired=YES;',timely)
+        self.assertLess(wait,log);self.assertLess(log,timely)
+        self.assertLess(latch,body.index('XCTAssertTrue(timely,'))
+        self.assertLess(latch,body.index('XCTAssertTrue(appeared,'))
+        self.assertIn('returned-started<=20 ? @"within" : @"missed"',body)
+        self.assertNotIn('deadline=',body[wait:])
+        for refusal in ('if (!admitted)', 'if (grant<=0)'):
+            branch=body.split(refusal,1)[1].split('}',1)[0]
+            self.assertLess(branch.index('self.tcPaletteReadinessExpired=YES;'),branch.index('XCTFail('))
+            self.assertIn('return NO;',branch)
+
+    def test_exact_inverse_preserves_original_case_and_dismissal(self):
+        revised=restore_ipad_files_attachment(HELPER,'TCPaletteUIHelpers.m')
+        cancel=revised.split('- (void)exercisePaletteFileCancelAndImportReturn:',1)[1].split('- (BOOL)waitForPaletteFilesPresentation:',1)[0]
+        self.assertEqual(cancel.count('cancelDeadline=cancelStarted+10;'),1)
+        self.assertEqual(cancel.count('[cancel tap];'),1)
+        self.assertIn('[self waitForPalettePresentationToClose:cancel];',cancel)
+        self.assertEqual(cancel.count('[self verifyHistory:@[] app:app];'),2)
+        self.assertIn('[self verifyInitialPaletteImportControls:app];',cancel)
+        self.assertIn('containsString:@"review every color"',cancel)
+        dismiss=section('- (void)waitForPalettePresentationToClose:', '- (BOOL)pastePalette:')
+        self.assertIn('waitForNonExistenceWithTimeout:5',dismiss)
+        self.assertIn('waitForExpectations:@[gone] timeout:5',dismiss)
+        # Existing full-file/method hashes are unchanged and run after this inverse.
+        self.assertNotIn('tcPaletteIPadCaseStarted',revised)
+        self.assertNotIn('waitForPaletteFilesCancellationPresentation:',revised)
+
+    def test_compiled_actual_control_flow_admission_boundaries_and_failure_hooks(self):
+        cc=shutil.which('clang') or shutil.which('cc')
+        self.assertIsNotNone(cc,'A C compiler is required for the portable deadline trace')
+        body=self.body().rsplit('}',1)[0]
+        body=re.sub(r'//[^\n]*','',body)
+        body=body.replace('self.tcPaletteReadinessExpired','expired').replace('self.tcPaletteIPadCaseStarted','setup_started')
+        body=body.replace('UIDevice.currentDevice.userInterfaceIdiom','idiom')
+        body=body.replace('[self waitForPaletteFilesPresentation:app]','original_wait()')
+        body=body.replace('NSProcessInfo.processInfo.systemUptime','read_clock()')
+        body,n=re.subn(r'    XCUIElement \*picker=[^\n]+;','    queries++;',body)
+        self.assertEqual(n,1)
+        body=body.replace('[picker waitForExistenceWithTimeout:grant]','wait_for_picker(grant)')
+        benchmark=re.search(r'appeared,returned-started,(.*?) \? @"within" : @"missed"',body).group(1)
+        body,n=re.subn(r'    NSLog\([\s\S]*?;', '    old_within='+benchmark+'; logs++;',body)
+        self.assertEqual(n,1)
+        body=re.sub(r'XCTFail\(@"[^"]*"\)', 'record_failure()',body)
+        body=re.sub(r'XCTAssertTrue\((\w+),@"[^"]*"\)',r'if (!\1) record_failure()',body)
+        self.assertNotIn('@',body)
+        harness=r'''
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+typedef double NSTimeInterval;
+typedef bool BOOL;
+#define YES true
+#define NO false
+enum { UIUserInterfaceIdiomPhone=1, UIUserInterfaceIdiomPad=2 };
+static double setup_started, instants[4], last_grant;
+static int idiom, reads, queries, waits, logs, failures, owned_failure_ax, legacy_waits, cancels;
+static bool expired, appeared, old_within;
+static double read_clock(void) { if (reads>=4) exit(90); return instants[reads++]; }
+static bool original_wait(void) { legacy_waits++; last_grant=idiom==UIUserInterfaceIdiomPhone ? 25 : 20; return true; }
+static bool wait_for_picker(double grant) { waits++; last_grant=grant; return appeared; }
+static void record_failure(void) { failures++; if (!expired) owned_failure_ax++; }
+static bool attachment(void) {
+ACTUAL_BODY
+}
+static bool run(double setup, double start, double query_return, double wait_return, double logged, bool found) {
+    setup_started=setup; instants[0]=start; instants[1]=query_return; instants[2]=wait_return; instants[3]=logged;
+    reads=queries=waits=logs=failures=owned_failure_ax=legacy_waits=cancels=0;
+    expired=false; appeared=found; old_within=false; last_grant=-1; idiom=UIUserInterfaceIdiomPad;
+    bool result=attachment(); if (result) cancels++;
+    return result;
+}
+#define CHECK(value) do { if (!(value)) { fprintf(stderr,"trace check failed at %d: %s\n",__LINE__,#value); return 1; } } while (0)
+int main(void) {
+    CHECK(run(100,120,120,135.601,135.602,true));
+    CHECK(old_within && !expired && cancels==1 && queries==1 && waits==1 && last_grant==30);
+    CHECK(run(100,120,120.25,142.3288707917,142.329,true));
+    CHECK(!old_within && !expired && last_grant==29.75 && logs==1 && failures==0);
+    CHECK(run(100,120,120,140,140.001,true)); CHECK(old_within);
+    double fractional_start=nextafter(64,-INFINITY), rounded_boundary=fractional_start+20;
+    CHECK(rounded_boundary==84 && rounded_boundary<=fractional_start+20);
+    CHECK(rounded_boundary-fractional_start>20);
+    CHECK(run(10,fractional_start,fractional_start,rounded_boundary,rounded_boundary,true));
+    CHECK(!old_within && !expired && failures==0);
+    CHECK(run(100,250,250,279.999,279.999,true)); CHECK(last_grant==30);
+    CHECK(!run(100,nextafter(250,INFINITY),251,252,253,true));
+    CHECK(queries==0 && waits==0 && expired && failures==1 && owned_failure_ax==0 && cancels==0);
+    double invalid[]={0,-1,NAN,INFINITY,-INFINITY,121};
+    for (unsigned i=0;i<sizeof(invalid)/sizeof(invalid[0]);i++) {
+        CHECK(!run(invalid[i],120,120,121,121,true));
+        CHECK(queries==0 && waits==0 && expired && failures==1 && owned_failure_ax==0 && cancels==0);
+    }
+    CHECK(!run(100,120,150,150,150,true));
+    CHECK(queries==1 && waits==0 && expired && failures==1 && owned_failure_ax==0);
+    double late[]={150,nextafter(150,INFINITY),190};
+    for (unsigned i=0;i<sizeof(late)/sizeof(late[0]);i++) {
+        CHECK(!run(100,120,120,late[i],late[i],true));
+        CHECK(waits==1 && logs==1 && expired && failures==1 && owned_failure_ax==0 && cancels==0);
+    }
+    CHECK(run(100,120,120,nextafter(150,-INFINITY),nextafter(150,-INFINITY),true));
+    CHECK(!run(100,120,120,149.999,150,true));
+    CHECK(expired && failures==1 && owned_failure_ax==0 && cancels==0);
+    CHECK(!run(100,120,120,130,130,false));
+    CHECK(expired && failures==1 && owned_failure_ax==0 && cancels==0);
+    int previous_queries=queries, previous_reads=reads;
+    CHECK(!attachment()); CHECK(queries==previous_queries && reads==previous_reads && failures==1);
+    for (int value=0;value<=1;value++) {
+        expired=false; idiom=value; setup_started=NAN; reads=queries=waits=legacy_waits=0;
+        CHECK(attachment()); CHECK(legacy_waits==1 && queries==0 && waits==0 && reads==0);
+        CHECK(last_grant==(value==UIUserInterfaceIdiomPhone ? 25 : 20));
+    }
+    return 0;
+}
+'''.replace('ACTUAL_BODY',body)
+        with tempfile.TemporaryDirectory() as tmp:
+            source=Path(tmp)/'attachment.c'; source.write_text(harness)
+            for optimization in ('-O0','-O2'):
+                binary=Path(tmp)/('attachment'+optimization)
+                subprocess.run([cc,'-std=c99','-Wall','-Werror',optimization,str(source),'-lm','-o',str(binary)],check=True,capture_output=True)
+                result=subprocess.run([str(binary)],capture_output=True,text=True)
+                self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_retained_native_observations_keep_original_outcomes(self):
+        # Mini run37524057802/job112478076938 source459c70b failed before Cancel.
+        self.assertGreater(22.3288707917,20)
+        self.assertLess(22.3288707917,30)  # Eligible window, not a claimed native pass.
+        self.assertLess(57.933,180)
+        # Prior source2d LargePad kept its stricter original successful path.
+        self.assertLess(15.601,20)
+        self.assertLess(80.206,180)
+
+
 class CenterInputSourceContracts(unittest.TestCase):
     def center(self):
         return section('- (BOOL)tapReadyPaletteAcceptCenter:', '- (void)verifyOriginalPaletteSources:')

@@ -13,8 +13,8 @@ from uikit_runtime_diagnostics import MAX_OUTPUT_BYTES, MAX_PREPARATION_OUTPUT_B
 from palette_lifecycle_diagnostics import MAX_HELP_LOG_BYTES
 from uikit_completion import completion_group, REF as COMPLETION_REF
 
-# The four remaining-failure groups retain the original per-family allocations
-# on four fresh hosts without increasing the ten-image envelope.
+# The three remaining groups retain their original per-family allocations.
+# The completed Large iPad four-slot allocation is retired, not redistributed.
 # Ten images at most; include base64, metadata and bounded child diagnostics.
 # Raw attachment manifests and result bundles are read locally, never emitted.
 ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 4, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
@@ -22,7 +22,6 @@ COMPLETION_EVIDENCE_GROUPS = {
     'iphone-compact': ('iPhoneCompact', 2),
     'iphone-large': ('iPhoneLarge', 2),
     'ipad-mini': ('iPadMini', 2),
-    'ipad-large': ('iPadLarge', 4),
 }
 COMPLETION_ALLOCATIONS = {name: allocation for name, (_, allocation) in COMPLETION_EVIDENCE_GROUPS.items()}
 MAX_IMAGE_BYTES = 500 * 1024
@@ -33,7 +32,7 @@ MAX_ISSUE_SOURCE_BYTES = 8 * 1024
 MAX_EXPORTS_PER_DEVICE = 2  # Functional and accessibility result bundles.
 MAX_RUNTIME_DIAGNOSTIC_BYTES = MAX_OUTPUT_BYTES + MAX_PREPARATION_OUTPUT_BYTES
 MAX_COMPLETION_SUMMARY_LOG_BYTES = 4 * 1024  # Budget, required-frame and image summaries per group.
-COMPLETION_SUITE_INVOCATIONS = 4 + 4 + 1  # Bootstrap, functional and nonempty audit selections.
+COMPLETION_SUITE_INVOCATIONS = 3 + 3  # Bootstrap and functional; all audits already qualified.
 MAX_COMPLETION_RESULT_LOG_BYTES = 36 * 1024  # 32 KiB receipt fields plus command/case framing.
 # The same 32 KiB slot now contains at most 24 KiB runtime + 8 KiB preparation.
 if MAX_RUNTIME_DIAGNOSTIC_BYTES != 32 * 1024: raise ValueError('Profile diagnostic allocation changed')
@@ -47,11 +46,10 @@ COMPLETION_RESERVED_LOG_BYTES = (sum(COMPLETION_ALLOCATIONS.values()) * IMAGE_SL
                                                                 + MAX_COMPLETION_SUMMARY_LOG_BYTES)
                                  + COMPLETION_SUITE_INVOCATIONS * MAX_COMPLETION_RESULT_LOG_BYTES
                                  + 2 * MAX_HELP_LOG_BYTES)
-if any(sum(count for candidate, count in COMPLETION_EVIDENCE_GROUPS.values() if candidate == device) != allocation
-       for device, allocation in ALLOCATIONS.items()):
+if any(count != ALLOCATIONS[device] for device, count in COMPLETION_EVIDENCE_GROUPS.values()):
     raise ValueError('Completion family image allocations differ from the original envelope')
-if sum(COMPLETION_ALLOCATIONS.values()) != 10:
-    raise ValueError('Completion image allocation must retain the ten-image cap')
+if sum(COMPLETION_ALLOCATIONS.values()) != 6:
+    raise ValueError('Completion image allocation must retain only the six selected slots')
 if max(ORIGINAL_RESERVED_LOG_BYTES, COMPLETION_RESERVED_LOG_BYTES) > MAX_RUN_LOG_BYTES:
     raise ValueError('Whole-run evidence allocation exceeds its cap')
 family = os.environ['TC_TEST_FAMILY']
