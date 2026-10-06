@@ -140,28 +140,14 @@ def owned_crashes(home, identity):
     return {'owned_crash_root_present': True, 'reports': reports}
 
 
-def collect(identity, home, runner=service_runner):
+def collect(identity, home):
     result = {'family': identity['family'], 'deviceId': identity['udid'], 'runtime': identity['runtime'],
               'phase': 'after-functional-failure', 'wall_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              'simulator_commands_completed': False}
-    try:
-        command = ['xcrun', 'simctl', 'spawn', identity['udid'], 'launchctl', 'list']
-        began = time.monotonic()
-        process = runner(command, timeout=3, text=True)
-        if time.monotonic() - began > 3:
-            result['service_query_error'] = 'LateCommandExit'
-            return result
-        result['service_query_exit'] = process.returncode
-        result['services'] = service_rows(process.stdout) if process.returncode == 0 else []
-        if process.returncode != 0:
-            return result
-    except Exception as error:
-        result['service_query_error'] = type(error).__name__
-        result['host_client_cleanup_confirmed'] = getattr(error, 'cleanup_confirmed', None)
-        # Reaping simctl's host group does not prove its simulator-side command
-        # exited. The pending marker must block later simulator mutation.
-        return result
-    result['simulator_commands_completed'] = True
+              'service_query_status': 'not_collected',
+              'service_query_reason': 'not_required_for_qualification_or_owned_app_correlation',
+              # No simulator command has been requested here. The independently
+              # bounded app collector below supplies its actual completion state.
+              'simulator_commands_completed': True}
     result.update(owned_crashes(home, identity))
     if identity['family'] in {'iPhoneLarge', 'iPhoneCompact'}:
         from palette_lifecycle_diagnostics import collect_lifecycle

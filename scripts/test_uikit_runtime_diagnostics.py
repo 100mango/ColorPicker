@@ -69,34 +69,29 @@ class UIKitRuntimeDiagnosticsTests(unittest.TestCase):
             root.rmdir(); root.symlink_to(alias, target_is_directory=True)
             self.assertFalse(owned_crashes(home, self.identity)['owned_crash_root_present'])
 
-    def test_command_is_bound_to_owned_simulator_and_error_text_is_not_emitted(self):
-        calls = []
-        def runner(command, **options):
-            calls.append((command, options))
-            return subprocess.CompletedProcess(command, 1, 'private output', '/personal/private/path')
-        with tempfile.TemporaryDirectory() as home:
-            result = collect(self.identity, home, runner)
-        self.assertEqual(calls[0][0], ['xcrun', 'simctl', 'spawn', self.identity['udid'], 'launchctl', 'list'])
-        self.assertEqual(calls[0][1]['timeout'], 3)
-        self.assertEqual(result['service_query_exit'], 1)
-        self.assertEqual(result['services'], [])
-        self.assertNotIn('private', framed_record(result))
+    def test_optional_service_listing_is_not_spawned_or_reported_as_empty(self):
+        with tempfile.TemporaryDirectory() as home, patch.object(diagnostics, 'service_runner', side_effect=AssertionError('service command')) as runner:
+            result = collect(self.identity, home)
+        runner.assert_not_called()
+        self.assertEqual(result['service_query_status'], 'not_collected')
+        self.assertNotIn('services', result)
+        self.assertNotIn('service_query_exit', result)
+        self.assertTrue(result['simulator_commands_completed']) # No device operation was requested.
 
-    def test_late_zero_service_exit_blocks_lifecycle_query_and_preserves_marker(self):
-        def runner(command, **options):
-            return subprocess.CompletedProcess(command, 0, '', '')
-        with tempfile.TemporaryDirectory() as home, patch.object(diagnostics.time, 'monotonic', side_effect=[0, 3.01]):
-            result = collect(dict(self.identity, family='iPhoneLarge'), home, runner)
-        self.assertFalse(result['simulator_commands_completed'])
-        self.assertEqual(result['service_query_error'], 'LateCommandExit')
-        self.assertNotIn('palette_lifecycle', result)
+    def test_app_lifecycle_uses_exact_owned_identity_without_service_dependency(self):
+        identity = dict(self.identity, family='iPhoneLarge')
+        lifecycle = {'simulator_commands_completed': True, 'events': [], 'status': 'unavailable'}
+        with tempfile.TemporaryDirectory() as home, patch.object(diagnostics, 'service_runner', side_effect=AssertionError('service command')) as runner, patch('palette_lifecycle_diagnostics.collect_lifecycle', return_value=lifecycle) as app:
+            result = collect(identity, home)
+        runner.assert_not_called(); app.assert_called_once_with(identity)
+        self.assertEqual(result['palette_lifecycle'], lifecycle)
+        self.assertEqual(result['palette_lifecycle']['status'], 'unavailable')
+        self.assertTrue(result['simulator_commands_completed'])
 
     def test_lifecycle_unknown_exit_keeps_shared_simulator_fence(self):
-        def runner(command, **options):
-            return subprocess.CompletedProcess(command, 0, '', '')
         lifecycle = {'simulator_commands_completed': False, 'reason': 'command-exit-unconfirmed'}
         with tempfile.TemporaryDirectory() as home, patch('palette_lifecycle_diagnostics.collect_lifecycle', return_value=lifecycle):
-            result = collect(dict(self.identity, family='iPhoneLarge'), home, runner)
+            result = collect(dict(self.identity, family='iPhoneLarge'), home)
         self.assertFalse(result['simulator_commands_completed'])
         self.assertEqual(result['palette_lifecycle'], lifecycle)
 
@@ -109,14 +104,12 @@ class UIKitRuntimeDiagnosticsTests(unittest.TestCase):
         self.assertNotIn('界', line)
 
     def test_host_client_cleanup_does_not_claim_simulator_exit(self):
-        def timeout(command, **options):
-            error = subprocess.TimeoutExpired(command, options['timeout'])
-            error.cleanup_confirmed = True
-            raise error
-        with tempfile.TemporaryDirectory() as home:
-            value = collect(self.identity, home, timeout)
+        lifecycle = {'simulator_commands_completed': False, 'host_client_cleanup_confirmed': True,
+                     'reason': 'command-exit-unconfirmed'}
+        with tempfile.TemporaryDirectory() as home, patch('palette_lifecycle_diagnostics.collect_lifecycle', return_value=lifecycle):
+            value = collect(dict(self.identity, family='iPhoneLarge'), home)
         self.assertFalse(value['simulator_commands_completed'])
-        self.assertTrue(value['host_client_cleanup_confirmed'])
+        self.assertTrue(value['palette_lifecycle']['host_client_cleanup_confirmed'])
 
     def test_pending_barrier_survives_unknown_exit_and_blocks_another_inventory(self):
         with tempfile.TemporaryDirectory() as directory:

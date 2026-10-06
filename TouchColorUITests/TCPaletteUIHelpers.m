@@ -308,8 +308,21 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
             for (id<XCUIElementSnapshot> cell in cells) if ([cell.identifier isEqualToString:identifier]) rendered=cell;
             if ((rendered && row.hittable) || attempt==5) break;
             BOOL materialized=rendered!=nil;
+            // These immutable frames already describe this unchanged table state.
+            // Preserve the same gutter/path/distance without four extra remote
+            // frame getters around a drag; the next state always comes from captureRows.
+            CGRect viewport=materialized ? tableSnapshot.frame : CGRectZero;
+            CGRect target=materialized ? rendered.frame : CGRectZero;
             tableSnapshot=nil;cells=nil;rendered=nil;
-            if (!materialized) [table swipeUpWithVelocity:XCUIGestureVelocitySlow]; else [self scrollTowardElement:row inScroll:table];
+            if (!materialized) [table swipeUpWithVelocity:XCUIGestureVelocitySlow];
+            else {
+                CGFloat limit=CGRectGetHeight(viewport)*0.45;
+                CGFloat distance=MAX(-limit,MIN(limit,CGRectGetMidY(target)-CGRectGetMidY(viewport)));
+                XCUICoordinate *start=[[table coordinateWithNormalizedOffset:CGVectorMake(0,0.5)] coordinateWithOffset:CGVectorMake(8,0)];
+                XCUICoordinate *end=[start coordinateWithOffset:CGVectorMake(0,-distance)];
+                NSLog(@"PALETTE_ROW_SCROLL frame=%@ viewport=%@ gutterX=8 delta=%.2f",NSStringFromCGRect(target),NSStringFromCGRect(viewport),distance);
+                [start pressForDuration:0.05 thenDragToCoordinate:end withVelocity:100 thenHoldForDuration:0.15];
+            }
             if (!captureRows()) return;
         }
         if (!rendered) {

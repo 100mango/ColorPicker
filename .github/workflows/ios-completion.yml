@@ -1,12 +1,12 @@
-name: Original-product iPhone and iPad qualification
+name: Fixed original-iOS missing-case completion
 on:
   push:
-    branches: [codex/ios-original-release]
+    branches: [codex/ios-original-completion]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: touchcolor-ios-${{ github.ref }}
+  group: touchcolor-ios-refs/heads/codex/ios-original-release
   cancel-in-progress: false
 jobs:
   compile-prerequisites:
@@ -26,14 +26,14 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/ios-original-release
-          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/codex/ios-original-release
+          test "$GITHUB_REF" = refs/heads/codex/ios-original-completion
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/codex/ios-original-completion
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
           echo "Prerequisite commit: $(git rev-parse HEAD)"
           echo "Prerequisite tree: $(git rev-parse 'HEAD^{tree}')"
-          shasum -a 256 .github/workflows/ios.yml
+          shasum -a 256 .github/workflows/ios-completion.yml
           sw_vers
           xcodebuild -version | tee /tmp/touchcolor-prerequisite-xcode.txt
           grep -Fx 'Xcode 27.0' /tmp/touchcolor-prerequisite-xcode.txt
@@ -50,7 +50,7 @@ jobs:
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_palette_readiness test_uikit_fixture_handoff test_original_ios_package test_ios_offline_privacy
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_completion test_uikit_completion_evidence test_uikit_palette_readiness test_uikit_fixture_handoff test_original_ios_package test_ios_offline_privacy
           PYTHONPATH=scripts python3 -O -m unittest test_ios_offline_privacy test_original_ios_package
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
@@ -99,19 +99,26 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
           echo "Final prerequisite tree: $(git rev-parse 'HEAD^{tree}')"
-          shasum -a 256 .github/workflows/ios.yml
-  compatibility:
+          shasum -a 256 .github/workflows/ios-completion.yml
+  completion:
     needs: compile-prerequisites
-    name: ${{ matrix.family }}
+    name: ${{ matrix.group }} · ${{ matrix.family }}
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
-        family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
+        include:
+          - {group: iphone-compact, family: iPhoneCompact, audits: true}
+          - {group: iphone-large, family: iPhoneLarge, audits: true}
+          - {group: ipad-mini-palette, family: iPadMini, audits: false}
+          - {group: ipad-mini-canvas, family: iPadMini, audits: true}
+          - {group: ipad-large-palette, family: iPadLarge, audits: false}
+          - {group: ipad-large-canvas, family: iPadLarge, audits: true}
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}
     env:
       TC_TEST_FAMILY: ${{ matrix.family }}
+      TC_COMPLETION_GROUP: ${{ matrix.group }}
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
       - name: Check out source
@@ -126,14 +133,15 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/ios-original-release
-          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/codex/ios-original-release
+          test "$GITHUB_REF" = refs/heads/codex/ios-original-completion
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/codex/ios-original-completion
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
           echo "Tested commit: $(git rev-parse HEAD)"
           echo "Tested tree: $(git rev-parse 'HEAD^{tree}')"
-          shasum -a 256 .github/workflows/ios.yml
+          shasum -a 256 .github/workflows/ios-completion.yml
+          PYTHONPATH=scripts python3 -c 'import os; from uikit_managed_device import require_job; print(require_job(os.environ["TC_TEST_FAMILY"]))'
       - name: Record exact stable toolchain and simulators
         run: |
           sw_vers
@@ -217,7 +225,7 @@ jobs:
         if: ${{ !cancelled() && steps.build-tests.outcome == 'success' && steps.build-fixture.outcome == 'success' }}
         timeout-minutes: 10
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" configure
-      - name: Unit and constrained-window layout tests
+      - name: Execute exact two-case hosted bootstrap
         id: hosted-tests
         if: ${{ !cancelled() && steps.warm-device.outcome == 'success' }}
         timeout-minutes: ${{ matrix.family == 'iPadMini' && 16 || 10 }}
@@ -227,25 +235,26 @@ jobs:
         if: ${{ !cancelled() && steps.hosted-tests.outcome == 'success' }}
         timeout-minutes: 10
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" fixture-seed
-      - name: Functional UI tests
+      - name: Execute closed functional completion selection
         id: functional-tests
         if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 20
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-functional
-      - name: Official XCTest accessibility audits
-        if: ${{ !cancelled() && steps.seed-device.outcome == 'success' }}
+      - name: Execute required selected StrictAll audits
+        id: audit-tests
+        if: ${{ !cancelled() && matrix.audits && steps.seed-device.outcome == 'success' }}
         timeout-minutes: 12
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-audits
-      - name: Read bounded app and Files-service metadata after a functional failure
+      - name: Read bounded app diagnostics after required UI and audits
         id: runtime-diagnostics
-        if: ${{ !cancelled() && steps.functional-tests.outcome == 'failure' }}
+        if: ${{ !cancelled() && (steps.functional-tests.outcome == 'failure' || steps.audit-tests.outcome == 'failure') }}
         timeout-minutes: 2
         run: python3 scripts/uikit_runtime_diagnostics.py "$TC_TEST_FAMILY"
       - name: Shut down simulator
         if: ${{ always() && steps.warm-device.outcome != 'skipped' && (steps.runtime-diagnostics.outcome == 'skipped' || steps.runtime-diagnostics.outputs.simulator_safe == 'true') }}
         timeout-minutes: 2
         run: bash scripts/test_simulators.sh "$TC_TEST_FAMILY" managed-shutdown
-      - name: Export bounded device evidence
+      - name: Export fixed group share of bounded family evidence
         if: always()
         timeout-minutes: 3
         run: python3 scripts/export_audit_failures.py
@@ -266,4 +275,4 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
           echo "Final tested tree: $(git rev-parse 'HEAD^{tree}')"
-          shasum -a 256 .github/workflows/ios.yml
+          shasum -a 256 .github/workflows/ios-completion.yml

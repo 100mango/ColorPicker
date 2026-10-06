@@ -24,7 +24,7 @@ class FixtureHandoff(ManagedFixture):
         self.setup = {'schema': 1, 'binding': self.binding, 'products': {'synthetic': True}}
         self.identity_bytes = self.paths()[0].read_bytes()
         self.binding_bytes = self.paths()[1].read_bytes()
-        fields = {'result': 'Passed', 'totalTestCount': 53, 'passedTests': 53,
+        fields = {'result': 'Passed', 'totalTestCount': 54, 'passedTests': 54,
                   'failedTests': 0, 'skippedTests': 0, 'expectedFailures': 0,
                   'qualified': True, 'device': NEW}
         self.hosted = {'schema': 1, 'suite': 'TouchColorTests', 'setup': self.setup, 'qualified': True,
@@ -374,6 +374,59 @@ class FixtureHandoff(ManagedFixture):
         with self.assertRaises(Exception): self.controller.command(device_module.READBACK, 30)
         self.assertEqual(self.calls, previous)
         return self.failure()
+
+    def test_launch_known_host_cleanup_is_retained_without_continuation(self):
+        failure = self.fail_at('launch', 'known_cleanup')
+        self.assertIs(failure['command']['host_cleanup_confirmed'], True)
+        self.assertIsNone(failure['command']['exit_code'])
+        self.assertEqual(failure['command']['argv'], ['xcrun', 'simctl', 'launch',
+            '--terminate-running-process', NEW, 'com.mango.touchColor.tests.paletteFixtures'])
+        self.assertEqual(failure['simulator_completion'], 'not_inferred')
+        self.assertFalse(failure['stderr']['stream_complete'])
+        self.assertNotIn('get_app_container', self.operations())
+        self.assertNotIn('terminate', self.operations())
+        self.assert_binding_unchanged()
+
+    def test_launch_unknown_host_cleanup_stays_null(self):
+        failure = self.fail_at('launch', 'unknown_cleanup')
+        self.assertIsNone(failure['command']['host_cleanup_confirmed'])
+        self.assertEqual(failure['source'], self.binding['context'])
+        self.assertEqual(failure['deviceId'], NEW)
+        self.assertNotIn('get_app_container', self.operations())
+
+    def test_launch_unconfirmed_host_cleanup_stays_false(self):
+        failure = self.fail_at('launch', 'unconfirmed_cleanup')
+        self.assertIs(failure['command']['host_cleanup_confirmed'], False)
+        self.assertIsNone(failure['command']['exit_code'])
+        self.assertNotIn('get_app_container', self.operations())
+
+    def test_launch_late_return_stops_with_original_deadline_and_observation(self):
+        failure = self.fail_at('launch', 'late')
+        self.assertEqual(failure['command']['exit_code'], 0)
+        self.assertIs(failure['command']['host_cleanup_confirmed'], True)
+        self.assertGreaterEqual(failure['command']['returned_monotonic'],
+                                failure['command']['deadline_monotonic'])
+        self.assertEqual(self.controller.deadline, 700)
+        self.assertNotIn('get_app_container', self.operations())
+
+    def test_launch_known_failure_keeps_exit_and_no_retry(self):
+        failure = self.fail_at('launch', 'nonzero')
+        self.assertEqual(failure['command']['exit_code'], 149)
+        self.assertIs(failure['command']['host_cleanup_confirmed'], True)
+        self.assertTrue(failure['stderr']['stream_complete'])
+        self.assertEqual(self.operations().count('launch'), 1)
+
+    def test_launch_allowlist_is_only_exact_owned_fixture_at_sixty(self):
+        self.controller.bind_owned_device(self.binding)
+        exact = ['xcrun', 'simctl', 'launch', '--terminate-running-process', NEW,
+                 'com.mango.touchColor.tests.paletteFixtures']
+        for argv, seconds in [(exact[:-1]+['com.mango.touchColor'],60),
+                              (exact[:4]+[OTHER,exact[-1]],60), (exact,61),
+                              (exact+['--extra'],60), (exact[:3]+exact[4:],60)]:
+            with self.subTest(argv=argv, seconds=seconds), self.assertRaisesRegex(ValueError, 'Unexpected fixture evidence command'):
+                self.controller.fixture_command(argv,seconds)
+        self.assertEqual(self.calls, [])
+        self.assertFalse(self.controller.pending.exists())
 
     def test_nonzero_boot_is_terminal_and_retains_exact_stderr(self):
         failure = self.fail_at('boot', 'nonzero')

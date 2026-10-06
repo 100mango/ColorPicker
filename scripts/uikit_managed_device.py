@@ -34,11 +34,14 @@ def require_job(family):
     """Host-only current canonical context. This does not verify checkout bytes."""
     require(family in PROFILES, 'Unknown canonical UIKit family')
     ref = os.environ.get('GITHUB_REF')
-    require(ref == REF, 'Unknown staged iOS qualification branch')
-    workflow = WORKFLOW
+    from uikit_completion import completion_group, REF as COMPLETION_REF, WORKFLOW as COMPLETION_WORKFLOW
+    selected = completion_group(family)
+    require(ref == (COMPLETION_REF if selected else REF), 'Unknown staged iOS qualification branch')
+    workflow = COMPLETION_WORKFLOW if selected else WORKFLOW
+    job = 'completion' if selected else 'compatibility'
     expected = {'GITHUB_REPOSITORY': REPOSITORY, 'GITHUB_REF': ref,
                 'GITHUB_WORKFLOW_REF': workflow, 'GITHUB_ACTIONS': 'true',
-                'GITHUB_JOB': 'compatibility', 'RUNNER_OS': 'macOS',
+                'GITHUB_JOB': job, 'RUNNER_OS': 'macOS',
                 'TC_TEST_FAMILY': family}
     require(all(os.environ.get(key) == value for key, value in expected.items()),
             'Exact canonical UIKit compatibility job required')
@@ -52,13 +55,15 @@ def require_job(family):
             'Exact run/attempt identity required')
     return {'repository': REPOSITORY, 'ref': ref, 'workflow_ref': workflow,
             'sha': sha, 'workflow_sha': sha, 'run_id': run, 'run_attempt': attempt,
-            'event': event, 'job': 'compatibility', 'family': family}
+            'event': event, 'job': job, 'family': family,
+            **({'completion_group': selected['id'], 'full_original_row': False} if selected else {})}
 
 
 def owned_name(context):
     # Full SHA avoids abbreviated-source collisions. No name is accepted by prefix.
     return ('TouchColor UIKit ' + context['family'] + ' ' + context['sha'] + ' ' +
-            context['run_id'] + '-' + context['run_attempt'])
+            context['run_id'] + '-' + context['run_attempt'] +
+            (' ' + context['completion_group'] if 'completion_group' in context else ''))
 
 
 def _paths(family):

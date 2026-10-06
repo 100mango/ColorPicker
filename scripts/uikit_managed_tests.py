@@ -1,7 +1,8 @@
-"""Closed canonical UIKit hosted-first setup and three complete XCTest targets.
+"""Owned UIKit setup and original complete targets, plus fixed completion groups.
 
 A configured fresh UUID and built product digest are not an installed-byte seal.
-Only a timely full hosted result permits the original Files/Photos preparation.
+Original preparation requires full hosted success. The separate completion route
+requires its actually executed two-case bootstrap, never a full-target claim.
 """
 import time
 STARTED = time.monotonic()
@@ -23,10 +24,11 @@ from uikit_managed_device import (create_owned_device, read_binding, read_manage
                                   read_managed_device_state, require_job)
 from uikit_runtime_diagnostics import MAX_PREPARATION_OUTPUT_BYTES
 from uikit_warmup import Warmup, WarmupFailed, interrupted
+from uikit_completion import selection
 
 # Existing workflow step ceilings. The whole command grant must fit, plus both
 # owned-cleanup tails and the result reader; entry never resets this clock.
-STEPS = {'TouchColorTests': (600, 500, 53), 'TouchColorUITests': (1200, 1100, None),
+STEPS = {'TouchColorTests': (600, 500, 54), 'TouchColorUITests': (1200, 1100, None),
          'AccessibilityAudits': (720, 620, 7)}
 CLEANUP, SUMMARY = 20, 20
 
@@ -174,8 +176,12 @@ def configure(family, started=STARTED):
           'pretest_installed_bytes': 'not_observed'}, sort_keys=True), flush=True)
 
 
-def require_hosted(family, setup):
+def require_hosted(family, setup, *, clock=time.monotonic, deadline=None):
+    if deadline is not None: require(clock() < deadline, 'Bootstrap reread exhausted caller phase')
     value = strict_json(read_regular(record_path(family, 'TouchColorTests'), 32768))
+    selected = selection(family, 'TouchColorTests')
+    if selected is not None:
+        return require_selected_bootstrap(family, setup, value, selected, clock=clock, deadline=deadline)
     require(type(value.get('schema')) is int and value['schema'] == 1 and value.get('suite') == 'TouchColorTests' and
             value.get('setup') == setup and value.get('qualified') is True and
             value.get('command', {}).get('status') == 'timely_exit' and
@@ -183,12 +189,78 @@ def require_hosted(family, setup):
             value.get('command', {}).get('host_cleanup_confirmed') is True,
             'Full timely hosted success is required before fixture preparation')
     fields = value.get('summary', {}).get('fields', {})
-    expected = {'result': 'Passed', 'totalTestCount': 53, 'passedTests': 53,
+    expected = {'result': 'Passed', 'totalTestCount': 54, 'passedTests': 54,
                 'failedTests': 0, 'skippedTests': 0, 'expectedFailures': 0,
                 'qualified': True, 'device': setup['binding']['identity']['udid']}
     require(value.get('summary', {}).get('status') == 'complete' and 'error' not in value and
             all(type(fields.get(k)) is type(v) and fields[k] == v for k, v in expected.items()),
             'Hosted receipt does not contain the required complete passing counts')
+    return value
+
+
+def require_selected_bootstrap(family, setup, value, selected, *, clock=time.monotonic, deadline=None):
+    """Reconstruct the actual two-case bootstrap from its original bounded reads."""
+    def remaining():
+        if deadline is not None:
+            require(clock() < deadline, 'Bootstrap reread exhausted caller phase')
+    remaining()
+    require(type(value.get('schema')) is int and value['schema'] == 3 and 'cases' not in value and
+            value.get('summary_qualification_only') is True and
+            value.get('case_identity_basis') == 'fixed_executed_argv_and_complete_summary' and
+            value.get('per_case_log_reconciliation') == 'pending_external_review' and
+            value.get('suite') == 'TouchColorTests' and value.get('selection') == selected and
+            value.get('setup') == setup and value.get('qualified') is True and 'error' not in value,
+            'Fresh selected bootstrap receipt required')
+    command = value.get('command', {})
+    require(command.get('status') == 'timely_exit' and type(command.get('exit_code')) is int and
+            command['exit_code'] == 0 and command.get('host_cleanup_confirmed') is True and
+            command.get('argv') == test_argv(family, 'TouchColorTests', setup['binding']['identity']['udid']),
+            'Bootstrap command does not match the exact executed selection')
+    timing = value.get('timing', {})
+    keys = {'phase_started_monotonic', 'phase_deadline_monotonic', 'admitted_monotonic',
+            'command_origin_monotonic', 'command_wall_started', 'command_wall_finished',
+            'reader_admitted_monotonic', 'reader_started_monotonic', 'reader_deadline_monotonic', 'evidence_completed_monotonic'}
+    require(isinstance(timing, dict) and set(timing) == keys and
+            all(type(t) in (int, float) and math.isfinite(t) and t >= 0 for t in timing.values()),
+            'Missing original bootstrap phase and reader bounds')
+    seconds, grant = (960, 800) if family == 'iPadMini' else STEPS['TouchColorTests'][:2]
+    phase_start, phase_end = timing['phase_started_monotonic'], timing['phase_deadline_monotonic']
+    admitted, origin = timing['admitted_monotonic'], timing['command_origin_monotonic']
+    began, finished = timing['command_wall_started'], timing['command_wall_finished']
+    times = [command.get(k) for k in ('started_monotonic', 'finished_monotonic', 'deadline_monotonic')]
+    require(all(type(t) in (int, float) and math.isfinite(t) for t in times) and
+            phase_end == phase_start + seconds and phase_start <= admitted <= origin <= times[0] <= times[1] < times[2] and
+            times[2] == origin + grant and admitted + grant + 2 * CLEANUP + SUMMARY < phase_end and
+            (family != 'iPadMini' or origin == admitted) and began <= finished,
+            'Bootstrap original command admission or interval differs')
+    reader_start, reader_end = timing['reader_started_monotonic'], timing['reader_deadline_monotonic']
+    require(times[1] <= timing['reader_admitted_monotonic'] <= reader_start and
+            timing['reader_admitted_monotonic'] + SUMMARY + CLEANUP < phase_end and
+            reader_end == min(reader_start + SUMMARY, phase_end - CLEANUP) and
+            reader_start <= timing['evidence_completed_monotonic'] < reader_end,
+            'Bootstrap original shared reader allowance differs')
+    proof = value.get('summary', {})
+    read = proof.get('reader', {})
+    expected_argv = ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path',
+                     'build/' + family + '-TouchColorTests.xcresult']
+    require(proof.get('status') == 'complete' and type(proof.get('exit_code')) is int and
+            proof['exit_code'] == 0 and proof.get('host_cleanup_confirmed') is True and
+            set(read) == {'argv', 'entered_monotonic', 'deadline_monotonic', 'returned_monotonic'} and
+            read.get('argv') == expected_argv, 'Bootstrap reader exit, cleanup or argv differs')
+    entry, end, returned = (read[k] for k in ('entered_monotonic', 'deadline_monotonic', 'returned_monotonic'))
+    require(all(type(t) in (int, float) and math.isfinite(t) for t in (entry, end, returned)) and
+            reader_start <= entry <= returned < end == reader_end and
+            returned <= timing['evidence_completed_monotonic'], 'Bootstrap reader original interval differs')
+    remaining()
+    raw = read_regular(Path('build') / (family + '-TouchColorTests-selected-summary.json'), 1024 * 1024)
+    remaining()
+    require(type(proof.get('bytes')) is int and proof['bytes'] == len(raw) and
+            proof.get('sha256') == hashlib.sha256(raw).hexdigest(), 'Bootstrap saved raw observation differs')
+    remaining()
+    fields = summary_fields(raw, family, 'TouchColorTests', setup['binding']['identity'], began, finished, 0)
+    require(fields['qualified'] is True and value['summary'].get('fields') == fields,
+            'Bootstrap persisted fields differ from raw results')
+    remaining()
     return value
 
 
@@ -365,7 +437,9 @@ class ManagedWarmup(Warmup):
         allowed = [(['xcrun', 'simctl', 'boot', device], 180),
                    (['xcrun', 'simctl', 'bootstatus', device, '-b'], 240),
                    (['xcrun', 'simctl', 'install', device,
-                     'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)]
+                     'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90),
+                   (['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
+                     'com.mango.touchColor.tests.paletteFixtures'], 60)]
         require((arguments, seconds) in allowed, 'Unexpected fixture evidence command')
         self.require_identity()
         self.fixture_observation = {'argv': arguments, 'exit_code': None,
@@ -391,16 +465,16 @@ class ManagedWarmup(Warmup):
         require(read_binding(self.family) == self.managed_binding, 'Managed ownership changed')
 
 
-def fixture_seed(family, started=STARTED):
-    warmup = ManagedWarmup(family, started=started)
+def fixture_seed(family, started=STARTED, *, clock=time.monotonic):
+    warmup = ManagedWarmup(family, started=started, clock=clock)
     setup = load_setup(family)
-    require_hosted(family, setup)
+    require_hosted(family, setup, clock=warmup.clock, deadline=warmup.deadline - CLEANUP)
     verify_source(warmup, setup['binding']['context'])
     device = warmup.fixture_device(setup)
     # Exact predecessor Files-host command families and fixture assertions.
     warmup.fixture_command(['xcrun', 'simctl', 'install', device,
                     'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)
-    warmup.command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
+    warmup.fixture_command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
                     'com.mango.touchColor.tests.paletteFixtures'], 60)
     require(warmup.remaining() >= 60 + CLEANUP, 'Full fixture container lookup and cleanup cannot fit')
     container = warmup.command(['xcrun', 'simctl', 'get_app_container', device,
@@ -471,17 +545,19 @@ def require_fixtures(family, setup):
 
 def test_argv(family, suite, device):
     require(suite in STEPS, 'Unknown canonical suite')
-    selection = suite
+    target = suite
     if suite == 'TouchColorUITests':
-        selection += '/TouchColorIPadUITests' if family.startswith('iPad') else '/TouchColorUITests'
+        target += '/TouchColorIPadUITests' if family.startswith('iPad') else '/TouchColorUITests'
     elif suite == 'AccessibilityAudits':
-        selection = 'TouchColorUITests/TouchColorAccessibilityUITests'
+        target = 'TouchColorUITests/TouchColorAccessibilityUITests'
+    selected = selection(family, suite)
+    selectors = selected['cases'] if selected else [target]
     return ['xcodebuild', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor', '-configuration', 'Debug',
             '-destination', 'platform=iOS Simulator,id=' + device, '-derivedDataPath', 'build/simulator',
             '-resultBundlePath', 'build/' + family + '-' + suite + '.xcresult', '-parallel-testing-enabled', 'NO',
             '-collect-test-diagnostics', 'never', '-test-timeouts-enabled', 'YES',
             '-default-test-execution-time-allowance', '180', '-maximum-test-execution-time-allowance', '240',
-            '-only-testing:' + selection, 'test-without-building']
+            *('-only-testing:' + case for case in selectors), 'test-without-building']
 
 
 def invoke(command, deadline, *, clock=time.monotonic, popen=subprocess.Popen, stopper=stop_group):
@@ -526,9 +602,11 @@ def summary_fields(raw, family, suite, identity, began, finished, code):
     fields = ('totalTestCount', 'passedTests', 'failedTests', 'skippedTests', 'expectedFailures')
     require(all(type(value.get(k)) is int and value[k] >= 0 for k in fields), 'Invalid summary counts')
     count = STEPS[suite][2] if suite != 'TouchColorUITests' else (16 if family.startswith('iPad') else 17)
+    selected = selection(family, suite)
+    if selected: count = len(selected['cases'])
     require(value['totalTestCount'] == count and
             value['passedTests'] + value['failedTests'] + value['skippedTests'] == count and
-            value['expectedFailures'] == 0, 'Incomplete or changed full-target inventory')
+            value['expectedFailures'] == 0, 'Incomplete or changed test inventory')
     # Staged feature-absence/import coverage replaces the former capability skip.
     require(value['skippedTests'] == 0, 'Unexpected skipped tests')
     require(all(type(value.get(k)) in (int, float) and math.isfinite(value[k]) for k in ('startTime', 'finishTime'))
@@ -541,6 +619,8 @@ def summary_fields(raw, family, suite, identity, began, finished, code):
             'Foreign result destination')
     require(all(row.get(k) == value[k] for k in fields[1:]), 'Per-device summary differs')
     passed = value['failedTests'] == 0
+    if selected:
+        require(type(code) is int and code == (0 if passed else 65), 'Unknown selected XCTest exit')
     require(value.get('result') == ('Passed' if passed else 'Failed') and (code == 0 if passed else code != 0),
             'Command and full-target result contradict')
     return {**{k: value[k] for k in fields}, 'result': value['result'], 'qualified': passed,
@@ -550,6 +630,7 @@ def summary_fields(raw, family, suite, identity, began, finished, code):
 def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time.time,
               runner=invoke, reader=capture, products=product_identity):
     require(suite in STEPS, 'Unknown canonical test target')
+    selected = selection(family, suite)
     seconds, grant, _ = STEPS[suite]
     mini_hosted = family == 'iPadMini' and suite == 'TouchColorTests'
     if mini_hosted: seconds, grant = 960, 800
@@ -558,13 +639,18 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
     setup = load_setup(family)
     verify_source(warmup, setup['binding']['context'])
     if suite != 'TouchColorTests':
-        require_hosted(family, setup); require_fixtures(family, setup)
+        require_hosted(family, setup, clock=clock, deadline=deadline - CLEANUP); require_fixtures(family, setup)
     path = record_path(family, suite)
     result_path = Path('build') / (family + '-' + suite + '.xcresult')
     require(not path.exists() and not path.is_symlink() and not result_path.exists() and not result_path.is_symlink(),
             'No repeated suite or reused result bundle')
-    record = {'schema': 1, 'suite': suite, 'setup': setup, 'qualified': False,
+    record = {'schema': 3 if selected else 1, 'suite': suite, 'setup': setup, 'qualified': False,
               'command': {'status': 'not_started'}, 'summary': {'status': 'not_started'}}
+    if selected:
+        record.update(selection=selected, summary_qualification_only=True,
+                      case_identity_basis='fixed_executed_argv_and_complete_summary',
+                      per_case_log_reconciliation='pending_external_review',
+                      timing={'phase_started_monotonic': started, 'phase_deadline_monotonic': deadline})
     def persist(): write_json(path, record, limit=32768)
     try:
         require(clock() + grant + 2 * CLEANUP + SUMMARY < deadline, 'Full XCTest and evidence tail cannot fit')
@@ -573,7 +659,11 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         persist()
         admitted = clock()
         require(admitted + grant + 2 * CLEANUP + SUMMARY < deadline, 'Entry persistence exhausted test admission')
-        began = wall(); command_deadline = (admitted if mini_hosted else clock()) + grant
+        began = wall(); command_origin = admitted if mini_hosted else clock()
+        command_deadline = command_origin + grant
+        if selected:
+            record['timing'].update(admitted_monotonic=admitted, command_origin_monotonic=command_origin,
+                                    command_wall_started=began)
         if mini_hosted:
             # Both limits use the same instant; deadline subtraction loses bits.
             benchmark = {'admitted_monotonic': admitted, 'deadline_monotonic': admitted + 500,
@@ -581,6 +671,7 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
             record['command']['prior_500_benchmark'] = benchmark
         record['command'] = runner(test_argv(family, suite, setup['binding']['identity']['udid']), command_deadline)
         finished = wall()
+        if selected: record['timing']['command_wall_finished'] = finished
         if mini_hosted:
             observed = record['command'].get('finished_monotonic')
             if (record['command'].get('status') == 'timely_exit' and
@@ -599,26 +690,46 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         observed = products(clock=clock, post_test_deadline=deadline - SUMMARY - CLEANUP,
                             observation=record['product_inventory'])
         require(observed == setup['products'], 'Post-test products changed')
-        require(clock() + SUMMARY + CLEANUP < deadline, 'Summary and owned cleanup cannot fit')
+        summary_admitted = clock()
+        require(summary_admitted + SUMMARY + CLEANUP < deadline, 'Summary and owned cleanup cannot fit')
         # The read grant is derived again after the receipt write, without reset.
-        summary_deadline = min(clock() + SUMMARY, deadline - CLEANUP)
+        summary_started = clock()
+        summary_deadline = min(summary_started + SUMMARY, deadline - CLEANUP)
+        if selected:
+            record['timing'].update(reader_admitted_monotonic=summary_admitted,
+                                    reader_started_monotonic=summary_started, reader_deadline_monotonic=summary_deadline)
         record['summary'] = {'status': 'pending'}; persist()
-        available = summary_deadline - clock()
+        summary_entry = clock()
+        available = summary_deadline - summary_entry
         require(available > 0, 'Expired summary entry')
-        result = reader(['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(result_path)],
-                        seconds=available, cap=1024 * 1024, cleanup_grace=10)
+        summary_argv = ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(result_path)]
+        summary_read = {'argv': summary_argv, 'entered_monotonic': summary_entry, 'deadline_monotonic': summary_deadline}
+        if selected: record['summary']['reader'] = summary_read
+        result = reader(summary_argv, seconds=available, cap=1024 * 1024, cleanup_grace=10)
+        if selected: summary_read['returned_monotonic'] = clock()
         record['summary'] = {'status': 'reader_returned', 'exit_code': result.returncode,
-                             'host_cleanup_confirmed': True}
+                             'host_cleanup_confirmed': True, **({'reader': summary_read} if selected else {})}
         require(clock() < summary_deadline and clock() < deadline, 'Late summary result')
         # A timely host-only nonzero result leaves qualification unavailable, but
         # does not claim that an already completed XCTest is simulator-uncertain.
-        warmup.pending.unlink()
+        if not selected: warmup.pending.unlink()
+        if selected:
+            record['summary'].update(bytes=len(result.stdout), sha256=hashlib.sha256(result.stdout).hexdigest())
+            persist()
+            retain_selected_raw(family, suite, 'summary', result.stdout)
         require(result.returncode == 0, 'Summary reader failed')
         fields = summary_fields(result.stdout, family, suite, setup['binding']['identity'], began, finished,
                                 record['command']['exit_code'])
         record['summary'] = {'status': 'complete', 'fields': fields, 'exit_code': 0,
                              'host_cleanup_confirmed': True,
-                             'bytes': len(result.stdout), 'sha256': hashlib.sha256(result.stdout).hexdigest()}
+                             'bytes': len(result.stdout), 'sha256': hashlib.sha256(result.stdout).hexdigest(),
+                             **({'reader': summary_read} if selected else {})}
+        if selected:
+            require(read_binding(family) == setup['binding'], 'Post-reader binding changed')
+            record['timing']['evidence_completed_monotonic'] = clock()
+            persist()
+            require(clock() < summary_deadline and clock() < deadline, 'Selected evidence exceeded original reader allowance')
+            warmup.pending.unlink()
         record['qualified'] = fields['qualified']
         persist()
         require(clock() < deadline, 'Final receipt exceeded original step')
@@ -627,18 +738,31 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         if isinstance(error, ProductInventoryError):
             record['product_inventory'] = error.observation
         if record['summary'].get('status') == 'pending':
-            record['summary'] = {'status': 'unavailable',
-                                 'host_cleanup_confirmed': getattr(error, 'cleanup_confirmed', None)}
+            record['summary'].update(status='unavailable',
+                                     host_cleanup_confirmed=getattr(error, 'cleanup_confirmed', None))
         record['qualified'] = False; record['error'] = str(error)[:160]
         persist()
         return 3
     finally:
         # Fixed small typed summary; raw app output already used the original stream.
-        print('UIKIT_MANAGED_RESULT:' + json.dumps({'family': family, 'suite': suite,
+        output = 'UIKIT_MANAGED_RESULT:' + json.dumps({'family': family, 'suite': suite,
               'source': setup['binding']['context'], 'command': record['command'],
               'summary': record['summary'], 'qualified': record['qualified'],
               'product_inventory': record.get('product_inventory'),
-              'error': record.get('error')}, sort_keys=True), flush=True)
+              'error': record.get('error'),
+              **({'selection': selected, 'timing': record['timing'],
+                  'summary_qualification_only': True, 'case_identity_basis': record['case_identity_basis'],
+                  'per_case_log_reconciliation': record['per_case_log_reconciliation']} if selected else {})}, sort_keys=True)
+        if selected:
+            require(len(output.encode()) + 1 <= 36 * 1024, 'Selected result framing exceeds whole-run allocation')
+        print(output, flush=True)
+
+
+def retain_selected_raw(family, suite, kind, raw):
+    require(kind == 'summary' and type(raw) is bytes and len(raw) <= 1024 * 1024, 'Invalid selected raw summary')
+    path = Path('build') / (family + '-' + suite + '-selected-' + kind + '.json')
+    with path.open('xb') as output:
+        output.write(raw)
 
 
 def main():

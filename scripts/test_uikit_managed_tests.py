@@ -25,7 +25,7 @@ SETUP = {'schema': 1, 'binding': {'identity': IDENTITY, 'context': {'sha': 'a'*4
 
 
 def summary(family='iPadMini', suite='TouchColorTests', failures=0):
-    total = {'TouchColorTests': 53, 'TouchColorUITests': 16 if family.startswith('iPad') else 17,
+    total = {'TouchColorTests': 54, 'TouchColorUITests': 16 if family.startswith('iPad') else 17,
              'AccessibilityAudits': 7}[suite]
     skips = 0
     fields = {'totalTestCount': total, 'passedTests': total-skips-failures, 'failedTests': failures,
@@ -57,7 +57,7 @@ class SummaryTests(unittest.TestCase):
             with self.subTest(mutate=mutate), self.assertRaises(ValueError):self.check(value)
     def test_count_skip_outcome_adversaries(self):
         mutations=[lambda s:s.update(totalTestCount=1),lambda s:s.update(passedTests=52),
-            lambda s:s.update(failedTests=True),lambda s:s.update(skippedTests=1,passedTests=52),
+            lambda s:s.update(failedTests=True),lambda s:s.update(skippedTests=1,passedTests=53),
             lambda s:s.update(expectedFailures=1),lambda s:s.update(result='Failed'),
             lambda s:s['devicesAndConfigurations'][0].update(passedTests=0)]
         for mutate in mutations:
@@ -68,15 +68,22 @@ class SummaryTests(unittest.TestCase):
     def test_former_phone_capability_skip_rejected_on_every_staged_profile(self):
         for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge'):
             value=summary(family)
-            value.update(passedTests=52,skippedTests=1)
+            value.update(totalTestCount=53,passedTests=52,skippedTests=1)
             value['devicesAndConfigurations'][0].update(passedTests=52,skippedTests=1)
             with self.subTest(family=family),self.assertRaises(ValueError):self.check(value,family)
-    def test_complete_staged_matrix_requires_306_passes_and_zero_skips(self):
+    def test_complete_staged_matrix_requires_310_passes_and_zero_skips(self):
         receipts=[summary(family,suite) for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge') for suite in m.STEPS]
-        self.assertEqual(sum(r['passedTests'] for r in receipts),306)
+        self.assertEqual(sum(r['passedTests'] for r in receipts),310)
         self.assertEqual(sum(r['skippedTests'] for r in receipts),0)
+    def test_old_53_case_results_cannot_qualify_current_54_case_target(self):
+        for failed in (0, 1):
+            value = summary(failures=failed)
+            value.update(totalTestCount=53, passedTests=53-failed)
+            value['devicesAndConfigurations'][0].update(passedTests=53-failed)
+            with self.subTest(failed=failed), self.assertRaises(ValueError):
+                self.check(value, code=65 if failed else 0)
     def test_duplicates_fail(self):
-        raw=json.dumps(summary()).replace('"passedTests": 53','"passedTests": 53, "passedTests": 53',1)
+        raw=json.dumps(summary()).replace('"passedTests": 54','"passedTests": 54, "passedTests": 54',1)
         with self.assertRaises(ValueError):m.summary_fields(raw,'iPadMini','TouchColorTests',IDENTITY,1000,1001,0)
 
 
@@ -155,7 +162,7 @@ class RunTests(unittest.TestCase):
         record=self.record();benchmark=record['command']['prior_500_benchmark']
         self.assertFalse(benchmark['completed_before_deadline'])
         self.assertEqual(benchmark['status'],'prior_limit_exceeded')
-        self.assertEqual(record['summary']['fields']['passedTests'],53)
+        self.assertEqual(record['summary']['fields']['passedTests'],54)
         self.assertEqual(record['summary']['fields']['skippedTests'],0)
         self.assertTrue(record['qualified']);self.assertFalse(self.pending())
         printed=json.loads(output.getvalue().split('UIKIT_MANAGED_RESULT:',1)[1])
@@ -388,6 +395,37 @@ class RunTests(unittest.TestCase):
         self.reader=lambda command,**kw:subprocess.CompletedProcess(command,0,json.dumps(summary(failures=1)).encode(),b'')
         self.assertEqual(self.run_case(),65);self.assertFalse(self.pending())
         self.assertEqual(self.record()['summary']['status'],'complete');self.assertFalse(self.record()['qualified'])
+    def test_known_failed_functional_result_does_not_suppress_required_audit(self):
+        self.suite='TouchColorUITests'
+        self.inject=lambda value,deadline:value.update(exit_code=65)
+        self.reader=lambda command,**kw:subprocess.CompletedProcess(command,0,
+            json.dumps(summary(self.family,self.suite,failures=1)).encode(),b'')
+        self.assertEqual(self.run_case(),65);self.assertFalse(self.pending())
+        functional=m.record_path(self.family,self.suite)
+        before=functional.read_bytes()
+        self.suite='AccessibilityAudits';self.inject=None
+        def audit_reader(command,**kw):
+            value=summary(self.family,self.suite)
+            value.update(startTime=1001.1,finishTime=1001.9)
+            return subprocess.CompletedProcess(command,0,json.dumps(value).encode(),b'')
+        self.reader=audit_reader
+        self.assertEqual(self.run_case(),0)
+        self.assertTrue(self.record()['qualified']);self.assertFalse(self.pending())
+        self.assertEqual(functional.read_bytes(),before)
+        self.assertFalse(json.loads(before)['qualified'])
+        self.assertEqual(len(self.calls),2)
+
+    def test_uncertain_functional_result_blocks_audit_before_any_new_command(self):
+        self.suite='TouchColorUITests'
+        self.inject=lambda value,deadline:value.update(status='incomplete',exit_code=None,
+            host_cleanup_confirmed=None,simulator_completion='unconfirmed')
+        self.assertEqual(self.run_case(),3);self.assertTrue(self.pending())
+        before=list(self.calls);readers=list(self.reader_calls)
+        self.suite='AccessibilityAudits';self.inject=None
+        with self.assertRaises(m.WarmupFailed):self.run_case()
+        self.assertEqual(self.calls,before);self.assertEqual(self.reader_calls,readers)
+        self.assertFalse(m.record_path(self.family,self.suite).exists())
+
     def test_prepare_marker_overhead_cannot_reset_nominal_cap(self):
         calls=[]
         w=m.ManagedWarmup('iPadMini',started=0,clock=lambda:self.tick,
@@ -635,9 +673,14 @@ class ReceiptTests(unittest.TestCase):
             value=self.hosted()
             m.write_json(m.record_path(family,'TouchColorTests'),value)
             self.assertEqual(m.require_hosted(family,SETUP),value)
-            value['summary']['fields'].update(passedTests=52,skippedTests=1)
+            value['summary']['fields'].update(totalTestCount=53,passedTests=52,skippedTests=1)
             m.write_json(m.record_path(family,'TouchColorTests'),value)
             with self.subTest(family=family),self.assertRaises(ValueError):m.require_hosted(family,SETUP)
+    def test_old_53_pass_receipt_cannot_seed_current_54_case_target(self):
+        value = self.hosted()
+        value['summary']['fields'].update(totalTestCount=53, passedTests=53)
+        m.write_json(m.record_path('iPadMini','TouchColorTests'), value)
+        with self.assertRaises(ValueError):m.require_hosted('iPadMini', SETUP)
     def test_flags_alone_cannot_hide_failed_or_missing_counts(self):
         changes=[lambda v:v['summary'].update(status='pending'),lambda v:v['summary'].update(fields={}),
             lambda v:v['summary']['fields'].update(totalTestCount=1),lambda v:v['summary']['fields'].update(failedTests=1),
@@ -700,7 +743,7 @@ class SourceTests(unittest.TestCase):
              'TCPhotoImportLifecycleTests.m','ColorCoreEquivalenceTests.swift','TCPhotoImportTests.swift')]
         files+=['TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift']
         count=sum(len(re.findall(r'(?:-\s*\(void\)\s*|func\s+)(test\w+)\b', (ROOT/p).read_text())) for p in files)
-        self.assertEqual(count,53)
+        self.assertEqual(count,54)
         for name,count in [('TouchColorUITests',17),('TouchColorIPadUITests',16),('TouchColorAccessibilityUITests',7)]:
             text=(ROOT/'TouchColorUITests'/(name+'.m')).read_text()
             self.assertEqual(len(re.findall(r'-\s*\(void\)\s*(test\w+)\s*\{',text)),count)
@@ -723,9 +766,27 @@ class SourceTests(unittest.TestCase):
                          ['compile-prerequisites','compatibility'])
         self.assertEqual(re.findall(r'^        timeout-minutes: (.+)$',job,re.M),
             ['6','5','8','4','10',"${{ matrix.family == 'iPadMini' && 16 || 10 }}",
-             '10','20','2','12','2','3'])
+             '10','20','12','2','2','3'])
         self.assertEqual(re.findall(r'^    timeout-minutes: (.+)$',text,re.M),
             ['20',"${{ matrix.family == 'iPadMini' && 70 || 60 }}"])
+    def test_optional_device_diagnostics_follow_all_required_ui_and_audits(self):
+        text=(ROOT/'.github/workflows/ios.yml').read_text()
+        names=['Functional UI tests','Official XCTest accessibility audits',
+               'Read bounded app and Files-service metadata after a functional failure','Shut down simulator']
+        positions=[text.index('      - name: '+name+'\n') for name in names]
+        self.assertEqual(positions,sorted(positions))
+        audit=text[positions[1]:positions[2]]
+        self.assertIn("!cancelled() && steps.seed-device.outcome == 'success'",audit)
+        self.assertNotIn('runtime-diagnostics',audit)
+        self.assertNotIn('functional-tests.outcome',audit)
+        diagnostic=text[positions[2]:positions[3]]
+        self.assertIn("steps.functional-tests.outcome == 'failure'",diagnostic)
+        self.assertIn('timeout-minutes: 2',diagnostic)
+        self.assertIn('uikit_runtime_diagnostics.py',diagnostic)
+        shutdown=text[positions[3]+len('      - name: Shut down simulator\n'):].split('      - name:',1)[0]
+        self.assertIn("steps.runtime-diagnostics.outputs.simulator_safe == 'true'",shutdown)
+        self.assertIn('managed-shutdown',shutdown)
+
     def test_live_phone_pipe_and_legacy_paths_preserved(self):
         text=(ROOT/'scripts/test_simulators.sh').read_text()
         self.assertIn('set -euo pipefail',text)
@@ -741,7 +802,7 @@ class SourceTests(unittest.TestCase):
         self.assertNotIn("device, 'com.mango.touchColor'",text)
         self.assertIn('warmup.fixture(container)',text);self.assertIn('warmup.seed(device)',text)
     def test_finite_schedule_arithmetic(self):
-        self.assertEqual(m.STEPS,{'TouchColorTests':(600,500,53),
+        self.assertEqual(m.STEPS,{'TouchColorTests':(600,500,54),
             'TouchColorUITests':(1200,1100,None),'AccessibilityAudits':(720,620,7)})
         self.assertEqual((m.CLEANUP,m.SUMMARY),(20,20))
         for step,command,_ in m.STEPS.values():

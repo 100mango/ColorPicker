@@ -434,6 +434,7 @@ import uikit_runtime_diagnostics as runtime
 result={}; cleanup_calls=[]; calls=[]
 original_stop=d.stop_group
 original_capture=d.capture
+original_collect=d.collect_lifecycle
 def owned_stop(process, **options):
     cleanup_calls.append(options)
     Path('cleanup.started').write_text(str(time.monotonic()))
@@ -446,6 +447,10 @@ def observe_capture(command, **options):
         result.update(reason=str(error),cleanup_confirmed=error.cleanup_confirmed,cancelled_signal=error.cancelled_signal)
         raise
 d.stop_group=owned_stop;d.capture=observe_capture
+# Supply only synthetic retained case metadata; exercise the real remaining
+# app collector and its first bounded help command through runtime.main.
+d.load_case=lambda identity: {'case': {'case': d.CASE, 'token': '11111111-1111-4111-8111-111111111111', 'pid': 32708, 'started': 100.125, 'epoch': 134.75}, 'source': {'sha': 'e'*40}}
+d.collect_lifecycle=lambda identity: original_collect(identity, runner=observe_capture)
 before={number:signal.getsignal(number) for number in (signal.SIGTERM,signal.SIGINT)}
 started=time.monotonic()
 os.environ['GITHUB_OUTPUT']=str(Path('github-output').resolve())
@@ -488,23 +493,23 @@ Path('result.json').write_text(json.dumps(result))
                 for number in (first_signal, signal.SIGINT, signal.SIGTERM, first_signal):
                     process.send_signal(number)
                     time.sleep(.035)
-                output, errors = process.communicate(timeout=25 if entry else 6)
+                output, errors = process.communicate(timeout=9 if entry else 6)
                 self.assertEqual(process.returncode, 0, errors.decode(errors='replace'))
                 result = json.loads((root/'result.json').read_text())
                 self.assertNotIn('unexpected_success', result)
                 self.assertTrue(result['cleanup_confirmed'], result)
                 self.assertEqual(result['cancelled_signal'], int(first_signal), result)
                 self.assertTrue(result['handlers_restored'], result)
-                self.assertEqual(result['cleanup_calls'], [{'grace': 10 if entry else 2}])
-                self.assertLess(result['elapsed'], 23.8 if entry else 4.8, result)
+                self.assertEqual(result['cleanup_calls'], [{'grace': 2}])
+                self.assertLess(result['elapsed'], 7.8 if entry else 4.8, result)
                 if entry:
                     self.assertTrue(result['marker_preserved'])
                     self.assertTrue(result['safe_output_absent'])
                     self.assertEqual(len(result['calls']), 1)
                     self.assertEqual(result['calls'][0]['seconds'], 3)
-                    self.assertEqual(result['calls'][0]['cleanup_grace'], 10)
-                    self.assertEqual(result['calls'][0]['cap'], 65536)
-                    self.assertEqual(result['calls'][0]['command'], ['xcrun','simctl','spawn',IDENTITY['udid'],'launchctl','list'])
+                    self.assertNotIn('cleanup_grace', result['calls'][0])  # Original collector uses capture's two-second default.
+                    self.assertEqual(result['calls'][0]['cap'], 32 * 1024)
+                    self.assertEqual(result['calls'][0]['command'], ['xcrun','simctl','help','spawn'])
                     self.assertIn(b'"simulator_commands_completed":false', output)
                 with self.assertRaises(ProcessLookupError): os.kill(producer_pid, 0)
                 with self.assertRaises(ProcessLookupError): os.killpg(producer_pid, 0)
@@ -548,16 +553,16 @@ Path('result.json').write_text(json.dumps(result))
     def test_sigterm_between_spawn_and_owned_process_assignment(self):
         self.assertIn('interrupted-by-signal', self.probe('spawn', signal.SIGTERM)['reason'])
 
-    def test_full_entry_sigterm_during_service_operation(self):
+    def test_full_entry_sigterm_during_collector_help(self):
         self.probe('active', signal.SIGTERM, entry=True)
 
-    def test_full_entry_sigint_during_service_operation(self):
+    def test_full_entry_sigint_during_collector_help(self):
         self.probe('active', signal.SIGINT, entry=True)
 
-    def test_full_entry_first_sigterm_during_service_cleanup(self):
+    def test_full_entry_first_sigterm_during_collector_cleanup(self):
         self.probe('timeout', signal.SIGTERM, entry=True)
 
-    def test_full_entry_first_sigint_during_service_cleanup(self):
+    def test_full_entry_first_sigint_during_collector_cleanup(self):
         self.probe('timeout', signal.SIGINT, entry=True)
 
     def test_full_entry_first_sigterm_during_output_cap_cleanup(self):
@@ -594,6 +599,9 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         self.root = Path(__file__).resolve().parents[1]
         self.swift = (self.root/'TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift').read_text()
         self.objc = (self.root/'ColorPickerTests/TCAdaptiveLayoutTests.m').read_text()
+        self.close = self.swift.split('    func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult()', 1)[1].split('    func testOriginalIOSImportIsPresentWithoutCompanion', 1)[0]
+        start = self.swift.index('    func testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses()')
+        self.accept = self.swift[start:self.swift.index('    func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult()', start)]
 
     def test_product_and_unrelated_close_methods_are_unchanged(self):
         import hashlib
@@ -604,8 +612,66 @@ class HostedGateSchedulingContracts(unittest.TestCase):
 
     def test_real_swift_close_gate_body_stays_byte_exact(self):
         import hashlib
-        body=self.swift.split('    func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult()',1)[1].split('    func testOriginalIOSImportIsPresentWithoutCompanion',1)[0]
+        body=self.close
         self.assertEqual(hashlib.sha256(body.encode()).hexdigest(),'ff08fdc43c4cf6a1932591fade35e7e6ed2830bb307b1a0d4b0445e8857b8a4e')
+
+    def test_add_colors_reuses_real_host_and_original_three_second_gates(self):
+        body = self.accept
+        self.assertEqual(self.swift.count('func testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses()'), 1)
+        # The scene, real appearance callback, full-screen host, timing proof and
+        # fail-closed presentation gates are copied exactly from the locked Close case.
+        def host(text):
+            return text.split('        let scene =', 1)[1].split('        let token =', 1)[0].split('        let selected =', 1)[0]
+        self.assertEqual(host(body).replace('HOSTED_UI_GATE case=add-colors ', 'HOSTED_UI_GATE '), host(self.close))
+        self.assertEqual(body.count('timeout: 3)'), 3)
+        self.assertEqual(body.count('owner.present('), 1)
+        self.assertEqual(body.count('UIApplication.shared.sendAction('), 1)
+        for phase in ('owner', 'presentation', 'dismissal'):
+            for clock in ('Action', 'Returned', 'Wait', 'WaitReturned'):
+                self.assertIn('let '+phase+clock+' = ProcessInfo.processInfo.systemUptime', body)
+            self.assertIn('$0 >= '+phase+'Action && $0 < '+phase+'Wait + 3', body)
+            rejected = body.split('guard '+phase+'Timely', 1)[1].split('return', 1)[0]
+            self.assertIn('XCTFail(', rejected)
+        callback = body.split('owner.onNextAppearance =', 1)[1].split('        defer { owner.onNextAppearance', 1)[0]
+        self.assertLess(callback.index('owner.presentedViewController == nil'), callback.index('dismissalEvent = ProcessInfo'))
+        self.assertIn('owner.viewIfLoaded?.window === window', callback)
+        self.assertIn('if dismissalState { dismissed.fulfill() }', callback)
+        self.assertLess(body.index('owner.onNextAppearance ='), body.index('UIApplication.shared.sendAction'))
+        self.assertIn('guard dismissalTimely, dismissalState, dismissalAbsent else', body)
+        self.assertIn('XCTAssertNil(owner.presentedViewController)', body)
+        for forbidden in ('XCTSkip', 'XCTNSPredicateExpectation', '.viewDidAppear(', '.viewDidDisappear(',
+                          '.beginAppearanceTransition(', '.endAppearanceTransition(', '.accept(', '.close(', '.dismiss('):
+            self.assertNotIn(forbidden, body)
+
+    def test_add_colors_dispatches_real_item_and_preserves_exact_duplicate_history(self):
+        body = self.accept
+        for required in ('let original: [String: Any] = ["colorArray": [String](), "unrelatedPreference": "untouched"]',
+                         'defaults.setPersistentDomain(original, forName: suite)',
+                         'let duplicateColors = ["#123456", "#123456"]',
+                         'content.apply(.success(selected), name: "duplicates.json", token: token)',
+                         'XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), [])',
+                         'XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, original as NSDictionary)',
+                         'let add = try XCTUnwrap(content.navigationItem.rightBarButtonItem)',
+                         'let action = try XCTUnwrap(add.action)',
+                         'XCTAssertEqual(add.accessibilityIdentifier, "palette.import.accept")',
+                         'XCTAssertTrue(add.isEnabled)', 'XCTAssertTrue(add.target === content)',
+                         'XCTAssertEqual(action, NSSelectorFromString("accept"))',
+                         'XCTAssertTrue(content.responds(to: action))',
+                         'let dispatched = UIApplication.shared.sendAction(action, to: add.target, from: add, for: nil)',
+                         'XCTAssertTrue(dispatched)', 'XCTAssertFalse(add.isEnabled)',
+                         'XCTAssertEqual(defaults.string(forKey: "unrelatedPreference"), "untouched")'):
+            self.assertIn(required, body)
+        self.assertLess(body.index('guard presentationTimely'), body.index('let token = content.begin()'))
+        self.assertLess(body.index('XCTAssertTrue(add.isEnabled)'), body.index('UIApplication.shared.sendAction'))
+        dispatched = body.split('let dispatched =', 1)[1].split('let dismissalWait =', 1)[0]
+        self.assertIn('XCTAssertFalse(add.isEnabled)', dispatched)
+        self.assertIn('XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), duplicateColors)', dispatched)
+        self.assertLess(body.index('guard dismissalTimely'), body.index('content.apply(.success(late)'))
+        late = body.split('content.apply(.success(late), name: "late.json", token: token)', 1)[1]
+        self.assertIn('XCTAssertEqual(content.selection, selected,', late)
+        self.assertIn('XCTAssertFalse(add.isEnabled)', late)
+        self.assertIn('XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), duplicateColors)', late)
+        self.assertIn('["colorArray": duplicateColors, "unrelatedPreference": "untouched"] as NSDictionary', late)
 
     def test_controller_and_workspace_geometry_assertions_are_byte_exact(self):
         import hashlib
@@ -637,36 +703,36 @@ class HostedGateSchedulingContracts(unittest.TestCase):
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(),expected)
 
     def test_swift_gates_preserve_waiter_relative_three_seconds(self):
-        self.assertEqual(self.swift.count('timeout: 3)'), 3)
+        self.assertEqual(self.close.count('timeout: 3)'), 3)
         for phase in ('owner', 'presentation', 'dismissal'):
-            self.assertIn('let '+phase+'Action = ProcessInfo.processInfo.systemUptime', self.swift)
-            self.assertIn('let '+phase+'Returned = ProcessInfo.processInfo.systemUptime', self.swift)
-            self.assertIn('let '+phase+'Wait = ProcessInfo.processInfo.systemUptime', self.swift)
-            self.assertIn('let '+phase+'WaitReturned = ProcessInfo.processInfo.systemUptime', self.swift)
-        self.assertNotIn('actionStarted + 3', self.swift)
-        self.assertNotIn('dismissalDeadline', self.swift)
-        self.assertNotIn('XCTNSPredicateExpectation', self.swift)
+            self.assertIn('let '+phase+'Action = ProcessInfo.processInfo.systemUptime', self.close)
+            self.assertIn('let '+phase+'Returned = ProcessInfo.processInfo.systemUptime', self.close)
+            self.assertIn('let '+phase+'Wait = ProcessInfo.processInfo.systemUptime', self.close)
+            self.assertIn('let '+phase+'WaitReturned = ProcessInfo.processInfo.systemUptime', self.close)
+        self.assertNotIn('actionStarted + 3', self.close)
+        self.assertNotIn('dismissalDeadline', self.close)
+        self.assertNotIn('XCTNSPredicateExpectation', self.close)
 
     def test_swift_dismissal_is_armed_before_real_action_and_state_before_clock(self):
-        callback=self.swift.split('owner.onNextAppearance =', 1)[1].split('        defer { owner.onNextAppearance', 1)[0]
+        callback=self.close.split('owner.onNextAppearance =', 1)[1].split('        defer { owner.onNextAppearance', 1)[0]
         self.assertLess(callback.index('owner.presentedViewController == nil'),callback.index('dismissalEvent = ProcessInfo'))
         self.assertIn('owner.viewIfLoaded?.window === window',callback)
         self.assertIn('if dismissalState { dismissed.fulfill() }',callback)
-        self.assertLess(self.swift.index('owner.onNextAppearance ='),self.swift.index('UIApplication.shared.sendAction'))
+        self.assertLess(self.close.index('owner.onNextAppearance ='),self.close.index('UIApplication.shared.sendAction'))
         self.assertIn('let next = onNextAppearance; onNextAppearance = nil; next?()',self.swift)
         for kept in ('XCTAssertNil(owner.presentedViewController)', 'content.apply(.success(late), name: "late.json", token: token)',
                      'XCTAssertNil(content.selection, "Dismissal invalidates a previously issued import generation")',
                      'XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), original)'):
-            self.assertIn(kept,self.swift)
+            self.assertIn(kept,self.close)
 
     def test_unknown_swift_readiness_stops_dependent_actions_without_skip(self):
         for phase in ('owner','presentation','dismissal'):
-            self.assertIn('guard '+phase+'Timely',self.swift)
-            self.assertIn('$0 >= '+phase+'Action && $0 < '+phase+'Wait + 3',self.swift)
-            self.assertIn('phase='+phase+' ',self.swift)
-        self.assertLess(self.swift.index('guard presentationTimely'),self.swift.index('let token = content.begin()'))
-        self.assertLess(self.swift.index('guard dismissalTimely'),self.swift.index('content.apply(.success(late)'))
-        self.assertNotIn('XCTSkip',self.swift)
+            self.assertIn('guard '+phase+'Timely',self.close)
+            self.assertIn('$0 >= '+phase+'Action && $0 < '+phase+'Wait + 3',self.close)
+            self.assertIn('phase='+phase+' ',self.close)
+        self.assertLess(self.close.index('guard presentationTimely'),self.close.index('let token = content.begin()'))
+        self.assertLess(self.close.index('guard dismissalTimely'),self.close.index('content.apply(.success(late)'))
+        self.assertNotIn('XCTSkip',self.close)
 
     def test_objc_owner_is_real_one_shot_event_and_geometry_is_guarded(self):
         self.assertIn('void (^observed)(void)=self.onAppearance; self.onAppearance=nil;',self.objc)
@@ -856,10 +922,10 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         self.assertEqual(self.objc.count('timeout:15'),2)
         self.assertEqual(self.objc.count('phaseDeadline=waitStarted+15'),2)
         self.assertEqual(self.objc.count('responsivenessDeadline=waitStarted+3'),2)
-        self.assertEqual(hashlib.sha256(self.swift.encode()).hexdigest(),
+        self.assertEqual(hashlib.sha256(self.swift.replace(self.accept, '', 1).encode()).hexdigest(),
                          '6a25635f308ebb13b0385fd971b5d1b133a50154624d70759d1f34618c29530b')
         managed=(self.root/'scripts/uikit_managed_tests.py').read_text()
-        self.assertIn("'TouchColorTests': (600, 500, 53)",managed)
+        self.assertIn("'TouchColorTests': (600, 500, 54)",managed)
         self.assertIn("'-default-test-execution-time-allowance', '180', '-maximum-test-execution-time-allowance', '240'",managed)
 
     def test_attachment_failure_blocks_later_geometry_and_actions(self):
@@ -888,8 +954,8 @@ class HostedGateSchedulingContracts(unittest.TestCase):
     def test_swift_late_events_do_not_advance_after_void_waiter(self):
         for phase in ('owner', 'presentation', 'dismissal'):
             line = ('let '+phase+'Timely = '+phase+'Event.map { $0 >= '+phase+'Action && $0 < '+phase+'Wait + 3 } ?? false')
-            self.assertIn(line, self.swift)
-            branch = self.swift.split('guard '+phase+'Timely', 1)[1].split('return', 1)[0]
+            self.assertIn(line, self.close)
+            branch = self.close.split('guard '+phase+'Timely', 1)[1].split('return', 1)[0]
             self.assertIn('XCTFail(', branch)
         def qualifies(event, action=100.0, wait=102.0, observed_state=True, current_state=True):
             return event is not None and action <= event < wait + 3 and observed_state and current_state
@@ -903,8 +969,8 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         self.assertFalse(qualifies(104.0, current_state=False))
 
     def test_no_additional_retry_synthetic_lifecycle_or_animation_change(self):
-        self.assertEqual(self.swift.count('owner.present('),1)
-        self.assertEqual(self.swift.count('UIApplication.shared.sendAction('),1)
+        self.assertEqual(self.close.count('owner.present('),1)
+        self.assertEqual(self.close.count('UIApplication.shared.sendAction('),1)
         self.assertEqual(self.objc.count('performWithoutAnimation:'),1)  # Existing workspace operation only.
         for text in (self.swift,self.objc):
             self.assertNotIn('sleep(',text)

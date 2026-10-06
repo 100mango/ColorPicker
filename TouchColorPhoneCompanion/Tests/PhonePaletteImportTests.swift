@@ -22,6 +22,132 @@ import ColorPaletteLegacy
 
 /// Integrated UIKit review lifecycle and staged original-product import preservation.
 @MainActor final class PhonePaletteImportTests: XCTestCase {
+    func testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses() async throws {
+        let suite = "TouchColor.add-colors-action.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let original: [String: Any] = ["colorArray": [String](), "unrelatedPreference": "untouched"]
+        defaults.setPersistentDomain(original, forName: suite)
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, original as NSDictionary)
+        let duplicateColors = ["#123456", "#123456"]
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive })
+        let oldKeyWindow = scene.windows.first { $0.isKeyWindow }
+        let owner = PhonePaletteImportTestOwner(), window = UIWindow(windowScene: scene)
+        let ownerAppeared = expectation(description: "Actual UIKit test owner appeared")
+        var ownerEvent: TimeInterval?
+        var ownerState = false
+        let ownerAction = ProcessInfo.processInfo.systemUptime
+        owner.onFirstAppearance = {
+            ownerState = owner.viewIfLoaded?.window === window
+            ownerEvent = ProcessInfo.processInfo.systemUptime
+            NSLog("HOSTED_UI_GATE case=add-colors phase=owner event=appearance action=%.6f observed=%.6f state=%d", ownerAction, ownerEvent!, ownerState ? 1 : 0)
+            if ownerState { ownerAppeared.fulfill() }
+        }
+        window.rootViewController = owner; window.makeKeyAndVisible()
+        let ownerReturned = ProcessInfo.processInfo.systemUptime
+        defer { window.isHidden = true; window.rootViewController = nil; oldKeyWindow?.makeKey() }
+        // makeKeyAndVisible begins appearance asynchronously. Present only after
+        // UIKit has delivered its actual owner callback, with the original import
+        // presentation and dismissal gates still independently capped at 3 seconds.
+        let ownerWait = ProcessInfo.processInfo.systemUptime
+        await fulfillment(of: [ownerAppeared], timeout: 3)
+        owner.onFirstAppearance = nil
+        let ownerAttached = owner.viewIfLoaded?.window === window
+        let ownerWaitReturned = ProcessInfo.processInfo.systemUptime
+        NSLog("HOSTED_UI_GATE case=add-colors phase=owner action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f state=%d", ownerAction, ownerReturned, ownerWait, ownerWaitReturned, ownerEvent ?? -1, ownerAttached ? 1 : 0)
+        XCTAssertTrue(owner.viewIfLoaded?.window === window)
+        let ownerTimely = ownerEvent.map { $0 >= ownerAction && $0 < ownerWait + 3 } ?? false
+        guard ownerTimely, ownerState, owner.hasAppeared, ownerAttached else {
+            XCTFail("Owner appearance readiness was not proved within the original waiter boundary")
+            NSLog("HOSTED_UI_GATE case=add-colors phase=owner dependent=unexecuted readiness=unproved"); return
+        }
+        let content = PhonePaletteImportController(defaults: defaults)
+        let navigation = UINavigationController(rootViewController: content); navigation.modalPresentationStyle = .fullScreen
+        let presented = expectation(description: "Actual full-screen UIKit import host appeared")
+        var presentationEvent: TimeInterval?
+        var presentationState = false
+        var presentationClosed = false
+        let presentationAction = ProcessInfo.processInfo.systemUptime
+        owner.present(navigation, animated: false) {
+            guard !presentationClosed else { return }
+            presentationState = owner.presentedViewController === navigation && navigation.presentingViewController === owner && content.viewIfLoaded?.window === window
+            presentationEvent = ProcessInfo.processInfo.systemUptime
+            NSLog("HOSTED_UI_GATE case=add-colors phase=presentation event=completion action=%.6f observed=%.6f state=%d", presentationAction, presentationEvent!, presentationState ? 1 : 0)
+            if presentationState { presented.fulfill() }
+        }
+        let presentationReturned = ProcessInfo.processInfo.systemUptime
+        let presentationWait = ProcessInfo.processInfo.systemUptime
+        await fulfillment(of: [presented], timeout: 3)
+        presentationClosed = true
+        let presentationAttached = owner.presentedViewController === navigation && navigation.presentingViewController === owner && content.viewIfLoaded?.window === window
+        let presentationWaitReturned = ProcessInfo.processInfo.systemUptime
+        NSLog("HOSTED_UI_GATE case=add-colors phase=presentation action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f state=%d", presentationAction, presentationReturned, presentationWait, presentationWaitReturned, presentationEvent ?? -1, presentationAttached ? 1 : 0)
+        XCTAssertTrue(window.isKeyWindow)
+        XCTAssertTrue(window.windowScene === scene)
+        XCTAssertTrue(owner.presentedViewController === navigation)
+        XCTAssertTrue(navigation.presentingViewController === owner)
+        XCTAssertTrue(navigation.topViewController === content)
+        XCTAssertTrue(content.view.window === window)
+        let presentationTimely = presentationEvent.map { $0 >= presentationAction && $0 < presentationWait + 3 } ?? false
+        guard presentationTimely, presentationState, presentationAttached else {
+            XCTFail("Presentation readiness was not proved within the original waiter boundary")
+            NSLog("HOSTED_UI_GATE case=add-colors phase=presentation dependent=unexecuted readiness=unproved"); return
+        }
+        let selected = try PaletteSelection(data: Data("[\"#123456\",\"#123456\"]".utf8))
+        let token = content.begin()
+        content.apply(.success(selected), name: "duplicates.json", token: token)
+        XCTAssertEqual(content.selection, selected)
+        XCTAssertEqual(content.selection?.colors.map(\.hex), duplicateColors)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), [])
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, original as NSDictionary)
+        let add = try XCTUnwrap(content.navigationItem.rightBarButtonItem)
+        let action = try XCTUnwrap(add.action)
+        XCTAssertEqual(add.accessibilityIdentifier, "palette.import.accept")
+        XCTAssertTrue(add.isEnabled)
+        XCTAssertTrue(add.target === content)
+        XCTAssertEqual(action, NSSelectorFromString("accept"))
+        XCTAssertTrue(content.responds(to: action))
+        XCTAssertNil(content.presentedViewController, "This regression exercises Add Colors without a presented child")
+        let dismissed = expectation(description: "Actual owner reappeared with full-screen presentation absent")
+        var dismissalEvent: TimeInterval?
+        var dismissalState = false
+        let dismissalAction = ProcessInfo.processInfo.systemUptime
+        owner.onNextAppearance = { [weak owner] in
+            guard let owner else { return }
+            dismissalState = owner.presentedViewController == nil && owner.viewIfLoaded?.window === window
+            dismissalEvent = ProcessInfo.processInfo.systemUptime
+            NSLog("HOSTED_UI_GATE case=add-colors phase=dismissal event=owner-reappeared action=%.6f observed=%.6f state=%d", dismissalAction, dismissalEvent!, dismissalState ? 1 : 0)
+            if dismissalState { dismissed.fulfill() }
+        }
+        defer { owner.onNextAppearance = nil }
+        let dispatched = UIApplication.shared.sendAction(action, to: add.target, from: add, for: nil)
+        let dismissalReturned = ProcessInfo.processInfo.systemUptime
+        XCTAssertTrue(dispatched)
+        XCTAssertFalse(add.isEnabled)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), duplicateColors)
+        XCTAssertEqual(defaults.string(forKey: "unrelatedPreference"), "untouched")
+        // Preserve the original waiter-relative3s gate. Action-to-state latency
+        // is recorded separately; no new action-start responsiveness SLA.
+        let dismissalWait = ProcessInfo.processInfo.systemUptime
+        await fulfillment(of: [dismissed], timeout: 3)
+        owner.onNextAppearance = nil
+        let dismissalAbsent = owner.presentedViewController == nil
+        let dismissalWaitReturned = ProcessInfo.processInfo.systemUptime
+        NSLog("HOSTED_UI_GATE case=add-colors phase=dismissal action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f state=%d", dismissalAction, dismissalReturned, dismissalWait, dismissalWaitReturned, dismissalEvent ?? -1, dismissalAbsent ? 1 : 0)
+        XCTAssertNil(owner.presentedViewController)
+        let dismissalTimely = dismissalEvent.map { $0 >= dismissalAction && $0 < dismissalWait + 3 } ?? false
+        guard dismissalTimely, dismissalState, dismissalAbsent else {
+            XCTFail("Dismissal readiness was not proved within the original waiter boundary")
+            NSLog("HOSTED_UI_GATE case=add-colors phase=dismissal late-result-check=unexecuted readiness=unproved"); return
+        }
+        let late = try PaletteSelection(data: Data("[\"#abcdef\"]".utf8))
+        content.apply(.success(late), name: "late.json", token: token)
+        XCTAssertEqual(content.selection, selected, "Dismissal rejects a late result from the accepted import generation")
+        XCTAssertEqual(content.selection?.colors.map(\.hex), duplicateColors)
+        XCTAssertFalse(add.isEnabled)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), duplicateColors)
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?,
+                       ["colorArray": duplicateColors, "unrelatedPreference": "untouched"] as NSDictionary)
+    }
     func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult() async throws {
         let suite = "TouchColor.close-action.\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }

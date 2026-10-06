@@ -19,7 +19,7 @@ class GeneratedIssueEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             os.chdir(directory)
             try:
-                with patch.dict(os.environ, {'TC_TEST_FAMILY': 'iPadLarge'}), contextlib.redirect_stdout(io.StringIO()):
+                with patch.dict(os.environ, {'TC_TEST_FAMILY': 'iPadLarge'}, clear=True), contextlib.redirect_stdout(io.StringIO()):
                     cls.module = runpy.run_path(str(script))
             finally:
                 os.chdir(previous)

@@ -10,11 +10,22 @@ import subprocess
 import sys
 
 from uikit_runtime_diagnostics import MAX_OUTPUT_BYTES, MAX_PREPARATION_OUTPUT_BYTES
+from uikit_completion import completion_group, REF as COMPLETION_REF
 
-# All four fresh hosts use these same checked-in allocations and exact-source proof.
+# The original four hosts retain their checked-in allocations. Completion splits
+# the iPads across six fresh hosts without increasing the ten-image envelope.
 # Ten images at most; include base64, metadata and bounded child diagnostics.
 # Raw attachment manifests and result bundles are read locally, never emitted.
 ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 4, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
+COMPLETION_EVIDENCE_GROUPS = {
+    'iphone-compact': ('iPhoneCompact', 2),
+    'iphone-large': ('iPhoneLarge', 2),
+    'ipad-mini-palette': ('iPadMini', 1),
+    'ipad-mini-canvas': ('iPadMini', 1),
+    'ipad-large-palette': ('iPadLarge', 2),
+    'ipad-large-canvas': ('iPadLarge', 2),
+}
+COMPLETION_ALLOCATIONS = {name: allocation for name, (_, allocation) in COMPLETION_EVIDENCE_GROUPS.items()}
 MAX_IMAGE_BYTES = 500 * 1024
 MAX_RUN_LOG_BYTES = 20_000_000
 MAX_EXPORT_DIAGNOSTIC_BYTES = 4 * 1024
@@ -22,18 +33,72 @@ MAX_ISSUE_DESCRIPTION_LOG_BYTES = 24 * 1024  # Reallocated from child diagnostic
 MAX_ISSUE_SOURCE_BYTES = 8 * 1024
 MAX_EXPORTS_PER_DEVICE = 2  # Functional and accessibility result bundles.
 MAX_RUNTIME_DIAGNOSTIC_BYTES = MAX_OUTPUT_BYTES + MAX_PREPARATION_OUTPUT_BYTES
+MAX_COMPLETION_SUMMARY_LOG_BYTES = 4 * 1024  # Budget, required-frame and image summaries per group.
+COMPLETION_SUITE_INVOCATIONS = 6 + 6 + 4  # Bootstrap, functional and nonempty audit selections.
+MAX_COMPLETION_RESULT_LOG_BYTES = 36 * 1024  # 32 KiB receipt fields plus command/case framing.
 # The same 32 KiB slot now contains at most 24 KiB runtime + 8 KiB preparation.
 if MAX_RUNTIME_DIAGNOSTIC_BYTES != 32 * 1024: raise ValueError('Profile diagnostic allocation changed')
-RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * (4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024)
-                      + len(ALLOCATIONS) * (MAX_EXPORTS_PER_DEVICE * (MAX_EXPORT_DIAGNOSTIC_BYTES + 512)
-                                            + MAX_ISSUE_DESCRIPTION_LOG_BYTES + MAX_RUNTIME_DIAGNOSTIC_BYTES))
-if RESERVED_LOG_BYTES > MAX_RUN_LOG_BYTES: raise ValueError('Whole-run evidence allocation exceeds its cap')
+IMAGE_SLOT_LOG_BYTES = 4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024
+DEVICE_DIAGNOSTIC_LOG_BYTES = (MAX_EXPORTS_PER_DEVICE * (MAX_EXPORT_DIAGNOSTIC_BYTES + 512)
+                             + MAX_ISSUE_DESCRIPTION_LOG_BYTES + MAX_RUNTIME_DIAGNOSTIC_BYTES)
+ORIGINAL_RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * IMAGE_SLOT_LOG_BYTES
+                               + len(ALLOCATIONS) * DEVICE_DIAGNOSTIC_LOG_BYTES)
+COMPLETION_RESERVED_LOG_BYTES = (sum(COMPLETION_ALLOCATIONS.values()) * IMAGE_SLOT_LOG_BYTES
+                                 + len(COMPLETION_ALLOCATIONS) * (DEVICE_DIAGNOSTIC_LOG_BYTES
+                                                                + MAX_COMPLETION_SUMMARY_LOG_BYTES)
+                                 + COMPLETION_SUITE_INVOCATIONS * MAX_COMPLETION_RESULT_LOG_BYTES)
+if any(sum(count for candidate, count in COMPLETION_EVIDENCE_GROUPS.values() if candidate == device) != allocation
+       for device, allocation in ALLOCATIONS.items()):
+    raise ValueError('Completion family image allocations differ from the original envelope')
+if sum(COMPLETION_ALLOCATIONS.values()) != 10:
+    raise ValueError('Completion image allocation must retain the ten-image cap')
+if max(ORIGINAL_RESERVED_LOG_BYTES, COMPLETION_RESERVED_LOG_BYTES) > MAX_RUN_LOG_BYTES:
+    raise ValueError('Whole-run evidence allocation exceeds its cap')
 family = os.environ['TC_TEST_FAMILY']
 if family not in ALLOCATIONS: raise ValueError('Unknown evidence family')
+group = completion_group(family)
+if group is None and (os.environ.get('GITHUB_REF') == COMPLETION_REF
+                      or os.environ.get('GITHUB_JOB') == 'completion'):
+    raise ValueError('Completion evidence requires its exact group')
+completion_context = None
 limit = ALLOCATIONS[family]
-print('EVIDENCE_BUDGET:' + json.dumps({'family': family, 'allocations': ALLOCATIONS,
+RESERVED_LOG_BYTES = ORIGINAL_RESERVED_LOG_BYTES
+budget_allocations = ALLOCATIONS
+if group is not None:
+    from uikit_managed_device import require_job
+    if (type(group) is not dict or group.get('id') not in COMPLETION_EVIDENCE_GROUPS
+            or group.get('id') != os.environ.get('TC_COMPLETION_GROUP')
+            or group.get('family') != family or type(group.get('images')) is not int
+            or COMPLETION_EVIDENCE_GROUPS[group['id']] != (family, group['images'])):
+        raise ValueError('Unknown completion evidence group/family/allocation')
+    group = dict(group)  # Freeze the selected dictionary against in-process rebinding.
+    completion_context = require_job(family)
+    if (completion_context.get('completion_group') != group['id']
+            or completion_context.get('family') != family):
+        raise ValueError('Completion evidence group differs from the current job')
+    if (not re.fullmatch('[0-9a-f]{40}', completion_context.get('sha', ''))
+            or completion_context['sha'] != os.environ.get('GITHUB_SHA')):
+        raise ValueError('Completion evidence source differs from the current job')
+    limit = COMPLETION_ALLOCATIONS[group['id']]
+    RESERVED_LOG_BYTES = COMPLETION_RESERVED_LOG_BYTES
+    budget_allocations = COMPLETION_ALLOCATIONS
+
+
+def require_evidence_context():
+    if completion_context is not None and (completion_group(family) != group
+            or require_job(family) != completion_context):
+        raise ValueError('Completion evidence group/source/run changed during export')
+
+
+budget = {'family': family, 'allocations': budget_allocations,
     'maximum_image_bytes': MAX_IMAGE_BYTES, 'reserved_run_log_bytes': RESERVED_LOG_BYTES,
-    'maximum_run_log_bytes': MAX_RUN_LOG_BYTES}, sort_keys=True))
+    'maximum_run_log_bytes': MAX_RUN_LOG_BYTES}
+if group is not None:
+    budget.update(completion_group=group['id'], diagnostic_groups=len(COMPLETION_ALLOCATIONS),
+                  maximum_group_summary_bytes=MAX_COMPLETION_SUMMARY_LOG_BYTES,
+                  selected_suite_invocations=COMPLETION_SUITE_INVOCATIONS,
+                  maximum_selected_result_bytes=MAX_COMPLETION_RESULT_LOG_BYTES)
+print('EVIDENCE_BUDGET:' + json.dumps(budget, sort_keys=True))
 exports = {}
 emitted_images = []
 
@@ -61,6 +126,7 @@ def attachment_path(destination, record):
 
 
 def emit_issue_descriptions(destination, attachments):
+    require_evidence_context()
     remaining = MAX_ISSUE_DESCRIPTION_LOG_BYTES - 512  # Final count/framing reserve.
     manifest_digest = hashlib.sha256((destination / 'manifest.json').read_bytes()).hexdigest()
     selected = [item for item in attachments
@@ -94,6 +160,8 @@ def emit_issue_descriptions(destination, attachments):
                 'truncated': original_size > len(raw) or text != raw.decode('utf-8', errors='replace'),
                 'utf8_replaced': raw.decode('utf-8', errors='replace').encode('utf-8') != raw,
                 'text': text}
+            if group is not None:
+                payload['completion_group'] = group['id']
             # Keep textual diagnostics from accidentally resembling an image envelope.
             line = 'AUDIT_ISSUE_DESCRIPTION:' + json.dumps(payload, ensure_ascii=False, sort_keys=True).replace('SCREENSHOT_', 'SCREENSHOT\\u005f') + '\n'
             cost = len(line.encode('utf-8')) + 128  # Actions timestamp/line framing.
@@ -146,18 +214,24 @@ def require_requested_audit_frames(attachments, emitted):
 
 
 def export_named(suite, names, limit):
+    require_evidence_context()
     if limit <= 0:
         return 0
     result = pathlib.Path('build', family + '-' + suite + '.xcresult')
     if not (result / 'Info.plist').is_file():
         return 0
     if suite not in exports:
+        if completion_context is not None:
+            from uikit_managed_device import read_binding
+            if read_binding(family)['context'] != completion_context:
+                raise ValueError('Completion result ownership differs from the current group/source')
         destination = pathlib.Path('build', 'evidence', family, suite)
         destination.mkdir(parents=True, exist_ok=True)
         # A child's stderr can split a buffered SCREENSHOT_CHUNK in the Actions
         # stream. Keep all exporter diagnostics between complete envelopes.
         sys.stdout.flush()
         exported = subprocess.run(['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(destination)], capture_output=True, text=True)
+        require_evidence_context()
         diagnostics = (exported.stdout + exported.stderr).encode('utf-8')
         if diagnostics:
             bounded = diagnostics[:MAX_EXPORT_DIAGNOSTIC_BYTES].decode('utf-8', errors='ignore')
@@ -196,6 +270,7 @@ def export_named(suite, names, limit):
                 provenance = 'unmodified XCTest issue PNG'
                 name += '-xctest-issue'
         commit = os.environ.get('GITHUB_SHA', '')
+        require_evidence_context()
         if not re.fullmatch('[0-9a-f]{40}', commit): raise ValueError('Exact tested source SHA is required for frame evidence')
         encoded = base64.b64encode(data).decode('ascii')
         metadata = {'name':family+'-'+name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),
@@ -203,6 +278,8 @@ def export_named(suite, names, limit):
             'attachment':source_record['exportedFileName'],'provenance':provenance,
             'device_id':source_record.get('deviceId'),'timestamp':source_record.get('timestamp'),
             'manifest_sha256':hashlib.sha256((destination/'manifest.json').read_bytes()).hexdigest()}
+        if group is not None:
+            metadata['completion_group'] = group['id']
         print('SCREENSHOT_META:' + json.dumps(metadata,sort_keys=True))
         print(f'SCREENSHOT_BEGIN:{family}-{name}')
         for offset in range(0, len(encoded), 4096):
