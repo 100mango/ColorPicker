@@ -8,22 +8,12 @@
 #import "ColorDetectView.h"
 #import "TCColorUtilities.h"
 #import "TCPrivacyTesting.h"
-#import <WebKit/WebKit.h>
 #import "../TouchColorUITests/TCSystemPickerGeometry.h"
 
 @interface ColorMainViewController (MinimumLayoutTests)
 - (void)reloadHistory;
 @end
-@interface TCMinimumLayoutPolicy : TCPrivacyViewController
-@end
-@implementation TCMinimumLayoutPolicy
-- (void)loadPolicy {
-    // Establish the actual native error state before attaching the test window.
-    // Leaving an unused, visible WKWebView here starts WebKit during the host's
-    // appearance transition and makes this geometry test depend on a cold service.
-    [self webViewWebContentProcessDidTerminate:nil];
-}
-@end
+
 
 static UIView *TCLayoutView(UIView *root, NSString *identifier) {
     if ([root.accessibilityIdentifier isEqualToString:identifier]) return root;
@@ -385,13 +375,36 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
                     }
                 }
             }];
-            [self withController:[TCMinimumLayoutPolicy new] size:size style:appearance.integerValue check:^(UIViewController *controller) {
+            [self withController:[TCPrivacyViewController new] size:size style:appearance.integerValue check:^(UIViewController *controller) {
                 [controller.view layoutIfNeeded];
-                UIScrollView *error=(UIScrollView *)TCLayoutView(controller.view,@"privacy.errorScroll");
-                UIButton *retry=(UIButton *)TCLayoutView(controller.view,@"privacy.retry");
-                XCTAssertFalse(error.hidden,@"The native failure state must be visible before layout is measured");
-                XCTAssertGreaterThanOrEqual(retry.bounds.size.height,44);
-                [self assertViewReadable:retry inScroll:error];
+                UIScrollView *content=(UIScrollView *)TCLayoutView(controller.view,@"privacy.content");
+                UIScrollView *actions=(UIScrollView *)TCLayoutView(controller.view,@"privacy.actions");
+                XCTAssertGreaterThan(content.bounds.size.height,44);
+                XCTAssertGreaterThanOrEqual(actions.bounds.size.height,44);
+                for (NSString *identifier in @[@"privacy.body.zh-Hans",@"privacy.body.en"]) {
+                    UITextView *body=(UITextView *)TCLayoutView(controller.view,identifier);
+                    XCTAssertFalse(body.editable);XCTAssertTrue(body.selectable);XCTAssertFalse(body.scrollEnabled);
+                    XCTAssertGreaterThan(body.text.length,100u);
+                    [body.layoutManager ensureLayoutForTextContainer:body.textContainer];
+                    NSRange glyphs=[body.layoutManager glyphRangeForTextContainer:body.textContainer];
+                    CGRect used=[body.layoutManager usedRectForTextContainer:body.textContainer];
+                    XCTAssertEqual(NSMaxRange(glyphs),body.layoutManager.numberOfGlyphs);
+                    XCTAssertLessThanOrEqual(CGRectGetMaxY(used),body.bounds.size.height+0.5);
+                    XCTAssertLessThanOrEqual(CGRectGetMaxX(used),body.bounds.size.width+0.5);
+                    XCTAssertEqual(body.dataDetectorTypes,UIDataDetectorTypeNone);
+                }
+                for (NSString *identifier in @[@"privacy.notice.en",@"privacy.notice.zh-Hans"]) {
+                    UILabel *notice=(UILabel *)TCLayoutView(controller.view,identifier);
+                    CGSize natural=[notice sizeThatFits:CGSizeMake(notice.bounds.size.width,CGFLOAT_MAX)];
+                    XCTAssertGreaterThanOrEqual(notice.bounds.size.height+0.5,natural.height);
+                    XCTAssertEqual([notice contentCompressionResistancePriorityForAxis:UILayoutConstraintAxisVertical],UILayoutPriorityRequired);
+                }
+                for (NSString *identifier in @[@"privacy.contact",@"privacy.externalPolicy"]) {
+                    UIButton *button=(UIButton *)TCLayoutView(controller.view,identifier);
+                    XCTAssertGreaterThanOrEqual(button.bounds.size.height,44);
+                    [self assertViewReadable:button inScroll:actions];
+                    XCTAssertTrue(CGRectContainsRect(button.bounds,CGRectInset([button.titleLabel convertRect:button.titleLabel.bounds toView:button],0.5,0.5)));
+                }
                 XCTAssertEqualObjects(controller.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"privacy.close");
             }];
         }

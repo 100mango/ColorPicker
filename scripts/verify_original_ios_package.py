@@ -8,6 +8,7 @@ signature, Store eligibility, older-OS runtime, or historical installed upgrade.
 import argparse
 import hashlib
 import json
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -19,9 +20,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 MAX_ENTRIES, MAX_BYTES, MAX_SECONDS = 8192, 1024 * 1024 * 1024, 30
 IMPORT_SHA = "32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1"
-POLICY_SOURCE = 'ColorPicker/PrivacyPolicy.html'
-POLICY_PRODUCT = 'app/PrivacyPolicy.html'
-POLICY_SHA256 = '390d6c30ab0f52031417981d7477c8553572402dd9d5757bf1ccbf4e6ea0c986'
+POLICY_LOCALIZATIONS = {'en': 'eaaff16f7db2531ea3c518ab7918ab28a4517cf3bbfda8dd373e5a857456f8b5', 'zh-Hans': '02074237db3a5589d8c9fc6c98ae99596660519fb1c4457493ab50364d62b78a'}
 APP_SOURCES = sorted(['ColorPicker/' + name for name in (
     'main.m', 'ColorAppDelegate.m', 'ColorSceneDelegate.m', 'ColorMainViewController.m',
     'ColorViewController.m', 'ColorRealTimeViewController.m', 'ColorDetectView.m',
@@ -138,6 +137,27 @@ def generated_project(raw):
     return result
 
 
+def strings_dictionary(raw):
+    """Accept compiled binary/XML plists or the checked-in quoted strings grammar."""
+    try:
+        value = plistlib.loads(raw)
+    except (plistlib.InvalidFileException, ValueError, TypeError):
+        text = raw.decode('utf-16' if raw.startswith((b'\xff\xfe', b'\xfe\xff')) else 'utf-8-sig')
+        token = re.compile(r'\s*(?:(?://[^\n]*(?:\n|$)|/\*[\s\S]*?\*/)|("(?:[^"\\]|\\.)*")\s*=\s*("(?:[^"\\]|\\.)*")\s*;)')
+        value, offset = {}, 0
+        while text[offset:].strip():
+            match = token.match(text, offset)
+            require(match is not None, 'Malformed localization strings')
+            offset = match.end()
+            if match.group(1) is not None:
+                key, item = json.loads(match.group(1)), json.loads(match.group(2))
+                require(key not in value, 'Duplicate localization key')
+                value[key] = item
+    require(isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()),
+            'Localization must be a string dictionary')
+    return value
+
+
 def source_graph(root):
     project = generated_project((root / 'TouchColor.xcodeproj/project.pbxproj').read_bytes())
     objects = project['objects']
@@ -151,19 +171,33 @@ def source_graph(root):
         phase = objects[phase_id]
         require(phase['isa'] != 'PBXCopyFilesBuildPhase', 'Unexpected app copy/embed phase')
         if phase['isa'] == 'PBXSourcesBuildPhase':
-            memberships += [objects[objects[b]['fileRef']]['path'] for b in phase['files']]
+            refs = [objects[objects[b]['fileRef']] for b in phase['files']]
+            require(all(x.get('isa') == 'PBXFileReference' and isinstance(x.get('path'), str) for x in refs), 'Invalid source-phase file reference')
+            memberships += [x['path'] for x in refs]
         if phase['isa'] == 'PBXResourcesBuildPhase':
             resource_refs += [objects[objects[b]['fileRef']] for b in phase['files']]
     require(sorted(memberships) == APP_SOURCES, 'App source membership differs from reviewed twelve-file graph')
-    policies = [ref for ref in resource_refs if Path(ref.get('path', '')).name == 'PrivacyPolicy.html']
-    require(len(policies) == 1 and policies[0].get('path') == POLICY_SOURCE and
-            policies[0].get('isa') == 'PBXFileReference' and policies[0].get('sourceTree') == '<group>' and
-            policies[0].get('lastKnownFileType') == 'text.html',
-            'Bundled privacy policy must occur exactly once in app resources')
-    policy_path = root / POLICY_SOURCE
-    require(policy_path.is_file() and not policy_path.is_symlink(), 'Missing or linked reviewed privacy policy source')
-    policy = policy_path.read_bytes()
-    require(hashlib.sha256(policy).hexdigest() == POLICY_SHA256, 'Reviewed privacy policy source bytes changed')
+    require(not any('PrivacyPolicy.html' in str(ref) for ref in resource_refs), 'Retired web policy resource retained')
+    groups = [ref for ref in resource_refs if ref.get('name') == 'Localizable.strings']
+    require(len(groups) == 1 and groups[0].get('isa') == 'PBXVariantGroup' and groups[0].get('sourceTree') == '<group>',
+            'Native privacy localizations require one resource variant group')
+    children = [objects[x] for x in groups[0].get('children', [])]
+    require(len(children) == 2 and {x.get('name') for x in children} == set(POLICY_LOCALIZATIONS), 'Native privacy locale inventory changed')
+    policies = {}
+    for language, digest in POLICY_LOCALIZATIONS.items():
+        path = f'ColorPicker/{language}.lproj/Localizable.strings'
+        matches = [x for x in children if x.get('name') == language]
+        require(len(matches) == 1 and matches[0].get('isa') == 'PBXFileReference' and matches[0].get('path') == path
+                and matches[0].get('sourceTree') == '<group>' and matches[0].get('lastKnownFileType') == 'text.plist.strings',
+                'Native privacy locale reference changed')
+        source = root / path
+        require(source.is_file() and not source.is_symlink(), 'Missing or linked native privacy localization')
+        raw = source.read_bytes()
+        require(hashlib.sha256(raw).hexdigest() == digest, 'Reviewed native privacy localization changed')
+        values = strings_dictionary(raw)
+        require(all(values.get(k) for k in ('Approved Privacy Body', 'External Privacy Website Notice', 'Contact Developer', 'Open in Browser')),
+                'Required native privacy copy missing')
+        policies[language] = {'path': path, 'bytes': len(raw), 'sha256': digest}
     require(target.get('dependencies', []) == [], 'Unexpected app target dependency')
     require(not any('PhonePaletteInbox' in p for p in memberships), 'Companion source retained')
     require(hashlib.sha256((root / 'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_bytes()).hexdigest() == IMPORT_SHA, 'Independent importer bytes changed')
@@ -174,7 +208,7 @@ def source_graph(root):
         require('openWatchInbox' not in text and 'watch.inbox.open' not in text, 'Companion entry retained')
     return {'source_paths': sorted(memberships), 'importer_sha256': IMPORT_SHA,
             'resource_paths': sorted(ref.get('path', ref.get('name', '')) for ref in resource_refs),
-            'privacy_policy': {'path': POLICY_SOURCE, 'bytes': len(policy), 'sha256': POLICY_SHA256},
+            'native_privacy_localizations': policies,
             'project_sha256': hashlib.sha256((root / 'TouchColor.xcodeproj/project.pbxproj').read_bytes()).hexdigest()}
 
 
@@ -188,9 +222,11 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
     def timely():
         require(clock() < deadline, 'Package inspection exceeded original 30-second deadline')
     graph = source_graph(root); timely()
-    policy = (root / POLICY_SOURCE).read_bytes()
-    require(hashlib.sha256(policy).hexdigest() == graph['privacy_policy']['sha256'],
-            'Reviewed privacy policy source changed during inspection')
+    policies = {}
+    for language, receipt in graph['native_privacy_localizations'].items():
+        raw = (root / receipt['path']).read_bytes()
+        require(hashlib.sha256(raw).hexdigest() == receipt['sha256'], 'Native privacy source changed during inspection')
+        policies[f'app/{language}.lproj/Localizable.strings'] = strings_dictionary(raw)
     timely()
     directories, files, binaries, plists, identities, total, count = {}, {}, {}, {}, {}, 0, 0
     roots = [('app', app)]
@@ -224,8 +260,9 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
                             'Product changed during inspection: ' + key)
                     files[key] = {'bytes': before.st_size, 'sha256': h.hexdigest()}
                     identities[path] = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
-                    if key == POLICY_PRODUCT:
-                        require(bytes(data) == policy, 'Bundled privacy policy differs from reviewed source bytes')
+                    require(path.name != 'PrivacyPolicy.html', 'Retired web policy remains in product')
+                    if key in policies:
+                        require(strings_dictionary(bytes(data)) == policies[key], 'Bundled native privacy localization differs from reviewed values')
                     if path.suffix in ('.plist', '.xcprivacy'):
                         plists[key] = plistlib.loads(data)
                     require('PaletteFixtures' not in relative, 'Fixture product embedded')
@@ -237,6 +274,7 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
                         require(not any(t in raw for t in PAIRED), 'Paired test code embedded: ' + key)
                         production = label == 'app' and not relative.startswith('PlugIns/')
                         if production:
+                            require(not any('/WebKit.framework/' in link for piece in slices for link in piece['libraries']), 'Retired WebKit renderer linked by shipping product')
                             require(not any(t in raw for t in COMPANION), 'Companion implementation embedded: ' + key)
                             if release:
                                 require(not any(t in raw for t in SEAMS), 'Debug fixture leaked into Release: ' + key)
@@ -257,7 +295,7 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
     for key in ('NSCameraUsageDescription', 'UIApplicationSceneManifest', 'UILaunchScreen',
                 'UISupportedInterfaceOrientations', 'UISupportedInterfaceOrientations~ipad'):
         require(metadata.get(key) == original.get(key), 'Original metadata changed: ' + key)
-    for path in ('Assets.car', 'PrivacyInfo.xcprivacy', 'PrivacyPolicy.html', 'en.lproj/Localizable.strings', 'zh-Hans.lproj/Localizable.strings',
+    for path in ('Assets.car', 'PrivacyInfo.xcprivacy', 'en.lproj/Localizable.strings', 'zh-Hans.lproj/Localizable.strings',
                  'en.lproj/InfoPlist.strings', 'zh-Hans.lproj/InfoPlist.strings'):
         require('app/' + path in files and files['app/' + path]['bytes'] > 0, 'Missing compiled resource: ' + path)
     require(plists['app/PrivacyInfo.xcprivacy'] ==

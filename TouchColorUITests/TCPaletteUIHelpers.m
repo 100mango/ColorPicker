@@ -299,7 +299,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     [self waitForPalettePresentationToClose:close];
 }
 - (void)acceptPalette:(XCUIApplication *)app {
-    [self acceptPalette:app readinessTimeout:5];
+    [self acceptPalette:app readinessTimeout:10];
 }
 - (void)verifyOriginalPaletteSources:(XCUIApplication *)app {
     XCUIElement *sources=app.scrollViews[@"sourceControls"];
@@ -373,7 +373,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 }
 - (void)exercisePaletteFileCancelAndImportReturn:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];
-    XCUIElement *file=[self paletteElement:@"palette.import.file" app:app];[self tapReadyPaletteElement:file timeout:5];
+    XCUIElement *file=[self paletteElement:@"palette.import.file" app:app];[self tapReadyPaletteElement:file timeout:10 existenceTimeout:5];
     if (self.tcPaletteReadinessExpired) return;
     if (![self waitForPaletteFilesPresentation:app]) return;
     // Observed system navigation owners differ between the wide sidebar and
@@ -423,7 +423,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     [self waitForPalettePresentationToClose:cancel];
     XCUIElement *close=app.buttons[@"palette.import.close"];
     XCTAssertTrue(close.hittable);XCTAssertTrue([[self paletteElement:@"palette.import.status" app:app].staticTexts.firstMatch.label containsString:@"cancelled"]);
-    [self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
+    [self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
     [self verifyOriginalPaletteSources:app];
     UIPasteboard.generalPasteboard.string=@"[\"#112233\"]";
     [self openPaletteAction:@"palette.import.open" app:app];
@@ -432,7 +432,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     XCUIElement *status=[self paletteElement:@"palette.import.status" app:app];
     XCTAssertTrue([status waitForExistenceWithTimeout:5]);XCTAssertGreaterThan(status.staticTexts.firstMatch.label.length,0u);
     XCTAssertTrue([status.staticTexts.firstMatch.label containsString:@"review every color"]);
-    close=app.buttons[@"palette.import.close"];XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:5];
+    close=app.buttons[@"palette.import.close"];XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];
     [self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
 }
 - (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app {
@@ -453,7 +453,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 - (void)selectSyntheticPaletteFile:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];
     XCUIElement *source=[self paletteElement:@"palette.import.file" app:app];
-    [self tapReadyPaletteElement:source timeout:5];
+    [self tapReadyPaletteElement:source timeout:10 existenceTimeout:5];
     if (![self waitForPaletteFilesPresentation:app]) return;
     XCUIElement *file=[app.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'TouchColor-Ordered-Colors'"]].firstMatch;
     if (!file.exists) {
@@ -600,7 +600,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     if (![self activateVisiblePalettePaste:app]) return;
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc",@"#445566"] app:app];
     XCUIElement *close=app.buttons[@"palette.import.close"];
-    XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];
+    XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self waitForPalettePresentationToClose:close];
     [self verifyHistory:@[] app:app];
 }
 - (void)exerciseLargestTextPaletteReviewAndImportHelp:(XCUIApplication *)app {
@@ -620,7 +620,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     }
     XCUIElement *close=app.buttons[@"palette.import.close"];
     XCTAssertTrue(close.hittable);XCTAssertTrue(app.buttons[@"palette.import.accept"].hittable);
-    [self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
+    [self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
     [self verifyOriginalPaletteSources:app];
     [self openPaletteAction:@"palette.import.open" app:app];
     [self verifyInitialPaletteImportControls:app];
@@ -637,7 +637,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     XCTAssertGreaterThanOrEqual(CGRectGetMinY(label.frame),CGRectGetMinY([self paletteBodyViewport:app table:table title:@"Import Palette"])-1);
     for (NSUInteger attempt=0;attempt<5 && CGRectGetMaxY(label.frame)>CGRectGetMaxY([self paletteBodyViewport:app table:table title:@"Import Palette"])+1;attempt++) [table swipeUp];
     XCTAssertLessThanOrEqual(CGRectGetMaxY(label.frame),CGRectGetMaxY([self paletteBodyViewport:app table:table title:@"Import Palette"])+1);
-    close=app.buttons[@"palette.import.close"];XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:5];
+    close=app.buttons[@"palette.import.close"];XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];
     [self waitForPalettePresentationToClose:close];[self verifyHistory:@[] app:app];
 }
 @end

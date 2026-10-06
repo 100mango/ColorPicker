@@ -4,7 +4,6 @@
 #import "ColorDetectView.h"
 #import "ColorViewController.h"
 #import "ColorRealTimeViewController.h"
-#import <WebKit/WebKit.h>
 
 @interface ColorRealTimeViewController (LifecycleTests)
 - (void)captureInterrupted:(NSNotification *)notification;
@@ -18,54 +17,24 @@
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView { return [(ColorDetectView *)scrollView imageView]; }
 - (void)handelColor:(NSString *)hex { self.hex=hex; }
 @end
-// Method-call spies prove app routing only; they are not packet-level network observations.
-@interface TCPolicyWebViewSpy : WKWebView
-@property (nonatomic) NSUInteger requestLoads;
-@property (nonatomic) NSUInteger HTMLLoads;
-@property (nonatomic) NSUInteger stops;
-@property (nonatomic, copy) NSString *loadedHTML;
-@property (nonatomic, strong) NSURL *loadedBaseURL;
-@end
-@implementation TCPolicyWebViewSpy
-- (WKNavigation *)loadRequest:(NSURLRequest *)request { self.requestLoads++; return nil; }
-- (WKNavigation *)loadHTMLString:(NSString *)string baseURL:(NSURL *)baseURL {
-    self.HTMLLoads++; self.loadedHTML=string; self.loadedBaseURL=baseURL; return nil;
-}
-- (void)stopLoading { self.stops++; }
-@end
+// Records the real native button route without opening another application.
 @interface TCPolicyControllerSpy : TCPrivacyViewController
-@property (nonatomic) BOOL usesFixtureURL;
-@property (nonatomic, strong) NSURL *fixtureURL;
-@property (nonatomic, strong) TCPolicyWebViewSpy *spy;
 @property (nonatomic, strong) NSMutableArray<NSURL *> *openedURLs;
+@property (nonatomic, copy) void (^pendingCompletion)(BOOL);
 @end
 @implementation TCPolicyControllerSpy
-- (WKWebView *)makePolicyWebViewWithConfiguration:(WKWebViewConfiguration *)configuration {
-    self.spy=[[TCPolicyWebViewSpy alloc] initWithFrame:CGRectZero configuration:configuration];
-    self.openedURLs=[NSMutableArray new]; return self.spy;
+- (void)openExternalURL:(NSURL *)URL completion:(void (^)(BOOL))completion {
+    if (!self.openedURLs) self.openedURLs=[NSMutableArray new];
+    [self.openedURLs addObject:URL]; self.pendingCompletion=completion;
 }
-- (NSURL *)policyResourceURL { return self.usesFixtureURL ? self.fixtureURL : [super policyResourceURL]; }
-- (void)openExternalPolicyURL:(NSURL *)URL { [self.openedURLs addObject:URL]; }
 @end
-@interface TCPolicyFrame : NSObject
-@property (nonatomic, getter=isMainFrame) BOOL mainFrame;
-@end
-@implementation TCPolicyFrame
-@end
-@interface TCPolicyAction : NSObject
-@property (nonatomic, strong) NSURLRequest *request;
-@property (nonatomic) WKNavigationType navigationType;
-@property (nonatomic, strong) TCPolicyFrame *sourceFrame;
-@property (nonatomic, strong) TCPolicyFrame *targetFrame;
-@end
-@implementation TCPolicyAction
-@end
-@interface TCPolicyResponse : NSObject
-@property (nonatomic, strong) NSURLResponse *response;
-@property (nonatomic, getter=isForMainFrame) BOOL forMainFrame;
-@end
-@implementation TCPolicyResponse
-@end
+static UIView *TCPolicyFindView(UIView *root, NSString *identifier) {
+    if ([root.accessibilityIdentifier isEqualToString:identifier]) return root;
+    for (UIView *child in root.subviews) {
+        UIView *found=TCPolicyFindView(child,identifier); if (found) return found;
+    }
+    return nil;
+}
 @interface ColorPickerTests : XCTestCase
 @property (nonatomic, copy) NSString *suite;
 @property (nonatomic, strong) NSUserDefaults *defaults;
@@ -204,49 +173,64 @@
     XCTAssertEqual(TCCameraAccessForStatus(AVAuthorizationStatusRestricted,YES),TCCameraAccessBlocked);
     for (NSNumber *status in @[@(AVAuthorizationStatusNotDetermined),@(AVAuthorizationStatusAuthorized),@(AVAuthorizationStatusDenied),@(AVAuthorizationStatusRestricted)]) XCTAssertEqual(TCCameraAccessForStatus(status.integerValue,NO),TCCameraAccessUnavailable);
 }
-- (void)testPrivacyNavigationIsLocalAndPublishedPolicyRequiresExplicitBrowserTap {
-    for (NSString *value in @[@"about:blank", @"about:blank#english-title"]) XCTAssertTrue(TCPrivacyAllowsDocumentURL([NSURL URLWithString:value]));
-    NSArray *remoteOrMalformed=@[@"https://100mango.github.io/app-privacy/", @"https://100mango.github.io:443/app-privacy/#touchcolor", @"http://100mango.github.io/app-privacy/", @"https://example.com/app-privacy/", @"https://100mango.github.io/other/", @"https://100mango.github.io/app-privacy/?tracking=1", @"https://100mango.github.io/app-privacy/?", @"https://user@100mango.github.io/app-privacy/", @"https://100mango.github.io:8443/app-privacy/", @"file:///app-privacy/", @"javascript:alert(1)", @"about:blank?", @"about:srcdoc", @"about://blank"];
-    for (NSString *value in remoteOrMalformed) XCTAssertFalse(TCPrivacyAllowsDocumentURL([NSURL URLWithString:value]), @"%@", value);
-    XCTAssertFalse(TCPrivacyAllowsDocumentURL(nil));
-    NSURL *published=[NSURL URLWithString:@"https://100mango.github.io/app-privacy/"];
-    XCTAssertTrue(TCPrivacyAllowsPublishedURL(published,YES));
-    XCTAssertFalse(TCPrivacyAllowsPublishedURL(published,NO));
-    XCTAssertFalse(TCPrivacyAllowsPublishedURL(nil,YES));
-    for (NSString *value in [remoteOrMalformed subarrayWithRange:NSMakeRange(1,remoteOrMalformed.count-1)]) XCTAssertFalse(TCPrivacyAllowsPublishedURL([NSURL URLWithString:value],YES), @"%@", value);
-    TCPolicyControllerSpy *controller=[TCPolicyControllerSpy new]; [controller loadViewIfNeeded];
-    TCPolicyAction *action=[TCPolicyAction new]; action.sourceFrame=[TCPolicyFrame new];action.sourceFrame.mainFrame=YES;
-    action.targetFrame=[TCPolicyFrame new];action.targetFrame.mainFrame=YES;
-    for (NSString *value in @[@"https://100mango.github.io/app-privacy/", @"mailto:100mango@gmail.com", @"https://example.com/", @"about:blank#english-title"]) {
-        action.request=[NSURLRequest requestWithURL:[NSURL URLWithString:value]];
-        for (NSNumber *navigationType in @[@(WKNavigationTypeOther),@(WKNavigationTypeLinkActivated)]) {
-            action.navigationType=navigationType.integerValue;
-            NSUInteger before=controller.openedURLs.count;
-            __block NSUInteger decisions=0;
-            [controller webView:controller.spy decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:^(WKNavigationActionPolicy policy) {
-                decisions++; XCTAssertEqual(policy,[value hasPrefix:@"about:"] ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
-            }];
-            XCTAssertEqual(decisions,1u);
-            BOOL explicitAllowed=action.navigationType==WKNavigationTypeLinkActivated && (TCPrivacyAllowsPublishedURL(action.request.URL,YES) || TCPrivacyAllowsContactURL(action.request.URL,YES));
-            XCTAssertEqual(controller.openedURLs.count,before+(explicitAllowed ? 1 : 0));
-            if (explicitAllowed) XCTAssertEqualObjects(controller.openedURLs.lastObject,action.request.URL);
-        }
-    }
-    action.request=[NSURLRequest requestWithURL:published]; action.navigationType=WKNavigationTypeLinkActivated;
-    action.sourceFrame.mainFrame=NO; NSUInteger before=controller.openedURLs.count;
-    [controller webView:controller.spy decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:^(WKNavigationActionPolicy policy) { XCTAssertEqual(policy,WKNavigationActionPolicyCancel); }];
-    XCTAssertEqual(controller.openedURLs.count,before);
-    action.sourceFrame.mainFrame=YES; [controller close];
-    [controller webView:controller.spy decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:^(WKNavigationActionPolicy policy) { XCTAssertEqual(policy,WKNavigationActionPolicyCancel); }];
-    XCTAssertEqual(controller.openedURLs.count,before);
-    XCTAssertEqual(controller.spy.requestLoads,0u);
+- (void)testNativePrivacyExplicitBrowserActionAndCloseRejectLateCompletion {
+    TCPolicyControllerSpy *controller=[TCPolicyControllerSpy new];[controller loadViewIfNeeded];
+    UIButton *browser=(UIButton *)TCPolicyFindView(controller.view,@"privacy.externalPolicy");
+    UIButton *contact=(UIButton *)TCPolicyFindView(controller.view,@"privacy.contact");
+    UILabel *error=(UILabel *)TCPolicyFindView(controller.view,@"privacy.externalError");
+    XCTAssertNotNil(browser);XCTAssertNotNil(contact);XCTAssertTrue(error.hidden);
+    XCTAssertEqual(controller.openedURLs.count,0u,@"Loading native policy never opens a service");
+    XCTAssertTrue([browser.allTargets containsObject:controller]);
+    XCTAssertTrue([[browser actionsForTarget:controller forControlEvent:UIControlEventTouchUpInside] containsObject:NSStringFromSelector(@selector(openPolicyInBrowser))]);
+    [browser sendActionsForControlEvents:UIControlEventTouchUpInside];
+    XCTAssertEqual(controller.openedURLs.count,1u);
+    XCTAssertEqualObjects(controller.openedURLs.lastObject.absoluteString,@"https://100mango.github.io/app-privacy/");
+    XCTAssertFalse(browser.enabled);XCTAssertFalse(contact.enabled);
+    [controller openPolicyInBrowser];[controller contactDeveloper];
+    XCTAssertEqual(controller.openedURLs.count,1u,@"A pending opener admits no second action");
+    [controller close];[controller close];
+    void (^completion)(BOOL)=controller.pendingCompletion;
+    XCTAssertNotNil(completion);if (completion) completion(NO);
+    XCTestExpectation *drained=[self expectationWithDescription:@"Public opener completion returned to the main queue"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; });
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    XCTAssertTrue(error.hidden,@"A late failure must not revive a closed policy");
+    XCTAssertFalse(browser.enabled);XCTAssertFalse(contact.enabled);
+    [controller openPolicyInBrowser];[controller contactDeveloper];
+    XCTAssertEqual(controller.openedURLs.count,1u);
 }
-- (void)testPrivacyMailRequiresExplicitApprovedContactTap {
-    NSURL *contact=[NSURL URLWithString:@"mailto:100mango@gmail.com"];
-    XCTAssertTrue(TCPrivacyAllowsContactURL(contact,YES));
-    XCTAssertFalse(TCPrivacyAllowsContactURL(contact,NO));
-    for (NSString *value in @[@"mailto:other@example.com", @"mailto:100mango@gmail.com?body=private", @"mailto:100mango@gmail.com?", @"mailto:100mango@gmail.com#", @"mailto://100mango@gmail.com", @"mailto:100mango@gmail.com#fragment", @"https://100mango.github.io/app-privacy/"]) XCTAssertFalse(TCPrivacyAllowsContactURL([NSURL URLWithString:value],YES));
-    XCTAssertFalse(TCPrivacyAllowsContactURL(nil,YES));
+- (void)testNativePrivacyContactFailureAndSuccessPreserveTheOfflineBody {
+    TCPolicyControllerSpy *controller=[TCPolicyControllerSpy new];[controller loadViewIfNeeded];
+    UIButton *contact=(UIButton *)TCPolicyFindView(controller.view,@"privacy.contact");
+    UIButton *browser=(UIButton *)TCPolicyFindView(controller.view,@"privacy.externalPolicy");
+    UILabel *error=(UILabel *)TCPolicyFindView(controller.view,@"privacy.externalError");
+    UITextView *body=(UITextView *)TCPolicyFindView(controller.view,@"privacy.body.en");
+    NSString *original=[body.text copy];
+    XCTAssertEqual(controller.openedURLs.count,0u);
+    XCTAssertTrue([contact.allTargets containsObject:controller]);
+    XCTAssertTrue([[contact actionsForTarget:controller forControlEvent:UIControlEventTouchUpInside] containsObject:NSStringFromSelector(@selector(contactDeveloper))]);
+    [contact sendActionsForControlEvents:UIControlEventTouchUpInside];
+    XCTAssertEqual(controller.openedURLs.count,1u);
+    XCTAssertEqualObjects(controller.openedURLs.lastObject.absoluteString,@"mailto:100mango@gmail.com");
+    XCTAssertFalse(contact.enabled);XCTAssertFalse(browser.enabled);
+    void (^failure)(BOOL)=controller.pendingCompletion;
+    XCTAssertNotNil(failure);if (failure) failure(NO);
+    XCTestExpectation *failed=[self expectationWithDescription:@"Known Mail failure observed on the main queue"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [failed fulfill]; });
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    XCTAssertFalse(error.hidden);XCTAssertGreaterThan(error.text.length,0u);
+    XCTAssertTrue(contact.enabled);XCTAssertTrue(browser.enabled);
+    XCTAssertEqualObjects(body.text,original);
+    [contact sendActionsForControlEvents:UIControlEventTouchUpInside];
+    XCTAssertEqual(controller.openedURLs.count,2u);
+    XCTAssertEqualObjects(controller.openedURLs.lastObject.absoluteString,@"mailto:100mango@gmail.com");
+    void (^success)(BOOL)=controller.pendingCompletion;
+    XCTAssertNotNil(success);if (success) success(YES);
+    XCTestExpectation *opened=[self expectationWithDescription:@"Known Mail open result observed on the main queue"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [opened fulfill]; });
+    [self waitForExpectationsWithTimeout:5 handler:nil];
+    XCTAssertTrue(error.hidden);XCTAssertTrue(contact.enabled);XCTAssertTrue(browser.enabled);
+    XCTAssertEqualObjects(body.text,original);[controller close];
 }
 - (void)testQueuedFramesCannotSurviveInterruptionPauseOrRestart {
     TCCaptureGate *gate=[TCCaptureGate new];
@@ -342,82 +326,42 @@
     XCTAssertEqual(reopened.colors.count,0);
     XCTAssertEqualObjects([self.defaults objectForKey:@"colorArrayRecoveryBackup"],original);
 }
-- (void)testPolicyLocalResourceFailuresAndWebProcessTerminationExposeReload {
-    NSURL *resource=[NSBundle.mainBundle URLForResource:@"PrivacyPolicy" withExtension:@"html"];
-    XCTAssertNotNil(resource,@"The actual host app must bundle the reviewed policy");
-    NSData *approved=[NSData dataWithContentsOfURL:resource];
-    NSString *HTML=TCPrivacyPolicyHTML(approved);
-    for (NSString *caption in @[@"开发者邮箱：100mango@gmail.com", @"Developer email: 100mango@gmail.com"]) {
-        XCTAssertTrue([HTML containsString:caption],@"Visible contact text preserves the complete selectable address and explains its purpose");
-        NSString *accessibleNameAttribute=[NSString stringWithFormat:@"aria-label=\"%@\"",caption];
-        XCTAssertTrue([HTML containsString:accessibleNameAttribute],@"The localized link name must match its readable visible text");
-    }
-    XCTAssertTrue([HTML containsString:@"href=\"mailto:100mango@gmail.com\""],@"The exact original contact destination remains unchanged");
-    XCTAssertNotNil(HTML);
-    if (!HTML) return; // The assertion above fails safely if packaging is broken.
-    XCTAssertTrue([HTML containsString:@"开发者不收集或上传这些数据"]);
-    XCTAssertTrue([HTML containsString:@"The developer does not collect or upload this data."]);
-    XCTAssertNil(TCPrivacyPolicyHTML(nil));
-    XCTAssertNil(TCPrivacyPolicyHTML([@"<html>malformed policy</html>" dataUsingEncoding:NSUTF8StringEncoding]));
-    NSMutableData *changed=[approved mutableCopy];
-    ((unsigned char *)changed.mutableBytes)[0]^=1;
-    XCTAssertNil(TCPrivacyPolicyHTML(changed));
-    NSURLResponse *local=[[NSURLResponse alloc] initWithURL:[NSURL URLWithString:@"about:blank"] MIMEType:@"text/html" expectedContentLength:approved.length textEncodingName:@"utf-8"];
-    XCTAssertTrue(TCPrivacyAllowsResponse(local));
-    XCTAssertFalse(TCPrivacyAllowsResponse(nil));
-    for (NSNumber *status in @[@200,@404,@500]) {
-        NSURLResponse *response=[[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://100mango.github.io/app-privacy/"] statusCode:status.integerValue HTTPVersion:@"HTTP/1.1" headerFields:@{}];
-        XCTAssertFalse(TCPrivacyAllowsResponse(response),@"All remote HTTP responses are now rejected, including 200");
-    }
-    NSURLResponse *foreign=[[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://example.com/"] statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{}];
-    XCTAssertFalse(TCPrivacyAllowsResponse(foreign));
-    XCTAssertFalse(TCPrivacyAllowsResponse([[NSURLResponse alloc] initWithURL:[NSURL URLWithString:@"about:blank"] MIMEType:@"image/png" expectedContentLength:1 textEncodingName:nil]));
+- (void)testNativePrivacyApprovedBilingualBodyRemainsSelectableAndCopyable {
     TCPolicyControllerSpy *controller=[TCPolicyControllerSpy new];[controller loadViewIfNeeded];
-    XCTAssertEqualObjects(controller.spy.loadedHTML,HTML);
-    XCTAssertNil(controller.spy.loadedBaseURL);
-    XCTAssertEqual(controller.spy.HTMLLoads,1u);
-    XCTAssertFalse(controller.spy.configuration.defaultWebpagePreferences.allowsContentJavaScript);
-    XCTAssertFalse(controller.spy.allowsLinkPreview);
-    XCTAssertFalse(controller.spy.configuration.websiteDataStore.persistent);
-    XCTAssertTrue([[controller valueForKey:@"errorScroll"] isHidden]);
-    [controller webView:nil didFailNavigation:nil withError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]];
-    XCTAssertTrue([[controller valueForKey:@"errorScroll"] isHidden]);
-    [controller webViewWebContentProcessDidTerminate:nil];
-    XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
-    [controller loadPolicy];
-    XCTAssertTrue([[controller valueForKey:@"errorScroll"] isHidden]);
-    XCTAssertEqual(controller.spy.HTMLLoads,2u);
-    TCPolicyResponse *response=[TCPolicyResponse new];response.response=local;response.forMainFrame=YES;
-    [controller webView:controller.spy decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:^(WKNavigationResponsePolicy policy) { XCTAssertEqual(policy,WKNavigationResponsePolicyAllow); }];
-    response.response=foreign;
-    [controller webView:controller.spy decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:^(WKNavigationResponsePolicy policy) { XCTAssertEqual(policy,WKNavigationResponsePolicyCancel); }];
-    XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
-    NSURL *fixture=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]];
+    NSArray<NSString *> *identifiers=@[@"privacy.body.zh-Hans",@"privacy.body.en"];
+    NSArray<NSString *> *approved=@[@"Celluloid、QRCatcher 和 TouchColor 在设备本地处理照片、相机画面、二维码或颜色数据，开发者不收集或上传这些数据。用户主动分享、打开链接，以及系统 iCloud 同步等行为由相应服务处理。如有隐私问题，请联系 100mango@gmail.com。本地数据可通过相应应用或系统删除，权限可在系统设置中撤回。",@"Celluloid, QRCatcher, and TouchColor process photos, camera images, QR codes, or color data locally on your device. The developer does not collect or upload this data. Actions you choose to take, such as sharing or opening links, and system services such as iCloud sync are handled by the respective services. For privacy questions, contact 100mango@gmail.com. Local data can be deleted through the relevant app or system, and permissions can be revoked in system settings."];
+    NSArray *savedClipboard=UIPasteboard.generalPasteboard.items;
     @try {
-        controller.usesFixtureURL=YES;controller.fixtureURL=fixture;
-        [controller loadPolicy]; // Missing local resource.
-        XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
-        XCTAssertEqual(controller.spy.HTMLLoads,2u);
-        XCTAssertTrue([changed writeToURL:fixture atomically:YES]);
-        [controller loadPolicy]; // Same-size tampered local resource.
-        XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
-        XCTAssertEqual(controller.spy.HTMLLoads,2u);
-        XCTAssertTrue([[@"<html>broken</html>" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:fixture atomically:YES]);
-        [controller loadPolicy]; // Malformed local resource.
-        XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
-        XCTAssertEqual(controller.spy.HTMLLoads,2u);
-        controller.usesFixtureURL=NO; [controller loadPolicy];
-        XCTAssertTrue([[controller valueForKey:@"errorScroll"] isHidden]);
-        XCTAssertEqual(controller.spy.HTMLLoads,3u);
-        XCTAssertEqualObjects(controller.spy.loadedHTML,HTML);
-        [controller close]; [controller loadPolicy];
-        XCTAssertEqual(controller.spy.stops,1u);
-        XCTAssertEqual(controller.spy.HTMLLoads,3u,@"Reload after Close must do nothing");
-        [controller webViewWebContentProcessDidTerminate:nil];
-        XCTAssertTrue([[controller valueForKey:@"errorScroll"] isHidden],@"Late failure after Close must be ignored");
-        XCTAssertEqual(controller.spy.requestLoads,0u,@"Method spy: no app-authored remote load, not packet capture");
-        XCTAssertEqual(controller.openedURLs.count,0u);
-    } @finally { [NSFileManager.defaultManager removeItemAtURL:fixture error:nil]; }
+        for (NSUInteger index=0;index<identifiers.count;index++) {
+            UITextView *body=(UITextView *)TCPolicyFindView(controller.view,identifiers[index]);
+            XCTAssertTrue([body isKindOfClass:UITextView.class]);
+            XCTAssertEqualObjects(body.text,approved[index]);
+            XCTAssertFalse(body.editable);XCTAssertTrue(body.selectable);XCTAssertFalse(body.scrollEnabled);
+            XCTAssertEqual(body.dataDetectorTypes,UIDataDetectorTypeNone);
+            XCTAssertTrue(body.adjustsFontForContentSizeCategory);
+            __block BOOL hasLink=NO;
+            [body.attributedText enumerateAttribute:NSLinkAttributeName inRange:NSMakeRange(0,body.attributedText.length) options:0 usingBlock:^(id value, NSRange range, BOOL *stop) { if (value) hasLink=YES; }];
+            XCTAssertFalse(hasLink,@"Plain selectable text must not create implicit external actions");
+            NSRange address=[body.text rangeOfString:@"100mango@gmail.com"];
+            XCTAssertNotEqual(address.location,NSNotFound);if (address.location==NSNotFound) continue;
+            body.selectedRange=address;
+            UIPasteboard.generalPasteboard.string=@"privacy-copy-sentinel";
+            [body copy:nil];
+            XCTAssertEqualObjects(UIPasteboard.generalPasteboard.string,@"100mango@gmail.com");
+            [controller.view setNeedsLayout];[controller.view layoutIfNeeded];
+            XCTAssertTrue(NSEqualRanges(body.selectedRange,address));
+            XCTAssertEqualObjects(body.text,approved[index]);
+        }
+    } @finally { UIPasteboard.generalPasteboard.items=savedClipboard; }
+    for (NSString *identifier in @[@"privacy.notice.en",@"privacy.notice.zh-Hans"]) {
+        UILabel *notice=(UILabel *)TCPolicyFindView(controller.view,identifier);
+        XCTAssertTrue([notice.text containsString:@"GitHub Pages"]);
+        XCTAssertTrue([notice.text containsString:@"IP"]);
+        XCTAssertEqual([notice contentCompressionResistancePriorityForAxis:UILayoutConstraintAxisVertical],UILayoutPriorityRequired);
+    }
+    XCTAssertEqual(controller.openedURLs.count,0u);
+    XCTAssertEqualObjects(controller.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"privacy.close");
+    [controller close];
 }
 - (void)testTransparentPhotoAppearanceMatchesSampledWhiteMatteInLightAndDark {
     UIGraphicsImageRendererFormat *format=[UIGraphicsImageRendererFormat defaultFormat];

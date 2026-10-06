@@ -26,7 +26,6 @@
 
 "Close" = "关闭";
 "Retry" = "重试";
-"The local privacy policy could not load. Reload to try again." = "本地隐私政策无法载入。请重新载入后再试。";
 
 "Zoom" = "缩放";
 "Selected pixel" = "已选择的像素";
@@ -102,3 +101,10 @@
 "Watch transfer is unavailable on this device. You can import a palette using Files or Paste." = "此设备不支持 Apple Watch 传输。您可以通过文件或粘贴导入调色板。";
 
 "Reload" = "重新载入";
+
+"Approved Privacy Body" = "Celluloid、QRCatcher 和 TouchColor 在设备本地处理照片、相机画面、二维码或颜色数据，开发者不收集或上传这些数据。用户主动分享、打开链接，以及系统 iCloud 同步等行为由相应服务处理。如有隐私问题，请联系 100mango@gmail.com。本地数据可通过相应应用或系统删除，权限可在系统设置中撤回。";
+"External Privacy Website Notice" = "打开此链接时，GitHub Pages 会出于安全目的记录并存储你的 IP 地址。";
+"Contact Developer" = "联系开发者";
+"Open in Browser" = "在浏览器中打开";
+"Mail could not be opened. You can copy the email address from the policy." = "无法打开邮件。你可以从隐私说明中复制邮箱地址。";
+"The browser could not be opened. The complete policy remains available here." = "无法打开浏览器。你仍可在此查看完整隐私说明。";

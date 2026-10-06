@@ -1,4 +1,10 @@
 /* English UI uses the source string as its fallback. */
 
 "Reload" = "Reload";
-"The local privacy policy could not load. Reload to try again." = "The local privacy policy could not load. Reload to try again.";
+
+"Approved Privacy Body" = "Celluloid, QRCatcher, and TouchColor process photos, camera images, QR codes, or color data locally on your device. The developer does not collect or upload this data. Actions you choose to take, such as sharing or opening links, and system services such as iCloud sync are handled by the respective services. For privacy questions, contact 100mango@gmail.com. Local data can be deleted through the relevant app or system, and permissions can be revoked in system settings.";
+"External Privacy Website Notice" = "When you open this link, GitHub Pages records and stores your IP address for security.";
+"Contact Developer" = "Contact Developer";
+"Open in Browser" = "Open in Browser";
+"Mail could not be opened. You can copy the email address from the policy." = "Mail could not be opened. You can copy the email address from the policy.";
+"The browser could not be opened. The complete policy remains available here." = "The browser could not be opened. The complete policy remains available here.";

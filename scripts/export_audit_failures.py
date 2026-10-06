@@ -214,18 +214,18 @@ def export_named(suite, names, limit):
     return count
 
 
-# Every device retains its first functional failure and first distinct audit
-# failure before filling a spare slot with another failure or a passing state.
+# Retain official audit evidence before ordinary functional/setup screenshots.
+# Known policy/concrete-screen findings precede the null-element live finding.
 functional_prefix = 'touchcolor-ipad-functional-failure-' if family.startswith('iPad') else 'touchcolor-phone-functional-failure-'
-count = export_named('TouchColorUITests', [functional_prefix + '1'], 1)
-count += export_named('AccessibilityAudits', [
-    'touchcolor-audit-failure-live', 'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
+count = export_named('AccessibilityAudits', [
+    'touchcolor-audit-failure-policy-local-body', 'touchcolor-audit-failure-policy-actions',
+    'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
     'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
-    'touchcolor-audit-failure-policy-error', 'touchcolor-audit-failure-policy-local-body',
     'touchcolor-audit-failure-import', 'touchcolor-audit-failure-import-help',
-], limit - count)
+    'touchcolor-audit-failure-live',
+], limit)
 if count < limit:
-    count += export_named('TouchColorUITests', [functional_prefix + '2'], limit - count)
+    count += export_named('TouchColorUITests', [functional_prefix + '1', functional_prefix + '2'], limit - count)
 if family == 'iPadMini' and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review', 'touchcolor-palette-import-help'], limit - count)
 if family == 'iPadMini' and count < limit:

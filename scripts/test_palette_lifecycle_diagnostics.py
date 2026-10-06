@@ -624,6 +624,16 @@ class HostedGateSchedulingContracts(unittest.TestCase):
                 for (NSString *identifier in expectedSources) {'''
                 self.assertEqual(actual.count(staged),1)
                 actual=actual.replace(staged,'                for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {')
+            if start == '- (void)exerciseSize:':
+                # Only the retired web-error layout is replaced by the reviewed
+                # native body/actions block. Every other geometry byte retains
+                # its existing inverse lock; the new block also has an exact pin.
+                begin = actual.index('            [self withController:[TCPrivacyViewController new]')
+                finish = actual.index('            }];', begin) + len('            }];')
+                native_policy = actual[begin:finish]
+                self.assertEqual(hashlib.sha256(native_policy.encode()).hexdigest(), '56dd60c0cd7f1146043da268ef4b0dab79596253728de86f89f1f4559265f1a9')
+                previous_policy = '            [self withController:[TCMinimumLayoutPolicy new] size:size style:appearance.integerValue check:^(UIViewController *controller) {\n                [controller.view layoutIfNeeded];\n                UIScrollView *error=(UIScrollView *)TCLayoutView(controller.view,@"privacy.errorScroll");\n                UIButton *retry=(UIButton *)TCLayoutView(controller.view,@"privacy.retry");\n                XCTAssertFalse(error.hidden,@"The native failure state must be visible before layout is measured");\n                XCTAssertGreaterThanOrEqual(retry.bounds.size.height,44);\n                [self assertViewReadable:retry inScroll:error];\n                XCTAssertEqualObjects(controller.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"privacy.close");\n            }];'
+                actual = actual[:begin] + previous_policy + actual[finish:]
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(),expected)
 
     def test_swift_gates_preserve_waiter_relative_three_seconds(self):

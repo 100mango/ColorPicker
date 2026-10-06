@@ -97,11 +97,14 @@
     XCTAssertTrue(CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)),@"The entire control must remain inside its scroll viewport");
 }
 - (void)assertLocalPolicyBody {
-    XCUIElement *policy=self.app.webViews[@"privacy.content"];
-    XCUIElement *chinese=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid、QRCatcher 和 TouchColor'"]].firstMatch;
-    XCUIElement *english=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid, QRCatcher, and TouchColor'"]].firstMatch;
-    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The bundled Chinese policy body must render locally");
-    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The bundled English policy body must render locally");
+    XCUIElement *chinese=self.app.textViews[@"privacy.body.zh-Hans"];
+    XCUIElement *english=self.app.textViews[@"privacy.body.en"];
+    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The approved Chinese policy must render natively");
+    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The approved English policy must render natively");
+    XCTAssertTrue([(NSString *)chinese.value containsString:@"Celluloid、QRCatcher 和 TouchColor"]);
+    XCTAssertTrue([(NSString *)english.value containsString:@"Celluloid, QRCatcher, and TouchColor"]);
+    XCTAssertTrue([(NSString *)chinese.value containsString:@"100mango@gmail.com"]);
+    XCTAssertTrue([(NSString *)english.value containsString:@"100mango@gmail.com"]);
 }
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     for (NSUInteger attempt=0; attempt<2; attempt++) {
@@ -124,21 +127,22 @@
         XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
     }
 }
-- (void)testPrivacyLocalErrorReloadAndClose {
-    [self.app terminate];
-    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-policy-local-error"];
-    [self.app launch];
-    [self.app.buttons[@"privacyPolicy"] tap];
-    XCTAssertTrue([self.app.staticTexts[@"privacy.error"] waitForExistenceWithTimeout:5]);
-    XCUIElement *retry=self.app.buttons[@"privacy.retry"];
-    XCTAssertTrue(retry.hittable);
-    [retry tap];
-    XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
-    XCTAssertTrue(self.app.webViews[@"privacy.content"].exists);
-    [self assertLocalPolicyBody];
-    [self.app.buttons[@"privacy.close"] tap];
-    XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
-    XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+- (void)testNativePrivacyBodyAndContactControlsRemainAvailableAfterReopen {
+    for (NSUInteger attempt=0;attempt<2;attempt++) {
+        [self.app.buttons[@"privacyPolicy"] tap];
+        [self assertLocalPolicyBody];
+        XCUIElement *actions=self.app.scrollViews[@"privacy.actions"];
+        for (NSString *identifier in @[@"privacy.contact",@"privacy.externalPolicy"]) {
+            XCUIElement *button=actions.buttons[identifier];
+            XCTAssertTrue([button waitForExistenceWithTimeout:5]);
+            [self revealControl:button inScrollView:actions];
+            XCTAssertTrue(button.enabled);XCTAssertTrue(button.hittable);
+        }
+        XCTAssertFalse(self.app.staticTexts[@"privacy.externalError"].exists);
+        [self.app.buttons[@"privacy.close"] tap];
+        XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
+        XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
+    }
 }
 - (void)testLaunchAndPhotoPickerCancelRepeatedly {
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:10]);
@@ -363,27 +367,25 @@
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     [self assertMarkerAtImageX:x y:y];
 }
-- (void)testLargestTextLocalPolicyCanScrollReloadAndCloseInLandscape {
+- (void)testLargestTextNativePolicyCanScrollAndCloseInLandscape {
     [self.app terminate];
-    // This route uses production navigation: no unrelated Debug fixture button crowds the SE navigation bar.
-    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-policy-local-error",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"privacyPolicy"] waitForExistenceWithTimeout:5]);
     [self.app.buttons[@"privacyPolicy"] tap];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
-    XCUIElement *retry=self.app.buttons[@"privacy.retry"];
-    XCTAssertTrue([retry waitForExistenceWithTimeout:5]);
-    [self revealControl:retry inScrollView:self.app.scrollViews[@"privacy.errorScroll"]];
-    XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable);
-    [retry tap];
-    XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
     [self assertLocalPolicyBody];
-    XCUIElement *policy=self.app.webViews[@"privacy.content"];
-    XCUIElement *published=[policy.links matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'Open in browser'"]].firstMatch;
-    XCTAssertTrue(published.exists);
-    // Reach the end of the real long local body at the largest size without opening a website.
-    for (NSUInteger attempt=0;attempt<16 && !published.hittable;attempt++) [policy swipeUpWithVelocity:XCUIGestureVelocityFast];
-    XCTAssertTrue(published.hittable,@"The end-of-policy external action must be reachable at largest text");
+    XCUIElement *content=self.app.scrollViews[@"privacy.content"];
+    XCUIElement *english=self.app.textViews[@"privacy.body.en"];
+    // Read the real long body, then reach independent real actions. No web failure/reload exists.
+    for (NSUInteger attempt=0;attempt<16 && !english.hittable;attempt++) [content swipeUpWithVelocity:XCUIGestureVelocityFast];
+    XCTAssertTrue(english.hittable,@"Both native language paragraphs must be reachable at largest text");
+    XCUIElement *actions=self.app.scrollViews[@"privacy.actions"];
+    for (NSString *identifier in @[@"privacy.contact",@"privacy.externalPolicy"]) {
+        XCUIElement *button=actions.buttons[identifier];
+        XCTAssertTrue(button.exists);[self revealControl:button inScrollView:actions];
+        XCTAssertTrue(button.enabled);XCTAssertTrue(button.hittable);
+    }
     XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable);
     [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);

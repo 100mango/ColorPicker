@@ -117,6 +117,40 @@ class GeneratedIssueEvidenceTests(unittest.TestCase):
         self.assertEqual(self.module['ALLOCATIONS']['iPadLarge'],4)
         self.assertLessEqual(self.module['RESERVED_LOG_BYTES'],20_000_000)
 
+    def test_existing_mini_slots_prioritize_policy_and_live_audits_over_setup(self):
+        script = Path(__file__).with_name('export_audit_failures.py').read_text()
+        suffix = script[script.index('# Retain official audit evidence'):]
+        available = {'touchcolor-audit-failure-policy-local-body', 'touchcolor-audit-failure-live',
+                     'touchcolor-ipad-functional-failure-1'}
+        emitted = []
+        def export(suite, names, limit):
+            chosen = [name for name in names if name in available][:max(0, limit)]
+            emitted.extend(chosen)
+            return len(chosen)
+        env = dict(family='iPadMini', limit=self.module['ALLOCATIONS']['iPadMini'], exports={},
+                   export_named=export, json=json, emitted_images=emitted)
+        with contextlib.redirect_stdout(io.StringIO()): exec(compile(suffix, 'actual-export-priority', 'exec'), env)
+        self.assertEqual(emitted, ['touchcolor-audit-failure-policy-local-body', 'touchcolor-audit-failure-live'])
+        self.assertEqual(env['count'], 2)
+        self.assertEqual(self.module['MAX_IMAGE_BYTES'], 500*1024)
+        self.assertEqual(self.module['RESERVED_LOG_BYTES'], 7_256_760)
+        self.assertEqual(self.module['MAX_RUN_LOG_BYTES'], 20_000_000)
+
+    def test_spare_slot_still_keeps_original_functional_failure(self):
+        script = Path(__file__).with_name('export_audit_failures.py').read_text()
+        suffix = script[script.index('# Retain official audit evidence'):]
+        available = {'touchcolor-audit-failure-policy-local-body', 'touchcolor-phone-functional-failure-1'}
+        emitted = []
+        def export(suite, names, limit):
+            chosen = [name for name in names if name in available][:max(0, limit)]
+            emitted.extend(chosen)
+            return len(chosen)
+        env = dict(family='iPhoneCompact', limit=2, exports={}, export_named=export,
+                   json=json, emitted_images=emitted)
+        with contextlib.redirect_stdout(io.StringIO()): exec(compile(suffix, 'actual-export-priority', 'exec'), env)
+        self.assertEqual(emitted, ['touchcolor-audit-failure-policy-local-body', 'touchcolor-phone-functional-failure-1'])
+        self.assertEqual(env['count'], 2)
+
     def test_nested_manifest_preserves_test_membership(self):
         result=list(self.module['records']([{'testIdentifier':'TouchColorAccessibilityUITests/testA','attachments':[{'exportedFileName':'one.txt'}]}]))
         self.assertEqual(result[0]['_testIdentifier'],'TouchColorAccessibilityUITests/testA')

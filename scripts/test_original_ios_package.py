@@ -41,8 +41,9 @@ class Fixture:
             'sources': {'isa': 'PBXSourcesBuildPhase', 'files': ['build']},
             'resources': {'isa': 'PBXResourcesBuildPhase', 'files': ['privacy-build']},
             'privacy-build': {'isa': 'PBXBuildFile', 'fileRef': 'privacy-file'},
-            'privacy-file': {'isa': 'PBXFileReference', 'path': package.POLICY_SOURCE,
-                             'sourceTree': '<group>', 'lastKnownFileType': 'text.html'},
+            'privacy-file': {'isa': 'PBXVariantGroup', 'name': 'Localizable.strings', 'sourceTree': '<group>', 'children': ['privacy-en', 'privacy-zh']},
+            'privacy-en': {'isa': 'PBXFileReference', 'name': 'en', 'path': 'ColorPicker/en.lproj/Localizable.strings', 'sourceTree': '<group>', 'lastKnownFileType': 'text.plist.strings'},
+            'privacy-zh': {'isa': 'PBXFileReference', 'name': 'zh-Hans', 'path': 'ColorPicker/zh-Hans.lproj/Localizable.strings', 'sourceTree': '<group>', 'lastKnownFileType': 'text.plist.strings'},
             'build': {'isa': 'PBXBuildFile', 'fileRef': 'import'},
             'import': {'isa': 'PBXFileReference', 'path': 'TouchColorPhoneCompanion/PhonePaletteImportController.swift'}}}
         self.project['objects']['sources']['files'] = []
@@ -56,7 +57,7 @@ class Fixture:
         color = self.root / 'ColorPicker'; color.mkdir()
         for name in ('ColorAppDelegate.m', 'ColorMainViewController.h', 'ColorMainViewController.m', 'TCWorkspaceViewController.m'):
             (color / name).write_text('// synthetic original-iOS product\n')
-        for name in ('TouchColor-Info.plist', 'PrivacyInfo.xcprivacy', 'PrivacyPolicy.html'):
+        for name in ('TouchColor-Info.plist', 'PrivacyInfo.xcprivacy'):
             (color / name).write_bytes((package.ROOT / 'ColorPicker' / name).read_bytes())
         self.metadata = plistlib.loads((color / 'TouchColor-Info.plist').read_bytes())
         self.metadata.update(CFBundleIdentifier='com.mango.touchColor', CFBundleExecutable='TouchColor',
@@ -67,11 +68,13 @@ class Fixture:
         self.write_info()
         (self.app / 'Assets.car').write_bytes(b'synthetic compiled icon')
         (self.app / 'PrivacyInfo.xcprivacy').write_bytes((color / 'PrivacyInfo.xcprivacy').read_bytes())
-        (self.app / 'PrivacyPolicy.html').write_bytes((color / 'PrivacyPolicy.html').read_bytes())
         for language in ('en', 'zh-Hans'):
             directory = self.app / (language + '.lproj'); directory.mkdir()
+            source_locale = color / (language + '.lproj'); source_locale.mkdir()
             for name in ('Localizable.strings', 'InfoPlist.strings'):
-                (directory / name).write_text('"test"="test";')
+                raw = (package.ROOT / 'ColorPicker' / (language + '.lproj') / name).read_bytes()
+                (source_locale / name).write_bytes(raw)
+                (directory / name).write_bytes(plistlib.dumps(package.strings_dictionary(raw), fmt=plistlib.FMT_BINARY))
         (self.app / 'TouchColor').write_bytes(macho(platform=7 if debug else 2))
         if debug:
             self.bundle(self.app / 'PlugIns/TouchColorTests.xctest', 'TouchColorTests')
@@ -124,7 +127,8 @@ class PackageTests(unittest.TestCase):
 
     def test_test_absence_string_and_dormant_localization_are_not_product_implementation(self):
         f = self.fixture(True)
-        (f.app / 'en.lproj/Localizable.strings').write_text('"Watch Inbox"="Watch Inbox";')
+        dormant = package.strings_dictionary((f.app / 'zh-Hans.lproj/Localizable.strings').read_bytes())
+        self.assertEqual(dormant['Watch Inbox'], '手表收件箱')
         (f.app / 'PlugIns/TouchColorTests.xctest/TouchColorTests').write_bytes(macho(platform=7, minimum=17, kind=8, payload=b'TCWatchPaletteInbox'))
         f.verify()
 
@@ -232,81 +236,83 @@ class PackageTests(unittest.TestCase):
         wrong = bytearray(macho()); struct.pack_into('<I', wrong, 36, 80)
         with self.assertRaises(ValueError): package.mach_info(wrong)
 
+    def test_native_localization_encodings_keep_identical_values(self):
+        expected = {'Approved Privacy Body': '选择完整邮箱100mango@gmail.com', 'External Privacy Website Notice': 'GitHub Pages IP'}
+        quoted = ''.join(json.dumps(k, ensure_ascii=False)+' = '+json.dumps(v, ensure_ascii=False)+';\n' for k,v in expected.items())
+        for raw in (quoted.encode(), quoted.encode('utf-16'), plistlib.dumps(expected),
+                    plistlib.dumps(expected, fmt=plistlib.FMT_BINARY)):
+            self.assertEqual(package.strings_dictionary(raw), expected)
+        for raw in (b'"a"="first";"a"="second";', b'"a"="value"; garbage', plistlib.dumps({'a': 1})):
+            with self.assertRaises(ValueError): package.strings_dictionary(raw)
+
+    def test_retired_webkit_cannot_remain_in_shipping_binary(self):
+        for debug in (False, True):
+            f = self.fixture(debug)
+            (f.app/'TouchColor').write_bytes(macho(platform=7 if debug else 2,
+                links=('/System/Library/Frameworks/WebKit.framework/WebKit',)))
+            with self.assertRaisesRegex(ValueError, 'Retired WebKit'): f.verify()
+
     def test_actual_staged_graph_and_product_surface_are_checked(self):
         graph = package.source_graph(package.ROOT)
         self.assertEqual(graph['source_paths'].count('TouchColorPhoneCompanion/PhonePaletteImportController.swift'), 1)
         self.assertFalse(any('Inbox' in p for p in graph['source_paths']))
-        self.assertEqual(graph['resource_paths'].count(package.POLICY_SOURCE), 1)
-        self.assertEqual(graph['privacy_policy']['sha256'], package.POLICY_SHA256)
+        self.assertEqual(graph['resource_paths'].count('Localizable.strings'), 1)
+        self.assertEqual(set(graph['native_privacy_localizations']), {'en', 'zh-Hans'})
 
-    def test_release_and_debug_ship_exact_reviewed_privacy_bytes_and_receipts(self):
+    def test_release_and_debug_ship_exact_reviewed_native_localizations(self):
         for debug in (False, True):
-            with self.subTest(debug=debug):
-                f = self.fixture(debug); result = f.verify()
-                source = (f.root / package.POLICY_SOURCE).read_bytes()
-                self.assertEqual((f.app / 'PrivacyPolicy.html').read_bytes(), source)
-                receipt = {'bytes': len(source), 'sha256': hashlib.sha256(source).hexdigest()}
-                self.assertEqual(result['files'][package.POLICY_PRODUCT], receipt)
-                self.assertEqual(result['source']['privacy_policy'], {'path': package.POLICY_SOURCE, **receipt})
+            f = self.fixture(debug); result = f.verify()
+            for language, digest in package.POLICY_LOCALIZATIONS.items():
+                source = f.root / f'ColorPicker/{language}.lproj/Localizable.strings'
+                product = f.app / f'{language}.lproj/Localizable.strings'
+                self.assertEqual(package.strings_dictionary(product.read_bytes()), package.strings_dictionary(source.read_bytes()))
+                self.assertEqual(result['source']['native_privacy_localizations'][language]['sha256'], digest)
+                self.assertIn(f'app/{language}.lproj/Localizable.strings', result['files'])
+            self.assertFalse((f.app / 'PrivacyPolicy.html').exists())
 
-    def test_missing_relocated_or_linked_privacy_resource_rejects(self):
+    def test_missing_relocated_or_linked_native_localization_rejects(self):
         for debug in (False, True):
             for placement in ('missing', 'subdirectory', 'test-bundle', 'symlink', 'directory'):
                 with self.subTest(debug=debug, placement=placement):
-                    f = self.fixture(debug); policy = f.app / 'PrivacyPolicy.html'
+                    f = self.fixture(debug); policy = f.app / 'en.lproj/Localizable.strings'
                     raw = policy.read_bytes(); policy.unlink()
                     if placement in ('subdirectory', 'test-bundle'):
-                        destination = f.app / ('en.lproj' if placement == 'subdirectory' else 'PlugIns/TouchColorTests.xctest')
-                        destination.mkdir(parents=True, exist_ok=True)
-                        (destination / 'PrivacyPolicy.html').write_bytes(raw)
-                    elif placement == 'symlink':
-                        policy.symlink_to(f.root / package.POLICY_SOURCE)
-                    elif placement == 'directory':
-                        policy.mkdir()
+                        destination = f.app / ('other.lproj' if placement == 'subdirectory' else 'PlugIns/TouchColorTests.xctest')
+                        destination.mkdir(parents=True, exist_ok=True); (destination / 'Localizable.strings').write_bytes(raw)
+                    elif placement == 'symlink': policy.symlink_to(f.root / 'ColorPicker/en.lproj/Localizable.strings')
+                    elif placement == 'directory': policy.mkdir()
                     with self.assertRaises(ValueError): f.verify()
 
-    def test_tampered_or_malformed_packaged_privacy_resource_rejects(self):
+    def test_tampered_or_malformed_packaged_native_localization_rejects(self):
         for debug in (False, True):
-            for raw in (b'', b'\xff\xfe\x00', b'<html><body>truncated',
-                        b'<html><body>Changed policy</body></html>',
-                        b'<html><script src="https://example.com/policy.js"></script></html>'):
+            for raw in (b'', b'\xff\xfe\x00', b'<html>old policy', b'"x"="y";', plistlib.dumps({'Approved Privacy Body': 'changed'})):
                 with self.subTest(debug=debug, raw=raw):
-                    f = self.fixture(debug); (f.app / 'PrivacyPolicy.html').write_bytes(raw)
-                    with self.assertRaisesRegex(ValueError, 'Bundled privacy policy differs from reviewed source bytes'):
-                        f.verify()
-        f = self.fixture(); policy = f.app / 'PrivacyPolicy.html'
-        policy.write_bytes(policy.read_bytes() + b'\n')
-        with self.assertRaisesRegex(ValueError, 'Bundled privacy policy differs from reviewed source bytes'):
-            f.verify()
+                    f = self.fixture(debug); (f.app / 'en.lproj/Localizable.strings').write_bytes(raw)
+                    with self.assertRaises((ValueError, UnicodeError)): f.verify()
+        f = self.fixture(); (f.app / 'PrivacyPolicy.html').write_text('retired web policy')
+        with self.assertRaisesRegex(ValueError, 'Retired web policy'): f.verify()
 
-    def test_changed_source_cannot_redefine_reviewed_privacy_resource(self):
-        f = self.fixture(); raw = b'<html><body>Altered source and product together</body></html>'
-        (f.root / package.POLICY_SOURCE).write_bytes(raw); (f.app / 'PrivacyPolicy.html').write_bytes(raw)
-        with self.assertRaisesRegex(ValueError, 'Reviewed privacy policy source bytes changed'):
-            f.verify()
-        f = self.fixture(); (f.root / package.POLICY_SOURCE).unlink()
-        with self.assertRaisesRegex(ValueError, 'Missing or linked reviewed privacy policy source'):
-            f.verify()
+    def test_changed_source_cannot_redefine_reviewed_native_privacy(self):
+        f = self.fixture(); path = 'en.lproj/Localizable.strings'; raw = b'"Approved Privacy Body"="Changed source and product";'
+        (f.root / 'ColorPicker' / path).write_bytes(raw); (f.app / path).write_bytes(raw)
+        with self.assertRaisesRegex(ValueError, 'Reviewed native privacy localization changed'): f.verify()
+        f = self.fixture(); (f.root / 'ColorPicker' / path).unlink()
+        with self.assertRaisesRegex(ValueError, 'Missing or linked native privacy localization'): f.verify()
 
-    def test_privacy_resource_graph_missing_duplicate_wrong_phase_or_reference_rejects(self):
-        for change in ('missing', 'duplicate', 'second-phase', 'sources-only', 'foreign-path', 'wrong-type', 'wrong-tree'):
+    def test_native_privacy_graph_missing_duplicate_wrong_phase_or_reference_rejects(self):
+        for change in ('missing', 'duplicate', 'second-phase', 'sources-only', 'foreign-path', 'wrong-type', 'wrong-tree', 'missing-locale', 'duplicate-locale'):
             with self.subTest(change=change):
                 f = self.fixture(); objects = f.project['objects']
-                if change == 'missing':
-                    objects['resources']['files'] = []
-                elif change == 'duplicate':
-                    objects['resources']['files'].append('privacy-build')
+                if change == 'missing': objects['resources']['files'] = []
+                elif change == 'duplicate': objects['resources']['files'].append('privacy-build')
                 elif change == 'second-phase':
-                    objects['second-resources'] = copy.deepcopy(objects['resources'])
-                    objects['app']['buildPhases'].append('second-resources')
-                elif change == 'sources-only':
-                    objects['resources']['isa'] = 'PBXSourcesBuildPhase'
-                elif change == 'foreign-path':
-                    objects['privacy-file']['path'] = 'Other/PrivacyPolicy.html'
-                elif change == 'wrong-type':
-                    objects['privacy-file']['lastKnownFileType'] = 'folder'
-                elif change == 'wrong-tree':
-                    objects['privacy-file']['sourceTree'] = 'SOURCE_ROOT'
+                    objects['second-resources'] = copy.deepcopy(objects['resources']); objects['app']['buildPhases'].append('second-resources')
+                elif change == 'sources-only': objects['resources']['isa'] = 'PBXSourcesBuildPhase'
+                elif change == 'foreign-path': objects['privacy-en']['path'] = 'Other/en.lproj/Localizable.strings'
+                elif change == 'wrong-type': objects['privacy-en']['lastKnownFileType'] = 'folder'
+                elif change == 'wrong-tree': objects['privacy-en']['sourceTree'] = 'SOURCE_ROOT'
+                elif change == 'missing-locale': objects['privacy-file']['children'] = ['privacy-en']
+                elif change == 'duplicate-locale': objects['privacy-file']['children'] = ['privacy-en', 'privacy-en']
                 f.write_project()
                 with self.assertRaises(ValueError): f.verify()
 

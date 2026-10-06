@@ -31,7 +31,7 @@ headers=[p.replace('.m','.h') for p in sources if p.endswith('.m') and p!='main.
 headers.append('TouchColor-Bridging-Header.h')
 apprefs=[ref('ColorPicker/'+p,filetype(p)) for p in sources+headers]
 companionrefs=[ref('TouchColorPhoneCompanion/'+name,'sourcecode.swift') for name in ['PhonePaletteImportController.swift']]
-resources=[ref('ColorPicker/Images.xcassets','folder.assetcatalog'),ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml'),ref('ColorPicker/PrivacyPolicy.html','text.html')]
+resources=[ref('ColorPicker/Images.xcassets','folder.assetcatalog'),ref('ColorPicker/PrivacyInfo.xcprivacy','text.xml')]
 for filename in ['Localizable.strings','InfoPlist.strings']:
     children=[add('loc:'+lang+filename, 'PBXFileReference', lastKnownFileType='text.plist.strings', name=lang, path='ColorPicker/'+lang+'.lproj/'+filename, sourceTree='<group>') for lang in ['en','zh-Hans']]
     resources.append(add('variant:'+filename,'PBXVariantGroup',children=children,name=filename,sourceTree='<group>'))

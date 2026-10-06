@@ -40,14 +40,14 @@
 - (void)recordAuditScreenshot:(NSString *)screen failure:(BOOL)failure {
     NSString *name=nil;
     if (failure) {
-        NSDictionary *states=@{@"palette import review":@"import",@"palette import help":@"import-help",@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"local policy error in dark appearance":@"policy-error",@"bundled bilingual policy in dark appearance":@"policy-local-body",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
+        NSDictionary *states=@{@"palette import review":@"import",@"palette import help":@"import-help",@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"native policy actions in dark appearance":@"policy-actions",@"native bilingual policy in dark appearance":@"policy-local-body",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
         if (states[screen]) name=[@"touchcolor-audit-failure-" stringByAppendingString:states[screen]];
     } else {
         if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
         if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
         if ([screen isEqualToString:@"palette import review"]) name=@"touchcolor-palette-import-review";
         if ([screen isEqualToString:@"palette import help"]) name=@"touchcolor-palette-import-help";
-        if ([screen isEqualToString:@"bundled bilingual policy in dark appearance"]) name=@"touchcolor-policy-local-body";
+        if ([screen isEqualToString:@"native bilingual policy in dark appearance"]) name=@"touchcolor-policy-local-body";
     }
     if (!name) return;
     NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
@@ -170,20 +170,25 @@
     [self assertEmptyHistoryDoesNotOverlapHeader];
     [self auditScreen:@"live camera unavailable"];
 }
-- (void)testAccessibilityLocalPolicyErrorAndBody {
+- (void)testAccessibilityNativePolicyBodyAndActions {
     [self.app terminate];
-    self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-policy-local-error",@"--ui-test-dark"]];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-dark"];
     [self.app launch];[self.app.buttons[@"privacyPolicy"] tap];
-    XCTAssertTrue([self.app.buttons[@"privacy.retry"] waitForExistenceWithTimeout:5]);
-    [self auditScreen:@"local policy error in dark appearance"];
-    [self.app.buttons[@"privacy.retry"] tap];
-    XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
-    XCUIElement *policy=self.app.webViews[@"privacy.content"];
-    XCUIElement *chinese=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid、QRCatcher 和 TouchColor'"]].firstMatch;
-    XCUIElement *english=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid, QRCatcher, and TouchColor'"]].firstMatch;
-    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The bundled Chinese policy body must render locally");
-    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The bundled English policy body must render locally");
-    [self auditScreen:@"bundled bilingual policy in dark appearance"];
+    XCUIElement *chinese=self.app.textViews[@"privacy.body.zh-Hans"];
+    XCUIElement *english=self.app.textViews[@"privacy.body.en"];
+    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The approved Chinese policy must render natively");
+    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The approved English policy must render natively");
+    XCTAssertTrue([(NSString *)chinese.value containsString:@"Celluloid、QRCatcher 和 TouchColor"]);
+    XCTAssertTrue([(NSString *)english.value containsString:@"Celluloid, QRCatcher, and TouchColor"]);
+    [self auditScreen:@"native bilingual policy in dark appearance"];
+    XCUIElement *actions=self.app.scrollViews[@"privacy.actions"];
+    for (NSString *identifier in @[@"privacy.contact",@"privacy.externalPolicy"]) {
+        XCUIElement *button=actions.buttons[identifier];
+        XCTAssertTrue([button waitForExistenceWithTimeout:5]);
+        for (NSUInteger attempt=0;attempt<5 && !button.hittable;attempt++) [self scrollTowardElement:button inScroll:actions];
+        XCTAssertTrue(button.hittable);XCTAssertTrue(button.enabled);
+    }
+    [self auditScreen:@"native policy actions in dark appearance"];
     [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
 }
