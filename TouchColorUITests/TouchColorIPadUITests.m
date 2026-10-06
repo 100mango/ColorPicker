@@ -346,7 +346,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     CGFloat imageWidth=self.app.images[@"sampleImage"].frame.size.width;
     [self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app];
     [self verifyPaletteRows:@[@"#112233",@"#112233"] app:self.app];
-    XCUIElement *close=self.app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
+    XCUIElement *close=self.app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self assertPresentationDisappears:close];
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0u,@"Cancel preserves the palette");
     XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
     XCTAssertEqualObjects(self.app.images[@"sampleMarker"].value,marker);

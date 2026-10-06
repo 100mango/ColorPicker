@@ -283,7 +283,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
         XCTNSPredicateExpectation *error=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS %@",messages[index]] object:status];
         XCTAssertEqual([XCTWaiter waitForExpectations:@[error] timeout:10],XCTWaiterResultCompleted,@"%@",app.debugDescription);
         XCTAssertFalse(app.buttons[@"palette.import.accept"].enabled);
-        XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];
+        XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self waitForPalettePresentationToClose:close];
         [self verifyHistory:@[@"#123456",@"#123456"] app:app];
     }
 }

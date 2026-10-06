@@ -402,13 +402,13 @@ def fixture_seed(family, started=STARTED):
                     'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)
     warmup.command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
                     'com.mango.touchColor.tests.paletteFixtures'], 60)
+    require(warmup.remaining() >= 60 + CLEANUP, 'Full fixture container lookup and cleanup cannot fit')
     container = warmup.command(['xcrun', 'simctl', 'get_app_container', device,
-                                'com.mango.touchColor.tests.paletteFixtures', 'data'], 30).strip()
+                                'com.mango.touchColor.tests.paletteFixtures', 'data'], 60).strip()
     warmup.fixture(container)
     warmup.command(['xcrun', 'simctl', 'terminate', device, 'com.mango.touchColor.tests.paletteFixtures'], 30)
-    warmup.command(['xcrun', 'simctl', 'spawn', device, 'launchctl', 'print', 'system'], 20, optional=True)
-    warmup.command(['xcodebuild', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor', '-showdestinations'],
-                    30, optional=True, simulator=False)
+    print('Optional simulator service listing diagnostic: not collected', flush=True)
+    print('Optional destination enumeration diagnostic: not collected', flush=True)
     warmup.seed(device)
     warmup.require_identity()
     require(load_setup(family) == setup, 'Setup changed during fixture preparation')

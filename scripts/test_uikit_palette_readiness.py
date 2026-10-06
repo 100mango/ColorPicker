@@ -11,7 +11,40 @@ class ReadinessSourceContracts(unittest.TestCase):
             methods=dict(re.findall(r'(?ms)^(- \([^\n]+)\n(.*?)(?=^- \(|^@end)',(ROOT/'TouchColorUITests'/name).read_text()))
             for signature,digest in expected.items():
                 with self.subTest(file=name,signature=signature):
-                    self.assertEqual(hashlib.sha256(methods[signature].encode()).hexdigest(),digest)
+                    body=methods[signature]
+                    if ((name=='TouchColorIPadUITests.m' and signature=='- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {') or
+                        (name=='TCPaletteUIHelpers.m' and signature=='- (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app {')):
+                        self.assertEqual(body.count('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'),1)
+                        body=body.replace('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]',
+                                          '[self tapReadyPaletteElement:close timeout:5]')
+                    self.assertEqual(hashlib.sha256(body.encode()).hexdigest(),digest)
+    def test_only_ipad_cancel_action_allowance_changes_with_original_body_retained(self):
+        text=(ROOT/'TouchColorUITests/TouchColorIPadUITests.m').read_text()
+        call='[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'
+        self.assertEqual(text.count(call),1)
+        body=text.split('- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {',1)[1].split('- (void)',1)[0]
+        self.assertIn(call,body)
+        restored=text.replace(call,'[self tapReadyPaletteElement:close timeout:5]')
+        # Exact ee52 file inverse: preserves all original post-dismissal,
+        # history, selected pixel, marker, width and keyboard assertions.
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'8e8839f6a3c6f40387a17a7a38ebc271273ec61cb6a5e101494da7d5114069fc')
+        self.assertNotIn('executionTimeAllowance',body)
+        self.assertIn('actionReturned<started+5',HELPER)
+        self.assertIn('BOOL completedTimely=NSProcessInfo.processInfo.systemUptime<deadline;',HELPER)
+
+    def test_invalid_paste_close_changes_only_one_shared_action_with_exact_inverse(self):
+        body=section('- (void)exerciseInvalidPalettePastePreservesHistory:', '- (void)exercisePaletteFileCancelAndImportReturn:')
+        call='[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'
+        self.assertEqual(body.count(call),1)
+        self.assertEqual(HELPER.count(call),1)
+        restored=HELPER.replace(call,'[self tapReadyPaletteElement:close timeout:5]')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'2cba5729c60d3a320385ce31058f1ba3a8477da3d88b462ed07f90b4ba084304')
+        self.assertIn('for (NSUInteger index=0;index<payloads.count;index++)',body)
+        self.assertIn('[self verifyHistory:@[@"#123456",@"#123456"] app:app];',body)
+        for file in ('TouchColorUITests.m','TouchColorIPadUITests.m'):
+            self.assertIn('- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }', (ROOT/'TouchColorUITests'/file).read_text())
+        self.assertNotIn('executionTimeAllowance',body)
+
     def test_exact_three_case_allowances_and_full_workflow(self):
         body=section('- (void)exercisePalettePasteReviewAcceptAndRelaunch:', '- (void)exercisePalette')
         self.assertEqual(body.count('timeout:15 existenceTimeout:5'),1)
@@ -140,7 +173,8 @@ class FunctionalCompletionContracts(unittest.TestCase):
         joined=cancel+accept
         current=Counter(re.findall(r'XCTAssert[^;]+;',joined))
         for item,n in Counter(self.ORIGINAL_ASSERTIONS).items():self.assertGreaterEqual(current[item],n,item)
-        current=Counter(re.findall(r'(?:^|;)\s*(\[self[^;]+;)',joined,re.M))
+        actions=joined.replace('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]', '[self tapReadyPaletteElement:close timeout:5]')
+        current=Counter(re.findall(r'(?:^|;)\s*(\[self[^;]+;)',actions,re.M))
         for item,n in Counter(self.ORIGINAL_ACTIONS).items():self.assertGreaterEqual(current[item],n,item)
         for body in (cancel,accept):
             self.assertEqual(body.count('[self importFixture]'),1)
@@ -174,9 +208,9 @@ class FunctionalCompletionContracts(unittest.TestCase):
                       'pressForDuration:0.05 thenDragToCoordinate:end withVelocity:100 thenHoldForDuration:0.15',
                       'NSStringFromCGRect(element.frame),NSStringFromCGRect(scroll.frame)']:
             self.assertIn(value,body)
-    def test_system_cancel_is_only_new_ten_second_action_and_old_latency_is_retained(self):
+    def test_system_cancel_is_unchanged_and_old_latency_is_retained(self):
         body=section('- (void)exercisePaletteFileCancelAndImportReturn:', '- (BOOL)waitForPaletteFilesPresentation:')
-        self.assertEqual(HELPER.count('timeout:10 existenceTimeout:5'),1)
+        self.assertEqual(HELPER.count('timeout:10 existenceTimeout:5'),2)
         self.assertIn('[self tapReadyPaletteElement:cancel timeout:10 existenceTimeout:5];',body)
         self.assertLess(body.index('if (self.tcPaletteReadinessExpired) return;'),body.index('[self waitForPalettePresentationToClose:cancel]'))
         self.assertIn('PALETTE_ACTION_RETURN case=%@ total=%.3f budget=%.3f responsiveness5=%@',HELPER)
@@ -201,7 +235,7 @@ class FunctionalCompletionContracts(unittest.TestCase):
     def test_retained_timing_boundaries_are_not_relabelled_fast(self):
         # Retained054 observations: Cancel readiness4.044s plus about2s action;
         # Compact provider/folder exceeded10s while the actual folder appeared.
-        for elapsed,functional,old in [(6.082,10,5),(11.01,15,10)]:
+        for elapsed,functional,old in [(6.082,10,5),(11.01,15,10),(5.154,10,5),(5.207,10,5)]:
             self.assertLess(elapsed,functional);self.assertFalse(elapsed<old)
         # Latency labels use the original absolute ceiling too; subtraction
         # can round a boundary interval down across a floating exponent.

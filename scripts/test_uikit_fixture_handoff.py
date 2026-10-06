@@ -100,7 +100,7 @@ class FixtureHandoff(ManagedFixture):
     def test_shutdown_boots_once_observes_completion_without_postboot_global_inventory(self):
         self.run_seed()
         self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus',
-            'install', 'launch', 'get_app_container', 'terminate', 'spawn', 'xcodebuild', 'addmedia'])
+            'install', 'launch', 'get_app_container', 'terminate', 'addmedia'])
         grants = {command[2]: grant for command, grant in self.calls if command[:2] == ['xcrun', 'simctl']}
         self.assertEqual(grants['boot'], 180)
         self.assertEqual(grants['bootstatus'], 240)
@@ -110,6 +110,149 @@ class FixtureHandoff(ManagedFixture):
         managed.require_fixtures('iPadMini', self.setup)
         self.assert_binding_unchanged()
         self.assertNotIn('UIKIT_PREPARATION_FAILURE:', self.output.getvalue())
+
+    def test_container_scope_and_omitted_diagnostic_preserve_required_command_order(self):
+        self.run_seed()
+        app = 'com.mango.touchColor.tests.paletteFixtures'
+        expected = [
+            (['xcrun', 'simctl', 'install', NEW,
+              'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90),
+            (['xcrun', 'simctl', 'launch', '--terminate-running-process', NEW, app], 60),
+            (['xcrun', 'simctl', 'get_app_container', NEW, app, 'data'], 60),
+            (['xcrun', 'simctl', 'terminate', NEW, app], 30)]
+        for (argv, grant), (expected_argv, cap) in zip(self.calls[5:9], expected):
+            self.assertEqual(argv, expected_argv)
+            self.assertAlmostEqual(grant, cap)
+        self.assertEqual(self.operations().count('get_app_container'), 1)
+        self.assertFalse(any('xcodebuild' in argv or '-showdestinations' in argv or 'launchctl' in argv for argv, _ in self.calls))
+        output = self.output.getvalue()
+        self.assertEqual(output.count('Optional simulator service listing diagnostic: not collected\n'), 1)
+        self.assertEqual(output.count('Optional destination enumeration diagnostic: not collected\n'), 1)
+        self.assertLess(output.index('Synthetic Files fixture is ready'),
+                        output.index('Optional destination enumeration diagnostic: not collected'))
+        self.assertLess(output.index('Optional destination enumeration diagnostic: not collected'),
+                        output.index('Synthetic photo seed complete'))
+        self.assertEqual(self.controller.deadline, 700)
+        managed.require_fixtures('iPadMini', self.setup)
+
+    def container_admission_at(self, remaining):
+        self.tick = self.controller.deadline - remaining - 1
+        def at_launch(command, timeout):
+            if command[2:3] == ['launch']:
+                self.tick = self.controller.deadline - remaining
+        self.action = at_launch
+
+    def test_container_admission_accepts_exact_full_sixty_and_twenty_cleanup(self):
+        self.container_admission_at(80)
+        self.run_seed()
+        self.assertAlmostEqual(next(grant for argv, grant in self.calls if argv[2:3] == ['get_app_container']), 60)
+        self.assertEqual(self.controller.deadline, 700)
+        managed.require_fixtures('iPadMini', self.setup)
+
+    def test_container_admission_accepts_just_above_full_sixty_and_twenty_cleanup(self):
+        self.container_admission_at(80.001)
+        self.run_seed()
+        self.assertAlmostEqual(next(grant for argv, grant in self.calls if argv[2:3] == ['get_app_container']), 60)
+        self.assertEqual(self.controller.deadline, 700)
+
+    def test_container_admission_rejects_just_below_full_grant_before_dispatch(self):
+        self.container_admission_at(79.999)
+        with patch.object(self.controller, 'fixture') as fixture, \
+                self.assertRaisesRegex(ValueError, 'Full fixture container lookup and cleanup cannot fit'):
+            self.run_seed()
+        fixture.assert_not_called()
+        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus', 'install', 'launch'])
+        self.assertFalse(self.controller.pending.exists())  # The refused query was never started.
+        self.assertEqual(self.controller.deadline, 700)
+        self.no_seed(); self.assert_binding_unchanged()
+
+    def delayed_container_marker(self, seconds):
+        original = Path.open
+        fixture = self
+        class DelayedMarker:
+            def __init__(self, stream): self.stream = stream
+            def __enter__(self): return self
+            def write(self, data):
+                fixture.tick += seconds
+                return self.stream.write(data)
+            def __exit__(self, *args): self.stream.close()
+        def opening(path, *args, **kwargs):
+            stream = original(path, *args, **kwargs)
+            if path == fixture.controller.pending and args == ('x',) and fixture.operations()[-1:] == ['launch']:
+                return DelayedMarker(stream)
+            return stream
+        return patch.object(Path, 'open', new=opening)
+
+    def assert_container_fenced(self):
+        self.assertTrue(self.controller.pending.exists())
+        self.no_seed(); self.assert_binding_unchanged()
+        previous = list(self.calls)
+        with self.assertRaises(Exception): self.controller.command(device_module.READBACK, 30)
+        with self.assertRaises(Exception): self.controller.shutdown(NEW)
+        with self.assertRaises(managed.WarmupFailed):
+            managed.ManagedWarmup('iPadMini', started=100, clock=lambda: self.tick, host_runner=self.runner)
+        self.assertEqual(self.calls, previous)
+        self.assertNotIn('Synthetic Files fixture is ready', self.output.getvalue())
+        self.assertEqual(self.controller.deadline, 700)
+
+    def test_container_marker_overhead_reduces_sixty_without_reset_or_cleanup_lending(self):
+        self.container_admission_at(80)
+        with self.delayed_container_marker(10): self.run_seed()
+        self.assertEqual(next(grant for argv, grant in self.calls if argv[2:3] == ['get_app_container']), 50)
+        self.assertEqual(self.controller.deadline, 700)
+        managed.require_fixtures('iPadMini', self.setup)
+
+    def test_container_expired_marker_stops_before_spawn_and_retains_fence(self):
+        self.container_admission_at(80)
+        with self.delayed_container_marker(60), self.assertRaisesRegex(ValueError, 'entry expired before capture'):
+            self.run_seed()
+        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus', 'install', 'launch'])
+        self.assert_container_fenced()
+
+    def container_failure(self, *, cleanup=None, late=None, unavailable=False):
+        def fail(command, timeout):
+            if command[2:3] != ['get_app_container']: return None
+            if late is not None:
+                self.tick = self.controller.operation_deadline + late
+                return subprocess.CompletedProcess(command, 0, str(self.container), '')
+            if unavailable: raise OSError('Synthetic lookup launch failure')
+            error = capture_module.CaptureStopped('duration-limit', cleanup)
+            raise error
+        self.action = fail
+        with self.assertRaises((capture_module.CaptureStopped, ValueError, OSError)): self.run_seed()
+        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus',
+            'install', 'launch', 'get_app_container'])
+        self.assertAlmostEqual(self.calls[-1][1], 60)
+        self.assert_container_fenced()
+
+    def test_container_timeout_with_confirmed_host_cleanup_never_continues(self):
+        self.container_failure(cleanup=True)
+
+    def test_container_timeout_with_unconfirmed_host_cleanup_never_continues(self):
+        self.container_failure(cleanup=False)
+
+    def test_container_timeout_with_unknown_host_cleanup_never_continues(self):
+        self.container_failure(cleanup=None)
+
+    def test_container_launch_exception_retains_uncertainty_fence(self):
+        self.container_failure(unavailable=True)
+
+    def test_container_zero_exit_at_absolute_deadline_is_terminal(self):
+        self.container_failure(late=0)
+
+    def test_container_zero_exit_after_absolute_deadline_is_terminal(self):
+        self.container_failure(late=.001)
+
+    def test_container_timely_result_after_old_thirty_second_cap_preserves_fixture_checks(self):
+        def slow(command, timeout):
+            if command[2:3] == ['get_app_container']: self.tick += 45
+        self.action = slow
+        self.run_seed()
+        self.assertAlmostEqual(self.calls[7][1], 60)
+        self.assertEqual(self.operations().count('get_app_container'), 1)
+        self.assertIn('Synthetic Files fixture is ready', self.output.getvalue())
+        self.assertEqual(self.controller.deadline, 700)
+        managed.require_fixtures('iPadMini', self.setup)
 
     def test_already_booted_needs_no_boot_or_readiness_command(self):
         self.states = ['Booted']
