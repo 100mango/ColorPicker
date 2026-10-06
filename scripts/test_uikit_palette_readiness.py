@@ -1,5 +1,5 @@
 """Portable source contracts and retained timing arithmetic; these do not execute XCTest."""
-import hashlib,json,re,unittest
+import hashlib,json,re,unittest,subprocess,tempfile,shutil
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 HELPER=(ROOT/'TouchColorUITests/TCPaletteUIHelpers.m').read_text()
@@ -32,10 +32,30 @@ def restore_common_action_budget(text, filename):
         text = text[:found.start(2)] + restored + text[found.end(2):]
     return text
 
+def restore_center_phone_wrappers(text):
+    for name, exercise in [('testPalettePasteReviewAcceptAndRelaunch','exercisePalettePasteReviewAcceptAndRelaunch'),
+                           ('testInvalidPalettePastePreservesHistory','exerciseInvalidPalettePastePreservesHistory')]:
+        revised=f"- (void){name} {{\n    self.tcPaletteCenteredAccept=YES;\n    @try {{ [self {exercise}:self.app]; }}\n    @finally {{ self.tcPaletteCenteredAccept=NO; }}\n}}"
+        if revised in text:
+            text=text.replace(revised,f"- (void){name} {{ [self {exercise}:self.app]; }}")
+    return text
+
+def restore_center_helper(text):
+    text=text.replace('#import <math.h>\n','').replace('static char TCPaletteCenteredAcceptKey;\n','')
+    begin=text.index('// Explicit test-wrapper opt-in.')
+    end=text.index('- (void)observeFailedPalettePresentation:',begin)
+    text=text[:begin]+text[end:]
+    begin=text.index('// A single alternate physical input')
+    end=text.index('- (void)verifyOriginalPaletteSources:',begin)
+    text=text[:begin]+text[end:]
+    revised='    if (self.tcPaletteCenteredAccept) {\n        if (![self tapReadyPaletteAcceptCenter:app timeout:timeout]) return;\n    } else {\n        [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];\n    }\n'
+    if text.count(revised)!=1: raise ValueError('Unexpected center dispatch scope')
+    return text.replace(revised,'    [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];\n')
+
 class ReadinessSourceContracts(unittest.TestCase):
     def test_untouched_method_bytes(self):
         for name,expected in LOCKS.items():
-            methods=dict(re.findall(r'(?ms)^(- \([^\n]+)\n(.*?)(?=^- \(|^@end)',restore_common_action_budget((ROOT/'TouchColorUITests'/name).read_text(),name)))
+            methods=dict(re.findall(r'(?ms)^(- \([^\n]+)\n(.*?)(?=^- \(|^@end)',restore_common_action_budget(restore_center_phone_wrappers((ROOT/'TouchColorUITests'/name).read_text()),name)))
             for signature,digest in expected.items():
                 with self.subTest(file=name,signature=signature):
                     body=without_query_guards(methods[signature])
@@ -66,14 +86,14 @@ class ReadinessSourceContracts(unittest.TestCase):
         body=section('- (void)exerciseInvalidPalettePastePreservesHistory:', '- (void)exercisePaletteFileCancelAndImportReturn:')
         call='[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'
         self.assertEqual(body.count(call),1)
-        prior=restore_common_action_budget(HELPER,'TCPaletteUIHelpers.m').replace('[self acceptPalette:app readinessTimeout:10]','[self acceptPalette:app readinessTimeout:5]')
+        prior=restore_common_action_budget(restore_center_helper(HELPER),'TCPaletteUIHelpers.m').replace('[self acceptPalette:app readinessTimeout:10]','[self acceptPalette:app readinessTimeout:5]')
         self.assertEqual(prior.count(call),1)
         restored=prior.replace(call,'[self tapReadyPaletteElement:close timeout:5]')
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'52dce95cc03624cc17ecb8791802dbdfb7226b14dca284d3aa85c72b853d8488')
         self.assertIn('for (NSUInteger index=0;index<payloads.count;index++)',body)
         self.assertIn('[self verifyHistory:@[@"#123456",@"#123456"] app:app];',body)
         for file in ('TouchColorUITests.m','TouchColorIPadUITests.m'):
-            self.assertIn('- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }', (ROOT/'TouchColorUITests'/file).read_text())
+            self.assertIn('- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }', restore_center_phone_wrappers((ROOT/'TouchColorUITests'/file).read_text()))
         self.assertNotIn('executionTimeAllowance',body)
 
     def test_exact_three_case_allowances_and_full_workflow(self):
@@ -193,6 +213,68 @@ class ReadinessSourceContracts(unittest.TestCase):
                 text=(ROOT/'TouchColorUITests'/file).read_text()
                 self.assertIn(name,text)
                 self.assertIn('[self exercisePalettePasteReviewAcceptAndRelaunch:self.app]',text)
+class CenterInputSourceContracts(unittest.TestCase):
+    def center(self):
+        return section('- (BOOL)tapReadyPaletteAcceptCenter:', '- (void)verifyOriginalPaletteSources:')
+    def test_exact_two_phone_wrappers_only_and_scoped_opt_in_cleanup(self):
+        phone=(ROOT/'TouchColorUITests/TouchColorUITests.m').read_text()
+        ipad=(ROOT/'TouchColorUITests/TouchColorIPadUITests.m').read_text()
+        header=(ROOT/'TouchColorUITests/TCPaletteUIHelpers.h').read_text()
+        self.assertEqual(phone.count('self.tcPaletteCenteredAccept=YES;'),2)
+        self.assertEqual(phone.count('@finally { self.tcPaletteCenteredAccept=NO; }'),2)
+        restored=restore_center_phone_wrappers(phone)
+        self.assertNotIn('tcPaletteCenteredAccept',restored)
+        self.assertNotIn('tcPaletteCenteredAccept',ipad)
+        self.assertIn('@property (nonatomic) BOOL tcPaletteCenteredAccept;',header)
+        body=self.center()
+        for name in ('testInvalidPalettePastePreservesHistory','testPalettePasteReviewAcceptAndRelaunch'):
+            self.assertIn('-[TouchColorUITests '+name+']',body)
+        self.assertIn('if (!self.tcPaletteCenteredAccept || !expectedCase) return NO;',body)
+    def test_one_center_gesture_same_live_owned_element_no_fallback(self):
+        body=self.center()
+        self.assertIn('[app.navigationBars matchingIdentifier:@"Import Palette"]',body)
+        self.assertIn('[owners.buttons matchingIdentifier:@"palette.import.accept"]',body)
+        self.assertIn('if (ownerCount!=1) return NO;',body)
+        self.assertIn('if (count!=1) return NO;',body)
+        self.assertIn('XCUIElement *accept=matches.firstMatch;',body)
+        self.assertIn('[self paletteElement:accept readyUntil:deadline started:started existenceTimeout:5]',body)
+        self.assertIn('CGRect frame=accept.frame;',body)
+        self.assertEqual(body.count('[accept coordinateWithNormalizedOffset:CGVectorMake(0.5,0.5)]'),1)
+        self.assertEqual(body.count('[center tap];'),1)
+        for banned in ('[accept tap]','sendAction','doubleTap','retry','sleep','while (','for ('):
+            self.assertNotIn(banned,body)
+        accept=section('- (void)acceptPalette:(XCUIApplication *)app readinessTimeout:', '- (void)acceptPalette:(XCUIApplication *)app {')
+        self.assertIn('if (![self tapReadyPaletteAcceptCenter:app timeout:timeout]) return;',accept)
+        self.assertIn('} else {\n        [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];',accept)
+        self.assertEqual(accept.count('[self waitForPalettePresentationToClose:close];'),1)
+    def test_current_observations_and_return_share_original_strict_deadline(self):
+        body=self.center()
+        self.assertEqual(body.count('deadline=started+timeout'),1)
+        self.assertIn('NSProcessInfo.processInfo.systemUptime<deadline',body)
+        self.assertLess(body.index('self.tcPaletteReadinessExpired=YES'),body.index('XCTAssertTrue(value'))
+        for observed in ('NSUInteger ownerCount=owners.count;','NSUInteger count=matches.count;','CGRect frame=accept.frame;'):
+            self.assertIn(observed+'\n    if (!timely()) return NO;',body)
+        self.assertIn('if (!timely()) return NO;\n    [center tap];',body)
+        after=body.split('[center tap];',1)[1]
+        self.assertIn('return timely();',after)
+        self.assertIn('returned<started+5',after)
+        self.assertNotIn('deadline=',after)
+        for query in ('accept.','app.','matches.','owners.','frame='):
+            self.assertNotIn(query,after)
+    def test_actual_frame_predicate_rejects_missing_invalid_or_empty_geometry(self):
+        body=self.center()
+        predicate=re.search(r'BOOL validFrame=(.*?);',body,re.S).group(1)
+        source='#include <math.h>\n#include <assert.h>\ntypedef struct { double x,y; } Point;\ntypedef struct { double width,height; } Size;\ntypedef struct { Point origin; Size size; } Rect;\nstatic int valid(Rect frame) { return '+predicate+'; }\nint main(void) {\n'
+        source+='assert(valid((Rect){{243,24},{112,36}}));\n'
+        for values in ('NAN,24,112,36','243,INFINITY,112,36','243,24,NAN,36','243,24,112,INFINITY','243,24,0,36','243,24,-1,36','243,24,112,0','243,24,112,-1'):
+            x,y,w,h=values.split(',');source+='assert(!valid((Rect){{'+x+','+y+'},{'+w+','+h+'}}));\n'
+        source+='return 0; }\n'
+        cc=shutil.which('cc');self.assertIsNotNone(cc,'A real C compiler is required for the geometry predicate')
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'center.c';binary=Path(tmp)/'center';path.write_text(source)
+            subprocess.run([cc,'-std=c99','-Wall','-Werror',str(path),'-o',str(binary)],check=True,capture_output=True)
+            subprocess.run([str(binary)],check=True,capture_output=True)
+
 class RetainedTimingArithmetic(unittest.TestCase):
     def setUp(self): self.f=json.loads((ROOT/'scripts/fixtures/mini-a622f8-readiness.json').read_text())
     def test_source_case_and_raw_binding(self):

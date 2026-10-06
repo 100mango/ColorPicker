@@ -24,7 +24,7 @@ from uikit_managed_device import (create_owned_device, read_binding, read_manage
                                   read_managed_device_state, require_job)
 from uikit_runtime_diagnostics import MAX_PREPARATION_OUTPUT_BYTES
 from uikit_warmup import Warmup, WarmupFailed, interrupted
-from uikit_completion import selection
+from uikit_completion import resource_selection, selection
 
 # Existing workflow step ceilings. The whole command grant must fit, plus both
 # owned-cleanup tails and the result reader; entry never resets this clock.
@@ -470,24 +470,32 @@ def fixture_seed(family, started=STARTED, *, clock=time.monotonic):
     setup = load_setup(family)
     require_hosted(family, setup, clock=warmup.clock, deadline=warmup.deadline - CLEANUP)
     verify_source(warmup, setup['binding']['context'])
+    selected = resource_selection(family)
     device = warmup.fixture_device(setup)
-    # Exact predecessor Files-host command families and fixture assertions.
-    warmup.fixture_command(['xcrun', 'simctl', 'install', device,
-                    'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)
-    warmup.fixture_command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
-                    'com.mango.touchColor.tests.paletteFixtures'], 60)
-    require(warmup.remaining() >= 60 + CLEANUP, 'Full fixture container lookup and cleanup cannot fit')
-    container = warmup.command(['xcrun', 'simctl', 'get_app_container', device,
-                                'com.mango.touchColor.tests.paletteFixtures', 'data'], 60).strip()
-    warmup.fixture(container)
-    warmup.command(['xcrun', 'simctl', 'terminate', device, 'com.mango.touchColor.tests.paletteFixtures'], 30)
+    if selected is None or selected['required']['files']:
+        # Exact predecessor Files-host command families and fixture assertions.
+        warmup.fixture_command(['xcrun', 'simctl', 'install', device,
+                        'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)
+        warmup.fixture_command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
+                        'com.mango.touchColor.tests.paletteFixtures'], 60)
+        require(warmup.remaining() >= 60 + CLEANUP, 'Full fixture container lookup and cleanup cannot fit')
+        container = warmup.command(['xcrun', 'simctl', 'get_app_container', device,
+                                    'com.mango.touchColor.tests.paletteFixtures', 'data'], 60).strip()
+        warmup.fixture(container)
+        warmup.command(['xcrun', 'simctl', 'terminate', device, 'com.mango.touchColor.tests.paletteFixtures'], 30)
     print('Optional simulator service listing diagnostic: not collected', flush=True)
     print('Optional destination enumeration diagnostic: not collected', flush=True)
-    warmup.seed(device)
+    if selected is None or selected['required']['photos']:
+        warmup.seed(device)
     warmup.require_identity()
     require(load_setup(family) == setup, 'Setup changed during fixture preparation')
-    write_json(record_path(family, 'fixtures'), {'schema': 2, 'setup': setup, 'complete': True,
-        'readiness': warmup.fixture_readiness}, limit=16384)
+    value = {'schema': 2, 'setup': setup, 'complete': True, 'readiness': warmup.fixture_readiness}
+    if selected is not None:
+        value.update(schema=3, selection=selected, resources={
+            name: 'performed-success' if required else 'not-required-by-exact-selection'
+            for name, required in selected['required'].items()})
+    warmup.require_time()
+    write_json(record_path(family, 'fixtures'), value, limit=16384)
     warmup.require_time()
 
 
@@ -535,12 +543,25 @@ def validate_fixture_readiness(value, setup):
 
 def require_fixtures(family, setup):
     value = strict_json(read_regular(record_path(family, 'fixtures'), 16384))
-    require(type(value.get('schema')) is int and value.get('schema') == 2 and
-            set(value) == {'schema', 'setup', 'complete', 'readiness'} and
-            value['setup'] == setup and value['complete'] is True, 'Same-device Files and Photos fixture required')
+    selected = resource_selection(family)
+    if selected is None:
+        require(type(value.get('schema')) is int and value.get('schema') == 2 and
+                set(value) == {'schema', 'setup', 'complete', 'readiness'} and
+                value['setup'] == setup and value['complete'] is True, 'Same-device Files and Photos fixture required')
+    else:
+        require(setup['binding']['context'] == require_job(family),
+                'Completion resources belong to another route or source')
+        require(type(value.get('schema')) is int and value['schema'] == 3 and
+                set(value) == {'schema', 'setup', 'complete', 'readiness', 'selection', 'resources'} and
+                value['setup'] == setup and value['complete'] is True and value['selection'] == selected and
+                all(type(required) is bool for required in value['selection']['required'].values()) and
+                value['resources'] == {name: 'performed-success' if required else 'not-required-by-exact-selection'
+                                       for name, required in selected['required'].items()},
+                'Same-device resources for the exact completion selection required')
     validate_fixture_readiness(value['readiness'], setup)
-    seed = strict_json(read_regular(Path('build') / (family + '-fixture-seeded'), 8192))
-    require(seed == setup['binding']['identity'], 'Photo seed identity differs')
+    if selected is None or selected['required']['photos']:
+        seed = strict_json(read_regular(Path('build') / (family + '-fixture-seeded'), 8192))
+        require(seed == setup['binding']['identity'], 'Photo seed identity differs')
 
 
 def test_argv(family, suite, device):

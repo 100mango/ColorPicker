@@ -2,8 +2,10 @@
 #import <UIKit/UIKit.h>
 #import "TCFilesPickerRoute.h"
 #import <objc/runtime.h>
+#import <math.h>
 
 static char TCPaletteReadinessExpiryKey;
+static char TCPaletteCenteredAcceptKey;
 
 static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NSString *location) {
     if (!snapshot) return TCFilesRouteNone;
@@ -21,6 +23,9 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 @implementation XCTestCase (TCPaletteUIHelpers)
 - (BOOL)tcPaletteReadinessExpired { return [objc_getAssociatedObject(self,&TCPaletteReadinessExpiryKey) boolValue]; }
 - (void)setTcPaletteReadinessExpired:(BOOL)value { objc_setAssociatedObject(self,&TCPaletteReadinessExpiryKey,value ? @YES : nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+// Explicit test-wrapper opt-in. Other testcases keep XCUIElement's default tap.
+- (BOOL)tcPaletteCenteredAccept { return [objc_getAssociatedObject(self,&TCPaletteCenteredAcceptKey) boolValue]; }
+- (void)setTcPaletteCenteredAccept:(BOOL)value { objc_setAssociatedObject(self,&TCPaletteCenteredAcceptKey,value ? @YES : nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 - (void)observeFailedPalettePresentation:(XCUIApplication *)app caseName:(NSString *)caseName {
     if (![app.launchArguments containsObject:@"--ui-test-palette-lifecycle"]) return;
     BOOL fileCase=[caseName containsString:@"testPaletteFileCancellationAndImportReturn"] || [caseName containsString:@"testPaletteFileSelectionReviewAndRelaunch"];
@@ -358,12 +363,61 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 }
 - (void)acceptPalette:(XCUIApplication *)app readinessTimeout:(NSTimeInterval)timeout {
     XCUIElement *accept=app.buttons[@"palette.import.accept"], *close=app.buttons[@"palette.import.close"];
-    [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];
+    if (self.tcPaletteCenteredAccept) {
+        if (![self tapReadyPaletteAcceptCenter:app timeout:timeout]) return;
+    } else {
+        [self tapReadyPaletteElement:accept timeout:timeout existenceTimeout:5];
+    }
     if (self.tcPaletteReadinessExpired) return;
     [self waitForPalettePresentationToClose:close];
 }
 - (void)acceptPalette:(XCUIApplication *)app {
     [self acceptPalette:app readinessTimeout:10];
+}
+// A single alternate physical input for the two explicitly opted-in phone cases.
+// This measures a possible XCTest hit-point difference; it is not an app fix.
+- (BOOL)tapReadyPaletteAcceptCenter:(XCUIApplication *)app timeout:(NSTimeInterval)timeout {
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, deadline=started+timeout;
+    BOOL expectedCase=[@[@"-[TouchColorUITests testInvalidPalettePastePreservesHistory]",
+                         @"-[TouchColorUITests testPalettePasteReviewAcceptAndRelaunch]"] containsObject:self.name];
+    XCTAssertTrue(self.tcPaletteCenteredAccept && expectedCase,@"Only the two explicit phone Add scenarios use center input");
+    if (!self.tcPaletteCenteredAccept || !expectedCase) return NO;
+    BOOL (^timely)(void)=^BOOL {
+        BOOL value=!self.tcPaletteReadinessExpired && NSProcessInfo.processInfo.systemUptime<deadline;
+        if (!value) self.tcPaletteReadinessExpired=YES;
+        XCTAssertTrue(value,@"Center Add observation or action exhausted its original deadline");
+        return value;
+    };
+    if (!timely()) return NO;
+    XCUIElementQuery *owners=[app.navigationBars matchingIdentifier:@"Import Palette"];
+    NSUInteger ownerCount=owners.count;
+    if (!timely()) return NO;
+    XCTAssertEqual(ownerCount,1u,@"The current Import Palette navigation owner must be unique");
+    if (ownerCount!=1) return NO;
+    XCUIElementQuery *matches=[owners.buttons matchingIdentifier:@"palette.import.accept"];
+    NSUInteger count=matches.count;
+    if (!timely()) return NO;
+    XCTAssertEqual(count,1u,@"The owned Add Colors Button must be unique");
+    if (count!=1) return NO;
+    XCUIElement *accept=matches.firstMatch;
+    if (![self paletteElement:accept readyUntil:deadline started:started existenceTimeout:5]) return NO;
+    if (!timely()) return NO;
+    CGRect frame=accept.frame;
+    if (!timely()) return NO;
+    BOOL validFrame=isfinite(frame.origin.x) && isfinite(frame.origin.y) &&
+        isfinite(frame.size.width) && isfinite(frame.size.height) && frame.size.width>0 && frame.size.height>0;
+    XCTAssertTrue(validFrame,@"Center input requires the current finite nonempty Add frame");
+    if (!validFrame) return NO;
+    XCUICoordinate *center=[accept coordinateWithNormalizedOffset:CGVectorMake(0.5,0.5)];
+    NSLog(@"PALETTE_CENTER_ACTION case=%@ frame=%@ normalized=0.5,0.5 total=%.3f budget=%.3f",
+          self.name,NSStringFromCGRect(frame),NSProcessInfo.processInfo.systemUptime-started,timeout);
+    if (!timely()) return NO;
+    [center tap];
+    NSTimeInterval returned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"PALETTE_ACTION_RETURN case=%@ total=%.3f budget=%.3f responsiveness5=%@",
+          self.name,returned-started,timeout,returned<started+5 ? @"within" : @"missed");
+    // A late dispatch result never advances to dismissal or history queries.
+    return timely();
 }
 - (void)verifyOriginalPaletteSources:(XCUIApplication *)app {
     XCUIElement *sources=app.scrollViews[@"sourceControls"];

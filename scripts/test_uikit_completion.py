@@ -18,6 +18,7 @@ import uikit_managed_device as d
 import uikit_managed_tests as m
 from palette_lifecycle_diagnostics import CaptureStopped
 from test_uikit_managed_tests import DEVICE, ROOT, SETUP
+from test_uikit_managed_device import ManagedFixture, NEW
 FULL_OR_SELECTED_HOSTED = m.require_hosted
 
 
@@ -39,9 +40,51 @@ def summary(selected, failed=0):
 
 
 class ClosedGroups(unittest.TestCase):
-    def test_ten_remaining_cases_are_the_exact_closed_source_inventory(self):
+    def test_resource_requirements_match_selected_method_dependencies(self):
+        def method(path, name):
+            source = (ROOT/'TouchColorUITests'/path).read_text()
+            return source.split('- (void)'+name, 1)[1].split('\n- (', 1)[0]
+        helpers = 'TCPaletteUIHelpers.m'
+        for name in ('exercisePalettePasteReviewAcceptAndRelaunch',
+                     'exerciseInvalidPalettePastePreservesHistory',
+                     'exerciseLargestTextPaletteReviewAndImportHelp'):
+            body = method(helpers, name)
+            self.assertIn('pastePalette:', body)
+            for consumer in ('selectSyntheticPaletteFile:', 'importFixture', 'choosePhoto'):
+                self.assertNotIn(consumer, body)
+        phone_setup = method('TouchColorUITests.m', 'setUp')
+        self.assertIn('@"--ui-test-image"', phone_setup)
+        cancellation = method(helpers, 'exercisePaletteFileCancelAndImportReturn')
+        self.assertIn('waitForPaletteFilesPresentation:', cancellation)
+        self.assertIn('[cancel tap]', cancellation)
+        self.assertNotIn('selectSyntheticPaletteFile:', cancellation)
+        file_consumer = method(helpers, 'exercisePaletteFileSelectionReviewAndRelaunch')
+        self.assertIn('selectSyntheticPaletteFile:', file_consumer)
+        for name in ('testPrivacyCloseRetainsPhotoSelection',
+                     'testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState',
+                     'testLiveCanvasPickerCancellationAndSceneLifecycle'):
+            self.assertIn('[self importFixture]', method('TouchColorIPadUITests.m', name))
+        live = method('TouchColorIPadUITests.m', 'testLiveCanvasPickerCancellationAndSceneLifecycle')
+        self.assertLess(live.index('[self cancelPicker]'), live.index('XCUIDeviceButtonHome'))
+        self.assertLess(live.index('XCUIDeviceButtonHome'), live.index('[self importFixture]'))
+        photo = method('TouchColorIPadUITests.m', 'importFixture')
+        self.assertIn('[self choosePhoto]', photo); self.assertIn('[photo tap]', photo)
+        audit = method('TouchColorAccessibilityUITests.m', 'testAccessibilityLiveCameraUnavailable')
+        self.assertNotIn('importAndSample', audit); self.assertNotIn('choosePhoto', audit)
+        for key, group in c.GROUPS.items():
+            with patch.dict(os.environ, environment(key), clear=True):
+                resources = c.resource_selection(group['family'])
+                self.assertEqual(resources['required'], {'files': False, 'photos': key.startswith('ipad-')})
+                self.assertEqual(resources['functional'], list(group['functional']))
+                self.assertEqual(resources['audits'], list(group['audits']))
+                self.assertEqual(resources['bootstrap'], list(c.BOOTSTRAP))
+                self.assertFalse(any('FileSelection' in case for case in resources['functional']))
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(c.resource_selection('iPadMini'))
+
+    def test_ten_missing_and_one_affected_recheck_are_the_exact_closed_source_inventory(self):
         expected = {
-            'iphone-compact': ('iPhoneCompact', ('testInvalidPalettePastePreservesHistory',), ()),
+            'iphone-compact': ('iPhoneCompact', ('testInvalidPalettePastePreservesHistory', 'testPalettePasteReviewAcceptAndRelaunch'), ()),
             'iphone-large': ('iPhoneLarge', ('testInvalidPalettePastePreservesHistory',
                 'testLargestTextPaletteReviewAndImportHelp', 'testPalettePasteReviewAcceptAndRelaunch'), ()),
             'ipad-mini': ('iPadMini', ('testPaletteFileCancellationAndImportReturn',
@@ -51,8 +94,8 @@ class ClosedGroups(unittest.TestCase):
         }
         self.assertEqual(list(c.GROUPS), list(expected))
         self.assertEqual([(len(g['functional']),len(g['audits'])) for g in c.GROUPS.values()],
-                         [(1,0),(3,0),(2,1),(3,0)])
-        self.assertEqual(sum(len(g['functional']) for g in c.GROUPS.values()), 9)
+                         [(2,0),(3,0),(2,1),(3,0)])
+        self.assertEqual(sum(len(g['functional']) for g in c.GROUPS.values()), 10)
         self.assertEqual(sum(len(g['audits']) for g in c.GROUPS.values()), 1)
         for identity, (family, functional, audits) in expected.items():
             selected = c.GROUPS[identity]
@@ -69,12 +112,27 @@ class ClosedGroups(unittest.TestCase):
                 self.assertEqual(len(re.findall(r'-\s*\(void\)\s*'+method+r'\s*\{', source)), 1)
         hosted=(ROOT/'TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift').read_text()
         self.assertEqual(c.BOOTSTRAP, (
-            'TouchColorTests/PhonePaletteImportTests/testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses',
-            'TouchColorTests/PhonePaletteImportTests/testOriginalIOSImportIsPresentWithoutCompanion'))
+            'TouchColorTests/PhonePaletteImportTests/testOriginalIOSImportIsPresentWithoutCompanion',
+            'TouchColorTests/PhonePaletteImportTests/testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead'))
         for case in c.BOOTSTRAP:self.assertEqual(hosted.count('func '+case.rsplit('/',1)[1]+'('),1)
         executions=[(g['family'],case) for g in c.GROUPS.values() for case in g['bootstrap']]
         self.assertEqual(len(executions),8);self.assertEqual(len(set(executions)),8)
-        self.assertEqual(212+36+48+4+10,310)  # Retained per-case sources; no new whole-row qualification.
+        self.assertEqual(212+36+47+4+11,310)  # Compact normal-paste is affected; old48 remain historical,47 reusable here.
+
+    def test_nonmodal_bootstrap_is_existing_hosted_source_not_new_business_qualification(self):
+        source=(ROOT/'TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift').read_text()
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),
+                         '11dad2857d71a00dee7aa845731af1db47a7a9891afa00c35aaa90568306c7c1')
+        for selector in c.BOOTSTRAP:
+            name=selector.rsplit('/',1)[1]
+            body=source.split('func '+name+'()',1)[1].split('\n    func ',1)[0]
+            for operation in ('UIWindow(','.present(','await fulfillment(','sendAction('):
+                self.assertNotIn(operation,body)
+            self.assertIn('PhonePaletteImportController(defaults:',body)
+            self.assertIn('loadViewIfNeeded()',body)
+            self.assertIn('XCTAssertEqual',body)
+        self.assertNotIn('testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses',str(c.BOOTSTRAP))
+        self.assertIn('func testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses()',source)
 
     def test_retired_split_groups_reject_in_all_route_guards(self):
         for family in ('iPadMini', 'iPadLarge'):
@@ -423,6 +481,223 @@ class SelectedExecution(unittest.TestCase):
     def test_full_command_and_tails_must_fit_before_execution(self):
         self.suite='TouchColorUITests';self.tick=40
         self.assertEqual(self.execute(),3);self.assertFalse(self.calls);self.assertFalse(self.reads)
+
+
+class SelectedResources(ManagedFixture):
+    """Run the actual receipt producer/reader with synthetic process responses."""
+    @contextlib.contextmanager
+    def rig(self, group, state='Booted'):
+        previous = Path.cwd()
+        with tempfile.TemporaryDirectory() as folder, contextlib.ExitStack() as stack:
+            os.chdir(folder)
+            stack.callback(os.chdir, previous)
+            stack.enter_context(patch.dict(os.environ, environment(group), clear=True))
+            self.family = c.GROUPS[group]['family']
+            self.tick = 100.
+            self.create(family=self.family)
+            self.binding = d.read_binding(self.family)
+            self.setup = {'schema': 1, 'binding': self.binding, 'products': SETUP['products']}
+            stack.enter_context(patch.object(m, 'product_identity', return_value=self.setup['products']))
+            m.write_json(m.record_path(self.family, 'setup'), self.setup)
+            self.state, self.action, self.calls = state, None, []
+            self.tick = 100.
+            self.controller = m.ManagedWarmup(self.family, started=100, clock=lambda: self.tick,
+                                               host_runner=self.host_runner)
+            with patch.object(m, 'ManagedWarmup', return_value=self.controller):
+                result = m.run_suite(self.family, 'TouchColorTests', started=100, clock=lambda: self.tick,
+                    wall=lambda: 1000+self.tick, runner=self.bootstrap_runner, reader=self.bootstrap_reader,
+                    products=lambda **kw: self.setup['products'])
+            self.assertEqual(result, 0)
+            self.started = self.tick
+            self.controller = m.ManagedWarmup(self.family, started=self.started, clock=lambda: self.tick,
+                                               host_runner=self.host_runner)
+            self.calls = []
+            yield
+
+    def bootstrap_runner(self, argv, deadline):
+        began = self.tick; self.tick += 1
+        return {'status': 'timely_exit', 'exit_code': 0, 'host_cleanup_confirmed': True,
+                'argv': argv, 'started_monotonic': began, 'finished_monotonic': self.tick,
+                'deadline_monotonic': deadline, 'simulator_completion': 'xcode_command_returned_only'}
+
+    def bootstrap_reader(self, argv, **kwargs):
+        value = summary(c.selection(self.family, 'TouchColorTests'))
+        value.update(startTime=1000+self.tick-.9, finishTime=1000+self.tick-.1)
+        value['devicesAndConfigurations'][0]['device']['deviceId'] = NEW
+        return subprocess.CompletedProcess(argv, 0, json.dumps(value).encode(), b'')
+
+    def host_runner(self, argv, *, timeout):
+        self.calls.append((list(argv), timeout))
+        self.assertTrue(self.controller.pending.exists())
+        self.tick += .01
+        if self.action:
+            result = self.action(argv, timeout)
+            if result is not None: return result
+        if argv == ['git', 'rev-parse', 'HEAD']:
+            output = self.binding['context']['sha']
+        elif argv == d.READBACK:
+            output = json.dumps(self.after(self.family, state=self.state))
+        elif argv[2:3] == ['bootstatus']:
+            output = ('Monitoring boot status for '+self.binding['receipt']['requested_name']+' ('+NEW+').\n'
+                      'Device already booted, nothing to do.\n\n')
+        else:
+            output = ''
+        if argv[2:3] == ['addmedia']:
+            self.assertTrue(Path(argv[-1]).read_bytes().startswith(b'\x89PNG\r\n\x1a\n'))
+        return subprocess.CompletedProcess(argv, 0, output, '')
+
+    def seed(self):
+        with patch.object(m, 'ManagedWarmup', return_value=self.controller):
+            m.fixture_seed(self.family, started=self.started, clock=lambda: self.tick)
+
+    def operations(self):
+        return [argv[2] if argv[:2] == ['xcrun', 'simctl'] else argv[0] for argv, _ in self.calls]
+
+    def receipt(self):
+        return json.loads(m.record_path(self.family, 'fixtures').read_text())
+
+    def test_all_four_skip_files_and_only_ipads_seed_photos(self):
+        for group in c.GROUPS:
+            with self.subTest(group=group), self.rig(group), patch.object(self.controller, 'fixture') as fixture:
+                before = self.binding
+                self.seed(); value = self.receipt()
+                fixture.assert_not_called()
+                photos = group.startswith('ipad-')
+                self.assertEqual(self.operations(), ['git', 'git', 'list'] + (['addmedia'] if photos else []))
+                self.assertEqual(value['schema'], 3)
+                self.assertEqual(value['selection'], c.resource_selection(self.family))
+                self.assertEqual(value['resources'], {'files': 'not-required-by-exact-selection',
+                    'photos': 'performed-success' if photos else 'not-required-by-exact-selection'})
+                self.assertEqual(Path('build', self.family+'-fixture-seeded').exists(), photos)
+                self.assertEqual(value['readiness']['basis'], 'owned_booted_inventory_snapshot_only')
+                self.assertEqual(d.read_binding(self.family), before)
+                self.assertEqual(self.controller.deadline, self.started+600)
+                self.assertFalse(self.controller.pending.exists())
+                m.require_fixtures(self.family, self.setup)
+
+    def test_shutdown_readiness_keeps_exact_boot_pair_and_original_caps(self):
+        for group in c.GROUPS:
+            with self.subTest(group=group), self.rig(group, state='Shutdown'):
+                self.seed()
+                self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus'] +
+                                 (['addmedia'] if group.startswith('ipad-') else []))
+                grants = [grant for argv, grant in self.calls if argv[2:3] in (['boot'], ['bootstatus'])]
+                self.assertEqual(len(grants), 2)
+                for grant, cap in zip(grants, (180, 240)): self.assertAlmostEqual(grant, cap)
+                self.assertEqual(self.receipt()['readiness']['basis'], 'owned_bootstatus_completion_observation_only')
+                m.require_fixtures(self.family, self.setup)
+
+    def test_forged_omissions_and_false_success_or_foreign_selection_reject(self):
+        for group in ('iphone-compact', 'ipad-mini'):
+            with self.subTest(group=group), self.rig(group):
+                self.seed(); original = self.receipt()
+                mutations = [lambda r: r['resources'].pop('photos'),
+                    lambda r: r['resources'].update(files='performed-success'),
+                    lambda r: r['selection']['functional'].pop(),
+                    lambda r: r['selection'].update(group='ipad-large'),
+                    lambda r: r['selection']['functional'].append(
+                        'TouchColorUITests/TouchColorIPadUITests/testPaletteFileSelectionReviewAndRelaunch'),
+                    lambda r: r['selection']['required'].update(photos=not group.startswith('ipad-')),
+                    lambda r: r['selection']['required'].update(files=0),
+                    lambda r: r.update(complete=False), lambda r: r.update(schema=2),
+                    lambda r: r['setup']['binding']['context'].update(sha='b'*40),
+                    lambda r: r['setup']['products'].update(tree_sha256='c'*64),
+                    lambda r: r['readiness'].update(binding_sha256='d'*64)]
+                for mutate in mutations:
+                    value = copy.deepcopy(original); mutate(value)
+                    m.write_json(m.record_path(self.family, 'fixtures'), value)
+                    with self.subTest(mutation=mutate), self.assertRaises(ValueError):
+                        m.require_fixtures(self.family, self.setup)
+                value = copy.deepcopy(original)
+                value['resources']['photos'] = 'not-required-by-exact-selection' if group.startswith('ipad-') else 'performed-success'
+                m.write_json(m.record_path(self.family, 'fixtures'), value)
+                with self.assertRaises(ValueError): m.require_fixtures(self.family, self.setup)
+
+    def test_required_photo_marker_cannot_be_missing_or_foreign(self):
+        for group in ('ipad-mini', 'ipad-large'):
+            with self.subTest(group=group), self.rig(group):
+                self.seed(); marker = Path('build', self.family+'-fixture-seeded')
+                marker.unlink()
+                with self.assertRaises(OSError): m.require_fixtures(self.family, self.setup)
+                m.write_json(marker, {**self.binding['identity'], 'udid': DEVICE})
+                with self.assertRaises(ValueError): m.require_fixtures(self.family, self.setup)
+
+    def test_selected_receipt_cannot_admit_original_or_foreign_source_route(self):
+        with self.rig('ipad-mini'):
+            self.seed()
+            changes = [{'GITHUB_REF': d.REF, 'GITHUB_WORKFLOW_REF': d.WORKFLOW, 'GITHUB_JOB': 'compatibility'},
+                {'GITHUB_SHA': 'b'*40, 'GITHUB_WORKFLOW_SHA': 'b'*40},
+                {'GITHUB_RUN_ATTEMPT': '2'}, {'TC_COMPLETION_GROUP': 'ipad-large'},
+                {'GITHUB_REPOSITORY': 'other/ColorPicker'}]
+            for change in changes:
+                with self.subTest(change=change), patch.dict(os.environ, change), self.assertRaises(ValueError):
+                    m.require_fixtures(self.family, self.setup)
+            with patch.dict(os.environ, {k:v for k,v in os.environ.items() if k!='TC_COMPLETION_GROUP'}, clear=True), \
+                    self.assertRaises(ValueError):
+                m.require_fixtures(self.family, self.setup)
+
+    def test_bad_bootstrap_blocks_resource_omission_before_simulator_lookup(self):
+        with self.rig('iphone-compact'):
+            path = m.record_path(self.family, 'TouchColorTests')
+            value = json.loads(path.read_text()); value['summary']['fields']['passedTests'] = 54
+            m.write_json(path, value)
+            with self.assertRaises(ValueError): self.seed()
+            self.assertEqual(self.calls, [])
+            self.assertFalse(m.record_path(self.family, 'fixtures').exists())
+
+    def test_source_and_products_still_checked_before_resource_handoff(self):
+        for changed in ('source', 'products'):
+            with self.subTest(changed=changed), self.rig('iphone-large'):
+                if changed == 'source':
+                    self.action = lambda argv, timeout: subprocess.CompletedProcess(argv, 0, 'b'*40, '')
+                    context = contextlib.nullcontext()
+                else:
+                    context = patch.object(m, 'product_identity', return_value={'changed': True})
+                with context, self.assertRaises(ValueError): self.seed()
+                self.assertNotIn('list', self.operations())
+                self.assertFalse(m.record_path(self.family, 'fixtures').exists())
+
+    def test_handoff_and_photo_work_share_original_remaining_preparation_budget(self):
+        with self.rig('ipad-large', state='Shutdown'):
+            def spend(argv, timeout):
+                if argv[2:3] == ['boot']: self.tick += 170
+                if argv[2:3] == ['bootstatus']: self.tick += 230
+            self.action = spend
+            self.seed()
+            grant = next(grant for argv, grant in self.calls if argv[2:3] == ['addmedia'])
+            self.assertLess(grant, 180); self.assertGreater(grant, 179)
+            self.assertEqual(self.controller.deadline, self.started+600)
+            m.require_fixtures(self.family, self.setup)
+
+    def test_final_setup_read_cannot_publish_after_original_cleanup_boundary(self):
+        for group in ('iphone-large', 'ipad-mini'):
+            with self.subTest(group=group), self.rig(group):
+                original = m.load_setup
+                count = []
+                def slow(family):
+                    value = original(family); count.append(family)
+                    if len(count) == 2: self.tick = self.controller.deadline-20
+                    return value
+                with patch.object(m, 'load_setup', side_effect=slow), self.assertRaises(m.WarmupFailed):
+                    self.seed()
+                self.assertFalse(m.record_path(self.family, 'fixtures').exists())
+
+    def test_uncertain_boot_or_photos_never_publish_or_allow_later_commands(self):
+        for operation, group in (('boot', 'iphone-compact'), ('bootstatus', 'ipad-mini'), ('addmedia', 'ipad-large')):
+            with self.subTest(operation=operation), self.rig(group, state='Shutdown'):
+                def fail(argv, timeout):
+                    if argv[2:3] == [operation]:
+                        error = subprocess.TimeoutExpired(argv, timeout); error.cleanup_confirmed = True
+                        raise error
+                self.action = fail
+                with self.assertRaises(m.WarmupFailed): self.seed()
+                self.assertEqual(self.operations()[-1], operation)
+                self.assertTrue(self.controller.pending.exists())
+                self.assertFalse(m.record_path(self.family, 'fixtures').exists())
+                before = len(self.calls)
+                with self.assertRaises(m.WarmupFailed):
+                    m.ManagedWarmup(self.family, started=self.started, clock=lambda: self.tick)
+                self.assertEqual(len(self.calls), before)
 
 
 if __name__=='__main__':unittest.main()

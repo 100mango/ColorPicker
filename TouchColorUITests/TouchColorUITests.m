@@ -58,8 +58,16 @@
     XCTAttachment *image=[XCTAttachment attachmentWithData:bytes uniformTypeIdentifier:@"public.jpeg"];
     image.name=name;image.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:image];
 }
-- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
-- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
+- (void)testPalettePasteReviewAcceptAndRelaunch {
+    self.tcPaletteCenteredAccept=YES;
+    @try { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
+    @finally { self.tcPaletteCenteredAccept=NO; }
+}
+- (void)testInvalidPalettePastePreservesHistory {
+    self.tcPaletteCenteredAccept=YES;
+    @try { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
+    @finally { self.tcPaletteCenteredAccept=NO; }
+}
 - (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }
 - (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
 - (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }

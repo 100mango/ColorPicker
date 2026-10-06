@@ -13,29 +13,31 @@ from palette_lifecycle_diagnostics import require
 REF = 'refs/heads/codex/ios-original-completion'
 WORKFLOW = '100mango/ColorPicker/.github/workflows/ios-completion.yml@' + REF
 BOOTSTRAP = tuple('TouchColorTests/PhonePaletteImportTests/' + name for name in (
-    'testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses',
-    'testOriginalIOSImportIsPresentWithoutCompanion'))
-def group(identity, family, names, audits, images):
+    'testOriginalIOSImportIsPresentWithoutCompanion',
+    'testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead'))
+def group(identity, family, names, audits, images, photos):
     cls = 'TouchColorIPadUITests' if family.startswith('iPad') else 'TouchColorUITests'
     return {'id': identity, 'family': family, 'bootstrap': BOOTSTRAP,
             'functional': tuple('TouchColorUITests/' + cls + '/' + n for n in names),
-            'audits': audits, 'images': images}
+            'audits': audits, 'images': images,
+            'resources': {'files': False, 'photos': photos}}
 
 GROUPS = {
     'iphone-compact': group('iphone-compact', 'iPhoneCompact',
-        ('testInvalidPalettePastePreservesHistory',), (), 2),
+        ('testInvalidPalettePastePreservesHistory',
+         'testPalettePasteReviewAcceptAndRelaunch'), (), 2, False),
     'iphone-large': group('iphone-large', 'iPhoneLarge',
         ('testInvalidPalettePastePreservesHistory',
          'testLargestTextPaletteReviewAndImportHelp',
-         'testPalettePasteReviewAcceptAndRelaunch'), (), 2),
+         'testPalettePasteReviewAcceptAndRelaunch'), (), 2, False),
     'ipad-mini': group('ipad-mini', 'iPadMini',
         ('testPaletteFileCancellationAndImportReturn',
          'testPrivacyCloseRetainsPhotoSelection'),
-        ('TouchColorUITests/TouchColorAccessibilityUITests/testAccessibilityLiveCameraUnavailable',), 2),
+        ('TouchColorUITests/TouchColorAccessibilityUITests/testAccessibilityLiveCameraUnavailable',), 2, True),
     'ipad-large': group('ipad-large', 'iPadLarge',
         ('testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState',
          'testPalettePasteReviewAcceptAndRelaunch',
-         'testLiveCanvasPickerCancellationAndSceneLifecycle'), (), 4),
+         'testLiveCanvasPickerCancellationAndSceneLifecycle'), (), 4, True),
 }
 
 def completion_group(family):
@@ -61,3 +63,21 @@ def selection(family, suite):
     return {'group': selected['id'], 'suite': suite, 'cases': list(cases),
             'kind': 'selected_bootstrap' if suite == 'TouchColorTests' else 'selected_completion',
             'full_target': False, 'full_original_row': False}
+
+
+def resource_selection(family):
+    """Reconstruct preparation dependencies only for the four closed selections.
+
+    Files cancellation never selects PaletteFixtures JSON. Phone cases use Paste
+    and the in-app image; both iPad groups call importFixture, including after
+    cancellation/Home in the Large live-canvas case. Full targets use their
+    existing Files and Photos preparation, outside this selected receipt branch.
+    """
+    selected = completion_group(family)
+    if selected is None:
+        return None
+    return {'group': selected['id'],
+            'bootstrap': list(selected['bootstrap']),
+            'functional': list(selected['functional']),
+            'audits': list(selected['audits']),
+            'required': dict(selected['resources'])}
