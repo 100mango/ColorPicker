@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Capture a held test-owned simulator checkpoint through supported simctl APIs."""
-import json,os,subprocess,uuid
+import json,os,subprocess,time,uuid
 from pathlib import Path
 from bounded_process import run_captured, check_output
 
@@ -64,14 +64,15 @@ def publish_acknowledgement(destination, outcome):
     finally:
         temporary.unlink(missing_ok=True)
 
-def fail_cached_capture(device, runner_identifier, request_id, reason,require_primed=False):
+def fail_cached_capture(device, runner_identifier, request_id, reason,require_primed=False,operation_unconfirmed=True):
     """Acknowledge failure without launching a command on an unhealthy VM.
 
     Only a previously verified runner container can be used. If the runner was
     replaced and its request is absent there, report that limitation explicitly.
     """
     if str(uuid.UUID(request_id)).upper()!=request_id: raise ValueError('Invalid request UUID')
-    outcome = {'id': request_id, 'success': False, 'error': reason[:500], 'acknowledged': False}
+    outcome = {'id': request_id, 'success': False, 'error': reason[:500], 'acknowledged': False,
+               'simulator_operation_unconfirmed': operation_unconfirmed}
     container = _containers.get((device, runner_identifier))
     lease=None
     if require_primed:
@@ -103,8 +104,9 @@ def capture(device,runner_identifier,request_id,output,may_start=lambda: True,re
         _containers[key]=container
     request=container/'tmp'/('TouchColor-capture-'+request_id+'.json')
     ack=container/'tmp'/('TouchColor-capture-'+request_id+'.ack')
-    outcome={'id':request_id,'success':False}
+    outcome={'id':request_id,'success':False,'simulator_operation_unconfirmed':False}
     validated_request=False
+    command_started=False;command_completed=False
     try:
         description=_read_request(request)
         if description.get('id')!=request_id or not description.get('name','').startswith('Native Vision') or len(description.get('name',''))>140:
@@ -112,24 +114,34 @@ def capture(device,runner_identifier,request_id,output,may_start=lambda: True,re
         if require_primed and (description.get('runner')!=runner_identifier or description.get('lease')!=lease):
             raise ValueError('Capture request does not match current runner binding')
         validated_request=True
+        outcome['name']=description['name']
         output=Path(output);output.mkdir(parents=True,exist_ok=True)
-        # The test holds the same state until acknowledgement. A timed-out simctl
-        # capture may leave pixels but is not a success. Retry that read-only
-        # command once, with a distinct file so an old writer cannot race it.
+        # Reaping our simctl process group cannot establish completion of its
+        # daemon-side request. Never retry an ambiguous screenshot operation.
         outcome['attempts']=[]
-        for attempt in range(2):
-            if not may_start():
-                outcome['cleanup_unconfirmed']=True
-                raise RuntimeError('No further capture command: host lifecycle cleanup is unconfirmed')
-            destination=output/((request_id if attempt==0 else str(uuid.uuid4()).upper())+'.jpeg')
-            command=['xcrun','simctl','io',device,'screenshot','--type=jpeg',str(destination)]
-            try:
-                result=run_captured(command,text=True,timeout=20)
-                outcome['attempts'].append({'exit':result.returncode,'file':destination.name})
-                break
-            except subprocess.TimeoutExpired as error:
-                outcome['attempts'].append({'exit':124,'file':destination.name,'error':str(error)[:1600]})
-                if attempt==1 or not getattr(error,'cleanup_confirmed',False): raise
+        if not may_start():
+            outcome.update(cleanup_unconfirmed=True,simulator_operation_unconfirmed=True)
+            raise RuntimeError('No capture command: host lifecycle cleanup is unconfirmed')
+        destination=output/(request_id+'.jpeg')
+        command=['xcrun','simctl','io',device,'screenshot','--type=jpeg',str(destination)]
+        outcome['command']=command
+        deadline=time.monotonic()+20
+        command_started=True
+        try:
+            result=run_captured(command,text=True,timeout=20)
+            command_completed=True
+            outcome['host_cleanup_confirmed']=True
+            if time.monotonic()>=deadline:
+                error=subprocess.TimeoutExpired(command,20);error.cleanup_confirmed=True;raise error
+            outcome['attempts'].append({'exit':result.returncode,'file':destination.name})
+        except subprocess.TimeoutExpired as error:
+            outcome['attempts'].append({'exit':124,'file':destination.name,'error':str(error)[:1600]})
+            outcome.update(simulator_operation_unconfirmed=True,cleanup_unconfirmed=True,
+                           host_cleanup_confirmed=getattr(error,'cleanup_confirmed',False) is True)
+            raise
+        if not may_start():
+            outcome.update(cleanup_unconfirmed=True,simulator_operation_unconfirmed=True)
+            raise RuntimeError('Capture completed after the host lifecycle was fenced')
         # Nonzero returns (including permission errors) are never retried.
         outcome.update(command=command,exit=result.returncode,diagnostic=(result.stdout+result.stderr)[-1600:])
         if result.returncode!=0 or not destination.is_file(): raise RuntimeError('simctl screenshot did not produce an image')
@@ -141,9 +153,16 @@ def capture(device,runner_identifier,request_id,output,may_start=lambda: True,re
         groups.append({'source':'simctl io screenshot at held XCTest checkpoint','attachments':[{'exportedFileName':destination.name,'suggestedHumanReadableName':description['name']}]})
         manifest.write_text(json.dumps(groups,indent=2)+'\n')
     except Exception as error:
+        outcome['success']=False
         outcome['error']=str(error)
-        if isinstance(error, subprocess.TimeoutExpired) and not getattr(error, 'cleanup_confirmed', False):
-            outcome['cleanup_unconfirmed']=True
+        if command_started and not command_completed and getattr(error,'command_started',True):
+            outcome.update(simulator_operation_unconfirmed=True,cleanup_unconfirmed=True,
+                           host_cleanup_confirmed=getattr(error,'cleanup_confirmed',False) is True)
     finally:
-        if validated_request: publish_acknowledgement(ack, outcome)
+        if validated_request:
+            try: publish_acknowledgement(ack, outcome)
+            except OSError as error:
+                # Preserve the original timeout/fence even if host-only ack
+                # persistence fails. The runner's own ack deadline also fails.
+                outcome.update(success=False,acknowledgement_error=str(error))
     return outcome

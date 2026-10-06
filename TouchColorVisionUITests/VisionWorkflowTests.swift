@@ -6,6 +6,8 @@ final class VisionWorkflowTests: XCTestCase {
     private var failClosedInterruption: NSObjectProtocol?
     private var app: XCUIApplication!
     private var captureLease: UUID?
+    private var captureFailed = false
+    private var simulatorOperationUnconfirmed = false
     override func setUpWithError() throws {
         try super.setUpWithError()
         // Keep intended dialog actions explicit. Never fall through to XCTest's
@@ -17,6 +19,8 @@ final class VisionWorkflowTests: XCTestCase {
         }
         continueAfterFailure = false
         captureLease = nil
+        captureFailed = false
+        simulatorOperationUnconfirmed = false
         app = nil
         // Bind this test runner before any app launch or UI work. A thrown
         // setup error fails the case rather than entering an unbound workflow.
@@ -30,29 +34,41 @@ final class VisionWorkflowTests: XCTestCase {
             if let monitor = failClosedInterruption { removeUIInterruptionMonitor(monitor) }
             failClosedInterruption = nil
         }
-        if let app {
-            if (testRun?.totalFailureCount ?? 0) > 0 && captureLease != nil {
-                capture("Native Vision failure"); print("VISION_FAILURE_AX: \(app.debugDescription)")
+        var captureError: Error?
+        if let app, !simulatorOperationUnconfirmed {
+            if !captureFailed && (testRun?.totalFailureCount ?? 0) > 0 && captureLease != nil {
+                do {
+                    try capture("Native Vision failure")
+                    print("VISION_FAILURE_AX: \(app.debugDescription)")
+                } catch { captureError = error }
             }
-            app.terminate()
+            // A diagnostic capture can itself fence this runner. XCTest's
+            // internal cleanup is separate and is not under this test's control.
+            if !simulatorOperationUnconfirmed { app.terminate() }
         }
-        if let captureLease {
+        if let captureLease, !simulatorOperationUnconfirmed {
             let request = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-runner-\(captureLease.uuidString).json")
             removeOwnedTemporaryFileIfPresent(request)
             removeOwnedTemporaryFileIfPresent(request.deletingPathExtension().appendingPathExtension("ack"))
         }
         captureLease = nil
         try super.tearDownWithError()
+        if let captureError { throw captureError }
     }
-    private func capture(_ name: String) {
-        // A failed visual checkpoint remains an XCTest failure, while later functional
-        // assertions still execute so a simulator capture problem cannot hide app defects.
-        let previousFailureBehavior = continueAfterFailure
-        continueAfterFailure = true
-        defer { continueAfterFailure = previousFailureBehavior }
+    private func checkpointFailure(_ message: String, operationUnconfirmed: Bool) -> NSError {
+        captureFailed = true
+        simulatorOperationUnconfirmed = simulatorOperationUnconfirmed || operationUnconfirmed
+        print("TOUCHCOLOR_VISION_CAPTURE_FAILED operation_unconfirmed=\(simulatorOperationUnconfirmed)"); fflush(stdout)
+        return NSError(domain: "TouchColorVisionCheckpoint", code: 1,
+                       userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    private func capture(_ name: String) throws {
+        // Required checkpoint failure unwinds the case before dependent UI work.
+        guard !captureFailed && !simulatorOperationUnconfirmed else {
+            throw checkpointFailure("Prior simulator checkpoint failed", operationUnconfirmed: simulatorOperationUnconfirmed)
+        }
         guard let captureLease else {
-            XCTFail("No verified current runner lease; no simulator checkpoint was requested")
-            return
+            throw checkpointFailure("No verified current runner lease; no simulator checkpoint was requested", operationUnconfirmed: false)
         }
         // The spatial XCTest screenshot API can crop or stall. Hold this real UI state
         // while the CI host uses documented simctl screenshot, with a bounded acknowledgement.
@@ -60,14 +76,26 @@ final class VisionWorkflowTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
         let request = root.appendingPathComponent("TouchColor-capture-\(id).json")
         let acknowledgement = root.appendingPathComponent("TouchColor-capture-\(id).ack")
-        defer { removeOwnedTemporaryFileIfPresent(request); removeOwnedTemporaryFileIfPresent(acknowledgement) }
+        defer {
+            if !simulatorOperationUnconfirmed {
+                removeOwnedTemporaryFileIfPresent(request); removeOwnedTemporaryFileIfPresent(acknowledgement)
+            }
+        }
         do { try JSONSerialization.data(withJSONObject: ["id": id, "name": name, "runner": Bundle.main.bundleIdentifier ?? "", "lease": captureLease.uuidString]).write(to: request) }
-        catch { XCTFail("Could not request simulator checkpoint: \(error)"); return }
+        catch { throw checkpointFailure("Could not request simulator checkpoint: \(error)", operationUnconfirmed: false) }
         print("TOUCHCOLOR_CAPTURE_REQUEST \(id)"); fflush(stdout)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in FileManager.default.fileExists(atPath: acknowledgement.path) }, object: nil)
-        guard XCTWaiter.wait(for: [ready], timeout: 85) == .completed else { XCTFail("Simulator checkpoint acknowledgement timed out"); return }
+        guard XCTWaiter.wait(for: [ready], timeout: 85) == .completed else {
+            throw checkpointFailure("Simulator checkpoint acknowledgement timed out", operationUnconfirmed: true)
+        }
         let result = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        XCTAssertEqual(result?["success"] as? Bool, true, "Simulator checkpoint failed: \(String(describing: result))")
+        guard result?["id"] as? String == id, let success = result?["success"] as? Bool,
+              let operationUnconfirmed = result?["simulator_operation_unconfirmed"] as? Bool else {
+            throw checkpointFailure("Simulator checkpoint acknowledgement is invalid", operationUnconfirmed: true)
+        }
+        guard success && !operationUnconfirmed else {
+            throw checkpointFailure("Simulator checkpoint failed: \(String(describing: result))", operationUnconfirmed: operationUnconfirmed)
+        }
     }
     private func removeOwnedTemporaryFileIfPresent(_ url: URL) {
         // A failed lookup never publishes an acknowledgement. Avoid throwing
@@ -110,14 +138,14 @@ final class VisionWorkflowTests: XCTestCase {
         let check = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR value == %@", expected, expected), object: value)
         XCTAssertEqual(XCTWaiter.wait(for: [check], timeout: 10), .completed, app.debugDescription)
     }
-    private func photo() {
+    private func photo() throws {
         XCTAssertTrue(app.buttons["image.photos"].waitForExistence(timeout: 20), app.debugDescription)
         app.buttons["image.photos"].tap()
         let picker = app.navigationBars["Photos"]
         XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
         let scroll = app.scrollViews["photosView_content_scroll_view"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 30), app.debugDescription)
-        capture("Native Vision Photos grid before selection diagnostic")
+        try capture("Native Vision Photos grid before selection diagnostic")
         // The exact system grid-image identifier is unique in the observed picker.
         // Avoid a second nested remote-subtree query after checking its scroll view.
         let image = app.images["PXGGridLayout-Info"].firstMatch
@@ -139,11 +167,11 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(paste.waitForExistence(timeout: 20), app.debugDescription)
         paste.tap(); hex("#ff00ff")
     }
-    func testRealPhotosImport() {
+    func testRealPhotosImport() throws {
         executionTimeAllowance = 300 // Cold spatial launch, actual picker and two held pixel checkpoints.
-        photo(); capture("Native Vision actual system Photos import")
+        try photo(); try capture("Native Vision actual system Photos import")
     }
-    func testRealPastePrecisionZoomPaletteAndRelaunch() {
+    func testRealPastePrecisionZoomPaletteAndRelaunch() throws {
         // 510fd5a completed both pixel checkpoints and relaunch, but its total
         // cold-session duration exceeded 180s. Individual control bounds stay unchanged.
         executionTimeAllowance = 300
@@ -153,14 +181,14 @@ final class VisionWorkflowTests: XCTestCase {
         app.buttons["sample.zoom.in"].tap()
         XCTAssertTrue(app.staticTexts["sample.zoom.value"].exists)
         app.buttons["sample.center"].tap(); hex("#ff00ff")
-        capture("Native Vision pasted image with precision sampling and zoom")
+        try capture("Native Vision pasted image with precision sampling and zoom")
         app.buttons["privacy.open"].tap(); XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5)); app.buttons["privacy.close"].tap()
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
         let count = app.staticTexts["palette.count"]
         XCTAssertTrue(count.waitForExistence(timeout: 15)); XCTAssertEqual(count.label, "2")
-        capture("Native Vision ordered palette after relaunch")
+        try capture("Native Vision ordered palette after relaunch")
     }
-    func testNativeExportSaveAndReopenActualPNG() {
+    func testNativeExportSaveAndReopenActualPNG() throws {
         executionTimeAllowance = 300
         paste(); app.buttons["image.export"].tap()
         XCTAssertTrue(app.navigationBars["DOCSidebarView"].waitForExistence(timeout: 45), app.debugDescription)
@@ -173,9 +201,9 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["export.reopen"].waitForExistence(timeout: 12), app.debugDescription)
         app.buttons["export.reopen"].tap(); hex("#ff00ff")
         app.buttons["sample.above"].tap(); hex("#00ff00")
-        capture("Native Vision actual exported PNG reopened")
+        try capture("Native Vision actual exported PNG reopened")
     }
-    func testNativePaletteExportReopensActualChangedSelectionAndDuplicates() {
+    func testNativePaletteExportReopensActualChangedSelectionAndDuplicates() throws {
         // This complete route includes three saves, system Files export/reopen,
         // three separate native menus and artifact readback; it exceeded 180 seconds
         // while still progressing through the genuine Save controls on 7c8148a.
@@ -212,7 +240,7 @@ final class VisionWorkflowTests: XCTestCase {
         }
         XCTAssertEqual(reopened, ["#ff00ff", "#ff00ff", "#00ff00"])
         print("VISION_JSON_REOPEN_VERIFIED: actual Copy values magenta, magenta, green")
-        capture("Native Vision changed-color JSON export reopened with duplicates")
+        try capture("Native Vision changed-color JSON export reopened with duplicates")
     }
     private func selectLocalFilesLocation(until deadline: Date) {
         let location = app.cells["DOC.sidebar.item.On My Apple Vision Pro"]
@@ -222,7 +250,7 @@ final class VisionWorkflowTests: XCTestCase {
         let title = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].staticTexts["On My Apple Vision Pro"]
         XCTAssertTrue(title.waitForExistence(timeout: max(0, deadline.timeIntervalSinceNow)), app.debugDescription)
     }
-    func testRealFilesPickerSelectsExportedPNG() {
+    func testRealFilesPickerSelectsExportedPNG() throws {
         executionTimeAllowance = 360
         paste(); app.buttons["image.export"].tap()
         let filename = "TouchSelect-" + String(UUID().uuidString.prefix(6))
@@ -256,7 +284,7 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", filename)).firstMatch.waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["sample.above"].tap(); hex("#00ff00")
         print("VISION_FILES_SELECTION_VERIFIED: actual saved PNG selected in system Files and sampled")
-        capture("Native Vision actual Files picker selected exported PNG")
+        try capture("Native Vision actual Files picker selected exported PNG")
     }
     private func assertSavedPaletteValuesAreContained() {
         // The retained native hierarchy identifies this exact container as
@@ -305,13 +333,13 @@ final class VisionWorkflowTests: XCTestCase {
             }
         }
     }
-    func testChinesePasteAndPrecisionControls() {
+    func testChinesePasteAndPrecisionControls() throws {
         paste(); app.buttons["sample.above"].tap(); hex("#00ff00")
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
         app.buttons["sample.save"].tap()
         // Preserve the unchanged visible state even if a subsequent AX query
         // fails to resolve; the containment/value assertions still gate success.
-        capture("Native Vision Chinese pasted image and precision controls")
+        try capture("Native Vision Chinese pasted image and precision controls")
         assertSavedPaletteValuesAreContained()
     }
     func testNativeFileAndPhotosCancelRepeatedly() {

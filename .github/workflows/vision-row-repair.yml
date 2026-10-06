@@ -102,44 +102,8 @@ jobs:
       matrix:
         include:
           - platform: vision
-            lane: vision-chinese
-            vision_case: chinese
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 950000
-          - platform: vision
-            lane: vision-canvas-audit
-            vision_case: canvas-audit
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 650000
-          - platform: vision
-            lane: vision-paste-relaunch
-            vision_case: paste-relaunch
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 1300000
-          - platform: vision
-            lane: vision-png-export
-            vision_case: png-export
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 900000
-          - platform: vision
             lane: vision-photos
             vision_case: photos
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 950000
-          - platform: vision
-            lane: vision-cancel
-            vision_case: cancel
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 750000
-          - platform: vision
-            lane: vision-files-select
-            vision_case: files-select
             text_phase: normal
             minutes: 35
             evidence_bytes: 950000

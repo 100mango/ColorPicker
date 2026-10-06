@@ -31,36 +31,51 @@ class CaptureCheckpointTests(unittest.TestCase):
         self.assertEqual(json.loads(self.ack.read_text()), result)
         return result, command.call_count
 
-    def test_timeout_retries_same_held_request_once_with_distinct_output(self):
-        files = []
-        def behavior(command, **options):
-            destination = Path(command[-1]); files.append(destination)
-            destination.write_bytes(b'synthetic screenshot bytes')
-            if len(files)==1:
-                error=subprocess.TimeoutExpired(command,options['timeout']);error.cleanup_confirmed=True;raise error
-            return subprocess.CompletedProcess(command,0,stdout='written',stderr='')
-        result, count = self.run_capture(behavior)
-        self.assertTrue(result['success']); self.assertEqual(count,2)
-        self.assertNotEqual(files[0],files[1])
-        self.assertEqual([a['exit'] for a in result['attempts']],[124,0])
-        manifest = json.loads((self.output/'manifest.json').read_text())
-        self.assertEqual(manifest[0]['attachments'][0]['exportedFileName'],files[1].name)
+    def test_timeout_never_retries_or_accepts_pixels_even_with_confirmed_host_cleanup(self):
+        for confirmed in (True, False, None):
+            with self.subTest(host_cleanup=confirmed):
+                def behavior(command, **options):
+                    Path(command[-1]).write_bytes(b'partial synthetic image')
+                    error=subprocess.TimeoutExpired(command,options['timeout'])
+                    if confirmed is not None: error.cleanup_confirmed=confirmed
+                    raise error
+                result,count = self.run_capture(behavior)
+                self.assertFalse(result['success']); self.assertEqual(count,1)
+                self.assertEqual([a['exit'] for a in result['attempts']],[124])
+                self.assertTrue(result['cleanup_unconfirmed'])
+                self.assertTrue(result['simulator_operation_unconfirmed'])
+                self.assertIs(result['host_cleanup_confirmed'],confirmed is True)
+                self.assertFalse((self.output/'manifest.json').exists())
 
-    def test_two_timeouts_acknowledge_failure_instead_of_succeeding_from_partial_file(self):
+    def test_late_zero_cannot_clear_failure_or_publish_success_manifest(self):
         def behavior(command, **options):
-            Path(command[-1]).write_bytes(b'partial synthetic image')
-            error=subprocess.TimeoutExpired(command,options['timeout']);error.cleanup_confirmed=True;raise error
-        result,count = self.run_capture(behavior)
-        self.assertFalse(result['success']); self.assertEqual(count,2)
-        self.assertEqual([a['exit'] for a in result['attempts']],[124,124])
+            Path(command[-1]).write_bytes(b'late synthetic image')
+            return subprocess.CompletedProcess(command,0,stdout='',stderr='')
+        with patch.object(checkpoint.time,'monotonic',side_effect=[100.,120.]):
+            result,count=self.run_capture(behavior)
+        self.assertEqual(count,1);self.assertFalse(result['success'])
+        self.assertTrue(result['simulator_operation_unconfirmed'])
+        self.assertTrue(result['host_cleanup_confirmed'])
         self.assertFalse((self.output/'manifest.json').exists())
 
-    def test_unconfirmed_cleanup_does_not_launch_a_second_capture(self):
-        def behavior(command, **options):
-            error=subprocess.TimeoutExpired(command,options['timeout']);error.cleanup_confirmed=False;raise error
-        result,count = self.run_capture(behavior)
-        self.assertFalse(result['success']); self.assertEqual(count,1)
-        self.assertTrue(result['cleanup_unconfirmed'])
+    def test_interrupted_capture_is_ambiguous_but_unstarted_budget_failure_is_not(self):
+        from job_budget import BudgetExhausted
+        for error,ambiguous in ((RuntimeError('lost completion'),True),(BudgetExhausted('not admitted'),False)):
+            with self.subTest(error=type(error).__name__):
+                result,count=self.run_capture(lambda *a,**k: (_ for _ in ()).throw(error))
+                self.assertEqual(count,1);self.assertFalse(result['success'])
+                self.assertIs(result['simulator_operation_unconfirmed'],ambiguous)
+                self.assertEqual(bool(result.get('cleanup_unconfirmed')),ambiguous)
+
+    def test_failed_ack_write_preserves_original_timeout_and_host_proof(self):
+        error=subprocess.TimeoutExpired('screenshot',20);error.cleanup_confirmed=True
+        with patch.object(checkpoint,'run_captured',side_effect=error) as command, \
+             patch.object(checkpoint,'publish_acknowledgement',side_effect=OSError('ack unavailable')):
+            result=checkpoint.capture('synthetic-device','synthetic-runner',self.identifier,self.output)
+        command.assert_called_once();self.assertFalse(result['success'])
+        self.assertTrue(result['simulator_operation_unconfirmed']);self.assertTrue(result['cleanup_unconfirmed'])
+        self.assertTrue(result['host_cleanup_confirmed']);self.assertIn('ack unavailable',result['acknowledgement_error'])
+        self.assertIn('timed out',result['error'])
 
     def test_unconfirmed_host_prevents_lookup_and_capture(self):
         checkpoint._containers[('synthetic-device','synthetic-runner')]=self.root
@@ -69,7 +84,7 @@ class CaptureCheckpointTests(unittest.TestCase):
         lookup.assert_not_called();command.assert_not_called()
         self.assertFalse(result['success']);self.assertTrue(result['acknowledged'])
 
-    def test_host_cleanup_loss_prevents_capture_retry(self):
+    def test_host_cleanup_loss_preserves_failure_without_retry(self):
         permitted=True
         def behavior(command, **options):
             nonlocal permitted
@@ -85,6 +100,7 @@ class CaptureCheckpointTests(unittest.TestCase):
         result,count = self.run_capture(lambda command,**_: subprocess.CompletedProcess(command,13,stdout='',stderr='Synthetic access denied'))
         self.assertFalse(result['success']); self.assertEqual(count,1)
         self.assertEqual(result['exit'],13)
+        self.assertFalse(result['simulator_operation_unconfirmed']);self.assertNotIn('cleanup_unconfirmed',result)
         self.assertFalse((self.output/'manifest.json').exists())
 
     def test_nonzero_with_existing_pixels_cannot_pass_under_optimized_python(self):

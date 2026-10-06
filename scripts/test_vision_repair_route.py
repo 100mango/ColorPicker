@@ -1,4 +1,4 @@
-"""Closed eight-row route; standard-library-only prerequisite checks."""
+"""Closed two-row successor route; standard-library-only prerequisite checks."""
 from pathlib import Path
 import re
 import unittest
@@ -6,8 +6,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 BRANCH='codex/vision-row-repair'
 WORKFLOW='100mango/ColorPicker/.github/workflows/vision-row-repair.yml@refs/heads/'+BRANCH
-ROWS=('vision-chinese','vision-canvas-audit','vision-paste-relaunch','vision-png-export',
-      'vision-photos','vision-cancel','vision-files-select','vision-chinese-system-largest')
+ROWS=('vision-photos','vision-chinese-system-largest')
 
 
 def matrix(text):
@@ -34,13 +33,15 @@ class FixedVisionRepairRouteTests(unittest.TestCase):
         self.assertIn('group: touchcolor-platforms-refs/heads/codex/platform-integration\n  cancel-in-progress: false',self.text)
         self.assertIn('group: touchcolor-platforms-${{ github.ref }}',self.base)
 
-    def test_exact_failed_eight_rows_not_green_or_other_platforms(self):
+    def test_exact_two_failed_rows_exclude_all_six_newly_green_rows(self):
         base=matrix(self.base)[2];rows=matrix(self.text)[2]
         self.assertEqual(len(base),19)
         self.assertEqual([lane(r) for r in rows],list(ROWS))
         self.assertEqual([r.rstrip() for r in rows],[r.rstrip() for r in base if lane(r) in ROWS])
         self.assertTrue(all(r.startswith('          - platform: vision\n') and '\n            minutes: 35\n' in r for r in rows))
-        for absent in ('vision-json-export','vision-corrupt-audit','vision-canvas-audit-system-largest'):
+        for absent in ('vision-chinese','vision-canvas-audit','vision-paste-relaunch','vision-png-export',
+                       'vision-cancel','vision-files-select','vision-json-export','vision-corrupt-audit',
+                       'vision-canvas-audit-system-largest'):
             self.assertNotIn(absent,[lane(r) for r in rows])
         self.assertIn('      max-parallel: 1\n',self.text)
         self.assertIn('      max-parallel: 2\n',self.base)

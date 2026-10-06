@@ -55,7 +55,7 @@ def run(command,timeout,required=True):
     report['active_command']={'command':command,'started_at':started_at,'started_monotonic':started,'timeout_seconds':timeout,'phase':'starting'}
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
-    diagnostics=[]
+    diagnostics=[];capture_start=len(report['captures']);runner_capture_failed=False
     watch_cases=WatchCaseLifecycle() if kind=='watch' and '-resultBundlePath' in command and command[command.index('-resultBundlePath')+1]==WATCH_UI_BUNDLE else None
     p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     report['active_command'].update(pid=p.pid,phase='running')
@@ -64,10 +64,19 @@ def run(command,timeout,required=True):
     reader_complete=threading.Event()
     reader_errors=[]
     def read_output():
+        nonlocal runner_capture_failed
         for line in p.stdout:
             print(line,end='',flush=True)
             if kind=='watch': watch_frames.record(line)
             if watch_cases is not None: watch_cases.record(line)
+            capture_failure=re.search(r'TOUCHCOLOR_VISION_CAPTURE_FAILED operation_unconfirmed=(true|false)',line)
+            if capture_failure and kind=='vision':
+                runner_capture_failed=True
+                if capture_failure.group(1)=='true':
+                    report['simulator_operation_unconfirmed']=True
+                    report['cleanup_unconfirmed']=True
+                record_failure(report,'vision-checkpoint','Runner rejected required simulator checkpoint')
+                (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
             ready=re.search(r'TOUCHCOLOR_VISION_RUNNER_READY ([0-9A-F-]{36})',line)
             if ready and kind=='vision' and device:
                 try:
@@ -75,22 +84,46 @@ def run(command,timeout,required=True):
                     report['runner_container_cache']=prime_container(device['udid'],report['ui_runner_identifier'],ready.group(1))
                 except Exception as error:
                     report['runner_container_cache']={'success':False,'error':type(error).__name__,'detail':str(error)[:500]}
-                    if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
+                    if isinstance(error,subprocess.TimeoutExpired):
+                        report['runner_container_cache']['host_cleanup_confirmed']=getattr(error,'cleanup_confirmed',False) is True
+                        report['simulator_operation_unconfirmed']=True
+                        report['cleanup_unconfirmed']=True
                 print('VISION_RUNNER_CONTAINER_CACHE',json.dumps(report['runner_container_cache']),flush=True)
             checkpoint=re.search(r'TOUCHCOLOR_CAPTURE_REQUEST ([0-9A-F-]{36})',line)
             if checkpoint and kind=='vision' and device and len(report['captures'])<16:
                 try:
                     if report.get('cleanup_unconfirmed'):
-                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Host diagnostic process exit was unconfirmed; no screenshot process was started',require_primed=True)
+                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),'Prior owned operation is unconfirmed; no screenshot process was started',require_primed=True)
                     else:
                         result=capture_checkpoint(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),out/'screenshots',may_start=lambda: not report.get('cleanup_unconfirmed'),require_primed=True)
-                    if report.get('text_size_phase')=='largest': result['system_text_size']='accessibility-extra-extra-extra-large'
-                    if result.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
-                    report['captures'].append(result);print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
                 except Exception as error:
-                    failure=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error),require_primed=True)
-                    if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
-                    report['captures'].append(failure);print('SIMULATOR_CHECKPOINT_FAILURE',json.dumps(failure),flush=True)
+                    ambiguous=isinstance(error,subprocess.TimeoutExpired)
+                    if ambiguous:
+                        report['simulator_operation_unconfirmed']=True
+                        report['cleanup_unconfirmed']=True
+                    try:
+                        result=fail_cached_capture(device['udid'],report['ui_runner_identifier'],checkpoint.group(1),str(error),require_primed=True,
+                                                   operation_unconfirmed=ambiguous or bool(report.get('cleanup_unconfirmed')))
+                    except Exception as ack_error:
+                        result={'id':checkpoint.group(1),'success':False,'error':str(error),'acknowledged':False,
+                                'acknowledgement_error':str(ack_error)}
+                    if ambiguous:
+                        result.update(simulator_operation_unconfirmed=True,cleanup_unconfirmed=True,
+                                      host_cleanup_confirmed=getattr(error,'cleanup_confirmed',False) is True)
+                if report.get('text_size_phase')=='largest': result['system_text_size']='accessibility-extra-extra-extra-large'
+                if result.get('simulator_operation_unconfirmed'):
+                    report['simulator_operation_unconfirmed']=True
+                    # Reuse the existing no-command fence, including final
+                    # shutdown/readback. This does not assert host-group liveness.
+                    report['cleanup_unconfirmed']=True
+                if result.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
+                report['captures'].append(result)
+                if result.get('success') is not True:
+                    record_failure(report,'vision-checkpoint',result.get('error','Required simulator checkpoint failed'))
+                # Keep failure metadata using host files even when all future
+                # simulator work (including capture and cleanup) is fenced.
+                (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+                print('SIMULATOR_CHECKPOINT',json.dumps(result),flush=True)
             if (re.match(r'(?:/.*|xcodebuild): error: ',line) or ('app icon set' in line and 'unassigned child' in line)) and len(diagnostics)<30: diagnostics.append(line.rstrip()[:2048])
     def output():
         try:
@@ -129,6 +162,7 @@ def run(command,timeout,required=True):
         if budget is not None: fail_record('Native command or capture cleanup unconfirmed',phase=budget.phase,cleanup_unconfirmed=True)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
+    if code==0 and (runner_capture_failed or any(value.get('success') is not True for value in report['captures'][capture_start:])): code=65
     report['stages'].append({'command':command,'exit':code,'raw_exit':raw_exit,'started':True,'timed_out':timed_out,'timeout_seconds':timeout,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
     if watch_cases is not None: report['stages'][-1]['watch_case_lifecycle']=watch_cases.report
     report['active_command']=None

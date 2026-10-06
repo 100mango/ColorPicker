@@ -106,14 +106,13 @@ class RunnerLeaseSourceTests(unittest.TestCase):
 
     def test_unbound_setup_cannot_request_teardown_capture(self):
         teardown = swift_method(self.source, 'tearDownWithError')
-        self.assertLess(teardown.index('if let app {'), teardown.index('capture("Native Vision failure")'))
+        self.assertLess(teardown.index('if let app, !simulatorOperationUnconfirmed {'), teardown.index('capture("Native Vision failure")'))
         self.assertIn('> 0 && captureLease != nil', teardown)
         self.assertIn('captureLease = nil', teardown)
         capture = swift_method(self.source, 'capture')
         prefix = capture[:capture.index('let id = UUID()')]
         self.assertIn('guard let captureLease else', prefix)
-        self.assertIn('XCTFail(', prefix)
-        self.assertIn('return', prefix)
+        self.assertIn('throw checkpointFailure(', prefix)
         self.assertIn('"lease": captureLease.uuidString', capture)
         self.assertIn('timeout: 85', capture)
         self.assertNotIn('?? ""', capture.split('"lease":')[1])
@@ -136,11 +135,40 @@ class RunnerLeaseSourceTests(unittest.TestCase):
         }
         self.assertEqual(set(expected), {method for method, _ in CASES.values()})
         for name, digest in expected.items():
-            self.assertEqual(hashlib.sha256(swift_method(self.source, name).encode()).hexdigest(), digest)
+            unchanged = swift_method(self.source, name)
+            if 'try capture(' in unchanged:
+                unchanged = unchanged.replace('() throws {','() {').replace('try capture(', 'capture(').replace('try photo()', 'photo()')
+            self.assertEqual(hashlib.sha256(unchanged.encode()).hexdigest(), digest)
 
-    def test_capture_helper_changes_only_owned_lookup_15_to_30(self):
-        self.assertEqual(hashlib.sha256((ROOT/'scripts/capture_simulator_checkpoint.py').read_bytes().replace(b"device,runner_identifier,'data'],text=True,timeout=30)",b"device,runner_identifier,'data'],text=True,timeout=15)",1)).hexdigest(),
-                         '204bdb363a3345d92527dba66e7865e86243a37ba35b2f0d1af829c1e7c07a47')
+    def test_required_capture_throws_through_every_dependent_ui_caller(self):
+        capture=swift_method(self.source,'capture')
+        self.assertNotIn('continueAfterFailure = true',self.source)
+        self.assertNotIn('XCTFail(',capture)
+        self.assertEqual(capture.count('throw checkpointFailure('),6)
+        self.assertIn('guard !captureFailed && !simulatorOperationUnconfirmed else',capture)
+        self.assertIn('result?["id"] as? String == id',capture)
+        self.assertIn('let operationUnconfirmed = result?["simulator_operation_unconfirmed"] as? Bool',capture)
+        self.assertIn('guard success && !operationUnconfirmed else',capture)
+        self.assertIn('timeout: 85) == .completed else',capture)
+        self.assertIn('if !simulatorOperationUnconfirmed {',capture)
+        for line in self.source.splitlines():
+            if re.search(r'(?<!func )capture\("',line): self.assertIn('try capture(',line)
+        for method in ('photo',*[m for m,_ in CASES.values()]):
+            body=swift_method(self.source,method)
+            if 'try capture(' in body: self.assertIn('throws {',body.splitlines()[0])
+        photo=swift_method(self.source,'photo')
+        self.assertLess(photo.index('try capture('),photo.index('let image ='))
+        self.assertIn('image.tap()',photo);self.assertIn('hex("#ff00ff")',photo)
+        failure=swift_method(self.source,'checkpointFailure')
+        self.assertIn('simulatorOperationUnconfirmed || operationUnconfirmed',failure)
+        self.assertIn('TOUCHCOLOR_VISION_CAPTURE_FAILED operation_unconfirmed=',failure)
+        teardown=swift_method(self.source,'tearDownWithError')
+        self.assertIn('if !captureFailed &&',teardown)
+        self.assertIn('if !simulatorOperationUnconfirmed { app.terminate() }',teardown)
+        self.assertIn('if let captureLease, !simulatorOperationUnconfirmed {',teardown)
+        self.assertLess(teardown.index('try capture('),teardown.index('app.debugDescription'))
+        self.assertIn('if let captureError { throw captureError }',teardown)
+
 
 
 class RunnerLeaseDriverTests(unittest.TestCase):
@@ -155,7 +183,8 @@ class RunnerLeaseDriverTests(unittest.TestCase):
                           os=os, subprocess=subprocess, stop_group=stop_group, print=lambda *a, **k: None,
                           kind='vision', device={'udid': DEVICE}, out=Path(self.temp.name),
                           prime_container=self.prime, capture_checkpoint=self.capture, fail_cached_capture=self.fail,
-                          report={'captures': [], 'stages': [], 'ui_runner_identifier': RUNNER})
+                          report={'captures': [], 'stages': [], 'ui_runner_identifier': RUNNER},
+                          record_failure=__import__('watch_failure_continuation').record_failure)
         exec(compile(ast.Module(body=[function], type_ignores=[]), 'actual-native-run', 'exec'), self.state)
 
     def run_lines(self, *lines):
@@ -204,10 +233,12 @@ class RunnerLeaseDriverTests(unittest.TestCase):
 
     def test_capture_exception_can_only_acknowledge_through_primed_path(self):
         self.capture.side_effect = ValueError('Current lease is missing')
-        self.assertEqual(self.run_lines('TOUCHCOLOR_CAPTURE_REQUEST ' + REQUEST), 0)
+        self.assertEqual(self.run_lines('TOUCHCOLOR_CAPTURE_REQUEST ' + REQUEST), 65)
         self.assertIs(self.capture.call_args.kwargs['require_primed'], True)
         self.assertIs(self.fail.call_args.kwargs['require_primed'], True)
         self.assertFalse(self.state['report']['captures'][-1]['success'])
+        self.assertIs(self.fail.call_args.kwargs['operation_unconfirmed'],False)
+        self.assertFalse(self.state['report'].get('cleanup_unconfirmed'))
         self.prime.assert_not_called()
 
     def test_each_test_invocation_renews_binding_even_on_same_device(self):
@@ -216,6 +247,144 @@ class RunnerLeaseDriverTests(unittest.TestCase):
         self.run_lines('TOUCHCOLOR_VISION_RUNNER_READY ' + next_lease)
         self.assertEqual([call.args for call in self.prime.call_args_list],
                          [(DEVICE, RUNNER, LEASE), (DEVICE, RUNNER, next_lease)])
+
+    def real_capture_fixture(self):
+        container=Path(self.temp.name)/'runner';(container/'tmp').mkdir(parents=True)
+        lease=container/'tmp'/('TouchColor-runner-'+LEASE+'.json')
+        lease.write_text(json.dumps({'id':LEASE,'runner':RUNNER}))
+        request=container/'tmp'/('TouchColor-capture-'+REQUEST+'.json')
+        request.write_text(json.dumps({'id':REQUEST,'runner':RUNNER,'lease':LEASE,
+                                       'name':'Native Vision Photos grid before selection diagnostic'}))
+        checkpoint._containers[(DEVICE,RUNNER)]=container
+        info=container.stat()
+        checkpoint._bindings[(DEVICE,RUNNER)]={'lease':LEASE,'device':info.st_dev,'inode':info.st_ino}
+        self.addCleanup(checkpoint._containers.clear);self.addCleanup(checkpoint._bindings.clear)
+        self.capture.side_effect=checkpoint.capture;self.fail.side_effect=checkpoint.fail_cached_capture
+        return container
+
+    def final_cleanup(self):
+        from vision_offline_result import confirm_shutdown
+        tree=ast.parse((ROOT/'scripts/test_extra_platforms.py').read_text())
+        tail=next(node.finalbody for node in tree.body if isinstance(node,ast.Try) and node.finalbody)
+        device_call=Mock(side_effect=AssertionError('No device command is allowed in fenced cleanup'))
+        reader=Mock();reader.cleanup_unconfirmed=False
+        self.state.update(pending_vision_hosted={'status':'hosted_result_deferred'},pending_vision_normal=None,
+                          pending_vision_result=None,owned_watch_devices=[],owned_watch_pair=None,
+                          runtime='com.apple.CoreSimulator.SimRuntime.xrOS-27-0',
+                          TouchSizeRunner=lambda callback:reader,confirm_vision_shutdown=confirm_shutdown,
+                          fail_record=Mock(),run_captured=device_call,resources=device_call,run=device_call)
+        previous=Path.cwd()
+        try:
+            os.chdir(self.temp.name)
+            exec(compile(ast.Module(body=tail,type_ignores=[]),'actual-native-finally','exec'),self.state)
+        finally: os.chdir(previous)
+        device_call.assert_not_called();reader.assert_not_called()
+        report=self.state['report']
+        self.assertEqual(report['result'],'failed')
+        self.assertNotIn('offline_shutdown_verified',report)
+        self.assertNotIn('shutdown_readback_operation',report)
+        self.assertNotIn('vision_offline_shutdown',report)
+        self.assertEqual(json.loads((Path(self.temp.name)/'runtime.json').read_text()),report)
+
+    def assert_ambiguous_capture_fences(self,confirmed=True,late=False,broken_ack=False):
+        self.real_capture_fixture()
+        def screenshot(command,**options):
+            self.assertEqual(command[:6],['xcrun','simctl','io',DEVICE,'screenshot','--type=jpeg'])
+            self.assertEqual(options['timeout'],20)
+            Path(command[-1]).write_bytes(b'late or partial pixels never certify capture')
+            if late:return subprocess.CompletedProcess(command,0,'','')
+            error=subprocess.TimeoutExpired(command,20)
+            if confirmed is not None:error.cleanup_confirmed=confirmed
+            raise error
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            command=stack.enter_context(patch.object(checkpoint,'run_captured',side_effect=screenshot))
+            lookup=stack.enter_context(patch.object(checkpoint,'check_output'))
+            if late:
+                # Replace this module's clock object only; the real driver clock
+                # and host process cleanup continue to execute normally.
+                clock=Mock();clock.monotonic.side_effect=[100.,120.]
+                stack.enter_context(patch.object(checkpoint,'time',clock))
+            if broken_ack:stack.enter_context(patch.object(checkpoint,'publish_acknowledgement',side_effect=OSError('synthetic ack unavailable')))
+            self.assertEqual(self.run_lines('TOUCHCOLOR_CAPTURE_REQUEST '+REQUEST,
+                                           'TOUCHCOLOR_CAPTURE_REQUEST '+REQUEST,
+                                           'TOUCHCOLOR_VISION_RUNNER_READY '+LEASE),124)
+        command.assert_called_once();lookup.assert_not_called();self.prime.assert_not_called()
+        report=self.state['report'];original=report['captures'][0]
+        self.assertFalse(original['success']);self.assertTrue(original['simulator_operation_unconfirmed'])
+        self.assertIs(original['host_cleanup_confirmed'],confirmed is True)
+        self.assertTrue(report['simulator_operation_unconfirmed']);self.assertTrue(report['cleanup_unconfirmed'])
+        self.assertTrue(report['stages'][-1]['process_group_gone'])
+        self.assertFalse((Path(self.temp.name)/'screenshots/manifest.json').exists())
+        with patch('job_budget.enabled_budget',return_value=None),patch.object(subprocess,'Popen') as start:
+            self.assertEqual(self.state['run'](['xcrun','simctl','shutdown',DEVICE],3,required=False),124)
+        start.assert_not_called()
+        self.final_cleanup()
+        self.assertEqual(report['captures'][0],original)
+        self.assertEqual(report['error'],report['failures'][0]['error'])
+
+    def test_confirmed_host_cleanup_still_fences_later_capture_binding_shutdown_and_readback(self):
+        self.assert_ambiguous_capture_fences()
+
+    def test_unknown_host_cleanup_fences_later_capture_binding_shutdown_and_readback(self):
+        self.assert_ambiguous_capture_fences(confirmed=False)
+
+    def test_missing_host_cleanup_proof_fences_later_capture_binding_shutdown_and_readback(self):
+        self.assert_ambiguous_capture_fences(confirmed=None)
+
+    def test_late_zero_fences_later_capture_binding_shutdown_and_readback(self):
+        self.assert_ambiguous_capture_fences(late=True)
+
+    def test_ack_write_error_does_not_erase_timeout_fence_or_failure_evidence(self):
+        self.assert_ambiguous_capture_fences(broken_ack=True)
+
+    def test_runner_unknown_ack_marker_fences_before_late_success_or_device_cleanup(self):
+        self.assertEqual(self.run_lines('TOUCHCOLOR_VISION_CAPTURE_FAILED operation_unconfirmed=true',
+                                       'TOUCHCOLOR_CAPTURE_REQUEST '+REQUEST,
+                                       'TOUCHCOLOR_VISION_RUNNER_READY '+LEASE),124)
+        self.capture.assert_not_called();self.prime.assert_not_called()
+        self.assertTrue(self.state['report']['simulator_operation_unconfirmed'])
+        self.final_cleanup()
+
+    def test_definitive_capture_failure_is_red_even_if_outer_command_exits_zero(self):
+        self.real_capture_fixture()
+        with patch.object(checkpoint,'run_captured',return_value=subprocess.CompletedProcess([],13,'','denied')) as command:
+            self.assertEqual(self.run_lines('TOUCHCOLOR_CAPTURE_REQUEST '+REQUEST),65)
+        command.assert_called_once()
+        report=self.state['report'];self.assertEqual(report['result'],'failed')
+        self.assertEqual(report['stages'][-1]['raw_exit'],0)
+        self.assertEqual(report['stages'][-1]['exit'],65)
+        self.assertFalse(report.get('cleanup_unconfirmed'))
+        self.assertFalse(report['captures'][0]['simulator_operation_unconfirmed'])
+        self.assertFalse((Path(self.temp.name)/'screenshots/manifest.json').exists())
+
+    def test_fenced_failure_metadata_uploads_without_qualifying_missing_required_pixels(self):
+        self.assert_ambiguous_capture_fences()
+        import native_text_evidence as evidence
+        from test_native_text_evidence import Fixture
+        root=Path(self.temp.name)/'evidence';root.mkdir()
+        fixture=Fixture(root,'vision','normal','photos')
+        fixture.runtime.update(self.state['report'])
+        for path in fixture.images:(root/path).unlink()
+        for groups in fixture.manifests.values():
+            for group in groups:group['attachments']=[]
+        fixture.save()
+        original=(root/'vision-runtime.json').read_bytes()
+        with patch.dict(os.environ,fixture.environment(),clear=True):
+            result=evidence.retain(root)
+            self.assertFalse(result['complete']);self.assertFalse(evidence.evidence_complete(root))
+            self.assertTrue(any('Missing or ambiguous checkpoint:' in value for value in result['missingProof']))
+            self.assertEqual((root/'vision-runtime.json').read_bytes(),original)
+            guard=subprocess.run([sys.executable,'-O',str(ROOT/'scripts/validate_evidence.py'),str(root),str(fixture.binding['evidence_bytes'])],
+                                 capture_output=True,text=True,timeout=5)
+        self.assertEqual(guard.returncode,0,guard.stdout+guard.stderr)
+        self.assertIn('Final evidence guard passed',guard.stdout)
+
+    def test_runner_definitive_failure_preserved_without_permanent_device_fence(self):
+        self.assertEqual(self.run_lines('TOUCHCOLOR_VISION_CAPTURE_FAILED operation_unconfirmed=false'),65)
+        self.assertFalse(self.state['report'].get('cleanup_unconfirmed'))
+        self.assertEqual(self.state['report']['result'],'failed')
+        self.capture.assert_not_called();self.prime.assert_not_called()
 
 
 class RunnerLeaseIdentityTests(unittest.TestCase):
