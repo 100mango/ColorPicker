@@ -19,12 +19,12 @@ BOOL TCPrivacyAllowsPublishedURL(NSURL *URL, BOOL userActivated) {
 NSString *TCPrivacyPolicyHTML(NSData *data) {
     // This digest pins the reviewed self-contained document, including its CSP and approved copy.
     // A changed or malformed resource must show local recovery, never an HTTP fallback.
-    if (!data || data.length != 2823) return nil;
+    if (!data || data.length != 2916) return nil;
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
     NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
     for (NSUInteger index = 0; index < CC_SHA256_DIGEST_LENGTH; index++) [hex appendFormat:@"%02x", digest[index]];
-    if (![hex isEqualToString:@"09af166e63987e02cb3722eacf4d4aa2ab6bccf55a5b43839ca4009826865cc2"]) return nil;
+    if (![hex isEqualToString:@"390d6c30ab0f52031417981d7477c8553572402dd9d5757bf1ccbf4e6ea0c986"]) return nil;
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {

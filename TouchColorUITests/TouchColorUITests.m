@@ -379,7 +379,7 @@
     XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
     [self assertLocalPolicyBody];
     XCUIElement *policy=self.app.webViews[@"privacy.content"];
-    XCUIElement *published=[policy.links matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'Open published policy in browser'"]].firstMatch;
+    XCUIElement *published=[policy.links matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'Open in browser'"]].firstMatch;
     XCTAssertTrue(published.exists);
     // Reach the end of the real long local body at the largest size without opening a website.
     for (NSUInteger attempt=0;attempt<16 && !published.hittable;attempt++) [policy swipeUpWithVelocity:XCUIGestureVelocityFast];

@@ -6,6 +6,7 @@
 - (BOOL)waitForReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout;
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout existenceTimeout:(NSTimeInterval)existenceTimeout;
+- (BOOL)tapReadyImportPaletteClose:(XCUIApplication *)app;
 - (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll;
 - (void)returnToPaletteFrom:(NSString *)title app:(XCUIApplication *)app;
 - (void)openPaletteAction:(NSString *)identifier app:(XCUIApplication *)app;

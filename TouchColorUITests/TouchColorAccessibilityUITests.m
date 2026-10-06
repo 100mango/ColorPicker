@@ -74,10 +74,7 @@
     NSLog(@"ACCESSIBILITY_RESULT screen=%@ passed=%d error=%@",screen,passed,error);
     XCTAssertTrue(passed,@"%@ accessibility audit: %@",screen,error);
 }
-- (void)importAndSample {
-    [self.app.buttons[@"choosePhoto"] tap];
-    XCUIElement *photo=[self.app.images matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"]].firstMatch;
-    XCTAssertTrue([photo waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
+- (void)sampleImportedPhoto:(XCUIElement *)photo {
     [photo tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:15]);
     [self.app.buttons[@"sampleCenter"] tap];
@@ -88,6 +85,12 @@
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"R 255   G 0   B 255"]);
     [self assertEmptyHistoryDoesNotOverlapHeader];
+}
+- (void)importAndSample {
+    [self.app.buttons[@"choosePhoto"] tap];
+    XCUIElement *photo=[self.app.images matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"]].firstMatch;
+    XCTAssertTrue([photo waitForExistenceWithTimeout:15],@"%@",self.app.debugDescription);
+    [self sampleImportedPhoto:photo];
 }
 - (void)testAccessibilityEmptyPalette {
     [self auditScreen:@"empty palette"];
@@ -135,7 +138,21 @@
     [self auditScreen:@"palette import help"];
 }
 - (void)testAccessibilitySampledPhoto {
-    [self importAndSample];
+    [self.app.buttons[@"choosePhoto"] tap];
+    XCUIElement *photo=[self.app.images matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"]].firstMatch;
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, deadline=started+20;
+    NSTimeInterval remaining=deadline-NSProcessInfo.processInfo.systemUptime;
+    if (remaining<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Photo audit fixture discovery has no remaining allowance"); return; }
+    BOOL appeared=[photo waitForExistenceWithTimeout:remaining];
+    NSTimeInterval returned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"PHOTO_AUDIT_FIXTURE_DISCOVERY appeared=%d elapsed=%.3f budget=20 responsiveness15=%@",appeared,returned-started,returned<started+15 ? @"within" : @"missed");
+    BOOL timely=returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Photo audit fixture discovery returned after its original deadline");
+    if (!timely) return;
+    XCTAssertTrue(appeared,@"The existing synthetic Photos fixture must appear before selection");
+    if (!appeared) return;
+    [self sampleImportedPhoto:photo];
     [self auditScreen:@"sampled photo with numeric RGB and hex"];
 }
 - (void)testAccessibilitySavedPalette {

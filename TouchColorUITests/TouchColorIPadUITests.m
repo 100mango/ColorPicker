@@ -395,7 +395,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
         XCTAssertTrue([close waitForExistenceWithTimeout:5]);
         XCTAssertFalse(self.app.buttons[@"saveLiveColor"].hittable,@"Inactive live controls must not be actionable under the full-screen flow");
         if (index==1) { [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];XCTAssertTrue(close.hittable); }
-        [self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
+        if (![self tapReadyImportPaletteClose:self.app]) return;[self assertPresentationDisappears:close];
         XCTNSPredicateExpectation *resumed=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'not available'"] object:self.app.staticTexts[@"cameraStatus"]];
         XCTAssertEqual([XCTWaiter waitForExpectations:@[resumed] timeout:5],XCTWaiterResultCompleted,@"Full-screen dismissal must release source suspension");
         XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);

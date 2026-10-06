@@ -7,7 +7,7 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-POLICY_SHA256 = '09af166e63987e02cb3722eacf4d4aa2ab6bccf55a5b43839ca4009826865cc2'
+POLICY_SHA256 = '390d6c30ab0f52031417981d7477c8553572402dd9d5757bf1ccbf4e6ea0c986'
 PUBLISHED = 'https://100mango.github.io/app-privacy/'
 CONTACT = 'mailto:100mango@gmail.com'
 
@@ -16,6 +16,7 @@ class PolicyDocument(HTMLParser):
     def __init__(self, source):
         super().__init__(convert_charrefs=True)
         self.tags, self.paragraphs, self.links, self.csp = [], [], [], []
+        self.mail_links, self.active_mail = [], None
         self.in_policy = False
         self.language = None
         self.paragraph = None
@@ -31,10 +32,15 @@ class PolicyDocument(HTMLParser):
             self.paragraph = []
         if tag == 'a':
             self.links.append(attrs.get('href'))
+            if attrs.get('href') == CONTACT:
+                self.active_mail = {'language': self.language, 'attrs': attrs, 'text': []}
         if tag == 'meta' and attrs.get('http-equiv', '').lower() == 'content-security-policy':
             self.csp.append(attrs.get('content'))
 
     def handle_endtag(self, tag):
+        if tag == 'a' and self.active_mail is not None:
+            self.mail_links.append(self.active_mail)
+            self.active_mail = None
         if tag == 'p' and self.paragraph is not None:
             self.paragraphs.append((self.language, ''.join(self.paragraph)))
             self.paragraph = None
@@ -42,6 +48,8 @@ class PolicyDocument(HTMLParser):
             self.language = None
 
     def handle_data(self, text):
+        if self.active_mail is not None:
+            self.active_mail['text'].append(text)
         if self.paragraph is not None:
             self.paragraph.append(text)
 
@@ -67,8 +75,15 @@ class OfflinePrivacyContracts(unittest.TestCase):
     def test_exact_approved_bilingual_copy_and_pinned_bytes(self):
         source = (ROOT / 'TouchColorMac/PrivacyView.swift').read_text()
         copy = [json.loads(value) for value in re.findall(r'^    static let (?:simplifiedChinese|english) = (".*")$', source, re.M)]
-        self.assertEqual(self.document.paragraphs, list(zip(['zh-Hans', 'en'], copy)))
-        self.assertEqual(len(self.html.encode()), 2823)
+        # Only the reviewed visible contact prefix is additional; every original
+        # policy word, email address and other paragraph character remains.
+        normalized=[]
+        for language, paragraph in self.document.paragraphs:
+            prefix={'zh-Hans':'开发者邮箱：','en':'Developer email: '}[language]
+            self.assertEqual(paragraph.count(prefix+'100mango@gmail.com'),1)
+            normalized.append((language,paragraph.replace(prefix+'100mango@gmail.com','100mango@gmail.com')))
+        self.assertEqual(normalized, list(zip(['zh-Hans', 'en'], copy)))
+        self.assertEqual(len(self.html.encode()), 2916)
         self.assertEqual(hashlib.sha256(self.html.encode()).hexdigest(), POLICY_SHA256)
         self.assertIn('@"' + POLICY_SHA256 + '"', self.controller)
         self.assertIn("POLICY_SHA256 = '" + POLICY_SHA256 + "'", (ROOT / 'scripts/verify_original_ios_package.py').read_text())
@@ -91,13 +106,76 @@ class OfflinePrivacyContracts(unittest.TestCase):
         self.assertIn('color-scheme: light dark', self.html)
         self.assertIn('overflow-wrap: anywhere', self.html)
         self.assertIn('lang="zh-Hans"', self.html)
-        self.assertIn('Open published policy in browser', self.html)
-        self.assertIn('在浏览器中打开已发布的隐私政策', self.html)
+        self.assertIn('Open in browser', self.html)
+        self.assertIn('在浏览器中打开', self.html)
         published = re.search(r'<p class="published">(.*?)</p>', self.html, re.S).group(1)
         english_notice = '<span lang="en">When you open this link, GitHub Pages records and stores your IP address for security.</span>'
         chinese_notice = '<span lang="zh-Hans">打开此链接时，GitHub Pages 会出于安全目的记录并存储你的 IP 地址。</span>'
         self.assertLess(published.index(english_notice), published.index('<a href="' + PUBLISHED + '">'))
         self.assertLess(published.index(chinese_notice), published.index('<a href="' + PUBLISHED + '">'))
+
+    def test_mail_links_have_visible_localized_purpose_and_identical_accessible_names(self):
+        expected={'zh-Hans':'开发者邮箱：100mango@gmail.com','en':'Developer email: 100mango@gmail.com'}
+        self.assertEqual(len(self.document.mail_links),2)
+        for link in self.document.mail_links:
+            self.assertEqual(''.join(link['text']),expected[link['language']])
+            self.assertEqual(link['attrs']['aria-label'],expected[link['language']])
+            self.assertEqual(link['attrs']['href'],CONTACT)
+            self.assertEqual(''.join(link['text']).count('100mango@gmail.com'),1)
+        for tag, attrs in self.document.tags:
+            self.assertNotIn('aria-hidden',attrs)
+            self.assertNotIn('role',attrs)
+        self.assertNotRegex(self.html.lower(),r'user-select:\s*none|font-size:\s*0|visibility:\s*hidden|display:\s*none')
+
+    def test_hosted_resource_checks_preserve_raw_email_and_descriptive_captions(self):
+        body=method(self.hosted,'testPolicyLocalResourceFailuresAndWebProcessTerminationExposeReload')
+        self.assertIn('@"开发者邮箱：100mango@gmail.com"',body)
+        self.assertIn('@"Developer email: 100mango@gmail.com"',body)
+        self.assertIn('containsString:caption',body)
+        self.assertIn('aria-label=',body)
+        self.assertIn('mailto:100mango@gmail.com',body)
+
+    def test_footer_action_is_short_bilingual_same_url_with_original_native_reachability(self):
+        expected='<a href="'+PUBLISHED+'">Open in browser<br><span lang="zh-Hans">在浏览器中打开</span></a>'
+        self.assertEqual(self.html.count(expected),1)
+        self.assertEqual(self.document.links.count(PUBLISHED),1)
+        self.assertNotIn('Open published policy in browser',self.html)
+        body=method(self.phone,'testLargestTextLocalPolicyCanScrollReloadAndCloseInLandscape')
+        self.assertIn("label CONTAINS 'Open in browser'",body)
+        self.assertIn('attempt<16 && !published.hittable',body)
+        self.assertIn('[policy swipeUpWithVelocity:XCUIGestureVelocityFast]',body)
+        self.assertIn('XCTAssertTrue(published.hittable,',body)
+        self.assertIn('XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable)',body)
+        self.assertNotIn('openURL:',body)
+        self.assertNotIn('executionTimeAllowance',body)
+
+    def test_only_sampled_photo_audit_gets_twenty_with_same_original_fifteen_marker(self):
+        body=method(self.audit,'testAccessibilitySampledPhoto')
+        self.assertEqual(body.count('[self.app.buttons[@"choosePhoto"] tap];'),1)
+        self.assertEqual(body.count('waitForExistenceWithTimeout:'),1)
+        self.assertIn('deadline=started+20;',body)
+        self.assertIn('returned<started+15 ? @"within" : @"missed"',body)
+        self.assertIn('returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline',body)
+        self.assertLess(body.index('self.tcPaletteReadinessExpired=YES;'),body.index('XCTAssertTrue(timely'))
+        self.assertLess(body.index('if (!timely) return;'),body.index('[self sampleImportedPhoto:photo]'))
+        self.assertLess(body.index('if (!appeared) return;'),body.index('[self sampleImportedPhoto:photo]'))
+        self.assertNotIn('debugDescription',body)
+        self.assertIn('[self auditScreen:@"sampled photo with numeric RGB and hex"]',body)
+        self.assertNotIn('executionTimeAllowance',body)
+        saved=method(self.audit,'testAccessibilitySavedPalette')
+        self.assertIn('[self importAndSample]',saved)
+        original=method(self.audit,'importAndSample')
+        self.assertIn('[photo waitForExistenceWithTimeout:15]',original)
+        self.assertNotIn('20',original)
+
+    def test_sampling_actions_and_original_other_audits_are_not_changed(self):
+        body=method(self.audit,'sampleImportedPhoto')
+        suffix=body
+        self.assertEqual(hashlib.sha256(suffix.encode()).hexdigest(),'d1e9a25e2bf6f1319bd33bf3f0ef257163465e78bc18a875ce4862b4bcbfa703')
+        for token in ('[photo tap]','@"#ff00ff"','@"#ff0000"','@"R 255   G 0   B 255"','[self assertEmptyHistoryDoesNotOverlapHeader]'):
+            self.assertIn(token,body)
+        self.assertIn('return NO; // No category-wide or element-wide suppression',self.audit)
+        self.assertEqual(len(re.findall(r'-\s*\(void\)\s*(test\w+)\s*\{',self.audit)),7)
 
     def test_default_and_reload_only_read_validated_bundle_with_nil_base(self):
         load = method(self.controller, 'loadPolicy')

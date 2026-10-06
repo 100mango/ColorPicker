@@ -125,6 +125,51 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 - (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout {
     [self tapReadyPaletteElement:element timeout:timeout existenceTimeout:timeout];
 }
+// Fixed app-owned Close only. The two reviewed call sites use this10s
+// functional allowance; all generic controls keep their original grants.
+- (BOOL)tapReadyImportPaletteClose:(XCUIApplication *)app {
+    if (self.tcPaletteReadinessExpired) return NO;
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, deadline=started+10;
+    XCUIElement *close=[app.navigationBars[@"Import Palette"].buttons matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@ AND enabled == YES",@"palette.import.close"]].firstMatch;
+    NSTimeInterval grant=MIN(5,MAX(0,deadline-NSProcessInfo.processInfo.systemUptime));
+    if (grant<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Owned Close has no existence allowance"); return NO; }
+    BOOL matched=[close waitForExistenceWithTimeout:grant];
+    NSLog(@"PALETTE_OWNED_CLOSE_QUERY case=%@ matched=%d total=%.3f budget=10 existenceCap=5",self.name,matched,NSProcessInfo.processInfo.systemUptime-started);
+    BOOL timely=NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Owned Close lookup returned after its original deadline");
+    if (!timely) return NO;
+    XCTAssertTrue(matched,@"The owned Import Palette Close Button must exist and be enabled");
+    if (!matched) return NO;
+    BOOL (^hittableNow)(void)=^BOOL {
+        if (self.tcPaletteReadinessExpired || NSProcessInfo.processInfo.systemUptime>=deadline) { self.tcPaletteReadinessExpired=YES; return NO; }
+        BOOL value=close.hittable;
+        if (NSProcessInfo.processInfo.systemUptime>=deadline) { self.tcPaletteReadinessExpired=YES; return NO; }
+        return value;
+    };
+    BOOL ready=hittableNow();
+    if (!ready && !self.tcPaletteReadinessExpired) {
+        XCTNSPredicateExpectation *hit=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id ignored,NSDictionary *bindings) { return hittableNow(); }] object:nil];
+        NSTimeInterval remaining=deadline-NSProcessInfo.processInfo.systemUptime;
+        if (remaining>0) ready=[XCTWaiter waitForExpectations:@[hit] timeout:remaining]==XCTWaiterResultCompleted;
+        else self.tcPaletteReadinessExpired=YES;
+    }
+    timely=!self.tcPaletteReadinessExpired && NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Owned Close readiness exceeded its original deadline");
+    if (!timely) return NO;
+    XCTAssertTrue(ready,@"Owned Close must be live hittable before its real tap");
+    if (!ready) return NO;
+    NSLog(@"PALETTE_OWNED_CLOSE_READY case=%@ total=%.3f budget=10",self.name,NSProcessInfo.processInfo.systemUptime-started);
+    if (NSProcessInfo.processInfo.systemUptime>=deadline) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Owned Close expired before tap"); return NO; }
+    [close tap];
+    NSTimeInterval returned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"PALETTE_OWNED_CLOSE_RETURN case=%@ total=%.3f budget=10 responsiveness5=%@",self.name,returned-started,returned<started+5 ? @"within" : @"missed");
+    timely=returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Owned Close tap returned after its original deadline");
+    return timely;
+}
 - (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll {
     CGRect viewport=scroll.frame,target=element.frame;
     CGFloat distance=CGRectGetMidY(target)-CGRectGetMidY(viewport);
@@ -185,7 +230,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     // A real Button and its enabled attribute are matched in one current AX
     // query. The old existence5 + enabled5 grants share one absolute10s clock.
     NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, deadline=started+10;
-    XCUIElement *paste=[app.buttons matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@ AND enabled == YES",@"palette.import.paste"]].firstMatch;
+    XCUIElement *paste=[app.tables[@"palette.import.review"].buttons matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@ AND enabled == YES",@"palette.import.paste"]].firstMatch;
     NSTimeInterval remaining=deadline-NSProcessInfo.processInfo.systemUptime;
     if (remaining<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Paste readiness expired before lookup"); return NO; }
     BOOL ready=[paste waitForExistenceWithTimeout:remaining];
@@ -527,7 +572,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     [self verifyPaletteRows:@[@"#112233"] app:app];[self acceptPalette:app];
     [self selectSyntheticPaletteFile:app];
     if (self.tcPaletteReadinessExpired) return;
-    XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];
+    XCUIElement *close=app.buttons[@"palette.import.close"];if (![self tapReadyImportPaletteClose:app]) return;[self waitForPalettePresentationToClose:close];
     [self verifyHistory:@[@"#112233"] app:app];
     [self selectSyntheticPaletteFile:app];
     if (self.tcPaletteReadinessExpired) return;

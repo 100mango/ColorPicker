@@ -21,7 +21,7 @@ MAX_ENTRIES, MAX_BYTES, MAX_SECONDS = 8192, 1024 * 1024 * 1024, 30
 IMPORT_SHA = "32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1"
 POLICY_SOURCE = 'ColorPicker/PrivacyPolicy.html'
 POLICY_PRODUCT = 'app/PrivacyPolicy.html'
-POLICY_SHA256 = '09af166e63987e02cb3722eacf4d4aa2ab6bccf55a5b43839ca4009826865cc2'
+POLICY_SHA256 = '390d6c30ab0f52031417981d7477c8553572402dd9d5757bf1ccbf4e6ea0c986'
 APP_SOURCES = sorted(['ColorPicker/' + name for name in (
     'main.m', 'ColorAppDelegate.m', 'ColorSceneDelegate.m', 'ColorMainViewController.m',
     'ColorViewController.m', 'ColorRealTimeViewController.m', 'ColorDetectView.m',
