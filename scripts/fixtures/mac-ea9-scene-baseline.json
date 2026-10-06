@@ -1,0 +1,32 @@
+{
+  "parent": "ea9da854f4658b36a28a3b80f6f48e06185cfedb",
+  "parent_tree": "141bcec9a89e74ebf519b513a7042a2503fe84d4",
+  "projections": {
+    "TouchColorMac/ColorWindow.swift": {
+      "debug": "957a5a7206f3003fb4e440b5513111ec6d8d40b9942a50e603dc6399be82d612",
+      "release": "957a5a7206f3003fb4e440b5513111ec6d8d40b9942a50e603dc6399be82d612"
+    },
+    "TouchColorMac/TouchColorMacApp.swift": {
+      "debug": "4d54f83e03639aba35ada07c76682d916770e2889832b4f188c6039be00eb479",
+      "release": "3970a262012b0c1778483cada38f4aed31aad867bc602dc43bd089e36f3f1f56"
+    }
+  },
+  "protected": {
+    ".github/workflows/apple-platforms.yml": "c2c7106d7830a532883b112b42a2c6d8549ef01f4300414b5c8c29ead093e974",
+    ".github/workflows/ios.yml": "e41f6b86e1b3498ada37a3a7306a0b00e9805ee288f52942504557a07211d0c7",
+    ".github/workflows/mac-launch-comparison.yml": "10aa38d657c83f53cb8edbacb71cb3e85732a2048c25b07b037f198888b114c5",
+    ".github/workflows/mac-watch-repair.yml": "e15d7a4d89318bfd10ec28b88c6df14730236cf88ba4393419a3ce4ed297baaa",
+    "TouchColorMac.xcodeproj/project.pbxproj": "7d12588eda1eb1578f131e459f1c6deba2841673ce894158787e6d94c1f1db34",
+    "TouchColorMac.xcodeproj/xcshareddata/xcschemes/TouchColorMac.xcscheme": "966a25e8cc7f6c110dd64ec4c4fb50b7b59c7aa4b96398bd864571d0f3b36650",
+    "TouchColorMac/ImageSession.swift": "9d1b69b8a2dc83ce27d332b908d3a640af3ead2bc6b32bdfa2b01e46887c3971",
+    "TouchColorMac/PaletteLibrary.swift": "ca074dc19dc8fad78c0efcf3d1c5eb206e7b9f0055a7443fa5c9888080081938",
+    "TouchColorMacUITests/TouchColorMacUITests.swift": "0f1cc977d997281f49c2b77a94e968fc42002d0c2481076647cb6b4c3ce16448",
+    "scripts/MacLaunchComparison.swift": "9eab452bc752f202ba5696b4e1010f413aaa68db718032a020a7d3c8b8210dd2",
+    "scripts/atomic_json.py": "748f5cb832ef41a6a0027be8c797b6d2484e4b80a7759df104307cbe06f7e0fb",
+    "scripts/bounded_process.py": "8d43e28c00d3e3d7ebe3140b63bcf9ed6b4a6d559282d67ccec30e5aed0db587",
+    "scripts/job_budget.py": "51ac0080b0237fe5c6cc536f8197ac9a7449b290a8840d9c6c4f05316ed025bd",
+    "scripts/palette_lifecycle_diagnostics.py": "377ea2ea975293100debd92bcc033348a34a0a4432fa59ca828dab042cf6a562",
+    "scripts/retain_mac_evidence.py": "47e5fb82f9aa03332e734368012906a6116fa005af4ce71db80c04e8a8f184ad",
+    "scripts/validate_evidence.py": "ce5896f6044287ff7aae38f72ad7195651a2cde2975ac02615cd656f49c63967"
+  }
+}

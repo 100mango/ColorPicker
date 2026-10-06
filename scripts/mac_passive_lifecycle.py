@@ -27,6 +27,8 @@ EVENTS = {'appInit','willFinishLaunching','didFinishRestoringWindows','didFinish
           'didBecomeActive','didResignActive','didHide','didUnhide','windowKey','windowResignKey',
           'windowMiniaturized','windowDeminiaturized','windowOcclusion','windowWillClose',
           'markerCreated','markerMapped','markerDetached','census','final'}
+SCENE_CHECKPOINTS = {'sceneBody','windowContentEntered','windowContentReturned','colorWindowBody'}
+EVENTS |= SCENE_CHECKPOINTS
 
 def require(value, reason):
     if not value: raise ValueError(reason)
@@ -137,7 +139,7 @@ def validate_census(app):
 
 def project(raw, receipts):
     records=strict_json(raw);require(isinstance(records,list) and len(records)<=240,'too many log rows')
-    by_key={(r['pid'],r['token']):r for r in receipts};buckets={key:[] for key in by_key};seen=set();launches={};sizes={}
+    by_key={(r['pid'],r['token']):r for r in receipts};buckets={key:[] for key in by_key};seen=set();launches={};sizes={};checkpoints=set()
     for record in records:
         require(isinstance(record,dict) and type(record.get('processID')) is int,'bad log envelope')
         message=record.get('eventMessage');require(isinstance(message,str) and message.startswith(PREFIX),'redacted or foreign message')
@@ -148,12 +150,15 @@ def project(raw, receipts):
         key=(value['pid'],value['token']);require(key in by_key,'foreign PID/token');receipt=by_key[key]
         require(record['processID']==value['pid'] and record.get('processImagePath')==receipt['executable'],'foreign process image')
         require(value['event'] in EVENTS and integer(value['sequence'],1,24) and integer(value['omittedRecords']) and type(value['late']) is bool,'bad event fields')
+        if value['event'] in SCENE_CHECKPOINTS:
+            checkpoint=(key,value['event'])
+            require(checkpoint not in checkpoints,'duplicate scene checkpoint');checkpoints.add(checkpoint)
         if 'launchIsDefault' in value:
             require(value['event']=='didFinishLaunching' and type(value['launchIsDefault']) is str
                     and value['launchIsDefault'] in {'missing','reportedTrue','reportedFalse','unexpectedType'},'invalid default-launch scalar')
         require(number(value['epoch']) and receipt['started']<=value['epoch']<=receipt['result_end'] and number(value['elapsed']) and value['elapsed']>=0,'out-of-window event')
         require(value['late']==(value['elapsed']>10) and (not value['late'] or value['event']=='final'),'late event is not a final omission')
-        require(('app' in value)==(not value['late']),'missing or invented census')
+        require(('app' in value)==(not value['late'] and value['event'] not in SCENE_CHECKPOINTS),'missing or invented census')
         if 'app' in value:validate_census(value['app'])
         if value['event']=='appInit':
             require(value['sequence']==1 and 'product' in value,'missing header')

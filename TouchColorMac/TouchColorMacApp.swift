@@ -21,16 +21,25 @@ import OSLog
         _library = StateObject(wrappedValue: PaletteLibrary(defaults: defaults))
     }
     var body: some Scene {
+        #if DEBUG
+        let _ = MacPassiveLifecycle.shared?.checkpoint(.sceneBody)
+        #endif
         WindowGroup("TouchColor") {
-            ColorWindow(library: library)
+            #if DEBUG
+            let _ = MacPassiveLifecycle.shared?.checkpoint(.windowContentEntered)
+            let content = ColorWindow(library: library)
                 .background(NativeWindowMinimumSize())
-                #if DEBUG
                 .overlay(alignment: .topLeading) {
                     if let proof = SandboxRuntimeProof.json {
                         Text(proof).font(.caption2).lineLimit(4).accessibilityIdentifier("debug.sandbox.proof")
                     }
                 }
-                #endif
+            let _ = MacPassiveLifecycle.shared?.checkpoint(.windowContentReturned)
+            content
+            #else
+            ColorWindow(library: library)
+                .background(NativeWindowMinimumSize())
+            #endif
         }
         .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }
@@ -173,6 +182,9 @@ final class PaneAccessibilityView: NSView {
 #if DEBUG
 /// Passive, synthetic test correlation only. No activation, scene creation or restoration writes.
 @MainActor final class MacPassiveLifecycle {
+    enum SceneCheckpoint: String {
+        case sceneBody, windowContentEntered, windowContentReturned, colorWindowBody
+    }
     static var shared: MacPassiveLifecycle?
     private let token: String
     private let launch = UUID().uuidString
@@ -183,6 +195,7 @@ final class PaneAccessibilityView: NSView {
     private var bytes = 0
     private var omitted = 0
     private var stopped = false
+    private var checkpoints: Set<SceneCheckpoint> = []
     private final class WindowIdentity {
         weak var window: NSWindow?
         let identifier: Int
@@ -245,6 +258,12 @@ final class PaneAccessibilityView: NSView {
             }
         }
     }
+    // First evaluation only, through the existing token-gated instance and bounds.
+    // A late or omitted checkpoint stays omitted; it is never retried.
+    func checkpoint(_ value: SceneCheckpoint) {
+        guard !stopped, checkpoints.insert(value).inserted else { return }
+        record(value.rawValue, sampleApp: false)
+    }
     func markerCreated() { record("markerCreated") }
     func markerMapped(_ window: NSWindow?) {
         workspace = window
@@ -274,7 +293,7 @@ final class PaneAccessibilityView: NSView {
                             "sheet": window.attachedSheet != nil, "workspace": window === workspace]
                 }]
     }
-    private func record(_ event: String, header: Bool = false, final: Bool = false, launchIsDefault: String? = nil) {
+    private func record(_ event: String, header: Bool = false, final: Bool = false, launchIsDefault: String? = nil, sampleApp: Bool = true) {
         guard !stopped else { return }
         let elapsed = ProcessInfo.processInfo.systemUptime - started
         // Delayed callbacks never extend observation. The final record reports omission honestly.
@@ -285,7 +304,7 @@ final class PaneAccessibilityView: NSView {
             "elapsed": elapsed, "sequence": sequence + 1, "event": event,
             "omittedRecords": omitted, "late": elapsed > 10]
         if event == "didFinishLaunching", let launchIsDefault { row["launchIsDefault"] = launchIsDefault }
-        if elapsed <= 10 { row["app"] = census() }
+        if elapsed <= 10 && sampleApp { row["app"] = census() }
         if header {
             let info = ProcessInfo.processInfo; let arguments = info.arguments
             let language = arguments.firstIndex(of: "-AppleLanguages").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
