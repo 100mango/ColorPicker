@@ -1,5 +1,8 @@
 """Source and resource contracts only; not Apple compilation or packet-level network observation."""
 import hashlib
+import ast
+import shutil
+import subprocess
 from html.parser import HTMLParser
 import json
 from pathlib import Path
@@ -308,6 +311,148 @@ class OfflinePrivacyContracts(unittest.TestCase):
         self.assertIn('test_original_ios_package test_ios_offline_privacy', prerequisite)
         self.assertIn('python3 -O -m unittest test_ios_offline_privacy test_original_ios_package', prerequisite)
 
+
+
+# C preprocessing counts parentheses, not Objective-C []/{} message or literal
+# grouping. Probe the actual arguments received by macros using the installed C
+# preprocessor; this is not an Apple XCTest/Objective-C type-check substitute.
+ASSERT_ARITY = {
+    'XCTAssertTrue': 1, 'XCTAssertFalse': 1, 'XCTAssertNil': 1,
+    'XCTAssertNotNil': 1, 'XCTFail': 1, 'XCTAssertEqual': 2,
+    'XCTAssertEqualObjects': 2, 'XCTAssertNotEqual': 2,
+    'XCTAssertGreaterThan': 2, 'XCTAssertGreaterThanOrEqual': 2,
+    'XCTAssertLessThanOrEqual': 2, 'XCTAssertEqualWithAccuracy': 3,
+}
+
+
+def mask_c_literals_and_comments(text):
+    masked = list(text)
+    index = 0
+    while index < len(text):
+        start = index
+        if text.startswith('//', index):
+            end = text.find('\n', index)
+            index = len(text) if end < 0 else end
+        elif text.startswith('/*', index):
+            end = text.find('*/', index + 2)
+            if end < 0:
+                raise ValueError('Unclosed C comment')
+            index = end + 2
+        elif text[index] in ('"', "'"):
+            quote = text[index]
+            index += 1
+            while index < len(text):
+                if text[index] == '\\':
+                    index += 2
+                elif text[index] == quote:
+                    index += 1
+                    break
+                else:
+                    index += 1
+            else:
+                raise ValueError('Unclosed C literal')
+        else:
+            index += 1
+            continue
+        for position in range(start, min(index, len(text))):
+            if masked[position] != '\n':
+                masked[position] = ' '
+    return ''.join(masked)
+
+
+def assertion_calls(source):
+    masked = mask_c_literals_and_comments(source)
+    calls = []
+    for found in re.finditer(r'\b(XCTAssert\w*|XCTFail)\s*\(', masked):
+        name = found.group(1)
+        if name not in ASSERT_ARITY:
+            raise ValueError('Unreviewed assertion macro ' + name)
+        depth, end = 1, found.end()
+        while end < len(masked) and depth:
+            if masked[end] == '(':
+                depth += 1
+            elif masked[end] == ')':
+                depth -= 1
+            end += 1
+        if depth:
+            raise ValueError('Unclosed assertion invocation')
+        calls.append(source[found.start():end])
+    return calls
+
+
+def preprocess_assertion_arguments(calls):
+    compiler = shutil.which('cc')
+    if not compiler:
+        raise RuntimeError('An installed C preprocessor is required; do not skip this check')
+    definitions = []
+    for name, arity in ASSERT_ARITY.items():
+        parameters = [f'arg{i}' for i in range(arity)]
+        definitions.append(f'#define {name}({", ".join(parameters)}, ...) '
+                           f'TC_XCT_ARG_RECORD("{name}", {", ".join("#" + p for p in parameters)})')
+    probe = '\n'.join(definitions + [call + ';' for call in calls]) + '\n'
+    if len(probe.encode()) > 1_000_000:
+        raise ValueError('Unexpected assertion probe size')
+    result = subprocess.run([compiler, '-E', '-P', '-x', 'c', '-'], input=probe,
+                            capture_output=True, text=True, timeout=15)
+    if result.returncode:
+        raise ValueError('C preprocessing failed: ' + result.stderr[:2000])
+    if len(result.stdout.encode()) > 2_000_000:
+        raise ValueError('Unexpected preprocessor output size')
+    records = []
+    literal = r'"(?:\\.|[^"\\])*"'
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r'\s*TC_XCT_ARG_RECORD\s*\(\s*(' + literal + r'(?:\s*,\s*' + literal + r')*)\s*\)\s*;?\s*', line)
+        if not match:
+            raise ValueError('Unexpected C preprocessor record: ' + line[:300])
+        values = [ast.literal_eval(token) for token in re.findall(literal, match.group(1))]
+        if len(values) != ASSERT_ARITY[values[0]] + 1:
+            raise ValueError('Wrong assertion argument count')
+        for argument in values[1:]:
+            clean = mask_c_literals_and_comments(argument)
+            stack = []
+            pairs = {')': '(', ']': '[', '}': '{'}
+            for char in clean:
+                if char in '([{':
+                    stack.append(char)
+                elif char in ')]}':
+                    if not stack or stack.pop() != pairs[char]:
+                        raise ValueError('Preprocessor split an Objective-C assertion argument: ' + values[0])
+            if stack:
+                raise ValueError('Preprocessor split an Objective-C assertion argument: ' + values[0])
+        records.append(values)
+    if len(records) != len(calls):
+        raise ValueError('Assertion probe omitted an invocation')
+    return records
+
+
+class ActualAssertionPreprocessorTests(unittest.TestCase):
+    def test_all_assertions_in_changed_native_files_retain_complete_arguments(self):
+        paths = ['ColorPickerTests/ColorPickerTests.m', 'TouchColorUITests/TCPaletteUIHelpers.m',
+                 'TouchColorUITests/TouchColorAccessibilityUITests.m',
+                 'TouchColorUITests/TouchColorIPadUITests.m', 'TouchColorUITests/TouchColorUITests.m']
+        counts = {}
+        for relative in paths:
+            calls = assertion_calls((ROOT / relative).read_text())
+            self.assertGreater(len(calls), 0)
+            counts[relative] = len(preprocess_assertion_arguments(calls))
+        self.assertGreater(sum(counts.values()), 200)
+
+    def test_real_preprocessor_rejects_message_and_collection_commas(self):
+        bad = [
+            'XCTAssertTrue([HTML containsString:[NSString stringWithFormat:@"aria-label=\\\"%@\\\"",caption]],@"Original21 failure");',
+            'XCTAssertEqualObjects(actual,@[@"one",@"two"]);',
+            'XCTAssertTrue([object matches:@{@"one": @1, @"two": @2}]);',
+        ]
+        for source in bad:
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                preprocess_assertion_arguments(assertion_calls(source))
+        good = ['XCTAssertTrue([HTML containsString:accessibleNameAttribute],@"Same semantic assertion");',
+                'XCTAssertEqualObjects(actual,(@[@"one",@"two"]));',
+                'XCTAssertTrue(([HTML containsString:[NSString stringWithFormat:@"%@",caption]]));']
+        for source in good:
+            self.assertEqual(len(preprocess_assertion_arguments(assertion_calls(source))), 1)
 
 if __name__ == '__main__':
     unittest.main()

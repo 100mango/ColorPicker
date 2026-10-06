@@ -349,7 +349,8 @@
     NSString *HTML=TCPrivacyPolicyHTML(approved);
     for (NSString *caption in @[@"开发者邮箱：100mango@gmail.com", @"Developer email: 100mango@gmail.com"]) {
         XCTAssertTrue([HTML containsString:caption],@"Visible contact text preserves the complete selectable address and explains its purpose");
-        XCTAssertTrue([HTML containsString:[NSString stringWithFormat:@"aria-label=\"%@\"",caption]],@"The localized link name must match its readable visible text");
+        NSString *accessibleNameAttribute=[NSString stringWithFormat:@"aria-label=\"%@\"",caption];
+        XCTAssertTrue([HTML containsString:accessibleNameAttribute],@"The localized link name must match its readable visible text");
     }
     XCTAssertTrue([HTML containsString:@"href=\"mailto:100mango@gmail.com\""],@"The exact original contact destination remains unchanged");
     XCTAssertNotNil(HTML);
