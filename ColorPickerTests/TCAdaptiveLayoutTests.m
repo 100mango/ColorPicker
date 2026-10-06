@@ -42,14 +42,21 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 
 @interface TCLayoutHost : UIViewController
 @property (nonatomic) BOOL appeared;
+@property (nonatomic, copy) void (^onAppearance)(void);
 @end
 @implementation TCLayoutHost
-- (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; self.appeared=YES; }
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated]; self.appeared=YES;
+    void (^observed)(void)=self.onAppearance; self.onAppearance=nil;
+    if (observed) observed();
+}
 @end
 
 @interface TCAdaptiveLayoutTests : XCTestCase
+@property (nonatomic) BOOL hostedGateUnproved;
 @end
 @implementation TCAdaptiveLayoutTests
+- (void)setUp { [super setUp]; self.hostedGateUnproved=NO; }
 - (void)testScreenEnvelopeRejectsOffscreenAndMixedSpaceCoordinates {
     TCPickerScreenContext context={3,YES,CGRectMake(0,0,1376,1032),CGRectMake(0,0,1032,1376)};
     TCPickerScreenMap map;CGRect window=CGRectMake(0,0,1376,1032),envelope;
@@ -207,12 +214,13 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
     XCTAssertFalse(TCPickerDismissalPoint(window,CGRectMake(100,50,200,300),NULL));
 }
 - (void)withController:(UIViewController *)controller size:(CGSize)size style:(UIUserInterfaceStyle)style check:(void (^)(UIViewController *))check {
+    if (self.hostedGateUnproved) { XCTFail(@"Earlier owner readiness remains unproved"); NSLog(@"HOSTED_UI_GATE phase=owner dependent=unexecuted readiness=unproved"); return; }
     UIWindowScene *scene=nil;
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {
         if ([candidate isKindOfClass:UIWindowScene.class] && candidate.activationState==UISceneActivationStateForegroundActive) { scene=(UIWindowScene *)candidate; break; }
     }
     XCTAssertNotNil(scene,@"A running UIKit scene is required for actual view-layout coverage");
-    if (!scene) return;
+    if (!scene) { self.hostedGateUnproved=YES; return; }
     UIWindow *previous=nil;
     for (UIWindow *candidate in scene.windows) if (candidate.isKeyWindow) previous=candidate;
     UIWindow *window=[[UIWindow alloc] initWithWindowScene:scene];
@@ -238,6 +246,18 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
     [host.view addSubview:navigation.view];
     [navigation didMoveToParentViewController:host];
     [NSLayoutConstraint activateConstraints:@[[navigation.view.widthAnchor constraintEqualToConstant:size.width],[navigation.view.heightAnchor constraintEqualToConstant:size.height],[navigation.view.topAnchor constraintEqualToAnchor:host.view.topAnchor],[navigation.view.leadingAnchor constraintEqualToAnchor:host.view.leadingAnchor]]];
+    XCTestExpectation *appeared=[self expectationWithDescription:@"Actual constrained-window owner appeared"];
+    __block NSTimeInterval observed=-1;
+    __block BOOL observedAttached=NO;
+    NSTimeInterval actionStarted=NSProcessInfo.processInfo.systemUptime;
+    __weak TCLayoutHost *weakHost=host;
+    host.onAppearance=^{
+        TCLayoutHost *current=weakHost;
+        observedAttached=current && current.viewIfLoaded.window==window && window.rootViewController==current;
+        observed=NSProcessInfo.processInfo.systemUptime;
+        NSLog(@"HOSTED_UI_GATE phase=owner event=appearance controller=%@ size=%@ style=%ld action=%.6f observed=%.6f state=%d",NSStringFromClass(controller.class),NSStringFromCGSize(size),(long)style,actionStarted,observed,observedAttached);
+        if (observedAttached) [appeared fulfill];
+    };
     @try {
         [largest performAsCurrentTraitCollection:^{
             window.rootViewController=host;
@@ -250,8 +270,19 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
         }];
         // Let UIKit finish presenting this test window before measuring or removing it.
         // Tearing a root down during its incoming appearance transition produces invalid lifecycle evidence.
-        XCTNSPredicateExpectation *appeared=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"appeared == true"] object:host];
-        XCTAssertEqual([XCTWaiter waitForExpectations:@[appeared] timeout:3],XCTWaiterResultCompleted);
+        NSTimeInterval actionReturned=NSProcessInfo.processInfo.systemUptime;
+        NSTimeInterval waitStarted=NSProcessInfo.processInfo.systemUptime;
+        XCTWaiterResult waited=[XCTWaiter waitForExpectations:@[appeared] timeout:3];
+        host.onAppearance=nil;
+        BOOL attached=host.appeared && host.viewIfLoaded.window==window && window.rootViewController==host;
+        NSTimeInterval waitReturned=NSProcessInfo.processInfo.systemUptime;
+        NSLog(@"HOSTED_UI_GATE phase=owner controller=%@ size=%@ style=%ld action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f state=%d result=%ld",NSStringFromClass(controller.class),NSStringFromCGSize(size),(long)style,actionStarted,actionReturned,waitStarted,waitReturned,observed,attached,(long)waited);
+        XCTAssertEqual(waited,XCTWaiterResultCompleted);
+        if (waited!=XCTWaiterResultCompleted || !observedAttached || !attached) {
+            XCTFail(@"Owner event and current attachment must both be proved before geometry");
+            self.hostedGateUnproved=YES;
+            NSLog(@"HOSTED_UI_GATE phase=owner geometry=unexecuted readiness=unproved"); return;
+        }
         XCTAssertEqualWithAccuracy(navigation.view.bounds.size.width,size.width,0.5);
         XCTAssertEqualWithAccuracy(navigation.view.bounds.size.height,size.height,0.5);
         XCTAssertEqualWithAccuracy(controller.view.bounds.size.width,size.width,0.5);
@@ -259,6 +290,7 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
         NSLog(@"MINIMUM_GEOMETRY viewport=%@ style=%ld category=%@ safe=%@",NSStringFromCGSize(size),(long)style,controller.traitCollection.preferredContentSizeCategory,NSStringFromCGRect(controller.view.safeAreaLayoutGuide.layoutFrame));
         check(controller);
     } @finally {
+        host.onAppearance=nil;
         window.hidden=YES;
         window.rootViewController=nil;
         [previous makeKeyAndVisible];
@@ -361,13 +393,46 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
 }
 - (void)test320x568LargestTextActualViewLayouts { [self exerciseSize:CGSizeMake(320,568)]; }
 - (void)test568x320LargestTextActualViewLayouts { [self exerciseSize:CGSizeMake(568,320)]; }
-- (void)settleWorkspace:(TCWorkspaceViewController *)workspace {
+- (BOOL)settleWorkspace:(TCWorkspaceViewController *)workspace expected:(UIViewController *)expected operation:(NSString *)operation actionStarted:(NSTimeInterval)actionStarted actionReturned:(NSTimeInterval)actionReturned {
+    if (self.hostedGateUnproved) { XCTFail(@"Earlier workspace readiness remains unproved"); return NO; }
     XCTestExpectation *settled=[self expectationWithDescription:@"Column transition completed"];
     id<UIViewControllerTransitionCoordinator> transition=workspace.transitionCoordinator;
-    BOOL scheduled=transition && [transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { [settled fulfill]; }];
-    if (!scheduled) dispatch_async(dispatch_get_main_queue(), ^{ [settled fulfill]; });
-    [self waitForExpectations:@[settled] timeout:3];
+    __block BOOL fulfilled=NO, closed=NO;
+    __block NSTimeInterval observed=-1;
+    __block BOOL observedAttached=NO;
+    __block NSString *observedKind=@"unobserved";
+    void (^observe)(NSString *, NSInteger, BOOL)=^(NSString *kind, NSInteger cancelled, BOOL qualifyingEvent) {
+        if (closed) return;
+        BOOL attached=workspace.viewIfLoaded.window!=nil && expected.viewIfLoaded.window==workspace.viewIfLoaded.window;
+        NSTimeInterval eventTime=NSProcessInfo.processInfo.systemUptime;
+        NSLog(@"HOSTED_UI_GATE phase=column operation=%@ event=%@ action=%.6f observed=%.6f state=%d cancelled=%ld duplicate=%d",operation,kind,actionStarted,eventTime,attached,(long)cancelled,fulfilled);
+        if (qualifyingEvent && attached && !fulfilled) {
+            fulfilled=YES; observed=eventTime; observedAttached=attached; observedKind=kind;
+            [settled fulfill];
+        }
+    };
+    BOOL scheduled=transition && [transition animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        observe(@"transition-completion",context.isCancelled ? 1 : 0,!context.isCancelled);
+    }];
+    // A false return does not exclude a later completion callback. A single
+    // main-queue turn is a fallback observation, never a fabricated transition.
+    if (!scheduled) dispatch_async(dispatch_get_main_queue(), ^{
+        observe(transition ? @"registration-rejected-main-turn" : @"no-coordinator-main-turn",-1,transition==nil);
+    });
+    NSTimeInterval waitStarted=NSProcessInfo.processInfo.systemUptime;
+    XCTWaiterResult waited=[XCTWaiter waitForExpectations:@[settled] timeout:3];
+    closed=YES;
+    BOOL attached=workspace.viewIfLoaded.window!=nil && expected.viewIfLoaded.window==workspace.viewIfLoaded.window;
+    NSTimeInterval waitReturned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"HOSTED_UI_GATE phase=column operation=%@ coordinator=%d registered=%d action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f kind=%@ state=%d result=%ld",operation,transition!=nil,scheduled,actionStarted,actionReturned,waitStarted,waitReturned,observed,observedKind,attached,(long)waited);
+    XCTAssertEqual(waited,XCTWaiterResultCompleted,@"Actual completion or attached no-transition state is required");
+    if (waited!=XCTWaiterResultCompleted || !fulfilled || !observedAttached || !attached) {
+        XCTFail(@"Column completion and current attachment must both be proved");
+        self.hostedGateUnproved=YES;
+        NSLog(@"HOSTED_UI_GATE phase=column dependent=unexecuted readiness=unproved"); return NO;
+    }
     [workspace.view.window layoutIfNeeded];[workspace.view layoutIfNeeded];
+    return YES;
 }
 - (void)testNativeWorkspaceCompactAndSplitWindowGeometry {
     for (NSValue *value in @[[NSValue valueWithCGSize:CGSizeMake(320,568)],[NSValue valueWithCGSize:CGSizeMake(507,768)],[NSValue valueWithCGSize:CGSizeMake(694,507)],[NSValue valueWithCGSize:CGSizeMake(1024,768)]]) {
@@ -377,12 +442,24 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             ColorViewController *canvas=[ColorViewController new];
             UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(3,2)];
             [canvas setChooseImage:[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) { [UIColor.magentaColor setFill];[context fillRect:CGRectMake(0,0,3,2)]; }]];
+            NSTimeInterval showStarted=NSProcessInfo.processInfo.systemUptime;
             [UIView performWithoutAnimation:^{ [palette.workspaceDelegate palette:palette showCanvas:canvas]; }];
+            NSTimeInterval showReturned=NSProcessInfo.processInfo.systemUptime;
             // Wait for UIKit's transition/layout transaction rather than measuring a newly loaded,
             // still-unattached secondary view against an already laid-out primary column.
-            [self settleWorkspace:workspace];
+            if (![self settleWorkspace:workspace expected:canvas operation:@"show-canvas" actionStarted:showStarted actionReturned:showReturned]) return;
             XCTNSPredicateExpectation *attached=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return canvas.view.window == workspace.view.window && canvas.view.window != nil; }] object:canvas];
-            XCTAssertEqual([XCTWaiter waitForExpectations:@[attached] timeout:3],XCTWaiterResultCompleted,@"Canvas must be attached before comparing column geometry");
+            NSTimeInterval attachmentWait=NSProcessInfo.processInfo.systemUptime;
+            XCTWaiterResult attachmentResult=[XCTWaiter waitForExpectations:@[attached] timeout:3];
+            BOOL canvasAttached=canvas.viewIfLoaded.window!=nil && canvas.viewIfLoaded.window==workspace.viewIfLoaded.window;
+            NSTimeInterval attachmentReturned=NSProcessInfo.processInfo.systemUptime;
+            NSLog(@"HOSTED_UI_GATE phase=attachment operation=show-canvas action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f state=%d result=%ld",showStarted,showReturned,attachmentWait,attachmentReturned,canvasAttached,(long)attachmentResult);
+            XCTAssertEqual(attachmentResult,XCTWaiterResultCompleted,@"Canvas must be attached before comparing column geometry");
+            if (attachmentResult!=XCTWaiterResultCompleted || !canvasAttached) {
+                XCTFail(@"Canvas attachment must be proved before dependent geometry");
+                self.hostedGateUnproved=YES;
+                NSLog(@"HOSTED_UI_GATE phase=attachment geometry=unexecuted readiness=unproved"); return;
+            }
             [workspace.view.window layoutIfNeeded];[workspace.view layoutIfNeeded];[canvas.view layoutIfNeeded];
             NSLog(@"SPLIT_GEOMETRY size=%@ horizontal=%ld collapsed=%d mode=%ld primaryWidth=%.1f palette=%@ canvas=%@",NSStringFromCGSize(value.CGSizeValue),(long)workspace.traitCollection.horizontalSizeClass,workspace.collapsed,(long)workspace.displayMode,workspace.primaryColumnWidth,NSStringFromCGRect([palette.view convertRect:palette.view.bounds toView:workspace.view]),NSStringFromCGRect([canvas.view convertRect:canvas.view.bounds toView:workspace.view]));
             ColorDetectView *viewport=(ColorDetectView *)TCLayoutView(canvas.view,@"photoViewport");
@@ -404,13 +481,17 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             } else {
                 XCTAssertEqualWithAccuracy(canvas.view.bounds.size.width,value.CGSizeValue.width,1);
                 UIBarButtonItem *showPalette=canvas.navigationItem.leftBarButtonItem;
+                NSTimeInterval paletteStarted=NSProcessInfo.processInfo.systemUptime;
                 XCTAssertTrue([UIApplication.sharedApplication sendAction:showPalette.action to:showPalette.target from:showPalette forEvent:nil]);
-                [self settleWorkspace:workspace];
+                NSTimeInterval paletteReturned=NSProcessInfo.processInfo.systemUptime;
+                if (![self settleWorkspace:workspace expected:palette operation:@"show-palette" actionStarted:paletteStarted actionReturned:paletteReturned]) return;
                 XCTAssertEqual(palette.view.window,workspace.view.window);
                 UIBarButtonItem *returnToCanvas=palette.navigationItem.leftBarButtonItem;
                 XCTAssertEqualObjects(returnToCanvas.accessibilityIdentifier,@"workspace.canvas");
+                NSTimeInterval canvasStarted=NSProcessInfo.processInfo.systemUptime;
                 XCTAssertTrue([UIApplication.sharedApplication sendAction:returnToCanvas.action to:returnToCanvas.target from:returnToCanvas forEvent:nil]);
-                [self settleWorkspace:workspace];
+                NSTimeInterval canvasReturned=NSProcessInfo.processInfo.systemUptime;
+                if (![self settleWorkspace:workspace expected:canvas operation:@"return-canvas" actionStarted:canvasStarted actionReturned:canvasReturned]) return;
                 XCTAssertEqual(canvas.view.window,workspace.view.window);
                 XCTAssertEqualObjects([canvas valueForKey:@"selectedHex"],@"#ff00ff");
             }

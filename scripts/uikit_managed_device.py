@@ -19,6 +19,8 @@ from uikit_runtime_diagnostics import read_identity, validate_identity
 REPOSITORY = '100mango/ColorPicker'
 REF = 'refs/heads/codex/platform-integration'
 WORKFLOW = REPOSITORY + '/.github/workflows/ios.yml@' + REF
+REPAIR_REF = 'refs/heads/codex/uikit-hosted-repair'
+REPAIR_WORKFLOW = REPOSITORY + '/.github/workflows/ios.yml@' + REPAIR_REF
 RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'
 PROFILES = {'iPadMini': 'iPad mini (A17 Pro)',
             'iPadLarge': 'iPad Pro 13-inch (M5)',
@@ -33,8 +35,11 @@ RECEIPT_LIMIT = 16384
 def require_job(family):
     """Host-only current canonical context. This does not verify checkout bytes."""
     require(family in PROFILES, 'Unknown canonical UIKit family')
-    expected = {'GITHUB_REPOSITORY': REPOSITORY, 'GITHUB_REF': REF,
-                'GITHUB_WORKFLOW_REF': WORKFLOW, 'GITHUB_ACTIONS': 'true',
+    ref = os.environ.get('GITHUB_REF')
+    require(ref in (REF, REPAIR_REF), 'Unknown UIKit qualification branch')
+    workflow = WORKFLOW if ref == REF else REPAIR_WORKFLOW
+    expected = {'GITHUB_REPOSITORY': REPOSITORY, 'GITHUB_REF': ref,
+                'GITHUB_WORKFLOW_REF': workflow, 'GITHUB_ACTIONS': 'true',
                 'GITHUB_JOB': 'compatibility', 'RUNNER_OS': 'macOS',
                 'TC_TEST_FAMILY': family}
     require(all(os.environ.get(key) == value for key, value in expected.items()),
@@ -47,7 +52,7 @@ def require_job(family):
     run, attempt = (os.environ.get(key, '') for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'))
     require(all(re.fullmatch('[1-9][0-9]{0,19}', value) for value in (run, attempt)),
             'Exact run/attempt identity required')
-    return {'repository': REPOSITORY, 'ref': REF, 'workflow_ref': WORKFLOW,
+    return {'repository': REPOSITORY, 'ref': ref, 'workflow_ref': workflow,
             'sha': sha, 'workflow_sha': sha, 'run_id': run, 'run_attempt': attempt,
             'event': event, 'job': 'compatibility', 'family': family}
 
@@ -137,6 +142,7 @@ def _owned_readback(value, identity, name, device_type, *, creation=False):
             device['name'] == name and device.get('deviceTypeIdentifier') == device_type and
             device.get('isAvailable') is True and device.get('state') in states,
             'Owned device configuration differs')
+    return device['state']
 
 
 def _no_existing_binding(family):
@@ -257,13 +263,18 @@ def read_binding(family):
             'identity_sha256': _digest(identity_bytes), 'receipt_sha256': _digest(receipt_bytes)}
 
 
-def read_managed_device(family, command, require_time):
-    """Validate the same owned UUID against current inventory; never select/rebind."""
+def read_managed_device_state(family, command, require_time):
+    """Return explicit current state after the unchanged strict ownership checks."""
     require_time()
     binding = read_binding(family)
     raw = command(READBACK.copy(), 30)
-    _owned_readback(_json_inventory(raw), binding['identity'], binding['receipt']['requested_name'],
-                    binding['receipt']['device_type'])
+    state = _owned_readback(_json_inventory(raw), binding['identity'], binding['receipt']['requested_name'],
+                            binding['receipt']['device_type'])
     require(read_binding(family) == binding, 'Managed binding changed during inventory')
     require_time()
-    return binding
+    return {'binding': binding, 'state': state}
+
+
+def read_managed_device(family, command, require_time):
+    """Preserve the original binding-only reader; never select/rebind."""
+    return read_managed_device_state(family, command, require_time)['binding']

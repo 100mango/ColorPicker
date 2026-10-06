@@ -1,7 +1,7 @@
 name: Combined UIKit import qualification
 on:
   push:
-    branches: [codex/platform-integration]
+    branches: [codex/platform-integration, codex/uikit-hosted-repair]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          [[ "$GITHUB_REF" == refs/heads/codex/platform-integration || "$GITHUB_REF" == refs/heads/codex/uikit-hosted-repair ]]
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -51,7 +51,7 @@ jobs:
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_palette_readiness
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_palette_readiness test_uikit_fixture_handoff
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
         timeout-minutes: 6
@@ -126,7 +126,7 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          [[ "$GITHUB_REF" == refs/heads/codex/platform-integration || "$GITHUB_REF" == refs/heads/codex/uikit-hosted-repair ]]
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --

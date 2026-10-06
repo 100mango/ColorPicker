@@ -559,5 +559,142 @@ class SourceBoundaryTests(unittest.TestCase):
         self.assertNotIn('log config', (root/'scripts/palette_lifecycle_diagnostics.py').read_text())
 
 
+class HostedGateSchedulingContracts(unittest.TestCase):
+    """Portable source/state models; actual UIKit event ordering remains unrun."""
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+        self.swift = (self.root/'TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift').read_text()
+        self.objc = (self.root/'ColorPickerTests/TCAdaptiveLayoutTests.m').read_text()
+
+    def test_product_and_unrelated_close_methods_are_unchanged(self):
+        import hashlib
+        self.assertEqual(hashlib.sha256((self.root/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_bytes()).hexdigest(),
+                         '32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1')
+        self.assertEqual(hashlib.sha256(self.swift.split('    func testUnsupportedCompanionExplainsIndependentPaletteImport()', 1)[1].encode()).hexdigest(),
+                         'c976d98177c262cbce4afd9c9cd0c8ed2479c5a939d34adf222d98eccac09317')
+
+    def test_all_six_controller_geometry_assertions_are_byte_exact(self):
+        import hashlib
+        locks = [('- (void)assertViewReadable:', '- (void)exerciseSize:', '2c68865a1a333b67b511b65f478d73e3f178449e550473ff91c62dacbd354a49'),
+                 ('- (void)exerciseSize:', '- (void)test320x568', '732fee239a3ddcaa1f441e22005d517981b5e2749bb74b6402c071f47fea6219'),
+                 ('        XCTAssertEqualWithAccuracy(navigation.view.bounds.size.width', '        check(controller);', '04644ce5c3ab3f367c068fe4d2b9c6b87c0933872d1a3c88cc796affc549e15a')]
+        for start,end,expected in locks:
+            actual=self.objc[self.objc.index(start):self.objc.index(end)]
+            self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(),expected)
+
+    def test_swift_gates_preserve_waiter_relative_three_seconds(self):
+        self.assertEqual(self.swift.count('timeout: 3)'), 3)
+        for phase in ('owner', 'presentation', 'dismissal'):
+            self.assertIn('let '+phase+'Action = ProcessInfo.processInfo.systemUptime', self.swift)
+            self.assertIn('let '+phase+'Returned = ProcessInfo.processInfo.systemUptime', self.swift)
+            self.assertIn('let '+phase+'Wait = ProcessInfo.processInfo.systemUptime', self.swift)
+            self.assertIn('let '+phase+'WaitReturned = ProcessInfo.processInfo.systemUptime', self.swift)
+        self.assertNotIn('actionStarted + 3', self.swift)
+        self.assertNotIn('dismissalDeadline', self.swift)
+        self.assertNotIn('XCTNSPredicateExpectation', self.swift)
+
+    def test_swift_dismissal_is_armed_before_real_action_and_state_before_clock(self):
+        callback=self.swift.split('owner.onNextAppearance =', 1)[1].split('        defer { owner.onNextAppearance', 1)[0]
+        self.assertLess(callback.index('owner.presentedViewController == nil'),callback.index('dismissalEvent = ProcessInfo'))
+        self.assertIn('owner.viewIfLoaded?.window === window',callback)
+        self.assertIn('if dismissalState { dismissed.fulfill() }',callback)
+        self.assertLess(self.swift.index('owner.onNextAppearance ='),self.swift.index('UIApplication.shared.sendAction'))
+        self.assertIn('let next = onNextAppearance; onNextAppearance = nil; next?()',self.swift)
+        for kept in ('XCTAssertNil(owner.presentedViewController)', 'content.apply(.success(late), name: "late.json", token: token)',
+                     'XCTAssertNil(content.selection, "Dismissal invalidates a previously issued import generation")',
+                     'XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), original)'):
+            self.assertIn(kept,self.swift)
+
+    def test_unknown_swift_readiness_stops_dependent_actions_without_skip(self):
+        for phase in ('owner','presentation','dismissal'):
+            self.assertIn('guard '+phase+'Timely',self.swift)
+            self.assertIn('$0 >= '+phase+'Action && $0 < '+phase+'Wait + 3',self.swift)
+            self.assertIn('phase='+phase+' ',self.swift)
+        self.assertLess(self.swift.index('guard presentationTimely'),self.swift.index('let token = content.begin()'))
+        self.assertLess(self.swift.index('guard dismissalTimely'),self.swift.index('content.apply(.success(late)'))
+        self.assertNotIn('XCTSkip',self.swift.split('    func testUnsupportedCompanion',1)[0])
+
+    def test_objc_owner_is_real_one_shot_event_and_geometry_is_guarded(self):
+        self.assertIn('void (^observed)(void)=self.onAppearance; self.onAppearance=nil;',self.objc)
+        self.assertIn('if (observed) observed();',self.objc)
+        self.assertLess(self.objc.index('host.onAppearance=^'),self.objc.index('[window makeKeyAndVisible]'))
+        self.assertNotIn('predicateWithFormat:@"appeared == true"',self.objc)
+        self.assertIn('waitForExpectations:@[appeared] timeout:3',self.objc)
+        self.assertLess(self.objc.index('if (waited!=XCTWaiterResultCompleted || !observedAttached || !attached)'),self.objc.index('        check(controller);'))
+        self.assertIn('- (void)setUp { [super setUp]; self.hostedGateUnproved=NO; }',self.objc)
+        self.assertIn('if (self.hostedGateUnproved)',self.objc)
+
+    def test_coordinator_callback_and_fallback_are_not_conflated(self):
+        settle=self.objc.split('- (BOOL)settleWorkspace:',1)[1].split('- (void)testNativeWorkspace',1)[0]
+        self.assertIn('qualifyingEvent && attached && !fulfilled',settle)
+        self.assertLess(settle.index('fulfilled=YES;'),settle.index('[settled fulfill]'))
+        self.assertEqual(settle.count('[settled fulfill]'),1)
+        self.assertIn('observe(@"transition-completion",context.isCancelled ? 1 : 0,!context.isCancelled)',settle)
+        self.assertIn('@"registration-rejected-main-turn" : @"no-coordinator-main-turn",-1,transition==nil',settle)
+        self.assertIn('waitForExpectations:@[settled] timeout:3',settle)
+        self.assertIn('closed=YES;',settle)
+        self.assertIn('if (closed) return;',settle)
+        self.assertEqual(self.objc.count('if (![self settleWorkspace:'),3)
+
+    def test_exactly_once_model_preserves_rejected_registration_unknown(self):
+        def observe(events):
+            fulfilled=False;count=0
+            for qualifies,attached in events:
+                if qualifies and attached and not fulfilled:fulfilled=True;count+=1
+            return count
+        self.assertEqual(observe([(False,True),(True,True)]),1)
+        self.assertEqual(observe([(True,True),(True,True)]),1)
+        self.assertEqual(observe([(False,True)]),0)
+        self.assertEqual(observe([(True,False)]),0)
+
+    def test_attachment_failure_blocks_later_geometry_and_actions(self):
+        body=self.objc.split('XCTWaiterResult attachmentResult=',1)[1]
+        self.assertIn('attachmentResult!=XCTWaiterResultCompleted || !canvasAttached',body)
+        self.assertLess(body.index('readiness=unproved'),body.index('NSLog(@"SPLIT_GEOMETRY'))
+
+    def test_completed_wait_with_lost_attachment_records_explicit_failure(self):
+        for start, end, guard in (
+            ('- (void)withController:', '- (void)exerciseSize:', 'if (waited!=XCTWaiterResultCompleted || !observedAttached || !attached)'),
+            ('- (BOOL)settleWorkspace:', '- (void)testNativeWorkspace', 'if (waited!=XCTWaiterResultCompleted || !fulfilled || !observedAttached || !attached)'),
+        ):
+            body = self.objc.split(start, 1)[1].split(end, 1)[0]
+            rejected = body.split(guard, 1)[1].split('return', 1)[0]
+            self.assertIn('XCTFail(', rejected)
+            self.assertLess(rejected.index('XCTFail('), rejected.index('hostedGateUnproved=YES'))
+        # Completed alone cannot authorize dependent geometry after detachment.
+        for waited, observed, attached in ((True, True, False), (True, False, True), (False, True, True)):
+            unproved = not waited or not observed or not attached
+            failures = int(unproved)
+            dependent = not unproved
+            self.assertEqual((failures, dependent), (1, False))
+
+    def test_swift_late_events_do_not_advance_after_void_waiter(self):
+        for phase in ('owner', 'presentation', 'dismissal'):
+            line = ('let '+phase+'Timely = '+phase+'Event.map { $0 >= '+phase+'Action && $0 < '+phase+'Wait + 3 } ?? false')
+            self.assertIn(line, self.swift)
+            branch = self.swift.split('guard '+phase+'Timely', 1)[1].split('return', 1)[0]
+            self.assertIn('XCTFail(', branch)
+        def qualifies(event, action=100.0, wait=102.0, observed_state=True, current_state=True):
+            return event is not None and action <= event < wait + 3 and observed_state and current_state
+        # A real event before waiting is valid; no action-start +3 SLA is added.
+        for event in (100.0, 101.0, 104.999999):
+            self.assertTrue(qualifies(event))
+        # Late observation, exact deadline and absence stay failed, even if state is now correct.
+        for event in (None, 99.999999, 105.0, 105.000001, 110.0):
+            self.assertFalse(qualifies(event))
+        self.assertFalse(qualifies(104.0, observed_state=False))
+        self.assertFalse(qualifies(104.0, current_state=False))
+
+    def test_no_new_wait_budget_retry_synthetic_lifecycle_or_animation_change(self):
+        self.assertEqual(self.swift.count('owner.present('),1)
+        self.assertEqual(self.swift.count('UIApplication.shared.sendAction('),1)
+        self.assertEqual(self.objc.count('performWithoutAnimation:'),1)  # Existing workspace operation only.
+        for text in (self.swift,self.objc):
+            self.assertNotIn('sleep(',text)
+            self.assertNotIn('setAnimationsEnabled',text)
+            self.assertNotIn('timeout: 10',text)
+            self.assertNotIn('timeout:10',text)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -303,10 +303,12 @@ class SourceTests(unittest.TestCase):
         self.assertIn('"$suite" == managed-functional',text)
         self.assertIn('palette_lifecycle_diagnostics.py" retain "$family"',text)
         self.assertIn('run_test_suite()',text);self.assertIn('uikit_warmup.py" "$family" "$suite"',text)
-    def test_no_standalone_touchcolor_launch_or_manual_boot(self):
+    def test_no_prehosted_boot_or_standalone_touchcolor_launch(self):
         import inspect
-        text=inspect.getsource(m.configure)+inspect.getsource(m.fixture_seed)
-        self.assertNotIn("'boot'",text);self.assertNotIn("'bootstatus'",text)
+        prehosted=inspect.getsource(m.configure)
+        self.assertNotIn("'boot'",prehosted);self.assertNotIn("'bootstatus'",prehosted)
+        text=prehosted+inspect.getsource(m.fixture_seed)+inspect.getsource(m.ManagedWarmup.fixture_device)
+        self.assertIn('warmup.fixture_device(setup)',text)
         self.assertNotIn("device, 'com.mango.touchColor'",text)
         self.assertIn('warmup.fixture(container)',text);self.assertIn('warmup.seed(device)',text)
     def test_finite_schedule_arithmetic(self):

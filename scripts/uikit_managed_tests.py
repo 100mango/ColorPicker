@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import signal
 import stat
@@ -18,7 +19,9 @@ import sys
 from atomic_json import write_json
 from bounded_process import group_exists, stop_group
 from palette_lifecycle_diagnostics import capture, strict_json, require
-from uikit_managed_device import create_owned_device, read_binding, read_managed_device, require_job
+from uikit_managed_device import (create_owned_device, read_binding, read_managed_device,
+                                  read_managed_device_state, require_job)
+from uikit_runtime_diagnostics import MAX_PREPARATION_OUTPUT_BYTES
 from uikit_warmup import Warmup, WarmupFailed, interrupted
 
 # Existing workflow step ceilings. The whole command grant must fit, plus both
@@ -135,9 +138,54 @@ def require_hosted(family, setup):
 
 def setup_capture(command, timeout):
     result = capture(command, seconds=timeout, cap=1_000_000, cleanup_grace=10)
+    result.stderr_prefix = result.stderr[:4096]
+    result.stderr_observed_bytes = len(result.stderr)
     result.stdout = result.stdout.decode('utf-8', errors='replace')
     result.stderr = result.stderr.decode('utf-8', errors='replace')
     return result
+
+
+def preparation_failure(binding, observation, error_type):
+    """One terminal app-scoped stderr frame; unknown text is never disclosed.
+
+    Preserve recognized simctl state/error lines exactly, with an explicit gap
+    for everything else. Prefix hashes refer to original captured bytes, not to
+    the allowlisted text. Neither host cleanup nor stderr proves daemon state.
+    """
+    observation = dict(observation)
+    raw = observation.pop('stderr_prefix', None)
+    observed = observation.pop('stderr_observed_bytes', None)
+    complete = observation.pop('stderr_complete')
+    text = ''; omitted = None
+    if type(raw) is bytes:
+        require(len(raw) <= 4096, 'Preparation stderr prefix exceeds bound')
+        domains = (r'com\.apple\.CoreSimulator\.SimError|NSPOSIXErrorDomain|NSCocoaErrorDomain|'
+                   r'NSOSStatusErrorDomain|MIInstallerErrorDomain|IXUserPresentableErrorDomain')
+        safe = re.compile(r'(?:An error was encountered processing the command \(domain=(?:' +
+            domains + r'), code=-?[0-9]{1,10}\):|Unable to (?:boot device|install app) in current state: '
+            r'(?:Shutdown|Booted|Booting|Shutting Down)|Invalid device state)')
+        # An incomplete last line could hide a sensitive suffix; omit it.
+        decoded = raw.decode('utf-8', errors='replace')
+        lines = decoded.splitlines(keepends=True)
+        kept = [line.rstrip('\r\n') for line in lines if
+                (line.endswith(('\r', '\n')) or (complete and observed == len(raw)))
+                and safe.fullmatch(line.rstrip('\r\n'))]
+        text = '\n'.join(kept)
+        omitted = len(lines) - len(kept)
+    stderr = {'available': raw is not None, 'observed_bytes': observed,
+        'captured_prefix_bytes': len(raw) if raw is not None else None,
+        'captured_prefix_sha256': hashlib.sha256(raw).hexdigest() if raw is not None else None,
+        'stream_complete': complete, 'truncated': None if raw is None else not complete or observed != len(raw),
+        'text': text, 'text_sha256': hashlib.sha256(text.encode()).hexdigest(),
+        'omitted_lines': omitted, 'policy': 'exact_allowlisted_simctl_error_lines_only'}
+    value = {'schema': 1, 'family': binding['identity']['family'], 'deviceId': binding['identity']['udid'],
+        'source': binding['context'], 'identity_sha256': binding['identity_sha256'],
+        'binding_sha256': binding['receipt_sha256'], 'command': observation,
+        'error_type': error_type, 'simulator_completion': 'not_inferred', 'stderr': stderr}
+    line = 'UIKIT_PREPARATION_FAILURE:' + json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n'
+    require(len(line.encode()) + 128 <= MAX_PREPARATION_OUTPUT_BYTES,
+            'Preparation failure framing exceeds shared allocation')
+    return line
 
 
 class ManagedWarmup(Warmup):
@@ -146,6 +194,7 @@ class ManagedWarmup(Warmup):
         self.host_runner = host_runner
         self.runner = self.absolute_runner
         self.operation_deadline = None
+        self.fixture_observation = None
 
     def command(self, arguments, seconds, **kwargs):
         self.operation_deadline = min(self.clock() + seconds, self.deadline - CLEANUP)
@@ -158,18 +207,85 @@ class ManagedWarmup(Warmup):
         deadline = min(self.clock() + timeout, self.operation_deadline, self.deadline - CLEANUP)
         grant = deadline - self.clock()
         require(grant > 0, 'Preparation entry expired before capture')
-        result = self.host_runner(command, timeout=grant)
+        if self.fixture_observation is not None:
+            self.fixture_observation.update(started_monotonic=self.clock(), deadline_monotonic=deadline)
+        try:
+            result = self.host_runner(command, timeout=grant)
+        except BaseException as error:
+            if self.fixture_observation is not None:
+                self.fixture_observation.update(
+                    host_cleanup_confirmed=getattr(error, 'cleanup_confirmed', None),
+                    stderr_prefix=getattr(error, 'stderr_prefix', None),
+                    stderr_observed_bytes=getattr(error, 'stderr_observed_bytes', None))
+            raise
+        if self.fixture_observation is not None:
+            self.fixture_observation.update(exit_code=result.returncode, host_cleanup_confirmed=True,
+                stderr_prefix=getattr(result, 'stderr_prefix', result.stderr.encode('utf-8')[:4096]),
+                stderr_observed_bytes=getattr(result, 'stderr_observed_bytes', len(result.stderr.encode('utf-8'))),
+                stderr_complete=True, returned_monotonic=self.clock())
         require(self.clock() < deadline, 'Preparation returned after original absolute deadline')
         return result
 
     def owned_device(self):
         binding = read_managed_device(self.family, self.command, self.require_time)
+        return self.bind_owned_device(binding)
+
+    def bind_owned_device(self, binding):
         self.managed_binding = binding
         self.identity = binding['identity']
         self.identity_path = self.build / (self.family + '-simulator.json')
         self.identity_bytes = self.identity_path.read_bytes()
         self.require_identity()
         return self.identity['udid']
+
+    def stop_fixture(self):
+        # The same durable fence blocks all finalizers and another invocation.
+        if not self.pending.exists() and not self.pending.is_symlink():
+            with self.pending.open('x') as marker:
+                marker.write('Terminal fixture failure; later simulator commands are blocked.\n')
+
+    def fixture_device(self, setup):
+        try:
+            current = read_managed_device_state(self.family, self.command, self.require_time)
+            require(current['binding'] == setup['binding'], 'Post-hosted binding differs from setup')
+            device = self.bind_owned_device(current['binding'])
+            if current['state'] == 'Shutdown':
+                self.fixture_command(['xcrun', 'simctl', 'boot', device], 180)
+                self.require_identity()
+                self.fixture_command(['xcrun', 'simctl', 'bootstatus', device, '-b'], 240)
+                self.require_identity()
+                current = read_managed_device_state(self.family, self.command, self.require_time)
+            require(current['binding'] == self.managed_binding and current['state'] == 'Booted',
+                    'Same owned simulator must be Booted before fixture installation')
+            self.require_identity()
+            return device
+        except BaseException:
+            self.stop_fixture()
+            raise
+
+    def fixture_command(self, arguments, seconds):
+        require(not self.pending.exists() and not self.pending.is_symlink(),
+                'Earlier fixture command remains blocked')
+        device = self.identity['udid']
+        allowed = [(['xcrun', 'simctl', 'boot', device], 180),
+                   (['xcrun', 'simctl', 'bootstatus', device, '-b'], 240),
+                   (['xcrun', 'simctl', 'install', device,
+                     'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)]
+        require((arguments, seconds) in allowed, 'Unexpected fixture evidence command')
+        self.require_identity()
+        self.fixture_observation = {'argv': arguments, 'exit_code': None,
+            'host_cleanup_confirmed': None, 'stderr_complete': False}
+        try:
+            return self.command(arguments, seconds)
+        except BaseException as error:
+            # A known nonzero return removed Warmup's uncertainty marker. Keep
+            # a terminal stop fence as well; failure is never a retry grant.
+            self.stop_fixture()
+            print(preparation_failure(self.managed_binding, self.fixture_observation,
+                                      type(error).__name__), end='', flush=True)
+            raise
+        finally:
+            self.fixture_observation = None
 
     def require_identity(self):
         super().require_identity()
@@ -181,9 +297,9 @@ def fixture_seed(family, started=STARTED):
     setup = load_setup(family)
     require_hosted(family, setup)
     verify_source(warmup, setup['binding']['context'])
-    device = warmup.owned_device()
+    device = warmup.fixture_device(setup)
     # Exact predecessor Files-host command families and fixture assertions.
-    warmup.command(['xcrun', 'simctl', 'install', device,
+    warmup.fixture_command(['xcrun', 'simctl', 'install', device,
                     'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)
     warmup.command(['xcrun', 'simctl', 'launch', '--terminate-running-process', device,
                     'com.mango.touchColor.tests.paletteFixtures'], 60)

@@ -78,6 +78,8 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
     previous = {}
     process = None
     stopped = None
+    errors = bytearray()
+    stderr_observed_bytes = 0
     selector = selectors.DefaultSelector()
 
     def interrupted(signum, frame):
@@ -116,7 +118,13 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
                     selector.unregister(key.fileobj)
                     continue
                 total += len(data)
+                if key.fileobj is process.stderr:
+                    stderr_observed_bytes += len(data)
                 if total > cap:
+                    if key.fileobj is process.stderr:
+                        # Count the already-read overflow chunk, but retain only
+                        # the prefix that still fits the original capture cap.
+                        errors.extend(data[:max(0, min(4096-len(errors), cap+len(data)-total))])
                     raise RuntimeError('byte-limit')
                 if key.fileobj is process.stdout:
                     output.extend(data)
@@ -137,6 +145,10 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
         confirmed = stop_group(process, grace=cleanup_grace)
         reason = str(error) if type(error) is RuntimeError else type(error).__name__
         stopped = CaptureStopped(reason, confirmed, cancelled[0])
+        # Preserve only bounded failure evidence already read by this capture.
+        # A stopped producer never proves the complete stderr stream was seen.
+        stopped.stderr_prefix = bytes(errors[:4096])
+        stopped.stderr_observed_bytes = stderr_observed_bytes
         raise stopped from None
     finally:
         selector.close()

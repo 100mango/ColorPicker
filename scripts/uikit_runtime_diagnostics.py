@@ -19,7 +19,9 @@ from native_runtime_diagnostics import crash_summary
 FAMILIES = {'iPadMini', 'iPadLarge', 'iPhoneCompact', 'iPhoneLarge'}
 SERVICE = re.compile(r'(?:^|:)(com\.apple\.(?:DocumentManager[\w.-]*|fileprovider[\w.-]*)|com\.mango\.touchColor(?:\.[\w.-]+)?)', re.I)
 REPORT = re.compile(r'^(?:TouchColor|DocumentManager|DocumentPicker|FileProvider)', re.I)
-MAX_OUTPUT_BYTES = 32 * 1024
+# Share the existing 32 KiB profile slot with one terminal fixture failure.
+MAX_PREPARATION_OUTPUT_BYTES = 8 * 1024
+MAX_OUTPUT_BYTES = 32 * 1024 - MAX_PREPARATION_OUTPUT_BYTES
 FRAME = 'UIKIT_RUNTIME_DIAGNOSTICS:'
 
 

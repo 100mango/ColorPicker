@@ -103,7 +103,8 @@ class UIKitRuntimeDiagnosticsTests(unittest.TestCase):
     def test_output_limit_includes_framing_and_omits_oversized_metadata(self):
         value = {'family': 'iPadMini', 'deviceId': self.identity['udid'], 'diagnostic': '界' * 100000}
         line = framed_record(value)
-        self.assertLessEqual(len(line.encode('utf-8')) + 128, 32768)
+        self.assertLessEqual(len(line.encode('utf-8')) + 128, 24*1024)
+        self.assertEqual(diagnostics.MAX_OUTPUT_BYTES + diagnostics.MAX_PREPARATION_OUTPUT_BYTES, 32768)
         self.assertIn('metadata exceeded', line)
         self.assertNotIn('界', line)
 

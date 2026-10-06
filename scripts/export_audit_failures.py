@@ -9,6 +9,8 @@ import re
 import subprocess
 import sys
 
+from uikit_runtime_diagnostics import MAX_OUTPUT_BYTES, MAX_PREPARATION_OUTPUT_BYTES
+
 # All four fresh hosts use these same checked-in allocations and exact-source proof.
 # Ten images at most; include base64, metadata and bounded child diagnostics.
 # Raw attachment manifests and result bundles are read locally, never emitted.
@@ -19,7 +21,9 @@ MAX_EXPORT_DIAGNOSTIC_BYTES = 4 * 1024
 MAX_ISSUE_DESCRIPTION_LOG_BYTES = 24 * 1024  # Reallocated from child diagnostics; includes framing.
 MAX_ISSUE_SOURCE_BYTES = 8 * 1024
 MAX_EXPORTS_PER_DEVICE = 2  # Functional and accessibility result bundles.
-MAX_RUNTIME_DIAGNOSTIC_BYTES = 32 * 1024  # One framed metadata record per device.
+MAX_RUNTIME_DIAGNOSTIC_BYTES = MAX_OUTPUT_BYTES + MAX_PREPARATION_OUTPUT_BYTES
+# The same 32 KiB slot now contains at most 24 KiB runtime + 8 KiB preparation.
+if MAX_RUNTIME_DIAGNOSTIC_BYTES != 32 * 1024: raise ValueError('Profile diagnostic allocation changed')
 RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * (4 * ((MAX_IMAGE_BYTES + 2) // 3) + 16 * 1024)
                       + len(ALLOCATIONS) * (MAX_EXPORTS_PER_DEVICE * (MAX_EXPORT_DIAGNOSTIC_BYTES + 512)
                                             + MAX_ISSUE_DESCRIPTION_LOG_BYTES + MAX_RUNTIME_DIAGNOSTIC_BYTES))

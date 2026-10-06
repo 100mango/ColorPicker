@@ -580,5 +580,36 @@ class BindingSafety(ManagedFixture):
                 managed._read_file(path, managed.RECEIPT_LIMIT)
 
 
+class FixedRepairRouteTests(unittest.TestCase):
+    def test_only_two_exact_ref_workflow_pairs_are_admitted(self):
+        for ref,workflow in ((managed.REF,managed.WORKFLOW),(managed.REPAIR_REF,managed.REPAIR_WORKFLOW)):
+            with patch.dict(os.environ,{**ENV,'GITHUB_REF':ref,'GITHUB_WORKFLOW_REF':workflow},clear=True):
+                result=managed.require_job('iPadMini')
+                self.assertEqual(result['ref'],ref);self.assertEqual(result['workflow_ref'],workflow)
+        for ref,workflow in ((managed.REF,managed.REPAIR_WORKFLOW),(managed.REPAIR_REF,managed.WORKFLOW),
+                             ('refs/heads/foreign',managed.REPAIR_WORKFLOW)):
+            with patch.dict(os.environ,{**ENV,'GITHUB_REF':ref,'GITHUB_WORKFLOW_REF':workflow},clear=True):
+                with self.assertRaises(ValueError):managed.require_job('iPadMini')
+
+    def test_repair_route_cannot_change_source_repo_job_or_family(self):
+        repair={**ENV,'GITHUB_REF':managed.REPAIR_REF,'GITHUB_WORKFLOW_REF':managed.REPAIR_WORKFLOW}
+        for key,bad in [('GITHUB_REPOSITORY','foreign/ColorPicker'),('GITHUB_JOB','native-platform'),
+                        ('GITHUB_WORKFLOW_SHA','b'*40),('TC_TEST_FAMILY','other'),('GITHUB_EVENT_NAME','pull_request')]:
+            with patch.dict(os.environ,{**repair,key:bad},clear=True):
+                with self.assertRaises(ValueError):managed.require_job('iPadMini')
+
+    def test_existing_workflow_adds_only_fixed_push_branch_and_two_guards(self):
+        root=Path(__file__).resolve().parents[1]
+        source=(root/'.github/workflows/ios.yml').read_text()
+        self.assertIn('branches: [codex/platform-integration, codex/uikit-hosted-repair]',source)
+        guard='[[ "$GITHUB_REF" == refs/heads/codex/platform-integration || "$GITHUB_REF" == refs/heads/codex/uikit-hosted-repair ]]'
+        self.assertEqual(source.count(guard),2)
+        native=(root/'.github/workflows/apple-platforms.yml').read_text()
+        self.assertNotIn('uikit-hosted-repair',native)
+        self.assertIn('branches: [codex/platform-integration]',native)
+        self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]',source)
+        self.assertIn('max-parallel: 1',source)
+
+
 if __name__ == '__main__':
     unittest.main()
