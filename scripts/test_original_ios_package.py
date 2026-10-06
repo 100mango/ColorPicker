@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import struct
@@ -251,14 +252,33 @@ class PackageTests(unittest.TestCase):
         with self.assertRaises(ValueError): f.verify()
 
     def test_product_mutation_after_read_rejects(self):
-        f = self.fixture(); original = Path.stat; calls = [0]
-        def changed(path, *args, **kwargs):
-            if path == f.app / 'TouchColor':
-                calls[0] += 1
-                if calls[0] == 2:
-                    with path.open('ab') as stream: stream.write(b'changed')
-            return original(path, *args, **kwargs)
-        with patch.object(Path, 'stat', changed), self.assertRaises(ValueError): f.verify()
+        # CPython versions legitimately differ: lstat may call self.stat or
+        # os.lstat directly. Mutate at the actual read/close boundary instead
+        # of assuming either implementation contributes a stat call.
+        for direct_lstat in (False, True):
+            with self.subTest(direct_lstat=direct_lstat):
+                f = self.fixture(); target = f.app / 'TouchColor'
+                before = target.read_bytes(); original_open = Path.open
+                mutations = []
+                class ChangedAfterClose:
+                    def __init__(self, stream): self.stream = stream
+                    def __enter__(self): return self.stream.__enter__()
+                    def __exit__(self, *args):
+                        result = self.stream.__exit__(*args)
+                        if args[0] is None:
+                            mutations.append(self.stream.closed)
+                            with original_open(target, 'ab') as writer:
+                                writer.write(b'changed')
+                        return result
+                def opened(path, *args, **kwargs):
+                    stream = original_open(path, *args, **kwargs)
+                    return ChangedAfterClose(stream) if path == target and args == ('rb',) else stream
+                lstat = (lambda path: os.lstat(path)) if direct_lstat else (lambda path: path.stat(follow_symlinks=False))
+                with patch.object(Path, 'lstat', lstat), patch.object(Path, 'open', opened):
+                    with self.assertRaisesRegex(ValueError, 'Product changed during inspection'):
+                        f.verify()
+                self.assertEqual(mutations, [True], 'The owned file must actually change after its read stream closes')
+                self.assertEqual(target.read_bytes(), before + b'changed')
 
     def test_fat_device_with_simulator_slice_and_duplicate_build_version_reject(self):
         a = macho(); b = macho(platform=7, cpu=0x1000007)
