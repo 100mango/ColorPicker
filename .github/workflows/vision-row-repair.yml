@@ -98,7 +98,7 @@ jobs:
     name: ${{ matrix.lane || matrix.platform }} on a fresh standard VM
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         include:
           - platform: vision

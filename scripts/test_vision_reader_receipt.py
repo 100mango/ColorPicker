@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -43,6 +44,59 @@ class ReaderReceiptTests(unittest.TestCase):
         reader.validate_reader_guard(selected['verification'],selected,time.monotonic()+300)
         with self.assertRaises(FileExistsError):self.prepare()
         self.assertEqual(self.resolve.call_count,1)
+
+    def fixed_clock_budget(self, now, remaining=1498):
+        path=self.root/'build/job-budget.json';record=json.loads(path.read_text())
+        record['started_monotonic']=now[0]-(1500-remaining)
+        # Vary the monotonic boundary without inventing a later job start than
+        # the retained preflight version observation when this loop runs slowly.
+        record['started_epoch']=min(record['started_epoch'],time.time()-(1500-remaining))
+        path.write_text(json.dumps(record))
+        return job_budget.JobBudget(record,monotonic=lambda:now[0])
+
+    def test_actual_producer_persisted_selection_and_guard_cross_float_exponent(self):
+        # Exact arithmetic changes sign across1024; no epsilon is used anywhere.
+        for start in (999.9,1000.1,1000.2,1019.9,1020.1,1023.9):
+            with self.subTest(start=start):
+                now=[start];budget=self.fixed_clock_budget(now)
+                with patch.object(job_budget,'load',return_value=budget),patch.object(reader.time,'monotonic',side_effect=lambda:now[0]):
+                    value=self.prepare()
+                    saved=json.loads((self.temp/reader.READER_RECEIPT).read_text())
+                    self.assertEqual(saved,value)
+                    self.assertEqual(saved['selection']['deadline'],start+30)
+                    reader.validate_reader_receipt(saved,self.binding)
+                    selected=self.select()
+                    reader.validate_reader_guard(selected['verification'],selected,start+300)
+                    for bad in (math.nextafter(start+30,math.inf),math.nextafter(start+30,-math.inf)):
+                        changed=copy.deepcopy(saved);changed['selection']['deadline']=bad
+                        with self.assertRaises(ValueError):reader.validate_reader_receipt(changed,self.binding)
+                    changed=copy.deepcopy(saved);changed['selection']['finished_at']=start+30
+                    with self.assertRaises(ValueError):reader.validate_reader_receipt(changed,self.binding)
+                    guard=copy.deepcopy(selected['verification']);guard['deadline']=math.nextafter(start+5,math.inf)
+                    with self.assertRaises(ValueError):reader.validate_reader_guard(guard,selected,start+300)
+                target=self.temp/reader.READER_RECEIPT;target.unlink();target.parent.rmdir()
+
+    def test_boundary_fixture_keeps_original_job_epoch_after_wall_time_advances(self):
+        original=json.loads((self.root/'build/job-budget.json').read_text())['started_epoch']
+        later=time.time()+5;now=[1000.1]
+        with patch.object(reader.time,'time',return_value=later):
+            budget=self.fixed_clock_budget(now)
+        self.assertEqual(budget.record['started_epoch'],original)
+        with patch.object(job_budget,'load',return_value=budget),patch.object(reader.time,'monotonic',side_effect=lambda:now[0]):
+            value=self.prepare();reader.validate_reader_receipt(value,self.binding)
+            self.select()
+        self.resolve.assert_called_once()
+
+    def test_original_reserve_exhausted_during_prelookup_work_starts_no_process(self):
+        now=[1000.1];budget=self.fixed_clock_budget(now,remaining=80)
+        actual=reader.file_bytes_identity
+        def consumed(path,*args,**kwargs):
+            value=actual(path,*args,**kwargs)
+            if Path(path)==self.version:now[0]+=30
+            return value
+        with patch.object(job_budget,'load',return_value=budget),patch.object(reader.time,'monotonic',side_effect=lambda:now[0]),patch.object(reader,'file_bytes_identity',side_effect=consumed):
+            with self.assertRaisesRegex(ValueError,'Full early lookup allowance does not fit'):self.prepare()
+        self.resolve.assert_not_called();self.assertFalse((self.temp/reader.READER_RECEIPT).exists())
 
     def test_missing_receipt_and_unknown_owner_fail_without_lookup(self):
         with self.assertRaises(FileNotFoundError):self.select()

@@ -42,7 +42,8 @@ class FixedVisionRepairRouteTests(unittest.TestCase):
         self.assertTrue(all(r.startswith('          - platform: vision\n') and '\n            minutes: 35\n' in r for r in rows))
         for absent in ('vision-json-export','vision-corrupt-audit','vision-canvas-audit-system-largest'):
             self.assertNotIn(absent,[lane(r) for r in rows])
-        self.assertIn('      max-parallel: 2\n',self.text)
+        self.assertIn('      max-parallel: 1\n',self.text)
+        self.assertIn('      max-parallel: 2\n',self.base)
         self.assertIn('  native-platform:\n    needs: native-prerequisites\n',self.text)
 
     def test_exact_entire_workflow_except_named_route_changes(self):
@@ -57,6 +58,8 @@ class FixedVisionRepairRouteTests(unittest.TestCase):
         actual=actual.replace(guard,'          test "$GITHUB_REF" = refs/heads/codex/platform-integration')
         self.assertEqual(actual.count(' test_vision_repair_route\n'),2)
         actual=actual.replace(' test_vision_repair_route\n','\n')
+        self.assertEqual(actual.count('      max-parallel: 1\n'),1)
+        actual=actual.replace('      max-parallel: 1\n','      max-parallel: 2\n',1)
         start,end,_=matrix(actual);a,b,_=matrix(self.base)
         actual=actual[:start]+self.base[a:b]+actual[end:]
         self.assertEqual(actual,self.base)

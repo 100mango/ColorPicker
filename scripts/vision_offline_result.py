@@ -382,8 +382,8 @@ def prepare_reader(root=Path('.'), *, version_observation=Path('/tmp/touchcolor-
         identity,raw=file_bytes_identity(version_path,min(context['work_deadline'],time.monotonic()+5),maximum=4096)
         require(raw==(XCODE_VERSION+'\n').encode()
                 and identity['mtime_ns']/1e9 >= context['started_epoch'], 'Missing fresh exact preflight Xcode observation')
-        started=time.monotonic();deadline=min(started+30,context['work_deadline']-30)
-        require(deadline-started==30, 'Full early lookup allowance does not fit')
+        started=time.monotonic();deadline=started+30
+        require(deadline<=context['work_deadline']-30, 'Full early lookup allowance does not fit')
         try:result=invoke(['xcrun','--find','xcresulttool'],timeout=30,text=False)
         except BaseException as error:
             fail_record('Early Vision reader selection failed',phase='work',cleanup_unconfirmed=getattr(error,'cleanup_confirmed',False) is not True)
@@ -456,7 +456,8 @@ def validate_reader_receipt(value, binding):
             and selection['timeout_seconds']==30 and type(selection['timeout_seconds']) is int and selection['cleanup_confirmed'] is True
             and all(finite(selection[k]) for k in ('started_at','finished_at','deadline'))
             and context['started_monotonic']<=selection['started_at']<=selection['finished_at']<selection['deadline']<=context['work_deadline']
-            and selection['deadline']-selection['started_at']<=30
+            and selection['deadline']==selection['started_at']+30
+            and selection['deadline']<=context['work_deadline']-30
             and finite(value['verified_at']) and selection['finished_at']<=value['verified_at']<context['work_deadline'],
             'Early reader selection exceeded its immutable deadline')
     require(isinstance(version,dict) and set(version)=={'path','identity'} and isinstance(version['path'],str)
@@ -492,7 +493,7 @@ def validate_reader_guard(guard, reader, deadline):
     require(isinstance(guard,dict) and set(guard)=={'identity','started_at','finished_at','deadline'}
             and guard['identity']==reader['identity'] and all(finite(guard[k]) for k in ('started_at','finished_at','deadline'))
             and reader['verified_at']<=guard['started_at']<=guard['finished_at']<guard['deadline']<=deadline
-            and guard['deadline']-guard['started_at']<=5, 'Missing bounded same-byte reader guard')
+            and guard['deadline']<=guard['started_at']+5, 'Missing bounded same-byte reader guard')
 
 
 
