@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -31,13 +32,15 @@ def request():
 
 
 def control():
-    return dict(schema=1,route='NSWorkspace',source=SOURCE,requestSHA256=m.digest(m.encode(request())),status='completed',
+    return dict(schema=2,route='NSWorkspace',source=SOURCE,requestSHA256=m.digest(m.encode(request())),status='completed',
         started=200.,controllerStartedMonotonic=200.,deadlineMonotonic=292.,launchRequests=1,terminateRequests=1,
         preexistingCount=0,caller=caller(),identity=dict(product={**PRODUCT,'bundle':'com.mango.touchColor'},pid=346,token=TOKEN,suite=SUITE,args=m.ARGS),
         callback=202.,terminated=214.,cleanupConfirmed=True,reason='process-launch-only-not-window-readiness',
         finished=214.1,finishedMonotonic=214.1,requested=201.,requestedMonotonic=201.,callbackDeadlineMonotonic=260.,
         callbackMonotonic=202.,observationDeadlineMonotonic=214.,terminationRequested=213.5,
-        terminationRequestedMonotonic=213.5,terminationDeadlineMonotonic=233.5,terminatedMonotonic=214.)
+        terminationRequestedMonotonic=213.5,terminationDeadlineMonotonic=232.5,terminatedMonotonic=214.,
+        observationScheduledMonotonic=212.5,observationEnteredMonotonic=212.5,observationLatenessSeconds=0.,
+        observationComplete=True,cleanupStartedMonotonic=212.5,operationUncertain=False)
 
 
 def contact_export(root, failed=True):
@@ -94,7 +97,7 @@ class ReceiptTests(unittest.TestCase):
 
     def test_callback_missing_error_late_and_wrong_source_fail(self):
         for key,value in [('callback',None),('status','error'),('callbackMonotonic',260.),('deadlineMonotonic',300.),
-            ('finishedMonotonic',292.),('terminationRequestedMonotonic',214.),('terminatedMonotonic',233.5),
+            ('finishedMonotonic',292.),('terminationRequestedMonotonic',232.5),('terminatedMonotonic',233.5),
             ('terminationDeadlineMonotonic',260.),('observationDeadlineMonotonic',250.),('source',{**SOURCE,'run':'2'})]:
             c=control();c[key]=value
             with self.subTest(key=key),self.assertRaises((ValueError,TypeError)):self.validate(c)
@@ -249,7 +252,7 @@ class DeadlineTests(unittest.TestCase):
             real()
             if c.value['status']=='routes-completed':self.clock.value=192.1
         c.persist=delayed
-        with patch.object(m,'product_identity',return_value=PRODUCT),patch.object(m,'validate_control',return_value={'controlled':'fixture'}),patch.object(c,'invoke',return_value=subprocess.CompletedProcess([],0,b'',b'')):
+        with patch.object(m,'product_identity',return_value=PRODUCT),patch.object(m,'validate_control',return_value={'completion':{'observationComplete':True,'appCleanupConfirmed':True,'operationUncertain':False}}),patch.object(c,'invoke',return_value=subprocess.CompletedProcess([],0,b'',b'')):
             with self.assertRaisesRegex(ValueError,'control-final-persistence-late'):c.control()
         self.assertTrue(m.LATCH.exists());self.assertTrue(c.stopped)
         self.assertEqual(c.value['status'],'incomplete')
@@ -316,7 +319,8 @@ class PacketTests(unittest.TestCase):
     tearDown=DeadlineTests.tearDown
     coordinator=DeadlineTests.coordinator
     # Exercise a complete synthetic packet without invoking any native API.
-    def fixture(self):
+    def fixture(self, control_value=None, before_evidence=None, query=None):
+        control_value=control() if control_value is None else control_value
         (Path('source.txt')).write_text('fixed fixture source')
         c=self.coordinator();c.value['sourceFiles']={'source.txt':m.digest(b'fixed fixture source')}
         c.value['product']=PRODUCT;c.value['caller']=caller();c.value['controllerSHA256']='d'*64
@@ -336,20 +340,27 @@ class PacketTests(unittest.TestCase):
         c.value['phase']='nsworkspace';self.clock.value=199.9
         c.budget.admit('ordinary-launch-controller',92,minimum=92,cleanup=20)
         def run(argv,**kwargs):
-            self.clock.value=214.2
+            self.clock.value=max(214.2,control_value['finishedMonotonic']+.1)
             return subprocess.CompletedProcess(argv,0,b'',b'')
-        c.runner=run;c.invoke('ordinary-launch-controller',['controller'],92,minimum=.001,deadline=312.)
+        c.runner=run;c.invoke('ordinary-launch-controller',m.controller_command(PRODUCT),92,minimum=.001,deadline=312.)
         # Receipt and command share the request's fixed deadline.
         c.value['commands'][-1]['deadlineMonotonic']=292.
         c.value['commands'][-1]['cleanupDeadlineMonotonic']=312.
         c.value['commands'][-1]['startedMonotonic']=200.
         c.value['commands'][-1]['requestedSeconds']=92.
-        (m.ROOT/'request.json').write_bytes(m.encode(request()));(m.ROOT/'control.json').write_bytes(m.encode(control()))
-        c.value['control']=m.validate_control(m.encode(control()),m.encode(request()),SOURCE,PRODUCT,'d'*64)
-        c.value.update(status='routes-completed',reason='awaiting-passive-evidence');c.persist()
-        def query(argv,**kwargs):
+        (m.ROOT/'request.json').write_bytes(m.encode(request()));(m.ROOT/'control.json').write_bytes(m.encode(control_value))
+        c.value['control']=m.validate_control(m.encode(control_value),m.encode(request()),SOURCE,PRODUCT,'d'*64,allow_incomplete=True)
+        complete=m.comparison_complete(c.value['control']['completion'])
+        c.value.update(status='routes-completed' if complete else 'incomplete',reason='awaiting-passive-evidence' if complete else control_value['reason'])
+        if control_value['operationUncertain']:
+            c.value['commands'][-1]['exit']=74
+            c.value['control']=None
+            m.durable(m.LATCH,{'schema':1,'source':SOURCE,'phase':'nsworkspace','reason':'control-unavailable'})
+        if before_evidence: before_evidence(c)
+        c.persist()
+        def silent_query(argv,**kwargs):
             self.clock.advance(.1);return subprocess.CompletedProcess(argv,0,b'[]',b'')
-        report=m.final_evidence(c.budget,SOURCE,runner=query,clock=self.clock)
+        report=m.final_evidence(c.budget,SOURCE,runner=query or silent_query,clock=self.clock)
         return c,report
 
     def test_full_packet_reconstructs_both_routes_and_silent_unknowns(self):
@@ -384,6 +395,201 @@ class PacketTests(unittest.TestCase):
 
 
 
+class HistoricalQueryTests(unittest.TestCase):
+    setUp=DeadlineTests.setUp
+    tearDown=DeadlineTests.tearDown
+    coordinator=DeadlineTests.coordinator
+    fixture=PacketTests.fixture
+
+    def fresh(self, **kwargs):
+        shutil.rmtree('build',ignore_errors=True);m.ROOT.mkdir(parents=True)
+        self.clock.value=100.;self.calls=[]
+        return self.fixture(**kwargs)
+
+    def missed(self):
+        c=control();entered=c['callbackMonotonic']+12.6
+        c.update(observationEnteredMonotonic=entered,observationLatenessSeconds=2.1,observationComplete=False,
+            cleanupStartedMonotonic=entered,terminationDeadlineMonotonic=entered+20,
+            terminationRequested=entered+.1,terminationRequestedMonotonic=entered+.1,
+            terminated=entered+.2,terminatedMonotonic=entered+.2,finished=entered+.3,finishedMonotonic=entered+.3,
+            status='incomplete',reason='observation-scheduling-miss')
+        return c
+
+    def uncertain(self, requested=True):
+        c=self.missed();c.update(status='unavailable',reason='termination-identity-unavailable',operationUncertain=True,
+            cleanupConfirmed=None if requested else False,terminated=None,terminatedMonotonic=None)
+        if not requested:c.update(terminateRequests=0,terminationRequested=None,terminationRequestedMonotonic=None)
+        return c
+
+    def test_missed_timer_can_retain_positive_records_without_upgrading_comparison(self):
+        def positive(argv,**kwargs):
+            self.calls.append(argv);self.clock.advance(.1)
+            window=dict(id=1,number=5,frame=[0,0,960,640],visible=True,miniaturized=False,key=True,main=True,occlusion=2,
+                restorable=True,restorationClass=False,autosaveName=True,sheet=False,workspace=True)
+            app=dict(present=True,running=True,active=True,hidden=False,policy=0,count=1,omitted=0,key=1,main=1,windows=[window])
+            value=event(app=app);value.update(pid=346,token=TOKEN,epoch=201+value['elapsed'])
+            raw=m.encode([dict(processID=346,processImagePath=PRODUCT['executable'],eventMessage=m.passive.PREFIX+json.dumps(value))])
+            return subprocess.CompletedProcess(argv,0,raw,b'')
+        with patch.object(m,'SOURCES',('source.txt',)):
+            c,report=self.fresh(control_value=self.missed(),query=positive)
+            checked=m.validate_packet(m.EVIDENCE,SOURCE)
+            self.assertEqual(checked['status'],'incomplete');self.assertFalse(checked['acceptance'])
+            self.assertEqual(checked['contactOutcome'],'failed')
+            self.assertEqual(checked['observations']['NSWorkspace'],'visible-workspace-observed')
+            self.assertFalse(checked['comparison']['observationComplete'])
+            self.assertTrue(checked['comparison']['appCleanupConfirmed'])
+            self.assertAlmostEqual(checked['comparison']['observationLatenessSeconds'],2.1)
+            self.assertEqual(len([argv for argv in self.calls if isinstance(argv,list) and argv[:2]==['/usr/bin/log','show']]),1)
+            for mutate in [lambda r:r.update(status='observation-only'),lambda r:r['comparison'].update(observationComplete=True),
+                lambda r:r['comparison'].update(observationLatenessSeconds=0),lambda r:r.update(contactOutcome='passed')]:
+                original=m.REPORT.read_bytes();changed=json.loads(original);mutate(changed);m.REPORT.write_bytes(m.encode(changed))
+                with self.assertRaises(ValueError):m.validate_packet(m.EVIDENCE,SOURCE)
+                m.REPORT.write_bytes(original)
+
+    def test_false_and_unknown_app_cleanup_allow_one_known_host_historical_query(self):
+        with patch.object(m,'SOURCES',('source.txt',)):
+            for requested in (False,True):
+                with self.subTest(requested=requested):
+                    c,report=self.fresh(control_value=self.uncertain(requested))
+                    checked=m.validate_packet(m.EVIDENCE,SOURCE)
+                    self.assertEqual(checked['status'],'incomplete');self.assertEqual(len(checked['records']),2)
+                    self.assertEqual(checked['comparison']['appCleanupConfirmed'],None if requested else False)
+                    self.assertTrue(checked['comparison']['operationUncertain'])
+                    self.assertTrue(checked['comparison']['controllerHostCleanupConfirmed'])
+                    self.assertTrue(m.LATCH.exists());self.assertIn('uncertain.json',checked['files'])
+                    with self.assertRaisesRegex(ValueError,'evidence-already-attempted'):
+                        m.final_evidence(c.budget,SOURCE,runner=lambda *a,**k:self.fail('second query'),clock=self.clock)
+
+    def test_unknown_controller_host_end_forbids_query_despite_exact_callback(self):
+        def interrupted(c,cleanup):
+            row=c.value['commands'][-1];row.update(returned=False,exit=None,cleanupConfirmed=cleanup,timely=False,
+                stdoutBytes=None,stderrBytes=None,stdoutSHA256=None,stderrSHA256=None)
+            row.pop('finishedMonotonic',None);row.pop('finishedEpoch',None)
+            c.value.update(status='incomplete',reason='command-uncertain-CaptureStopped')
+            m.durable(m.LATCH,{'schema':1,'source':SOURCE,'phase':'nsworkspace','reason':'unknown-host'})
+        with patch.object(m,'SOURCES',('source.txt',)):
+            for cleanup in (False,None):
+                with self.subTest(cleanup=cleanup):
+                    c,report=self.fresh(before_evidence=lambda c:interrupted(c,cleanup),query=lambda *a,**k:self.fail('unowned query'))
+                    self.assertIsNone(report['query']);self.assertEqual(report['status'],'incomplete')
+                    m.validate_packet(m.EVIDENCE,SOURCE)
+
+    def test_known_bounded_interrupted_host_cleanup_can_retain_only_historical_records(self):
+        def interrupted(c):
+            row=c.value['commands'][-1];row.update(returned=False,exit=None,cleanupConfirmed=True,timely=False,
+                stdoutBytes=None,stderrBytes=None,stdoutSHA256=None,stderrSHA256=None)
+            c.value.update(status='incomplete',reason='command-uncertain-CaptureStopped')
+            m.durable(m.LATCH,{'schema':1,'source':SOURCE,'phase':'nsworkspace','reason':'interrupted-known-host'})
+        with patch.object(m,'SOURCES',('source.txt',)):
+            c,report=self.fresh(control_value=self.uncertain(),before_evidence=interrupted)
+            self.assertEqual(m.validate_packet(m.EVIDENCE,SOURCE)['status'],'incomplete')
+            self.assertTrue(report['query']['returned'])
+
+    def test_missing_changed_identity_source_and_request_range_forbid_query(self):
+        mutations=[lambda c:c.update(identity=None),lambda c:c['identity'].update(pid=0),
+            lambda c:c['identity'].update(token='AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'),
+            lambda c:c['identity']['product'].update(executable='/unowned/TouchColor'),
+            lambda c:c['source'].update(run='2'),lambda c:c.update(callback=None),
+            lambda c:c.update(callbackMonotonic=260.),lambda c:c.update(finished=99999.),
+            lambda c:c.update(finishedMonotonic=99999.)]
+        with patch.object(m,'SOURCES',('source.txt',)):
+            for index,mutate in enumerate(mutations):
+                def tamper(coordinator):
+                    path=m.ROOT/'control.json';raw=json.loads(path.read_bytes());mutate(raw);path.write_bytes(m.encode(raw))
+                    coordinator.value.update(control=None,status='incomplete',reason='control-unavailable')
+                with self.subTest(index=index):
+                    c,report=self.fresh(before_evidence=tamper,query=lambda *a,**k:self.fail('unbound query'))
+                    self.assertIsNone(report['query']);self.assertEqual(report['records'],[])
+                    m.validate_packet(m.EVIDENCE,SOURCE)
+
+    def test_query_rejects_altered_predicate_time_range_and_host_cleanup_after_capture(self):
+        with patch.object(m,'SOURCES',('source.txt',)):
+            self.fresh(control_value=self.missed());original=m.REPORT.read_bytes()
+            for mutation in [lambda q:q['argv'].__setitem__(-1,'process == "TouchColor"'),
+                lambda q:q['argv'].__setitem__(q['argv'].index('--start')+1,'1900-01-01 00:00:00+0000'),
+                lambda q:q['argv'].__setitem__(q['argv'].index('--end')+1,'2999-01-01 00:00:00+0000'),
+                lambda q:q.update(cleanupConfirmed=False),lambda q:q.update(deadlineMonotonic=q['startedMonotonic']+31)]:
+                changed=json.loads(original);mutation(changed['query']);m.REPORT.write_bytes(m.encode(changed))
+                with self.assertRaises(ValueError):m.validate_packet(m.EVIDENCE,SOURCE)
+            m.REPORT.write_bytes(original)
+
+    def test_late_query_projection_or_unknown_capture_keeps_permanent_incomplete(self):
+        def late(argv,**kwargs):
+            self.clock.advance(26);return subprocess.CompletedProcess(argv,0,b'[]',b'')
+        def interrupted(argv,**kwargs):raise CaptureStopped('unknown-cleanup',False)
+        def foreign(argv,**kwargs):
+            self.clock.advance(.1);return subprocess.CompletedProcess(argv,0,b'[{"processID": 123, "eventMessage":"unrelated"}]',b'')
+        with patch.object(m,'SOURCES',('source.txt',)):
+            for query in (late,interrupted,foreign):
+                with self.subTest(query=query.__name__):
+                    c,report=self.fresh(control_value=self.missed(),query=query)
+                    self.assertEqual(report['status'],'incomplete');self.assertEqual(report['records'],[])
+                    self.assertFalse(report['comparison']['observationComplete'])
+                    self.assertFalse((m.EVIDENCE/'lifecycle-query.json').exists())
+                    self.assertIn('uncertain.json',report['files']);m.validate_packet(m.EVIDENCE,SOURCE)
+
+    def test_query_persistence_delay_cannot_spawn_or_extend_query_deadline(self):
+        real=m.durable;writes=[]
+        def delayed(path,value,**kwargs):
+            real(path,value,**kwargs)
+            if path==m.REPORT and not writes:
+                writes.append(path);self.clock.advance(27)
+        with patch.object(m,'SOURCES',('source.txt',)),patch.object(m,'durable',side_effect=delayed):
+            c,report=self.fresh(control_value=self.missed(),query=lambda *a,**k:self.fail('late spawn'))
+            self.assertEqual(report['status'],'incomplete');self.assertFalse(report['query']['returned'])
+            self.assertEqual(report['query']['deadlineMonotonic']-report['query']['startedMonotonic'],30)
+            m.validate_packet(m.EVIDENCE,SOURCE)
+
+    def test_contradictory_or_unknown_fence_cannot_grant_historical_query(self):
+        fences=[{'schema':True,'source':SOURCE,'phase':'xctest','route':'NSWorkspace','reason':'foreign','unexpected':'field'},
+            {'schema':1,'source':SOURCE,'phase':'xctest','reason':'test-timeout'},
+            {'schema':1,'source':SOURCE,'phase':'nsworkspace','reason':'valid','extra':0},
+            {'schema':1,'source':SOURCE,'route':'NSWorkspace','reason':None},
+            {'schema':1,'source':SOURCE,'phase':'evidence','reason':'old-query'}]
+        with patch.object(m,'SOURCES',('source.txt',)):
+            for fence in fences:
+                with self.subTest(fence=fence):
+                    c,report=self.fresh(before_evidence=lambda c:m.durable(m.LATCH,fence),query=lambda *a,**k:self.fail('bad fence query'))
+                    self.assertIsNone(report['query']);self.assertEqual(report['records'],[])
+
+    def test_incomplete_request_time_cannot_follow_receipt_end(self):
+        value=self.uncertain();value['finishedMonotonic']=value['terminationRequestedMonotonic']-.01
+        with self.assertRaisesRegex(ValueError,'invalid-termination-request'):
+            m.validate_control(m.encode(value),m.encode(request()),SOURCE,PRODUCT,'d'*64,allow_incomplete=True)
+
+    def test_unqueried_incomplete_packet_cannot_promote_original_failed_contact(self):
+        def stopped(c):
+            row=c.value['commands'][-1];row.update(returned=False,exit=None,cleanupConfirmed=None,timely=False,
+                stdoutBytes=None,stderrBytes=None,stdoutSHA256=None,stderrSHA256=None)
+            row.pop('finishedMonotonic',None);row.pop('finishedEpoch',None)
+            c.value.update(status='incomplete',reason='unknown-controller-host')
+        with patch.object(m,'SOURCES',('source.txt',)):
+            self.fresh(before_evidence=stopped)
+            state_path=m.EVIDENCE/'state.json';original=state_path.read_bytes();report_original=m.REPORT.read_bytes()
+            for mutate in [lambda c:c['contact'].update(outcome='passed'),lambda c:c.update(contactCommandExit=0)]:
+                state=json.loads(original);mutate(state);raw=m.encode(state);state_path.write_bytes(raw)
+                report=json.loads(report_original);report.update(contactOutcome='passed')
+                report['files']['state.json']={'bytes':len(raw),'sha256':m.digest(raw)};m.REPORT.write_bytes(m.encode(report))
+                with self.assertRaises(ValueError):m.validate_packet(m.EVIDENCE,SOURCE)
+
+    def test_legacy_absent_fields_are_exact_historical_unknown_only(self):
+        fixture=json.loads((ROOT/'scripts/fixtures/mac-cb594-observation-late.json').read_bytes())
+        raw=fixture['control'].encode();request_raw=fixture['request'].encode()
+        value=json.loads(raw);request_value=json.loads(request_raw)
+        checked=m.validate_control(raw,request_raw,value['source'],request_value['product'],value['caller']['executableSHA256'],allow_incomplete=True)
+        self.assertTrue(checked['historicalOnly']);self.assertIsNone(checked['completion']['observationComplete'])
+        self.assertIsNone(checked['completion']['observationLatenessSeconds'])
+        self.assertFalse(checked['completion']['appCleanupConfirmed'])
+        self.assertNotIn('pid',checked)
+        with self.assertRaises(ValueError):
+            m.validate_control(raw,request_raw,value['source'],request_value['product'],value['caller']['executableSHA256'])
+        for mutate in [lambda c:c.update(schema=2),lambda c:c.update(observationComplete=False),
+            lambda c:c.update(cleanupConfirmed=True),lambda c:c['source'].update(sha='b'*40)]:
+            changed=copy.deepcopy(value);mutate(changed)
+            with self.assertRaises(ValueError):
+                m.validate_control(m.encode(changed),request_raw,value['source'],request_value['product'],value['caller']['executableSHA256'],allow_incomplete=True)
+
+
 class SourceTests(unittest.TestCase):
     def test_exact_single_case_and_unchanged_canonical_collectors(self):
         command=m.test_command();self.assertEqual([x for x in command if x.startswith('-only-testing:')],['-only-testing:'+m.METHOD])
@@ -406,7 +612,7 @@ class SourceTests(unittest.TestCase):
         self.assertLess(callback.index('guard live("callback"'),callback.index('try verify(app,'))
         failure=text.split('private func fail(',1)[1].split('private func live(',1)[0]
         for forbidden in ('NSRunningApplication.','owned.','terminate()','NSWorkspace.'):self.assertNotIn(forbidden,failure)
-        self.assertLess(failure.index('try atomic(fence'),failure.index('try? persist'))
+        self.assertLess(failure.index('try atomic(fence'),failure.index('do { try persist() }'))
         self.assertIn('SecCSFlags(rawValue: kSecCSSigningInformation | kSecCSRequirementInformation)',text)
         self.assertIn('dictionary == nil && blob == nil',text)
         self.assertIn('let entitlements = dictionary as? [String: Any]',text)

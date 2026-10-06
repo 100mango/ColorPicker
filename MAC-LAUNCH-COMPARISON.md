@@ -1,14 +1,16 @@
-# Fixed Mac launch comparison: local review candidate
+# Fixed Mac launch comparison: scheduling and evidence successor
 
 This diagnostic is a separate observation-only lane. It does not change the app,
 contact test, canonical collectors, canonical workflows, or release acceptance.
-Publication and native execution require separate authorization. The source base
-is `74ccaa93ae3f0cb5d0a63f6957460e9e8e576add`, tree
-`c6bb5466a57dfd919b5dbd0edb3b58b7bf5a8683`.
+Publication and native execution require separate authorization. The exact source parent
+is `cb5943730e128d6806f7b1b1b053e9e91ba5647a`, tree
+`ad6cde09f96a54a87e5d0701a91cac074f658d94`. This successor changes only the
+existing standalone controller, coordinator/validator, focused tests and this
+document. All workflow, product, XCTest and shared-budget bytes are unchanged.
 
 ## Exact experiment
 
-The dedicated push-only branch is `codex/mac-launch-comparison`; its only new
+The dedicated push-only branch is `codex/mac-launch-comparison`; its unchanged
 workflow is `.github/workflows/mac-launch-comparison.yml`. One standard
 `xcode-27` arm64 disposable VM, macOS 27.0 build 26A428 and Xcode 27.0 27A266a,
 builds the unchanged normal Debug app and UI test product once. It does not build
@@ -24,7 +26,9 @@ when the observation comparison completed. A timely known failed
 case (exit 65 and matching one-case failed summary) remains `failed`; it may
 continue only with its exact existing lifecycle receipt and confirmed owned
 host cleanup. A missing identity, unexpected command exit, timeout, cancellation,
-late result or unknown cleanup stops the VM's diagnostic.
+late result or unknown host cleanup stops subsequent app work. Only the tightly
+scoped historical-evidence exception below can run after the controller's own
+host group has independently been confirmed stopped.
 
 The second route makes exactly one public
 `NSWorkspace.shared.openApplication(at:configuration:completionHandler:)`
@@ -52,14 +56,26 @@ new-window operation, force termination, retry, additional XCTest, screenshot,
 or accessibility query is added.
 
 The callback only proves a process launch. Existing DEBUG app-owned lifecycle
-logging is the sole product observation. After an at-most-12-second passive
-interval, the controller reverifies and calls `terminate()` once on the returned
-owned `NSRunningApplication`; the only subsequent process query is its bounded
-termination status. The timer is scheduled half a second before the immutable
-12-second ceiling to allow dispatch, receipt persistence and byte verification;
-late execution fails closed rather than extending the passive interval. All
-state/app operations are serialized on the main queue; concurrent callbacks
-only enqueue work. Late callbacks are rejected before their app object is read.
+logging is the sole product observation. The existing single passive timer is scheduled at callback + 10.5 seconds,
+before the immutable callback + 12-second observation ceiling. Existing app-owned
+census events finish by 10 seconds. The callback clock is captured once. Actual
+timer entry and dispatch delay are retained; entry at or beyond the 12-second
+ceiling permanently marks the observation incomplete. A known timer-dispatch
+miss is distinct from a delayed or unknown in-flight app operation.
+
+Once the timer enters, the already returned owned `NSRunningApplication` may
+enter its one cleanup path, including after an observation miss. Its immutable
+cleanup deadline is min(timer entry + 20 seconds, original controller deadline).
+Every PID, bundle, path, executable and termination-state read is pre/post fenced
+to that cleanup deadline; each identity value is checked before the next app
+read, and the product bytes are reverified. Only after successful revalidation
+and persistence may the controller call `terminate()` once. The only subsequent
+app-property query is its bounded termination status. Missing/changed identity,
+a late property, rejected or late operation, or failed/late persistence fences
+all subsequent app calls. A late passive timer never authorizes another launch,
+window query, activation or functional phase. All mutable state and app calls
+remain on the main queue; late callbacks are rejected before reading their app
+object.
 
 ## Budget, persistence and cleanup
 
@@ -90,26 +106,36 @@ the test/control routes. Preparation uses one immutable deadline. Each command
 is clipped to its original absolute phase/work deadline before persistence and
 again immediately before spawn; capture receives only the remaining time.
 Post-return and post-persistence checks never reset that deadline. The
-controller's 92 seconds includes at most 60 seconds to callback, at most 12
-seconds passive delay and at most 20 seconds owned app termination. It receives
+controller retains the original 92-second ceiling, 60-second callback ceiling,
+12-second observation ceiling and maximum 20-second owned cleanup. Late timer
+entry consumes existing controller time; it does not extend or reset any global
+deadline, and cleanup is clipped to the original 92-second ceiling. It receives
 the coordinator's absolute monotonic deadline, which native validation must
 confirm shares the system-uptime clock origin on this pinned Mac toolchain.
 
 The existing bounded capture/owned-process-group primitives enforce finite
 stdout+stderr acquisition and termination of only the spawned host group.
-Any uncertain launch, test, capture, termination or cancellation latches a
-source/run-bound stop record before further operations. Thereafter only local
-persistence/retention remains; no new command, app query, second launch or app
-cleanup discovery is attempted. The standalone controller uses the same durable
+Any uncertain launch, test, capture, termination, persistence or cancellation
+latches a source/run-bound stop record before further app work. No app query,
+second launch, cleanup discovery or retry can follow that fence. Local retention
+remains permitted. The only external exception is the existing single read-only
+historical `log show` query below, after independent retained identities and
+known owned controller-host cleanup have been reconstructed. It never reads a
+live app property or discovers a process. The standalone controller uses the same durable
 stop location. File and parent-directory fsync must succeed; persistence failure
-is unavailable, never claimed durable. The console emits one nonblocking atomic
+is unavailable, never claimed durable. A terminal receipt remains in a
+finalizing stage until its write is checked. A failed or late final write
+invalidates any prior completion claim; failure-receipt persistence failure
+removes the stale output rather than leaving a successful receipt available. The console emits one nonblocking atomic
 line of at most 512 bytes with source/run/attempt/phase and honest durability.
 
 The final host-only evidence phase has its own immutable contiguous 180-second
 ceiling and does not consume the earlier 80-second intermediate work allocation.
 It makes at most one fixed app/PID/token-scoped log query, with the original
 30-second budget (including two two-second owned cleanup phases), 512 KiB raw
-limit and 128 KiB projected limit. The packet is capped at 3 MB. Raw output of
+limit and 128 KiB projected limit. The packet cap remains exactly 3,000,000 bytes.
+The earlier local proposal's 2 MiB figure was a documentation error, not a new
+cap. The original workflow identity and budget value are unchanged. Raw output of
 compiler/build/test commands is not retained; bounded byte counts and hashes
 are kept. Only the exact original summary, manifest/identity receipt, standalone
 request/receipt/caller inspection, source/phase state and scoped log bytes are
@@ -117,11 +143,61 @@ retained. Other attachments are explicitly omitted and remain runner-local.
 
 ## Evidence and interpretation
 
-The standalone receipt is a separate closed `NSWorkspace` schema. It has no
-XCTest test/case identity. Only after validating source/run/attempt, requested
-arguments and two tokens, callback PID/path, both product hashes, caller signing
-state, exact operation counts, fixed deadlines and known termination does the
-diagnostic reuse the existing passive event parser. Canonical collector
+The standalone receipt is a separate closed `NSWorkspace` schema 2. It has no
+XCTest test/case identity. The request retains its original schema 1. State and
+report are schema 2; new-source receipts cannot omit any required field. The
+existing fields retain their meanings, with absent not-yet-observed timestamps
+explicitly null. Six fields distinguish the new facts:
+
+- `observationScheduledMonotonic`: verified callback clock + 10.5 seconds
+- `observationEnteredMonotonic`: actual passive timer entry, or null
+- `observationLatenessSeconds`: max(0, entry minus scheduled clock), or null;
+  this is dispatch delay, not just time beyond the 12-second ceiling
+- `observationComplete`: entry strictly before callback + 12 seconds; false
+  stays false even when owned cleanup succeeds; null means no retained entry
+- `cleanupStartedMonotonic`: the same timer-entry clock when cleanup is admitted
+- `operationUncertain`: an actual operation, identity, deadline or persistence
+  fence; a known passive timer miss alone does not set it
+
+`cleanupConfirmed` is true only after the owned app was observed terminated and
+terminal persistence succeeded. It is false when cleanup was not confirmed
+before a termination request, or null after an uncertain request/finalization.
+`terminateRequests` records at most one admitted request; persistence can fence
+before its actual call. `status=completed` requires on-time observation, confirmed
+cleanup and no uncertainty. Late observation with successful cleanup remains
+`status=incomplete`, reason `observation-scheduling-miss`; the controller exits
+0, while the coordinator preserves the incomplete state and its own nonzero
+result. An uncertainty has unavailable status and a durable stop fence.
+
+The report's `comparison` contains the independently reconstructed observation,
+app-cleanup and uncertainty facts plus `controllerHostCleanupConfirmed` from the
+bounded capture receipt. These are distinct facts. A known host end does not
+imply the app was cleaned up. Unknown host cleanup forbids the historical query.
+
+Historical query eligibility requires the exact retained original contact
+receipt and a timely independently verified ordinary callback, matching source,
+run, product hashes, caller, arguments, PID, token and request hash. Every prior
+command must have completed its original phase; the controller command must be
+the exact owned path/arguments with a known stopped host group and retained end
+clocks within its original outer cleanup ceiling. The sole query is the existing
+fixed predicate for those two PID/token scopes, with its interval derived only
+from retained request/result/end facts. It may retain records despite app cleanup
+being false/unknown or an observation miss, but report status stays incomplete
+and all flags remain. Missing identity or timestamps permits no query. The latch
+is never removed. A persisted query attempt cannot be retried. Every raw event
+is checked against PID/token/product/time before retention, so unexpected raw
+output is not added to the packet.
+
+The exact immutable predecessor receipt and report from cb594/run37391944166
+remain historical unknown, accepted only under their original source and exact
+retained byte hashes. Their absent timer-entry/dispatch fields are never filled
+in. They do not authorize a query or become a schema-2 result. The predecessor
+contact remains failed; its receipt ended about 0.608 seconds after the ceiling,
+which includes failure persistence and does not establish exact dispatch delay.
+No retained ordinary-route window records exist in that packet.
+
+Only after independently validating these scoped facts does the diagnostic reuse
+the existing passive event parser. Canonical collector
 acceptance and its four allowed XCTest methods are untouched. Actual captured
 summary/caller/query bytes and retained derived records are hash-bound. Final
 validation reconstructs both routes and checks source-file, phase, command,
@@ -151,7 +227,14 @@ sandboxed/unreadable caller reports, missing/error/late callbacks, deadline and
 cleanup reserves, persistence latency, cancellation/unknown cleanup fences,
 exhausted preparation, failed-case continuation, distinct receipt schemas,
 source/phase/capture tampering, byte limits, omission/late-event handling, and
-full-packet reconstruction. Source assertions additionally fence public API
+full-packet reconstruction. Added tests cover 10.5/11.9/12.0/12.6-second timer
+entries, every delayed cleanup identity property, rejected/late termination,
+expired global deadlines, each persistence checkpoint, permanent miss flags,
+false/unknown app cleanup with known host cleanup, missing identity and unknown
+host rejection, altered query scopes/ranges, late query output, and original
+contact-outcome promotion. The scheduling model derives constants/property order
+from Swift and pins its control-flow structure; it is still a portable synthetic
+model, not execution of Swift or AppKit. Source assertions additionally fence public API
 selection and callback-before-query ordering. These are not a native execution
 claim and do not replace macOS validation of the actual controller.
 
@@ -159,8 +242,8 @@ Normal and optimized portable suite commands:
 
 ```
 cd scripts
-python3 -m unittest -v test_mac_launch_comparison test_mac_passive_lifecycle test_job_budget test_budgeted_step test_bounded_process test_atomic_json test_retain_mac_evidence test_mac_workspace_launch_policy test_mac_only_repair_route
-python3 -O -m unittest -v test_mac_launch_comparison test_mac_passive_lifecycle test_job_budget test_budgeted_step test_bounded_process test_atomic_json test_retain_mac_evidence test_mac_workspace_launch_policy test_mac_only_repair_route
+python3 -m unittest -v test_mac_launch_comparison test_mac_comparison_scheduling test_mac_passive_lifecycle test_job_budget test_budgeted_step test_bounded_process test_atomic_json test_retain_mac_evidence test_mac_workspace_launch_policy test_mac_only_repair_route
+python3 -O -m unittest -v test_mac_launch_comparison test_mac_comparison_scheduling test_mac_passive_lifecycle test_job_budget test_budgeted_step test_bounded_process test_atomic_json test_retain_mac_evidence test_mac_workspace_launch_policy test_mac_only_repair_route
 ```
 
 Native gates are intentionally unrun in this Linux/local-only review:

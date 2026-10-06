@@ -90,6 +90,7 @@ private final class Comparison {
     private var signals: [DispatchSourceSignal] = []
     private var callbackDeadline = 0.0
     private var observationDeadline = 0.0
+    private var observationScheduled = 0.0
     private var terminationDeadline = 0.0
 
     init(_ request: [String: Any], _ output: URL, _ latch: URL, _ requestHash: String) throws {
@@ -97,12 +98,19 @@ private final class Comparison {
         guard let deadline = request["deadlineMonotonic"] as? Double else { throw Invalid.contract }
         self.deadline = deadline
         try require(deadline > began && deadline <= began + 92)
-        receipt = ["schema": 1, "route": "NSWorkspace", "source": request["source"] ?? NSNull(),
+        receipt = ["schema": 2, "route": "NSWorkspace", "source": request["source"] ?? NSNull(),
             "requestSHA256": requestHash, "status": "unavailable",
             "started": epoch(), "controllerStartedMonotonic": began, "deadlineMonotonic": deadline,
             "launchRequests": 0, "terminateRequests": 0, "preexistingCount": NSNull(),
             "caller": NSNull(), "identity": NSNull(), "callback": NSNull(), "terminated": NSNull(),
-            "cleanupConfirmed": false, "reason": "not-started"]
+            "cleanupConfirmed": false, "reason": "not-started", "operationUncertain": false,
+            "requested": NSNull(), "requestedMonotonic": NSNull(), "callbackDeadlineMonotonic": NSNull(),
+            "callbackMonotonic": NSNull(), "observationDeadlineMonotonic": NSNull(),
+            "observationScheduledMonotonic": NSNull(), "observationEnteredMonotonic": NSNull(),
+            "observationLatenessSeconds": NSNull(), "observationComplete": NSNull(),
+            "cleanupStartedMonotonic": NSNull(), "terminationRequested": NSNull(),
+            "terminationRequestedMonotonic": NSNull(), "terminationDeadlineMonotonic": NSNull(),
+            "terminatedMonotonic": NSNull(), "finished": NSNull(), "finishedMonotonic": NSNull()]
     }
     private func persist() throws { try atomic(receipt, to: output) }
     private func fail(_ reason: String) {
@@ -110,11 +118,25 @@ private final class Comparison {
         stage = "stopped"
         // Latch first, then local persistence only. No app reads/operations here.
         let fence: [String: Any] = ["schema": 1, "source": request["source"] ?? NSNull(), "reason": reason, "route": "NSWorkspace"]
-        do { try atomic(fence, to: latch) } catch { _exit(75) }
         receipt["reason"] = reason; receipt["status"] = "unavailable"
+        receipt["operationUncertain"] = true
+        if receipt["terminateRequests"] as? Int == 0 {
+            receipt["cleanupConfirmed"] = false
+        } else {
+            receipt["cleanupConfirmed"] = NSNull()
+        }
         receipt["finished"] = epoch(); receipt["finishedMonotonic"] = now()
-        try? persist()
-        exit(74)
+        var fenced = false
+        do { try atomic(fence, to: latch); fenced = true } catch { }
+        do { try persist() } catch {
+            // Atomic replacement may have succeeded before fsync failed. Do
+            // not leave an earlier terminal success as the available receipt.
+            _ = unlink(output.path)
+            let parent = open(output.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY)
+            if parent >= 0 { _ = fsync(parent); close(parent) }
+            _exit(75)
+        }
+        exit(fenced ? 74 : 75)
     }
     private func live(_ expected: String, until: Double) -> Bool {
         guard stage == expected else { return false }
@@ -123,26 +145,34 @@ private final class Comparison {
         }
         return true
     }
-    private func verify(_ app: NSRunningApplication, expected: String, until: Double) throws -> pid_t {
+    private func verify(_ app: NSRunningApplication, expected: String, until: Double, expectedPID: pid_t? = nil) throws -> pid_t {
         guard let product = request["product"] as? [String: String],
               let path = product["applicationPath"], let executable = product["executable"] else { throw Invalid.contract }
-        // Each potentially delayed public property read has an original-phase
-        // pre/post fence; a late return cannot lead into the next app query.
+        // Each potentially delayed public property read has phase-specific
+        // pre/post fences. Reject each identity field before any next app read.
         guard live(expected, until: until) else { throw Invalid.contract }
         let pid = app.processIdentifier
         guard live(expected, until: until) else { throw Invalid.contract }
+        try require(pid > 0)
+        if let expectedPID { try require(pid == expectedPID) }
+        guard live(expected, until: until) else { throw Invalid.contract }
         let identifier = app.bundleIdentifier
+        guard live(expected, until: until) else { throw Invalid.contract }
+        try require(identifier == bundleID)
         guard live(expected, until: until) else { throw Invalid.contract }
         let bundleURL = app.bundleURL
         guard live(expected, until: until) else { throw Invalid.contract }
+        guard let url = bundleURL else { throw Invalid.contract }
+        try require(url.path == path && url.resolvingSymlinksInPath().path == path)
+        guard live(expected, until: until) else { throw Invalid.contract }
         let executableURL = app.executableURL
+        guard live(expected, until: until) else { throw Invalid.contract }
+        guard let actualExecutable = executableURL else { throw Invalid.contract }
+        try require(actualExecutable.path == executable && actualExecutable.resolvingSymlinksInPath().path == executable)
         guard live(expected, until: until) else { throw Invalid.contract }
         let terminated = app.isTerminated
         guard live(expected, until: until) else { throw Invalid.contract }
-        guard let url = bundleURL, let actualExecutable = executableURL else { throw Invalid.contract }
-        try require(pid > 0 && identifier == bundleID && !terminated)
-        try require(url.path == path && url.resolvingSymlinksInPath().path == path)
-        try require(actualExecutable.path == executable && actualExecutable.resolvingSymlinksInPath().path == executable)
+        try require(!terminated)
         try verifyProduct()
         guard live(expected, until: until) else { throw Invalid.contract }
         return pid
@@ -221,31 +251,48 @@ private final class Comparison {
             var identity = request["product"] as! [String: String]
             identity["bundle"] = bundleID
             receipt["identity"] = ["product": identity, "pid": Int(pid), "token": request["token"]!, "suite": request["suite"]!, "args": arguments]
-            receipt["callback"] = epoch(); receipt["callbackMonotonic"] = now()
+            let callback = now()
+            receipt["callback"] = epoch(); receipt["callbackMonotonic"] = callback
             guard live("callback", until: callbackDeadline) else { return }
-            observationDeadline = min(now() + 12, deadline - 20)
+            observationDeadline = callback + 12
+            observationScheduled = callback + 10.5
             receipt["observationDeadlineMonotonic"] = observationDeadline
+            receipt["observationScheduledMonotonic"] = observationScheduled
             stage = "observing"
             try persist()
             guard live("observing", until: observationDeadline) else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + max(0, observationDeadline - now() - 0.5)) { [weak self] in self?.terminateOwned() }
+            let observationDelay = max(0, observationScheduled - now())
+            DispatchQueue.main.asyncAfter(deadline: .now() + observationDelay) { [weak self] in self?.terminateOwned() }
         } catch { fail("callback-identity-unavailable") }
     }
     private func terminateOwned() {
         // No app/window observation is added during the passive interval.
         guard stage == "observing" else { return }
-        guard now() < deadline - 0.05, !FileManager.default.fileExists(atPath: latch.path) else { fail("observation-late"); return }
-        guard now() < observationDeadline, let app = owned else { fail("observation-late"); return }
+        let entered = now()
+        receipt["observationEnteredMonotonic"] = entered
+        receipt["observationLatenessSeconds"] = max(0, entered - observationScheduled)
+        receipt["observationComplete"] = entered < observationDeadline
+        // Only this passive timer may cross the observation ceiling. Its miss
+        // is permanent, but is not an unknown in-flight app call. The one owned
+        // cleanup has a separate 20-second reserve inside the original ceiling.
+        guard live("observing", until: deadline) else { return }
+        guard let app = owned, let expectedPID = ownedPID, expectedPID > 0,
+              receipt["identity"] is [String: Any] else { fail("cleanup-identity-missing"); return }
+        terminationDeadline = min(entered + 20, deadline)
+        receipt["cleanupStartedMonotonic"] = entered
+        receipt["terminationDeadlineMonotonic"] = terminationDeadline
+        receipt["status"] = "incomplete"
+        receipt["reason"] = entered < observationDeadline ? "cleanup-pending" : "observation-scheduling-miss"
+        stage = "cleaning-up"
         do {
-            let pid = try verify(app, expected: "observing", until: observationDeadline)
-            try require(pid == ownedPID)
-            guard now() < observationDeadline, !FileManager.default.fileExists(atPath: latch.path) else { fail("termination-late"); return }
-            terminationDeadline = min(now() + 20, deadline)
+            try persist()
+            guard live("cleaning-up", until: terminationDeadline) else { return }
+            _ = try verify(app, expected: "cleaning-up", until: terminationDeadline, expectedPID: expectedPID)
+            guard live("cleaning-up", until: terminationDeadline) else { return }
             receipt["terminateRequests"] = 1
             receipt["terminationRequested"] = epoch(); receipt["terminationRequestedMonotonic"] = now()
-            receipt["terminationDeadlineMonotonic"] = terminationDeadline
             try persist()
-            guard now() < observationDeadline && now() < terminationDeadline else { fail("termination-late"); return }
+            guard live("cleaning-up", until: terminationDeadline) else { return }
             stage = "terminating"
             let accepted = app.terminate()
             guard live("terminating", until: terminationDeadline) else { return }
@@ -258,18 +305,21 @@ private final class Comparison {
         let terminated = app.isTerminated
         guard live("terminating", until: terminationDeadline) else { return }
         if terminated {
-            stage = "stopped"
+            stage = "finalizing"
             receipt["terminated"] = epoch(); receipt["terminatedMonotonic"] = now()
-            receipt["cleanupConfirmed"] = true; receipt["status"] = "completed"
-            receipt["reason"] = "process-launch-only-not-window-readiness"
+            receipt["cleanupConfirmed"] = true
+            let complete = receipt["observationComplete"] as? Bool == true && receipt["operationUncertain"] as? Bool == false
+            receipt["status"] = complete ? "completed" : "incomplete"
+            receipt["reason"] = complete ? "process-launch-only-not-window-readiness" : "observation-scheduling-miss"
             receipt["finished"] = epoch(); receipt["finishedMonotonic"] = now()
             do {
                 try persist()
-                guard now() < terminationDeadline && now() < deadline else {
-                    stage = "persist-late"; fail("completion-persistence-late"); return
+                guard now() < terminationDeadline && now() < deadline && !FileManager.default.fileExists(atPath: latch.path) else {
+                    fail("completion-persistence-late-or-fenced"); return
                 }
+                stage = "stopped"
                 exit(0)
-            } catch { stage = "persist-failed"; fail("completion-persistence-unavailable") }
+            } catch { fail("completion-persistence-unavailable") }
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.pollTermination() }
         }
