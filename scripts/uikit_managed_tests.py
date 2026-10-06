@@ -550,7 +550,10 @@ def summary_fields(raw, family, suite, identity, began, finished, code):
 def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time.time,
               runner=invoke, reader=capture, products=product_identity):
     require(suite in STEPS, 'Unknown canonical test target')
-    seconds, grant, _ = STEPS[suite]; deadline = started + seconds
+    seconds, grant, _ = STEPS[suite]
+    mini_hosted = family == 'iPadMini' and suite == 'TouchColorTests'
+    if mini_hosted: seconds, grant = 960, 800
+    deadline = started + seconds
     warmup = ManagedWarmup(family, started=started, clock=clock, seconds=seconds)
     setup = load_setup(family)
     verify_source(warmup, setup['binding']['context'])
@@ -568,10 +571,25 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         with warmup.pending.open('x') as marker:
             marker.write('Managed XCTest has no confirmed timely completion.\n'); marker.flush(); os.fsync(marker.fileno())
         persist()
-        require(clock() + grant + 2 * CLEANUP + SUMMARY < deadline, 'Entry persistence exhausted test admission')
-        began = wall(); command_deadline = clock() + grant
+        admitted = clock()
+        require(admitted + grant + 2 * CLEANUP + SUMMARY < deadline, 'Entry persistence exhausted test admission')
+        began = wall(); command_deadline = (admitted if mini_hosted else clock()) + grant
+        if mini_hosted:
+            # Both limits use the same instant; deadline subtraction loses bits.
+            benchmark = {'admitted_monotonic': admitted, 'deadline_monotonic': admitted + 500,
+                         'completed_before_deadline': None, 'status': 'unknown'}
+            record['command']['prior_500_benchmark'] = benchmark
         record['command'] = runner(test_argv(family, suite, setup['binding']['identity']['udid']), command_deadline)
         finished = wall()
+        if mini_hosted:
+            observed = record['command'].get('finished_monotonic')
+            if (record['command'].get('status') == 'timely_exit' and
+                    record['command'].get('host_cleanup_confirmed') is True and
+                    type(observed) in (int, float) and math.isfinite(observed)):
+                within = observed < benchmark['deadline_monotonic']
+                benchmark.update(completed_before_deadline=within,
+                    status='within_prior_limit' if within else 'prior_limit_exceeded')
+            record['command']['prior_500_benchmark'] = benchmark
         persist()  # Preserve observed XCTest outcome before host-only readers.
         require(record['command'].get('status') == 'timely_exit' and
                 record['command'].get('host_cleanup_confirmed') is True and clock() < command_deadline,

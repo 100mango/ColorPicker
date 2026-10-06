@@ -174,21 +174,44 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     }
     XCTAssertTrue(closed,@"The actual import/inbox presentation must close");
 }
-- (void)pastePalette:(NSString *)JSON app:(XCUIApplication *)app {
+- (BOOL)pastePalette:(NSString *)JSON app:(XCUIApplication *)app {
+    if (self.tcPaletteReadinessExpired) return NO;
     UIPasteboard.generalPasteboard.string=JSON;
     [self openPaletteAction:@"palette.import.open" app:app];
-    [self activateVisiblePalettePaste:app];
+    return [self activateVisiblePalettePaste:app];
 }
-- (void)activateVisiblePalettePaste:(XCUIApplication *)app {
-    XCUIElement *paste=[self paletteElement:@"palette.import.paste" app:app];
-    XCTAssertTrue([paste waitForExistenceWithTimeout:5]);
-    XCTNSPredicateExpectation *ready=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"enabled == true"] object:paste];
-    XCTAssertEqual([XCTWaiter waitForExpectations:@[ready] timeout:5],XCTWaiterResultCompleted,@"The system Paste control must be enabled before the single tap");
+- (BOOL)activateVisiblePalettePaste:(XCUIApplication *)app {
+    if (self.tcPaletteReadinessExpired) return NO;
+    // A real Button and its enabled attribute are matched in one current AX
+    // query. The old existence5 + enabled5 grants share one absolute10s clock.
+    NSTimeInterval started=NSProcessInfo.processInfo.systemUptime, deadline=started+10;
+    XCUIElement *paste=[app.buttons matchingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@ AND enabled == YES",@"palette.import.paste"]].firstMatch;
+    NSTimeInterval remaining=deadline-NSProcessInfo.processInfo.systemUptime;
+    if (remaining<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Paste readiness expired before lookup"); return NO; }
+    BOOL ready=[paste waitForExistenceWithTimeout:remaining];
+    NSTimeInterval returned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"PALETTE_PASTE_READINESS ready=%d elapsed=%.3f budget=10",ready,returned-started);
+    BOOL timely=returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline;
+    if (!timely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(timely,@"Paste readiness returned after its original combined allowance");
+    if (!timely) return NO;
+    XCTAssertTrue(ready,@"The system Paste Button must exist and be enabled before its single tap");
+    if (!ready) return NO;
     XCUIElement *table=app.tables[@"palette.import.review"];
-    for (NSUInteger attempt=0;attempt<5 && !CGRectContainsRect([self paletteBodyViewport:app table:table title:@"Import Palette"],CGRectInset(paste.frame,1,1));attempt++) [self scrollTowardElement:paste inScroll:table];
-    XCTAssertTrue(CGRectContainsRect([self paletteBodyViewport:app table:table title:@"Import Palette"],CGRectInset(paste.frame,1,1)),@"The complete system Paste control must be visible");
-    XCTAssertTrue(paste.hittable);
-    NSLog(@"NATIVE_PASTE_CONTROL frame=%@ body=%@ orientation=%ld",NSStringFromCGRect(paste.frame),NSStringFromCGRect([self paletteBodyViewport:app table:table title:@"Import Palette"]),(long)XCUIDevice.sharedDevice.orientation);
+    // Geometry is sampled once per unchanged UI state. Every actual drag is
+    // followed by a fresh viewport/target read; no snapshot crosses a mutation.
+    CGRect viewport=[self paletteBodyViewport:app table:table title:@"Import Palette"], target=paste.frame;
+    for (NSUInteger attempt=0;attempt<5 && !CGRectContainsRect(viewport,CGRectInset(target,1,1));attempt++) {
+        [self scrollTowardElement:paste inScroll:table];
+        viewport=[self paletteBodyViewport:app table:table title:@"Import Palette"]; target=paste.frame;
+    }
+    BOOL visible=CGRectContainsRect(viewport,CGRectInset(target,1,1));
+    XCTAssertTrue(visible,@"The complete system Paste control must be visible");
+    if (!visible) return NO;
+    BOOL hittable=paste.hittable;
+    XCTAssertTrue(hittable);
+    if (!hittable) return NO;
+    NSLog(@"NATIVE_PASTE_CONTROL frame=%@ body=%@",NSStringFromCGRect(target),NSStringFromCGRect(viewport));
     if ([app.launchArguments containsObject:@"--ui-test-scroll-state"]) {
         NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
         XCTAssertLessThanOrEqual(bytes.length,500*1024u);
@@ -196,6 +219,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
         attachment.name=UIDeviceOrientationIsLandscape(XCUIDevice.sharedDevice.orientation)?@"touchcolor-largest-paste-control-landscape":@"touchcolor-largest-paste-control-portrait";attachment.lifetime=XCTAttachmentLifetimeKeepAlways;[self addAttachment:attachment];
     }
     [paste tap];
+    return YES;
 }
 - (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {
     XCUIElement *table=app.tables[@"palette.import.review"];
@@ -258,47 +282,99 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
 - (void)exercisePalettePasteReviewAcceptAndRelaunch:(XCUIApplication *)app {
     NSArray *colors=@[@"#112233",@"#112233",@"#aabbcc"];
     NSString *JSON=@"[\"#112233\",\"#112233\",\"#AABBCC\"]";
-    [self pastePalette:JSON app:app];[self verifyPaletteRows:colors app:app];
+    if (![self pastePalette:JSON app:app]) return;[self verifyPaletteRows:colors app:app];
     XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:15 existenceTimeout:5];
     if (self.tcPaletteReadinessExpired) return;
     [self waitForPalettePresentationToClose:close];
     [self verifyHistory:@[] app:app];
-    [self pastePalette:JSON app:app];[self verifyPaletteRows:colors app:app];[self acceptPalette:app readinessTimeout:15];
+    if (![self pastePalette:JSON app:app]) return;[self verifyPaletteRows:colors app:app];[self acceptPalette:app readinessTimeout:15];
     if (self.tcPaletteReadinessExpired) return;
     [self verifyHistory:colors app:app];
-    [self pastePalette:@"[\"#445566\"]" app:app];[self verifyPaletteRows:@[@"#445566"] app:app];[self acceptPalette:app readinessTimeout:15];
+    if (![self pastePalette:@"[\"#445566\"]" app:app]) return;[self verifyPaletteRows:@[@"#445566"] app:app];[self acceptPalette:app readinessTimeout:15];
     if (self.tcPaletteReadinessExpired) return;
     NSArray *appended=[colors arrayByAddingObject:@"#445566"];[self verifyHistory:appended app:app];
     [app terminate];app.launchArguments=@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];[app launch];
     [self verifyHistory:appended app:app];
 }
 - (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app {
-    [self pastePalette:@"[\"#123456\",\"#123456\"]" app:app];
+    if (![self pastePalette:@"[\"#123456\",\"#123456\"]" app:app]) return;
     [self verifyPaletteRows:@[@"#123456",@"#123456"] app:app];[self acceptPalette:app];
+    if (self.tcPaletteReadinessExpired) return;
     NSArray *payloads=@[@"[\"#abcdef\",123]",[[[@" " stringByPaddingToLength:1024*1024+1 withString:@" " startingAtIndex:0] stringByAppendingString:@"[]"] copy]];
     NSArray *messages=@[@"must contain only",@"no larger than 1 MB"];
     for (NSUInteger index=0;index<payloads.count;index++) {
-        [self pastePalette:payloads[index] app:app];
-        XCUIElement *status=[self paletteElement:@"palette.import.status" app:app].staticTexts.firstMatch;
-        XCTNSPredicateExpectation *error=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS %@",messages[index]] object:status];
-        XCTAssertEqual([XCTWaiter waitForExpectations:@[error] timeout:10],XCTWaiterResultCompleted,@"%@",app.debugDescription);
+        if (![self pastePalette:payloads[index] app:app]) return;
+        // Retained native hierarchy: owned status Cell with StaticText child.
+        // Match the message inside AX's query, without a second remote label read.
+        XCUIElement *status=[app.cells[@"palette.import.status"].staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS %@",messages[index]]].firstMatch;
+        NSTimeInterval errorStarted=NSProcessInfo.processInfo.systemUptime, errorDeadline=errorStarted+10;
+        NSTimeInterval errorRemaining=errorDeadline-NSProcessInfo.processInfo.systemUptime;
+        if (errorRemaining<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Palette error lookup has no remaining allowance"); return; }
+        BOOL errorShown=[status waitForExistenceWithTimeout:errorRemaining];
+        NSTimeInterval errorReturned=NSProcessInfo.processInfo.systemUptime;
+        NSLog(@"PALETTE_ERROR_READINESS index=%lu shown=%d elapsed=%.3f budget=10",(unsigned long)index,errorShown,errorReturned-errorStarted);
+        BOOL errorTimely=errorReturned<errorDeadline && NSProcessInfo.processInfo.systemUptime<errorDeadline;
+        if (!errorTimely) self.tcPaletteReadinessExpired=YES;
+        XCTAssertTrue(errorTimely,@"Palette error lookup returned after its original allowance");
+        if (!errorTimely) return;
+        XCTAssertTrue(errorShown,@"The original palette validation message must appear");
+        if (!errorShown) return;
         XCTAssertFalse(app.buttons[@"palette.import.accept"].enabled);
-        XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self waitForPalettePresentationToClose:close];
+        XCUIElement *close=app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];
+        if (self.tcPaletteReadinessExpired) return;
+        [self waitForPalettePresentationToClose:close];
         [self verifyHistory:@[@"#123456",@"#123456"] app:app];
     }
 }
 - (void)exercisePaletteFileCancelAndImportReturn:(XCUIApplication *)app {
     [self openPaletteAction:@"palette.import.open" app:app];
     XCUIElement *file=[self paletteElement:@"palette.import.file" app:app];[self tapReadyPaletteElement:file timeout:5];
+    if (self.tcPaletteReadinessExpired) return;
     if (![self waitForPaletteFilesPresentation:app]) return;
     // Observed system navigation owners differ between the wide sidebar and
     // phone picker. Scope positively to those owners, not a global exclusion.
     XCUIElementQuery *pickerBars=[app.navigationBars matchingPredicate:[NSPredicate predicateWithFormat:@"identifier IN %@",@[@"FullDocumentManagerViewControllerNavigationBar",@"DOCSidebarView"]]];
-    XCUIElement *cancel=pickerBars.buttons[@"Cancel"].firstMatch;
-    // The retained large-phone gate needed4.044s readiness plus about2s for
-    // the real system tap. Keep existence at5; report the former5s total separately.
-    [self tapReadyPaletteElement:cancel timeout:10 existenceTimeout:5];
-    if (self.tcPaletteReadinessExpired) return;
+    // Match the actual owned system Button and enabled state in one AX query;
+    // live hittability and the actual tap still share the original10s deadline.
+    XCUIElement *cancel=[pickerBars.buttons matchingPredicate:[NSPredicate predicateWithFormat:@"(identifier == %@ OR label == %@) AND enabled == YES",@"Cancel",@"Cancel"]].firstMatch;
+    NSTimeInterval cancelStarted=NSProcessInfo.processInfo.systemUptime, cancelDeadline=cancelStarted+10;
+    NSTimeInterval cancelExistenceGrant=MIN(5,MAX(0,cancelDeadline-NSProcessInfo.processInfo.systemUptime));
+    if (cancelExistenceGrant<=0) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Files Cancel has no existence allowance"); return; }
+    BOOL cancelExists=[cancel waitForExistenceWithTimeout:cancelExistenceGrant];
+    BOOL cancelTimely=NSProcessInfo.processInfo.systemUptime<cancelDeadline;
+    if (!cancelTimely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(cancelTimely,@"Files Cancel lookup exceeded its original deadline");
+    if (!cancelTimely) return;
+    XCTAssertTrue(cancelExists,@"The owned Files Cancel Button must exist and be enabled");
+    if (!cancelExists) return;
+    BOOL (^cancelHittable)(void)=^BOOL {
+        if (self.tcPaletteReadinessExpired || NSProcessInfo.processInfo.systemUptime>=cancelDeadline) { self.tcPaletteReadinessExpired=YES; return NO; }
+        BOOL value=cancel.hittable;
+        if (NSProcessInfo.processInfo.systemUptime>=cancelDeadline) { self.tcPaletteReadinessExpired=YES; return NO; }
+        return value;
+    };
+    BOOL cancelReady=cancelHittable();
+    if (!cancelReady && !self.tcPaletteReadinessExpired) {
+        XCTNSPredicateExpectation *hit=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id ignored,NSDictionary *bindings) { return cancelHittable(); }] object:nil];
+        NSTimeInterval grant=cancelDeadline-NSProcessInfo.processInfo.systemUptime;
+        if (grant>0) cancelReady=[XCTWaiter waitForExpectations:@[hit] timeout:grant]==XCTWaiterResultCompleted;
+        else self.tcPaletteReadinessExpired=YES;
+    }
+    cancelTimely=!self.tcPaletteReadinessExpired && NSProcessInfo.processInfo.systemUptime<cancelDeadline;
+    if (!cancelTimely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(cancelTimely,@"Files Cancel readiness exceeded its original deadline");
+    if (!cancelTimely) return;
+    XCTAssertTrue(cancelReady,@"Files Cancel must be live hittable before its single tap");
+    if (!cancelReady) return;
+    // Assertion/logging overhead does not create a fresh tap allowance.
+    if (NSProcessInfo.processInfo.systemUptime>=cancelDeadline) { self.tcPaletteReadinessExpired=YES; XCTFail(@"Files Cancel deadline expired before tap"); return; }
+    [cancel tap];
+    NSTimeInterval cancelReturned=NSProcessInfo.processInfo.systemUptime;
+    NSLog(@"PALETTE_ACTION_RETURN case=%@ total=%.3f budget=10 responsiveness5=%@",self.name,cancelReturned-cancelStarted,cancelReturned<cancelStarted+5 ? @"within" : @"missed");
+    cancelTimely=cancelReturned<cancelDeadline && NSProcessInfo.processInfo.systemUptime<cancelDeadline;
+    if (!cancelTimely) self.tcPaletteReadinessExpired=YES;
+    XCTAssertTrue(cancelTimely,@"Files Cancel tap returned after its original deadline");
+    if (!cancelTimely) return;
     [self waitForPalettePresentationToClose:cancel];
     XCUIElement *close=app.buttons[@"palette.import.close"];
     XCTAssertTrue(close.hittable);XCTAssertTrue([[self paletteElement:@"palette.import.status" app:app].staticTexts.firstMatch.label containsString:@"cancelled"]);
@@ -447,7 +523,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     [self verifyPaletteRows:@[@"#445566",@"#445566",@"#aabbcc"] app:app];
 }
 - (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app {
-    [self pastePalette:@"[\"#112233\"]" app:app];
+    if (![self pastePalette:@"[\"#112233\"]" app:app]) return;
     [self verifyPaletteRows:@[@"#112233"] app:app];[self acceptPalette:app];
     [self selectSyntheticPaletteFile:app];
     if (self.tcPaletteReadinessExpired) return;
@@ -467,7 +543,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     // This independent rotation scenario enters through portrait. The separate
     // largest-text review/inbox case retains landscape source-control reveal.
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;[app launch];
-    [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app];
+    if (![self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app]) return;
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];
     // Keep this same populated dialog through both orientations; no app relaunch
     // or state transfer from another testcase can establish the rotation proof.
@@ -476,7 +552,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     // Preserve the original landscape-to-portrait replacement and exact values.
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     UIPasteboard.generalPasteboard.string=@"[\"#112233\",\"#aabbcc\",\"#445566\"]";
-    [self activateVisiblePalettePaste:app];
+    if (![self activateVisiblePalettePaste:app]) return;
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc",@"#445566"] app:app];
     XCUIElement *close=app.buttons[@"palette.import.close"];
     XCTAssertTrue(close.hittable);[self tapReadyPaletteElement:close timeout:5];[self waitForPalettePresentationToClose:close];
@@ -486,7 +562,7 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     [app terminate];
     app.launchArguments=@[@"--ui-test-reset",@"--ui-test-dark",@"--ui-test-scroll-state",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;[app launch];
-    [self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app];
+    if (![self pastePalette:@"[\"#112233\",\"#aabbcc\"]" app:app]) return;
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:app];
     XCUIElement *table=app.tables[@"palette.import.review"];
     for (NSString *text in @[@"#aabbcc",@"R 170   G 187   B 204"]) {

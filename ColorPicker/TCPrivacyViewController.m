@@ -1,23 +1,38 @@
 #import "TCPrivacyViewController.h"
 #import <WebKit/WebKit.h>
+#import <CommonCrypto/CommonDigest.h>
 BOOL TCPrivacyAllowsDocumentURL(NSURL *URL) {
     if (!URL) return NO;
     NSURLComponents *parts = [NSURLComponents componentsWithURL:URL resolvingAgainstBaseURL:NO];
-    return [parts.scheme.lowercaseString isEqualToString:@"https"] &&
-        [parts.host.lowercaseString isEqualToString:@"100mango.github.io"] &&
-        [parts.path isEqualToString:@"/app-privacy/"] && !parts.query.length && !parts.user.length && !parts.password.length &&
-        (!parts.port || parts.port.integerValue == 443);
+    return [parts.scheme.lowercaseString isEqualToString:@"about"] &&
+        [parts.path isEqualToString:@"blank"] && !parts.query && !parts.host &&
+        !parts.user && !parts.password && !parts.port;
 }
 BOOL TCPrivacyAllowsResponse(NSURLResponse *response) {
-    return TCPrivacyAllowsDocumentURL(response.URL) &&
-        (![response isKindOfClass:NSHTTPURLResponse.class] || [(NSHTTPURLResponse *)response statusCode] < 400);
+    return response && ![response isKindOfClass:NSHTTPURLResponse.class] &&
+        TCPrivacyAllowsDocumentURL(response.URL) && [response.MIMEType.lowercaseString isEqualToString:@"text/html"];
+}
+BOOL TCPrivacyAllowsPublishedURL(NSURL *URL, BOOL userActivated) {
+    // Exact spelling intentionally rejects queries, fragments, credentials and alternate ports.
+    return userActivated && [URL.absoluteString isEqualToString:@"https://100mango.github.io/app-privacy/"];
+}
+NSString *TCPrivacyPolicyHTML(NSData *data) {
+    // This digest pins the reviewed self-contained document, including its CSP and approved copy.
+    // A changed or malformed resource must show local recovery, never an HTTP fallback.
+    if (!data || data.length != 2823) return nil;
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (NSUInteger index = 0; index < CC_SHA256_DIGEST_LENGTH; index++) [hex appendFormat:@"%02x", digest[index]];
+    if (![hex isEqualToString:@"09af166e63987e02cb3722eacf4d4aa2ab6bccf55a5b43839ca4009826865cc2"]) return nil;
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
 }
 BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     if (!URL || !userActivated) return NO;
     NSURLComponents *parts = [NSURLComponents componentsWithURL:URL resolvingAgainstBaseURL:NO];
     return [parts.scheme.lowercaseString isEqualToString:@"mailto"] &&
-        [parts.path.lowercaseString isEqualToString:@"100mango@gmail.com"] && !parts.query.length && !parts.fragment.length &&
-        !parts.host.length && !parts.user.length && !parts.password.length && !parts.port;
+        [parts.path.lowercaseString isEqualToString:@"100mango@gmail.com"] && !parts.query && !parts.fragment &&
+        !parts.host && !parts.user && !parts.password && !parts.port;
 }
 @interface TCPrivacyViewController () <WKNavigationDelegate>
 @property (nonatomic, strong) WKWebView *webView;
@@ -26,10 +41,19 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
 @property (nonatomic, strong) UIActivityIndicatorView *activity;
 @property (nonatomic) BOOL closing;
 #if DEBUG
-@property (nonatomic) BOOL simulatedOfflineOnce;
+@property (nonatomic) BOOL simulatedLocalErrorOnce;
 #endif
 @end
 @implementation TCPrivacyViewController
+- (WKWebView *)makePolicyWebViewWithConfiguration:(WKWebViewConfiguration *)configuration {
+    return [[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration];
+}
+- (NSURL *)policyResourceURL {
+    return [NSBundle.mainBundle URLForResource:@"PrivacyPolicy" withExtension:@"html"];
+}
+- (void)openExternalPolicyURL:(NSURL *)URL {
+    [UIApplication.sharedApplication openURL:URL options:@{} completionHandler:nil];
+}
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = NSLocalizedString(@"Privacy Policy", nil);
@@ -38,8 +62,10 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     self.navigationItem.leftBarButtonItem.accessibilityIdentifier = @"privacy.close";
     WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
     configuration.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
+    configuration.dataDetectorTypes = WKDataDetectorTypeNone;
     configuration.defaultWebpagePreferences.allowsContentJavaScript = NO;
-    self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration];
+    self.webView = [self makePolicyWebViewWithConfiguration:configuration];
+    self.webView.allowsLinkPreview = NO;
     self.webView.navigationDelegate = self;
     self.webView.accessibilityIdentifier = @"privacy.content";
     self.webView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -49,14 +75,14 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     self.activity.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.activity];
     UILabel *message = [UILabel new];
-    message.text = NSLocalizedString(@"The privacy policy could not load. Check your connection and try again.", nil);
+    message.text = NSLocalizedString(@"The local privacy policy could not load. Reload to try again.", nil);
     message.accessibilityIdentifier = @"privacy.error";
     message.numberOfLines = 0;
     message.textAlignment = NSTextAlignmentCenter;
     message.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     message.adjustsFontForContentSizeCategory = YES;
     UIButton *retry = [UIButton buttonWithType:UIButtonTypeSystem];
-    [retry setTitle:NSLocalizedString(@"Retry", nil) forState:UIControlStateNormal];
+    [retry setTitle:NSLocalizedString(@"Reload", nil) forState:UIControlStateNormal];
     retry.accessibilityIdentifier = @"privacy.retry";
     retry.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     retry.titleLabel.adjustsFontForContentSizeCategory = YES;
@@ -96,19 +122,31 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
 - (void)loadPolicy {
     if (self.closing) return;
 #if DEBUG
-    // Deterministic offline recovery test; excluded from every Release build.
-    if (!self.simulatedOfflineOnce && [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-policy-offline"]) {
-        self.simulatedOfflineOnce = YES;
-        [self showLoadError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNotConnectedToInternet userInfo:nil]];
+    // Deterministic one-shot local-render error, not an offline HTTP request.
+    // Excluded from every Release build. Reload reads the same bundled resource.
+    if (!self.simulatedLocalErrorOnce && [NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-policy-local-error"]) {
+        self.simulatedLocalErrorOnce = YES;
+        [self showLoadError:[NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError userInfo:nil]];
         return;
     }
 #endif
+    NSURL *URL = [self policyResourceURL];
+    NSError *error = nil;
+    NSNumber *size = nil;
+    NSData *data = nil;
+    if (URL.isFileURL && [URL getResourceValue:&size forKey:NSURLFileSizeKey error:&error] && size.unsignedLongLongValue <= 16384) {
+        data = [NSData dataWithContentsOfURL:URL options:NSDataReadingMappedIfSafe error:&error];
+    }
+    NSString *HTML = TCPrivacyPolicyHTML(data);
+    if (!HTML) {
+        [self showLoadError:error ?: [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError userInfo:nil]];
+        return;
+    }
     self.errorView.hidden = YES;
     self.errorScroll.hidden = YES;
     self.webView.hidden = NO;
     [self.activity startAnimating];
-    NSURL *URL = [NSURL URLWithString:@"https://100mango.github.io/app-privacy/"];
-    [self.webView loadRequest:[NSURLRequest requestWithURL:URL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20]];
+    [self.webView loadHTMLString:HTML baseURL:nil];
 }
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     [self.activity stopAnimating];
@@ -126,15 +164,19 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     [self showLoadError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorUnknown userInfo:nil]];
 }
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationResponse:(WKNavigationResponse *)response decisionHandler:(void (^)(WKNavigationResponsePolicy))decisionHandler {
-    BOOL allowed = TCPrivacyAllowsResponse(response.response);
-    if (!allowed) [self showLoadError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorBadServerResponse userInfo:nil]];
+    BOOL allowed = !self.closing && response.isForMainFrame && TCPrivacyAllowsResponse(response.response);
+    if (!allowed) [self showLoadError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCannotDecodeContentData userInfo:nil]];
     decisionHandler(allowed ? WKNavigationResponsePolicyAllow : WKNavigationResponsePolicyCancel);
 }
 - (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
-    if (TCPrivacyAllowsContactURL(action.request.URL, action.navigationType == WKNavigationTypeLinkActivated)) {
-        [UIApplication.sharedApplication openURL:action.request.URL options:@{} completionHandler:nil];
+    BOOL userActivated = !self.closing && action.navigationType == WKNavigationTypeLinkActivated && action.sourceFrame.isMainFrame;
+    NSURL *URL = action.request.URL;
+    if (TCPrivacyAllowsContactURL(URL, userActivated) || TCPrivacyAllowsPublishedURL(URL, userActivated)) {
+        [self openExternalPolicyURL:URL];
     }
-    decisionHandler(TCPrivacyAllowsDocumentURL(action.request.URL) ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+    // External destinations are always cancelled in this embedded view, even after a user tap.
+    BOOL allowed = !self.closing && action.targetFrame.isMainFrame && TCPrivacyAllowsDocumentURL(URL);
+    decisionHandler(allowed ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
 }
 - (void)close {
     if (self.closing) return;

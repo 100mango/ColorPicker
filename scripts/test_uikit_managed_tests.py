@@ -4,6 +4,7 @@ import copy
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -83,6 +84,7 @@ class RunTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.old=Path.cwd();os.chdir(self.tmp.name)
         self.tick=0.;self.calls=[];self.reader_calls=[];self.inject=None;self.read_inject=None
+        self.family='iPadMini';self.suite='TouchColorTests'
         self.stack=contextlib.ExitStack()
         self.stack.enter_context(patch.object(m,'load_setup',return_value=copy.deepcopy(SETUP)))
         self.stack.enter_context(patch.object(m,'read_binding',return_value=copy.deepcopy(SETUP['binding'])))
@@ -93,40 +95,261 @@ class RunTests(unittest.TestCase):
     def tearDown(self):
         self.stack.close();os.chdir(self.old);self.tmp.cleanup()
     def runner(self,command,deadline):
-        self.calls.append((command,deadline));self.tick+=1
+        began=self.tick;self.calls.append((command,deadline));self.tick+=1
         value={'status':'timely_exit','exit_code':0,'host_cleanup_confirmed':True,'simulator_completion':'xcode_command_returned_only'}
         if self.inject:self.inject(value,deadline)
+        value.update(started_monotonic=began,finished_monotonic=self.tick,
+                     elapsed_seconds=self.tick-began,deadline_monotonic=deadline)
         return value
     def reader(self,command,**kw):
         self.reader_calls.append((command,kw))
         if self.read_inject:self.read_inject(kw)
-        return subprocess.CompletedProcess(command,0,json.dumps(summary()).encode(),b'')
+        return subprocess.CompletedProcess(command,0,json.dumps(summary(self.family,self.suite)).encode(),b'')
     def run_case(self,**kwargs):
         products=kwargs.pop('products',lambda **kw:copy.deepcopy(SETUP['products']))
-        return m.run_suite('iPadMini','TouchColorTests',started=0,clock=lambda:self.tick,
+        return m.run_suite(self.family,self.suite,started=0,clock=lambda:self.tick,
             wall=lambda:1000+self.tick,runner=self.runner,reader=self.reader,
             products=products,**kwargs)
-    def record(self):return json.loads(m.record_path('iPadMini','TouchColorTests').read_text())
-    def pending(self):return Path('build/iPadMini-runtime-command-uncertain').exists()
+    def record(self):return json.loads(m.record_path(self.family,self.suite).read_text())
+    def pending(self):return Path('build/'+self.family+'-runtime-command-uncertain').exists()
     def test_exact_success(self):
         self.assertEqual(self.run_case(),0);self.assertFalse(self.pending());self.assertTrue(self.record()['qualified'])
-        self.assertEqual(self.calls[0][1],500)
+        self.assertEqual(self.calls[0][1],800)
         self.assertEqual(self.reader_calls[0][1],{'seconds':20,'cap':1048576,'cleanup_grace':10})
-    def test_39_seconds_entry_fits(self):
-        self.tick=39
+        self.assertEqual(self.record()['command']['prior_500_benchmark'],
+            {'admitted_monotonic':0.,'deadline_monotonic':500.,
+             'completed_before_deadline':True,'status':'within_prior_limit'})
+    def clear_case(self):
+        m.record_path(self.family,self.suite).unlink(missing_ok=True)
+        Path('build/'+self.family+'-runtime-command-uncertain').unlink(missing_ok=True)
+        self.calls.clear();self.reader_calls.clear()
+    def test_only_mini_hosted_receives_larger_command_and_phase(self):
+        for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge'):
+            for suite,(phase,grant,_) in m.STEPS.items():
+                self.family=family;self.suite=suite;self.tick=0.
+                mini=family=='iPadMini' and suite=='TouchColorTests'
+                expected_phase,expected_grant=(960,800) if mini else (phase,grant)
+                scans=[]
+                def scan(**kw):
+                    scans.append(kw);return copy.deepcopy(SETUP['products'])
+                with self.subTest(family=family,suite=suite):
+                    self.assertEqual(self.run_case(products=scan),0)
+                    self.assertEqual(self.calls[0][1],expected_grant)
+                    self.assertEqual(scans[0]['post_test_deadline'],expected_phase-40)
+                    self.assertEqual('prior_500_benchmark' in self.record()['command'],mini)
+                    self.clear_case()
+                    # Every non-Mini route retains its exact 40-second entry boundary.
+                    self.tick=100 if mini else 40
+                    self.assertEqual(self.run_case(),3);self.assertEqual(self.calls,[])
+                    self.clear_case()
+    def test_unknown_family_or_suite_cannot_obtain_mini_allowance(self):
+        for family,suite in [('iPadmini','TouchColorTests'),('iPadMiniExtra','TouchColorTests'),
+                             ('iPadMini','TouchColorTests/testOne'),('iPadMini','hosted')]:
+            self.family=family;self.suite=suite
+            with self.subTest(family=family,suite=suite),self.assertRaises(ValueError):self.run_case()
+            self.assertEqual(self.calls,[])
+    def test_observed_composite_fits_but_retains_prior_benchmark_exceeded(self):
+        self.inject=lambda value,deadline:setattr(self,'tick',770.044)
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output):self.assertEqual(self.run_case(),0)
+        record=self.record();benchmark=record['command']['prior_500_benchmark']
+        self.assertFalse(benchmark['completed_before_deadline'])
+        self.assertEqual(benchmark['status'],'prior_limit_exceeded')
+        self.assertEqual(record['summary']['fields']['passedTests'],53)
+        self.assertEqual(record['summary']['fields']['skippedTests'],0)
+        self.assertTrue(record['qualified']);self.assertFalse(self.pending())
+        printed=json.loads(output.getvalue().split('UIKIT_MANAGED_RESULT:',1)[1])
+        self.assertEqual(printed['command']['prior_500_benchmark'],benchmark)
+    def test_prior_benchmark_exact_representable_boundaries_use_admission(self):
+        # These instants catch both directions of rounded-deadline subtraction.
+        for admission in (0.,.002,.003):
+            old=admission+500
+            for finish,within in ((math.nextafter(old,-math.inf),True),
+                                  (old,False),(math.nextafter(old,math.inf),False)):
+                self.tick=admission
+                self.inject=lambda value,deadline,finish=finish:setattr(self,'tick',finish)
+                with self.subTest(admission=admission,finish=finish):
+                    self.assertEqual(self.run_case(),0)
+                    benchmark=self.record()['command']['prior_500_benchmark']
+                    self.assertEqual(benchmark['admitted_monotonic'],admission)
+                    self.assertEqual(benchmark['deadline_monotonic'],old)
+                    self.assertIs(benchmark['completed_before_deadline'],within)
+                    self.assertEqual(self.calls[0][1],admission+800)
+                    self.clear_case()
+        self.assertLess((.002+800)-800+500,.002+500)
+        self.assertGreater((.003+800)-800+500,.003+500)
+    def test_entry_persistence_defines_one_shared_admission_instant(self):
+        original=m.write_json;calls=[0]
+        def delayed(*args,**kw):
+            original(*args,**kw);calls[0]+=1
+            if calls[0]==1:self.tick=.002
+        with patch.object(m,'write_json',side_effect=delayed):self.assertEqual(self.run_case(),0)
+        self.assertEqual(self.calls[0][1],800.002)
+        self.assertEqual(self.record()['command']['prior_500_benchmark']['deadline_monotonic'],500.002)
+        self.assertEqual(self.record()['command']['prior_500_benchmark']['admitted_monotonic'],.002)
+    def test_wall_observation_overhead_does_not_extend_admitted_deadlines(self):
+        observations=[0]
+        def wall():
+            observations[0]+=1
+            if observations[0]==1:self.tick=.006
+            return 1000+self.tick
+        self.assertEqual(m.run_suite(self.family,self.suite,started=0,clock=lambda:self.tick,
+            wall=wall,runner=self.runner,reader=self.reader,
+            products=lambda **kw:copy.deepcopy(SETUP['products'])),0)
+        command=self.record()['command']
+        self.assertEqual(command['started_monotonic'],.006)
+        self.assertEqual(command['deadline_monotonic'],800)
+        self.assertEqual(command['prior_500_benchmark']['admitted_monotonic'],0)
+        self.assertEqual(command['prior_500_benchmark']['deadline_monotonic'],500)
+    def test_other_routes_keep_their_original_post_wall_command_clock(self):
+        for family,suite,grant in [('iPadLarge','TouchColorTests',500),
+                                  ('iPhoneCompact','TouchColorTests',500),
+                                  ('iPhoneLarge','TouchColorTests',500),
+                                  ('iPadMini','TouchColorUITests',1100),
+                                  ('iPadMini','AccessibilityAudits',620)]:
+            self.family=family;self.suite=suite;self.tick=0.;observations=[0]
+            def wall():
+                observations[0]+=1
+                if observations[0]==1:self.tick=.006
+                return 1000+self.tick
+            with self.subTest(family=family,suite=suite):
+                self.assertEqual(m.run_suite(family,suite,started=0,clock=lambda:self.tick,
+                    wall=wall,runner=self.runner,reader=self.reader,
+                    products=lambda **kw:copy.deepcopy(SETUP['products'])),0)
+                self.assertEqual(self.calls[0][1],.006+grant)
+                self.assertNotIn('prior_500_benchmark',self.record()['command'])
+                self.clear_case()
+    def test_unobserved_or_unclean_completion_has_unknown_prior_benchmark(self):
+        for status,cleanup in [('incomplete',True),('incomplete',False),('not_started',None),
+                               ('timely_exit',False),('timely_exit',None)]:
+            self.tick=0.
+            self.inject=lambda value,deadline:value.update(status=status,host_cleanup_confirmed=cleanup)
+            with self.subTest(status=status,cleanup=cleanup):
+                self.assertEqual(self.run_case(),3)
+                benchmark=self.record()['command']['prior_500_benchmark']
+                self.assertIsNone(benchmark['completed_before_deadline'])
+                self.assertEqual(benchmark['status'],'unknown')
+                self.assertTrue(self.pending());self.assertEqual(self.reader_calls,[])
+                self.clear_case()
+    def test_missing_or_non_numeric_completion_is_never_a_prior_benchmark_pass(self):
+        original=self.runner
+        for finish in (None,True,'unknown'):
+            self.tick=0.
+            def run(command,deadline):
+                value=original(command,deadline);value['finished_monotonic']=finish;return value
+            self.runner=run
+            with self.subTest(finish=finish):
+                self.assertEqual(self.run_case(),0)
+                self.assertEqual(self.record()['command']['prior_500_benchmark']['status'],'unknown')
+                self.clear_case()
+    def test_nonfinite_completion_fails_existing_strict_receipt_write(self):
+        original=self.runner
+        for finish in (float('nan'),float('inf')):
+            self.tick=0.
+            def run(command,deadline):
+                value=original(command,deadline);value['finished_monotonic']=finish;return value
+            self.runner=run;output=io.StringIO()
+            with self.subTest(finish=finish),contextlib.redirect_stdout(output),self.assertRaises(ValueError):
+                self.run_case()
+            self.assertTrue(self.pending());self.assertEqual(self.reader_calls,[])
+            printed=json.loads(output.getvalue().split('UIKIT_MANAGED_RESULT:',1)[1])
+            self.assertEqual(printed['command']['prior_500_benchmark']['status'],'unknown')
+            self.clear_case()
+    def test_real_invoke_finish_and_cleanup_drive_prior_benchmark(self):
+        for finish,within in ((math.nextafter(500.,-math.inf),True),(500.,False),(770.044,False)):
+            self.tick=0.
+            class Process:
+                pid=123456789
+                def wait(inner,timeout):self.tick=finish;return 0
+            self.runner=lambda command,deadline:m.invoke(command,deadline,clock=lambda:self.tick,
+                popen=lambda *a,**kw:Process())
+            with self.subTest(finish=finish),patch.object(m,'group_exists',return_value=False):
+                self.assertEqual(self.run_case(),0)
+                command=self.record()['command']
+                self.assertEqual(command['started_monotonic'],0)
+                self.assertEqual(command['finished_monotonic'],finish)
+                self.assertEqual(command['elapsed_seconds'],finish)
+                self.assertTrue(command['host_cleanup_confirmed'])
+                self.assertIs(command['prior_500_benchmark']['completed_before_deadline'],within)
+                self.clear_case()
+    def test_real_invoke_start_offset_does_not_reset_prior_benchmark(self):
+        observations=[0]
+        def wall():
+            observations[0]+=1
+            if observations[0]==1:self.tick=.006
+            return 1000+self.tick
+        class Process:
+            pid=123456789
+            def wait(inner,timeout):self.tick=500.003;return 0
+        self.runner=lambda command,deadline:m.invoke(command,deadline,clock=lambda:self.tick,
+            popen=lambda *a,**kw:Process())
+        with patch.object(m,'group_exists',return_value=False):
+            self.assertEqual(m.run_suite(self.family,self.suite,started=0,clock=lambda:self.tick,
+                wall=wall,runner=self.runner,reader=self.reader,
+                products=lambda **kw:copy.deepcopy(SETUP['products'])),0)
+        command=self.record()['command']
+        self.assertEqual(command['started_monotonic'],.006)
+        self.assertLess(command['elapsed_seconds'],500)
+        self.assertEqual(command['prior_500_benchmark']['admitted_monotonic'],0)
+        self.assertEqual(command['prior_500_benchmark']['status'],'prior_limit_exceeded')
+    def test_real_invoke_timeout_does_not_infer_completion_from_cleanup(self):
+        for cleanup in (True,False):
+            self.tick=0.;stops=[]
+            class Process:
+                pid=123456789
+                def wait(inner,timeout):
+                    self.tick=800
+                    raise subprocess.TimeoutExpired('xcodebuild',timeout)
+            def stop(process,grace):
+                stops.append(grace);self.tick+=20;return cleanup
+            self.runner=lambda command,deadline:m.invoke(command,deadline,clock=lambda:self.tick,
+                popen=lambda *a,**kw:Process(),stopper=stop)
+            with self.subTest(cleanup=cleanup):
+                self.assertEqual(self.run_case(),3)
+                command=self.record()['command']
+                self.assertEqual(command['finished_monotonic'],820)
+                self.assertEqual(command['status'],'incomplete')
+                self.assertIs(command['host_cleanup_confirmed'],cleanup)
+                self.assertEqual(command['prior_500_benchmark']['status'],'unknown')
+                self.assertIsNone(command['prior_500_benchmark']['completed_before_deadline'])
+                self.assertEqual(stops,[10]);self.assertTrue(self.pending())
+                self.assertEqual(self.reader_calls,[]);self.clear_case()
+    def test_runner_exception_preserves_unknown_admitted_benchmark_and_fence(self):
+        def fail(command,deadline):raise OSError('launch unavailable')
+        self.runner=fail
+        self.assertEqual(self.run_case(),3)
+        benchmark=self.record()['command']['prior_500_benchmark']
+        self.assertEqual(benchmark['admitted_monotonic'],0)
+        self.assertEqual(benchmark['deadline_monotonic'],500)
+        self.assertEqual(benchmark['status'],'unknown')
+        self.assertTrue(self.pending());self.assertEqual(self.reader_calls,[])
+    def test_99_seconds_entry_fits(self):
+        self.tick=99
         # Make summary dates correspond to this injected entry time.
         def read(command,**kw):
-            value=summary();value.update(startTime=1039.1,finishTime=1039.9)
+            value=summary();value.update(startTime=1099.1,finishTime=1099.9)
             return subprocess.CompletedProcess(command,0,json.dumps(value).encode(),b'')
         self.reader=read
-        self.assertEqual(self.run_case(),0);self.assertEqual(self.calls[0][1],539)
-    def test_exact_40_seconds_entry_refuses_full_admission(self):
-        self.tick=40;self.assertEqual(self.run_case(),3);self.assertEqual(self.calls,[])
+        self.assertEqual(self.run_case(),0);self.assertEqual(self.calls[0][1],899)
+    def test_exact_100_seconds_entry_refuses_full_admission(self):
+        self.tick=100;self.assertEqual(self.run_case(),3);self.assertEqual(self.calls,[])
+    def test_insufficient_and_rounded_equality_reserves_refuse_without_spawn(self):
+        for entry in (101.,math.nextafter(100.,-math.inf)):
+            self.tick=entry
+            self.assertGreaterEqual(entry+800+2*m.CLEANUP+m.SUMMARY,960)
+            self.assertEqual(self.run_case(),3);self.assertEqual(self.calls,[])
+            self.assertFalse(self.pending());self.clear_case()
     def test_persist_overhead_cannot_start_expired_grant(self):
         original=m.write_json
         def delayed(*args,**kw):
-            original(*args,**kw);self.tick=41
+            original(*args,**kw);self.tick=100
         with patch.object(m,'write_json',side_effect=delayed):self.assertEqual(self.run_case(),3)
+        self.assertEqual(self.calls,[]);self.assertTrue(self.pending())
+    def test_marker_fsync_overhead_cannot_borrow_owned_cleanup_reserve(self):
+        original=m.os.fsync
+        def delayed(fd):
+            original(fd);self.tick=100
+        with patch.object(m.os,'fsync',side_effect=delayed):self.assertEqual(self.run_case(),3)
         self.assertEqual(self.calls,[]);self.assertTrue(self.pending())
     def test_late_xctest_retains_fence_and_early_outcome(self):
         self.inject=lambda value,deadline:setattr(self,'tick',deadline)
@@ -203,7 +426,7 @@ class RunTests(unittest.TestCase):
             raise m.ProductInventoryError(observation)
         output=io.StringIO()
         with contextlib.redirect_stdout(output):self.assertEqual(self.run_case(products=scan),3)
-        self.assertEqual(seen[0]['post_test_deadline'],560)
+        self.assertEqual(seen[0]['post_test_deadline'],920)
         self.assertIsNotNone(seen[0]['clock']);self.assertEqual(self.reader_calls,[])
         record=self.record();self.assertEqual(record['command']['exit_code'],65)
         self.assertIs(record['command']['host_cleanup_confirmed'],True)
@@ -485,15 +708,24 @@ class SourceTests(unittest.TestCase):
         import re
         text=(ROOT/'.github/workflows/ios.yml').read_text()
         job=text.split('  compatibility:\n',1)[1]
-        self.assertIn('    timeout-minutes: 60\n',job)
+        self.assertIn("    timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}\n",job)
         self.assertEqual(re.findall(r'^      max-parallel: (.+)$',job,re.M),['2'])
         def step(name):return job.split('      - name: '+name+'\n',1)[1].split('      - name:',1)[0]
         hosted=step('Unit and constrained-window layout tests')
         functional=step('Functional UI tests')
         seeded=step('Prepare Files fixture and seed synthetic photo')
         self.assertIn("steps.hosted-tests.outcome == 'success'",seeded)
-        self.assertIn('timeout-minutes: 10',hosted);self.assertIn('timeout-minutes: 20',functional)
+        self.assertIn("timeout-minutes: ${{ matrix.family == 'iPadMini' && 16 || 10 }}",hosted)
+        self.assertIn('timeout-minutes: 20',functional)
         self.assertIn('timeout-minutes: 10',seeded)
+        # The only two conditional ceilings are this row and its hosted step.
+        self.assertEqual(re.findall(r'^  ([a-z-]+):$',text.split('jobs:\n',1)[1],re.M),
+                         ['compile-prerequisites','compatibility'])
+        self.assertEqual(re.findall(r'^        timeout-minutes: (.+)$',job,re.M),
+            ['6','5','8','4','10',"${{ matrix.family == 'iPadMini' && 16 || 10 }}",
+             '10','20','2','12','2','3'])
+        self.assertEqual(re.findall(r'^    timeout-minutes: (.+)$',text,re.M),
+            ['20',"${{ matrix.family == 'iPadMini' && 70 || 60 }}"])
     def test_live_phone_pipe_and_legacy_paths_preserved(self):
         text=(ROOT/'scripts/test_simulators.sh').read_text()
         self.assertIn('set -euo pipefail',text)
@@ -509,6 +741,9 @@ class SourceTests(unittest.TestCase):
         self.assertNotIn("device, 'com.mango.touchColor'",text)
         self.assertIn('warmup.fixture(container)',text);self.assertIn('warmup.seed(device)',text)
     def test_finite_schedule_arithmetic(self):
+        self.assertEqual(m.STEPS,{'TouchColorTests':(600,500,53),
+            'TouchColorUITests':(1200,1100,None),'AccessibilityAudits':(720,620,7)})
+        self.assertEqual((m.CLEANUP,m.SUMMARY),(20,20))
         for step,command,_ in m.STEPS.values():
             self.assertEqual(step-command-2*m.CLEANUP-m.SUMMARY,40)
 

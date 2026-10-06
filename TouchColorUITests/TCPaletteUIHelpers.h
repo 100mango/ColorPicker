@@ -9,8 +9,8 @@
 - (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll;
 - (void)returnToPaletteFrom:(NSString *)title app:(XCUIApplication *)app;
 - (void)openPaletteAction:(NSString *)identifier app:(XCUIApplication *)app;
-- (void)activateVisiblePalettePaste:(XCUIApplication *)app;
-- (void)pastePalette:(NSString *)JSON app:(XCUIApplication *)app;
+- (BOOL)activateVisiblePalettePaste:(XCUIApplication *)app;
+- (BOOL)pastePalette:(NSString *)JSON app:(XCUIApplication *)app;
 - (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app;
 - (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app;
 - (void)verifyOriginalPaletteSources:(XCUIApplication *)app;

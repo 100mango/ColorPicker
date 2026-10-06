@@ -19,6 +19,9 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 MAX_ENTRIES, MAX_BYTES, MAX_SECONDS = 8192, 1024 * 1024 * 1024, 30
 IMPORT_SHA = "32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1"
+POLICY_SOURCE = 'ColorPicker/PrivacyPolicy.html'
+POLICY_PRODUCT = 'app/PrivacyPolicy.html'
+POLICY_SHA256 = '09af166e63987e02cb3722eacf4d4aa2ab6bccf55a5b43839ca4009826865cc2'
 APP_SOURCES = sorted(['ColorPicker/' + name for name in (
     'main.m', 'ColorAppDelegate.m', 'ColorSceneDelegate.m', 'ColorMainViewController.m',
     'ColorViewController.m', 'ColorRealTimeViewController.m', 'ColorDetectView.m',
@@ -143,13 +146,24 @@ def source_graph(root):
     require(not any(x.get('isa') in ('PBXReferenceProxy', 'PBXContainerItemProxy') and 'Watch' in str(x) for x in objects.values()), 'Watch target proxy retained')
     require(not any('Watch' in str(x) or 'PairedTests/' in str(x) for x in objects.values()), 'Watch/paired project reference retained')
     target = targets['TouchColor']
-    memberships = []
+    memberships, resource_refs = [], []
     for phase_id in target['buildPhases']:
         phase = objects[phase_id]
         require(phase['isa'] != 'PBXCopyFilesBuildPhase', 'Unexpected app copy/embed phase')
         if phase['isa'] == 'PBXSourcesBuildPhase':
             memberships += [objects[objects[b]['fileRef']]['path'] for b in phase['files']]
+        if phase['isa'] == 'PBXResourcesBuildPhase':
+            resource_refs += [objects[objects[b]['fileRef']] for b in phase['files']]
     require(sorted(memberships) == APP_SOURCES, 'App source membership differs from reviewed twelve-file graph')
+    policies = [ref for ref in resource_refs if Path(ref.get('path', '')).name == 'PrivacyPolicy.html']
+    require(len(policies) == 1 and policies[0].get('path') == POLICY_SOURCE and
+            policies[0].get('isa') == 'PBXFileReference' and policies[0].get('sourceTree') == '<group>' and
+            policies[0].get('lastKnownFileType') == 'text.html',
+            'Bundled privacy policy must occur exactly once in app resources')
+    policy_path = root / POLICY_SOURCE
+    require(policy_path.is_file() and not policy_path.is_symlink(), 'Missing or linked reviewed privacy policy source')
+    policy = policy_path.read_bytes()
+    require(hashlib.sha256(policy).hexdigest() == POLICY_SHA256, 'Reviewed privacy policy source bytes changed')
     require(target.get('dependencies', []) == [], 'Unexpected app target dependency')
     require(not any('PhonePaletteInbox' in p for p in memberships), 'Companion source retained')
     require(hashlib.sha256((root / 'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_bytes()).hexdigest() == IMPORT_SHA, 'Independent importer bytes changed')
@@ -159,6 +173,8 @@ def source_graph(root):
         text = (root / 'ColorPicker' / name).read_text()
         require('openWatchInbox' not in text and 'watch.inbox.open' not in text, 'Companion entry retained')
     return {'source_paths': sorted(memberships), 'importer_sha256': IMPORT_SHA,
+            'resource_paths': sorted(ref.get('path', ref.get('name', '')) for ref in resource_refs),
+            'privacy_policy': {'path': POLICY_SOURCE, 'bytes': len(policy), 'sha256': POLICY_SHA256},
             'project_sha256': hashlib.sha256((root / 'TouchColor.xcodeproj/project.pbxproj').read_bytes()).hexdigest()}
 
 
@@ -172,6 +188,10 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
     def timely():
         require(clock() < deadline, 'Package inspection exceeded original 30-second deadline')
     graph = source_graph(root); timely()
+    policy = (root / POLICY_SOURCE).read_bytes()
+    require(hashlib.sha256(policy).hexdigest() == graph['privacy_policy']['sha256'],
+            'Reviewed privacy policy source changed during inspection')
+    timely()
     directories, files, binaries, plists, identities, total, count = {}, {}, {}, {}, {}, 0, 0
     roots = [('app', app)]
     if build_for_testing:
@@ -204,6 +224,8 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
                             'Product changed during inspection: ' + key)
                     files[key] = {'bytes': before.st_size, 'sha256': h.hexdigest()}
                     identities[path] = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+                    if key == POLICY_PRODUCT:
+                        require(bytes(data) == policy, 'Bundled privacy policy differs from reviewed source bytes')
                     if path.suffix in ('.plist', '.xcprivacy'):
                         plists[key] = plistlib.loads(data)
                     require('PaletteFixtures' not in relative, 'Fixture product embedded')
@@ -235,7 +257,7 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
     for key in ('NSCameraUsageDescription', 'UIApplicationSceneManifest', 'UILaunchScreen',
                 'UISupportedInterfaceOrientations', 'UISupportedInterfaceOrientations~ipad'):
         require(metadata.get(key) == original.get(key), 'Original metadata changed: ' + key)
-    for path in ('Assets.car', 'PrivacyInfo.xcprivacy', 'en.lproj/Localizable.strings', 'zh-Hans.lproj/Localizable.strings',
+    for path in ('Assets.car', 'PrivacyInfo.xcprivacy', 'PrivacyPolicy.html', 'en.lproj/Localizable.strings', 'zh-Hans.lproj/Localizable.strings',
                  'en.lproj/InfoPlist.strings', 'zh-Hans.lproj/InfoPlist.strings'):
         require('app/' + path in files and files['app/' + path]['bytes'] > 0, 'Missing compiled resource: ' + path)
     require(plists['app/PrivacyInfo.xcprivacy'] ==

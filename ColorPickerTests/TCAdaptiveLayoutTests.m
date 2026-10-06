@@ -7,16 +7,12 @@
 #import "ColorViewController.h"
 #import "ColorDetectView.h"
 #import "TCColorUtilities.h"
-#import "TCPrivacyViewController.h"
+#import "TCPrivacyTesting.h"
 #import <WebKit/WebKit.h>
 #import "../TouchColorUITests/TCSystemPickerGeometry.h"
 
 @interface ColorMainViewController (MinimumLayoutTests)
 - (void)reloadHistory;
-@end
-@interface TCPrivacyViewController (MinimumLayoutTests)
-- (void)loadPolicy;
-- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView;
 @end
 @interface TCMinimumLayoutPolicy : TCPrivacyViewController
 @end

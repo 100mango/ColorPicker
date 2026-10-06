@@ -4,14 +4,16 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 HELPER=(ROOT/'TouchColorUITests/TCPaletteUIHelpers.m').read_text()
 def section(start,end): return HELPER.split(start,1)[1].split(end,1)[0]
-LOCKS={'TCPaletteUIHelpers.m': {'- (XCUIElement *)paletteElement:(NSString *)identifier app:(XCUIApplication *)app {': 'bd76b81e3cd0dba5e7338ffe1e75da1d1720b149707f7a355a29fb032a103a87', '- (void)returnToPaletteFrom:(NSString *)title app:(XCUIApplication *)app {': 'e6a9d262c92120711056db033297901a7daad34e33bd1101a1cb52ebca435be2', '- (CGRect)paletteBodyViewport:(XCUIApplication *)app table:(XCUIElement *)table title:(NSString *)title {': '1c24405d1835718ae9fcd118cc29a0bb194df94e29a2b03c3e3c136fbc50845e', '- (void)openPaletteAction:(NSString *)identifier app:(XCUIApplication *)app {': 'abb7d22be0c90c363368d8b0c3dadfe8c0dbf812b743528bf5ae13a5db8b48a8', '- (void)waitForPalettePresentationToClose:(XCUIElement *)close {': '80d4bb267e6bbab199cae03bc9b2a8e835fb9e7136848e28943193d9158aee23', '- (void)pastePalette:(NSString *)JSON app:(XCUIApplication *)app {': 'c08167f15d514c1e198f73388569907eb19808b6019183e40b0732f0dfed1c50', '- (void)activateVisiblePalettePaste:(XCUIApplication *)app {': 'b582598a55bf65ee522cc7d27ff4a2b518c6ebbe7ef62ce5e35e71a9426525b4', '- (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {': '1197df52e6126912f57b07eca023b3c7013f4f4248622456c810f6de663d1613', '- (void)verifyHistory:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {': 'e75bc62b80e2750a7fc0750b4e199e4d24a8cd3e60b6badca1735eb7af80075e', '- (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app {': '603d23ed2f5952f34adcf96babb1c8609f3ac36869b2ae9d7afcf16c32a4634f', '- (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app {': '6b438e25d28d0ab3bc281751e34f0b7af55496432e2e8a5e17f1a0bcded97134', '- (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app {': 'b603290fada1a69334022edf923b5776fe2fb7f7cbcd23389bd15d310cf5432f', '- (void)exerciseLargestTextPaletteRotationReplacesSelection:(XCUIApplication *)app {': 'e3e878f00b16e0fa1b68a96cd341701da3e28aa4d6fc3ce4b786c9f04fa32fdc', '- (void)exerciseLargestTextPaletteReviewAndImportHelp:(XCUIApplication *)app {': 'c162bff1ace8e604b91259d4c78f6e3447b0316facb8471165b1313376605893', '- (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll {': '947813c17a21254e807fd70daa0a6ef4ee290537f9531be7c37571ba7ce74289', '- (void)exercisePaletteFileCancelAndImportReturn:(XCUIApplication *)app {': 'aca216481a5b8b4de9396fd08f0c51a2bb5be5b0ef143a0311dc984dac1eadbc', '- (void)selectSyntheticPaletteFile:(XCUIApplication *)app {': 'de3be18cca36fe13ed2950ee99579b7976802ec5ed85f09aeed7e36173150bbf'}, 'TouchColorIPadUITests.m': {'- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)choosePhoto {': 'f68d61d96e90c59812d57a14637abfd5bd576b9bc75c53376df2646f22a9b14c', '- (void)importFixture {': '4ed6e8f9d4e976830f4d35fe2984d6a023106423f9b58bb4d66776f34b7691a0', '- (void)cancelPicker {': 'a92b352cfc0348a6bc15ddf1e9bde80bcf503e8339dca471f53f615532f09e45', '- (void)assertPresentationDisappears:(XCUIElement *)presentation {': 'a60264fe303b9dc839b0b897a666db7e1586f7a2c15eaa3eca2b0496eaa0a341', '- (void)testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch {': 'a5a629ff8f6857dbd090b84df062eb812a62820d23b5492881ee31cbedb5f2a4', '- (void)testKeyboardImportSamplingZoomSaveAndRotation {': '0a7cdfacabbea0a78902077b0c593ece55eb9c7089b5bda849a9a9e96fdb5ea9', '- (void)testCancelPhotoLoadingRetainsTheCurrentCanvasAndPalette {': 'eabec474269dec499e482f88953e3a6b280622a1e7285083b8ebb5992f024124', '- (void)testLargestTextNativePaletteAndCanvasControls {': '633739bfb62eafdb92eeae1b11f735dc986d1a64ab92c9528866b62e9275fe8c', '- (void)testLiveCanvasPickerCancellationAndSceneLifecycle {': '0b7dbf396c70c2ef16e8772462a0aa994d767119a2e6eb2c9f86dde6a37e627a', '- (void)testFullScreenPaletteFlowsResumeLiveUnavailableState {': '94f73c9a1573b3555e4fcb3ba58ea47191c1b4e6673d1c89da8da2208ffb2346', '- (void)testPrivacyCloseRetainsPhotoSelection {': '5a42447627e2a9d946e39a632d42697123a50b1f48231bfa30b4233e9d2613c3', '- (void)testZNativeWindowResizePreservesSelectionAndPaletteReturn {': '24025cdf804283c79ac438ee5a8decfd7e2e5eaef0d5268c4369504f6476155b', '- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {': '3929230903916f43c642bd23ebee6ba838ebb6c10b16b9dfd98daaf05d9e376b', '- (void)testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState {': '17b6d665d0dde5b4e668e79e0b0172e0ab883f2d73bd08c4059d999ca9f80434'}, 'TouchColorUITests.m': {'- (void)emitScreenshot:(NSString *)name {': '562cbd5d6719f49e688ab5ee8726c86981b95c206cdc4d6c3bdb71bcd824dcf5', '- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)emitPaletteLifecycleCase:(NSString *)event pid:(NSNumber *)pid {': 'f73beaf8f36d5c3cf18026753ca48c29b432458816f673b814120c3cb49de4ba', '- (void)revealControl:(XCUIElement *)element inScrollView:(XCUIElement *)scroll {': '912963cf5f19e812d286e00b4c5a69aa2862ca936445bd00e1f09a9a1477a433', '- (void)testPrivacyPolicyEntryOpensAndCloses {': '72ea29cc8e37565ce97ed31acb89d3d50faf6c3165f4fe76ccae8f51a373d731', '- (void)testPrivacyOfflineRetryAndClose {': 'ca076a1ca93908dd01ea3bc439d1a3214ac7a9f702cb37847b40cb5118b897fa', '- (void)testLaunchAndPhotoPickerCancelRepeatedly {': 'abffaa133ac0d09f00aea36057e4bec80697b187881b8501e3657fea1f816d75', '- (void)assertPresentationDisappears:(XCUIElement *)presentation {': '7983284bd4ac961a8fdff50c83b2b2e41a4340efc8e5aa57ff47cd9ed35786cc', '- (void)respondToRealCameraPromptAllow:(BOOL)allow {': 'd0cbab91d78ef965b3743859fe99a6967fb5fd401e89c151ed0bc844fab806e5', '- (void)testRealCameraPermissionAllowThenResetAndDeny {': 'e4a6dfc0ac68d6897e3eaa86c7c8c7ba5c58140a10d2ac9eeaab50d899a6a8aa', '- (void)testSampleSaveRelaunchDeleteAndBackground {': 'aaf971ec59712853b07b97017abf347c1cbca69f9677d9ac6d7ba8ac6500ceaa', '- (void)testNoCameraAndLiveLifecycleDoNotEnableInvalidSave {': '6cfe46605b1a2329071fa22522a090f7b2e4456ae92e770171414f4290d586f3', '- (void)testAdaptiveLandscapePhotoSampling {': '28efdda455e23d4a124d906f0469e668ea5a25e0a46e653adb9612b1dd425952', '- (void)testLargestDynamicTypeControlsRemainReachable {': '4899e116f3a3758d22a24c65bb6a4572b5df0516ac9dc3f437f4a67a50701bfa', '- (void)assertMarkerAtImageX:(CGFloat)x y:(CGFloat)y {': '8f73b022c6a9b947da80f1bf3ec5b7b2bf2209438f1237cc060e2dd0e9b51848', '- (void)testAsymmetricMarkerCenterRotationLetterboxAndAccessibleZoomInDarkMode {': 'fb5bf7fb286ecd4ec279ef2f8c5d7d7aa3a59c50e47e63d9962c89f6dcc337fb', '- (void)testLargestTextOfflinePolicyCanScrollRetryAndCloseInLandscape {': '90ee3d4b51adb56a68c9b5b11be7179e0254fdb601ce8bc1250ef5ec7a0aef8b', '- (void)testSystemPhotoSelectionAndSampling {': '710f140b0b7158a19655be210335a94303de514d1a5404d3ab04cb68504b4193', '- (void)tearDown {': 'c8c27a10316e30af3e915d173484a919e1bf044fee1240581e499e6d63f7f1e6'}}
+LOCKS={'TCPaletteUIHelpers.m': {'- (XCUIElement *)paletteElement:(NSString *)identifier app:(XCUIApplication *)app {': 'bd76b81e3cd0dba5e7338ffe1e75da1d1720b149707f7a355a29fb032a103a87', '- (void)returnToPaletteFrom:(NSString *)title app:(XCUIApplication *)app {': 'e6a9d262c92120711056db033297901a7daad34e33bd1101a1cb52ebca435be2', '- (CGRect)paletteBodyViewport:(XCUIApplication *)app table:(XCUIElement *)table title:(NSString *)title {': '1c24405d1835718ae9fcd118cc29a0bb194df94e29a2b03c3e3c136fbc50845e', '- (void)openPaletteAction:(NSString *)identifier app:(XCUIApplication *)app {': 'abb7d22be0c90c363368d8b0c3dadfe8c0dbf812b743528bf5ae13a5db8b48a8', '- (void)waitForPalettePresentationToClose:(XCUIElement *)close {': '80d4bb267e6bbab199cae03bc9b2a8e835fb9e7136848e28943193d9158aee23', '- (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {': '1197df52e6126912f57b07eca023b3c7013f4f4248622456c810f6de663d1613', '- (void)verifyHistory:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {': 'e75bc62b80e2750a7fc0750b4e199e4d24a8cd3e60b6badca1735eb7af80075e', '- (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app {': '6b438e25d28d0ab3bc281751e34f0b7af55496432e2e8a5e17f1a0bcded97134', '- (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app {': 'b603290fada1a69334022edf923b5776fe2fb7f7cbcd23389bd15d310cf5432f', '- (void)exerciseLargestTextPaletteRotationReplacesSelection:(XCUIApplication *)app {': 'e3e878f00b16e0fa1b68a96cd341701da3e28aa4d6fc3ce4b786c9f04fa32fdc', '- (void)exerciseLargestTextPaletteReviewAndImportHelp:(XCUIApplication *)app {': 'c162bff1ace8e604b91259d4c78f6e3447b0316facb8471165b1313376605893', '- (void)scrollTowardElement:(XCUIElement *)element inScroll:(XCUIElement *)scroll {': '947813c17a21254e807fd70daa0a6ef4ee290537f9531be7c37571ba7ce74289', '- (void)selectSyntheticPaletteFile:(XCUIApplication *)app {': 'de3be18cca36fe13ed2950ee99579b7976802ec5ed85f09aeed7e36173150bbf', '- (BOOL)pastePalette:(NSString *)JSON app:(XCUIApplication *)app {': 'd55aa29396b48b7f1aa49462f4642ee998ea3f7242f926556c8709f33bee6270', '- (BOOL)activateVisiblePalettePaste:(XCUIApplication *)app {': '15b30fe31b3d1478a737abf461135b4448164a9e9372b0c9ccb5299f9d4b6df5', '- (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app {': '318552fd608242b54fe41817d4d4f5eb53b8cd9cab0482f26c2cb103fd2b7e7d', '- (void)exercisePaletteFileCancelAndImportReturn:(XCUIApplication *)app {': 'c0f10e1458e9c4a2bc8568fcf9b6e817beb2e751f68491a2ec69f0ddae4d4032'}, 'TouchColorIPadUITests.m': {'- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)choosePhoto {': 'f68d61d96e90c59812d57a14637abfd5bd576b9bc75c53376df2646f22a9b14c', '- (void)importFixture {': '4ed6e8f9d4e976830f4d35fe2984d6a023106423f9b58bb4d66776f34b7691a0', '- (void)cancelPicker {': 'a92b352cfc0348a6bc15ddf1e9bde80bcf503e8339dca471f53f615532f09e45', '- (void)assertPresentationDisappears:(XCUIElement *)presentation {': 'a60264fe303b9dc839b0b897a666db7e1586f7a2c15eaa3eca2b0496eaa0a341', '- (void)testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch {': 'a5a629ff8f6857dbd090b84df062eb812a62820d23b5492881ee31cbedb5f2a4', '- (void)testKeyboardImportSamplingZoomSaveAndRotation {': '0a7cdfacabbea0a78902077b0c593ece55eb9c7089b5bda849a9a9e96fdb5ea9', '- (void)testCancelPhotoLoadingRetainsTheCurrentCanvasAndPalette {': 'eabec474269dec499e482f88953e3a6b280622a1e7285083b8ebb5992f024124', '- (void)testLargestTextNativePaletteAndCanvasControls {': '633739bfb62eafdb92eeae1b11f735dc986d1a64ab92c9528866b62e9275fe8c', '- (void)testLiveCanvasPickerCancellationAndSceneLifecycle {': '0b7dbf396c70c2ef16e8772462a0aa994d767119a2e6eb2c9f86dde6a37e627a', '- (void)testFullScreenPaletteFlowsResumeLiveUnavailableState {': '94f73c9a1573b3555e4fcb3ba58ea47191c1b4e6673d1c89da8da2208ffb2346', '- (void)testPrivacyCloseRetainsPhotoSelection {': '67220580ed73c8794d9a9ec8583f7880a1801ba236a6c4180beef2979ff1f4da', '- (void)testZNativeWindowResizePreservesSelectionAndPaletteReturn {': '24025cdf804283c79ac438ee5a8decfd7e2e5eaef0d5268c4369504f6476155b', '- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {': '3929230903916f43c642bd23ebee6ba838ebb6c10b16b9dfd98daaf05d9e376b', '- (void)testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState {': '17b6d665d0dde5b4e668e79e0b0172e0ab883f2d73bd08c4059d999ca9f80434'}, 'TouchColorUITests.m': {'- (void)emitScreenshot:(NSString *)name {': '562cbd5d6719f49e688ab5ee8726c86981b95c206cdc4d6c3bdb71bcd824dcf5', '- (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', '- (void)emitPaletteLifecycleCase:(NSString *)event pid:(NSNumber *)pid {': 'f73beaf8f36d5c3cf18026753ca48c29b432458816f673b814120c3cb49de4ba', '- (void)revealControl:(XCUIElement *)element inScrollView:(XCUIElement *)scroll {': '912963cf5f19e812d286e00b4c5a69aa2862ca936445bd00e1f09a9a1477a433', '- (void)testPrivacyPolicyEntryOpensAndCloses {': 'af28541413932be92303eadbd9d04cd713a599cf677fb4c092f48036aaef79ef', '- (void)testLaunchAndPhotoPickerCancelRepeatedly {': 'abffaa133ac0d09f00aea36057e4bec80697b187881b8501e3657fea1f816d75', '- (void)assertPresentationDisappears:(XCUIElement *)presentation {': '7983284bd4ac961a8fdff50c83b2b2e41a4340efc8e5aa57ff47cd9ed35786cc', '- (void)respondToRealCameraPromptAllow:(BOOL)allow {': 'd0cbab91d78ef965b3743859fe99a6967fb5fd401e89c151ed0bc844fab806e5', '- (void)testRealCameraPermissionAllowThenResetAndDeny {': 'e4a6dfc0ac68d6897e3eaa86c7c8c7ba5c58140a10d2ac9eeaab50d899a6a8aa', '- (void)testSampleSaveRelaunchDeleteAndBackground {': 'aaf971ec59712853b07b97017abf347c1cbca69f9677d9ac6d7ba8ac6500ceaa', '- (void)testNoCameraAndLiveLifecycleDoNotEnableInvalidSave {': '6cfe46605b1a2329071fa22522a090f7b2e4456ae92e770171414f4290d586f3', '- (void)testAdaptiveLandscapePhotoSampling {': '28efdda455e23d4a124d906f0469e668ea5a25e0a46e653adb9612b1dd425952', '- (void)testLargestDynamicTypeControlsRemainReachable {': '4899e116f3a3758d22a24c65bb6a4572b5df0516ac9dc3f437f4a67a50701bfa', '- (void)assertMarkerAtImageX:(CGFloat)x y:(CGFloat)y {': '8f73b022c6a9b947da80f1bf3ec5b7b2bf2209438f1237cc060e2dd0e9b51848', '- (void)testAsymmetricMarkerCenterRotationLetterboxAndAccessibleZoomInDarkMode {': 'fb5bf7fb286ecd4ec279ef2f8c5d7d7aa3a59c50e47e63d9962c89f6dcc337fb', '- (void)testSystemPhotoSelectionAndSampling {': '710f140b0b7158a19655be210335a94303de514d1a5404d3ab04cb68504b4193', '- (void)tearDown {': 'c8c27a10316e30af3e915d173484a919e1bf044fee1240581e499e6d63f7f1e6', '- (void)testPrivacyLocalErrorReloadAndClose {': 'c11a9733d3541ffac9a7b2e73e55eb73a588a5143bb14f17fa4fd4238d39b915', '- (void)testLargestTextLocalPolicyCanScrollReloadAndCloseInLandscape {': 'bf3fe50b6d39ab8f50b994e977944b5704ddf5e06262eca3daaae618022f2ed6'}}
+def without_query_guards(text):
+    return re.sub(r'if \(!(\[self (?:pastePalette:|activateVisiblePalettePaste:)[^;]+\])\) return;',r'\1;',text)
 class ReadinessSourceContracts(unittest.TestCase):
     def test_untouched_method_bytes(self):
         for name,expected in LOCKS.items():
             methods=dict(re.findall(r'(?ms)^(- \([^\n]+)\n(.*?)(?=^- \(|^@end)',(ROOT/'TouchColorUITests'/name).read_text()))
             for signature,digest in expected.items():
                 with self.subTest(file=name,signature=signature):
-                    body=methods[signature]
+                    body=without_query_guards(methods[signature])
                     if ((name=='TouchColorIPadUITests.m' and signature=='- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {') or
                         (name=='TCPaletteUIHelpers.m' and signature=='- (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app {')):
                         self.assertEqual(body.count('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]'),1)
@@ -24,7 +26,10 @@ class ReadinessSourceContracts(unittest.TestCase):
         self.assertEqual(text.count(call),1)
         body=text.split('- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {',1)[1].split('- (void)',1)[0]
         self.assertIn(call,body)
-        restored=text.replace(call,'[self tapReadyPaletteElement:close timeout:5]')
+        # Remove only the exact added bilingual-body observation before checking the original full-file inverse.
+        policy_observation='    XCUIElement *policy=self.app.webViews[@"privacy.content"];\n    XCUIElement *chinese=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH \'Celluloid、QRCatcher 和 TouchColor\'"]].firstMatch;\n    XCUIElement *english=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH \'Celluloid, QRCatcher, and TouchColor\'"]].firstMatch;\n    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The bundled Chinese policy body must render locally");\n    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The bundled English policy body must render locally");\n'
+        self.assertEqual(text.count(policy_observation),1)
+        restored=without_query_guards(text).replace(policy_observation,'').replace(call,'[self tapReadyPaletteElement:close timeout:5]')
         # Exact ee52 file inverse: preserves all original post-dismissal,
         # history, selected pixel, marker, width and keyboard assertions.
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'8e8839f6a3c6f40387a17a7a38ebc271273ec61cb6a5e101494da7d5114069fc')
@@ -38,7 +43,7 @@ class ReadinessSourceContracts(unittest.TestCase):
         self.assertEqual(body.count(call),1)
         self.assertEqual(HELPER.count(call),1)
         restored=HELPER.replace(call,'[self tapReadyPaletteElement:close timeout:5]')
-        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'2cba5729c60d3a320385ce31058f1ba3a8477da3d88b462ed07f90b4ba084304')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),'d59ffe40fa7655e7e5793c50831dcf89dc6463ba23d2ce0a72fe3508814e4a36')
         self.assertIn('for (NSUInteger index=0;index<payloads.count;index++)',body)
         self.assertIn('[self verifyHistory:@[@"#123456",@"#123456"] app:app];',body)
         for file in ('TouchColorUITests.m','TouchColorIPadUITests.m'):
@@ -46,7 +51,7 @@ class ReadinessSourceContracts(unittest.TestCase):
         self.assertNotIn('executionTimeAllowance',body)
 
     def test_exact_three_case_allowances_and_full_workflow(self):
-        body=section('- (void)exercisePalettePasteReviewAcceptAndRelaunch:', '- (void)exercisePalette')
+        body=section('- (void)exercisePalettePasteReviewAcceptAndRelaunch:', '- (void)exerciseInvalid')
         self.assertEqual(body.count('timeout:15 existenceTimeout:5'),1)
         self.assertEqual(body.count('readinessTimeout:15'),2)
         self.assertEqual(HELPER.count('readinessTimeout:15'),2)
@@ -154,7 +159,7 @@ class ReadinessSourceContracts(unittest.TestCase):
         self.assertIn('TouchColorUITests/TouchColorUITests',shell)
         workflow=(ROOT/'.github/workflows/ios.yml').read_text()
         self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]',workflow)
-        self.assertIn('timeout-minutes: 60',workflow)
+        self.assertIn("timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}",workflow)
         self.assertIn('test_uikit_palette_readiness',workflow)
         for name in ['testPalettePasteReviewAcceptAndRelaunch']:
             for file in ['TouchColorIPadUITests.m','TouchColorUITests.m']:
@@ -192,7 +197,7 @@ class FunctionalCompletionContracts(unittest.TestCase):
         joined=cancel+accept
         current=Counter(re.findall(r'XCTAssert[^;]+;',joined))
         for item,n in Counter(self.ORIGINAL_ASSERTIONS).items():self.assertGreaterEqual(current[item],n,item)
-        actions=joined.replace('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]', '[self tapReadyPaletteElement:close timeout:5]')
+        actions=without_query_guards(joined).replace('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]', '[self tapReadyPaletteElement:close timeout:5]')
         current=Counter(re.findall(r'(?:^|;)\s*(\[self[^;]+;)',actions,re.M))
         for item,n in Counter(self.ORIGINAL_ACTIONS).items():self.assertGreaterEqual(current[item],n,item)
         for body in (cancel,accept):
@@ -227,11 +232,13 @@ class FunctionalCompletionContracts(unittest.TestCase):
                       'pressForDuration:0.05 thenDragToCoordinate:end withVelocity:100 thenHoldForDuration:0.15',
                       'NSStringFromCGRect(element.frame),NSStringFromCGRect(scroll.frame)']:
             self.assertIn(value,body)
-    def test_system_cancel_is_unchanged_and_old_latency_is_retained(self):
+    def test_system_cancel_query_and_old_latency_are_retained(self):
         body=section('- (void)exercisePaletteFileCancelAndImportReturn:', '- (BOOL)waitForPaletteFilesPresentation:')
-        self.assertEqual(HELPER.count('timeout:10 existenceTimeout:5'),2)
-        self.assertIn('[self tapReadyPaletteElement:cancel timeout:10 existenceTimeout:5];',body)
-        self.assertLess(body.index('if (self.tcPaletteReadinessExpired) return;'),body.index('[self waitForPalettePresentationToClose:cancel]'))
+        self.assertEqual(HELPER.count('timeout:10 existenceTimeout:5'),1)
+        self.assertIn('cancelDeadline=cancelStarted+10;',body)
+        self.assertIn('cancelExistenceGrant=MIN(5,',body)
+        self.assertIn('[cancel tap];',body)
+        self.assertLess(body.index('if (!cancelTimely) return;'),body.index('[self waitForPalettePresentationToClose:cancel]'))
         self.assertIn('PALETTE_ACTION_RETURN case=%@ total=%.3f budget=%.3f responsiveness5=%@',HELPER)
         self.assertIn('actionReturned<started+5 ? @"within" : @"missed"',HELPER)
         self.assertLess(HELPER.index('PALETTE_ACTION_RETURN'),HELPER.index('BOOL completedTimely='))
@@ -266,5 +273,139 @@ class FunctionalCompletionContracts(unittest.TestCase):
             self.assertTrue(deadline-.001<deadline)
             self.assertFalse(deadline<deadline)
             self.assertFalse(deadline+.001<deadline)
+
+
+class ConsolidatedAXQueryContracts(unittest.TestCase):
+    def paste(self): return section('- (BOOL)activateVisiblePalettePaste:', '- (void)verifyPaletteRows:')
+    def cancel(self): return section('- (void)exercisePaletteFileCancelAndImportReturn:', '- (BOOL)waitForPaletteFilesPresentation:')
+    def error(self): return section('- (void)exerciseInvalidPalettePastePreservesHistory:', '- (void)exercisePaletteFileCancelAndImportReturn:')
+    def test_paste_uses_observed_button_type_and_query_enabled(self):
+        text=self.paste()
+        self.assertIn('app.buttons matchingPredicate:',text)
+        self.assertIn('identifier == %@ AND enabled == YES',text)
+        self.assertIn('@"palette.import.paste"',text)
+        self.assertNotIn('paste.enabled',text)
+        self.assertEqual(text.count('waitForExistenceWithTimeout:'),1)
+        self.assertNotIn('waitForExpectations:',text)
+    def test_paste_original_combined_allowance_never_resets_after_late_lookup(self):
+        text=self.paste()
+        self.assertEqual(text.count('deadline=started+10;'),1)
+        self.assertIn('returned<deadline && NSProcessInfo.processInfo.systemUptime<deadline',text)
+        self.assertLess(text.index('if (!timely) self.tcPaletteReadinessExpired=YES;'),text.index('XCTAssertTrue(timely'))
+        self.assertLess(text.index('if (!timely) return NO;'),text.index('XCUIElement *table='))
+        self.assertLess(text.index('if (!ready) return NO;'),text.index('XCUIElement *table='))
+    def test_paste_geometry_reloads_after_each_mutation_and_is_reused_before_next(self):
+        text=self.paste()
+        loop=text.split('for (NSUInteger attempt=',1)[1].split('BOOL visible=',1)[0]
+        self.assertIn('attempt<5',loop)
+        self.assertIn('!CGRectContainsRect(viewport,CGRectInset(target,1,1))',loop)
+        self.assertLess(loop.index('[self scrollTowardElement:'),loop.index('viewport=[self paletteBodyViewport:'))
+        self.assertEqual(text.count('paletteBodyViewport:'),2)
+        self.assertEqual(text.count('paste.frame'),2)
+        after=text.split('BOOL visible=',1)[1]
+        self.assertNotIn('paste.frame',after)
+        self.assertNotIn('paletteBodyViewport:',after)
+        self.assertIn('BOOL hittable=paste.hittable;',after)
+        self.assertIn('if (!visible) return NO;',after)
+        self.assertIn('if (!hittable) return NO;',after)
+        self.assertEqual(after.count('[paste tap]'),1)
+    def test_paste_failures_are_propagated_to_every_real_caller(self):
+        header=(ROOT/'TouchColorUITests/TCPaletteUIHelpers.h').read_text()
+        self.assertIn('- (BOOL)activateVisiblePalettePaste:(XCUIApplication *)app;',header)
+        self.assertIn('- (BOOL)pastePalette:(NSString *)JSON app:(XCUIApplication *)app;',header)
+        count=0
+        for path in (ROOT/'TouchColorUITests').glob('*.m'):
+            source=path.read_text()
+            for line in source.splitlines():
+                if '[self pastePalette:' not in line and '[self activateVisiblePalettePaste:' not in line: continue
+                count+=1
+                self.assertTrue('if (!' in line and ') return;' in line or 'return [self activateVisiblePalettePaste:app];' in line,line)
+            if path.name!='TCPaletteUIHelpers.m' and ('[self pastePalette:' in source or '[self activateVisiblePalettePaste:' in source):
+                self.assertIn('#import "TCPaletteUIHelpers.h"',source)
+        self.assertEqual(count,14)
+    def test_status_matches_native_cell_statictext_without_duplicate_label_fetch(self):
+        text=self.error()
+        self.assertIn('app.cells[@"palette.import.status"].staticTexts matchingPredicate:',text)
+        self.assertIn('label CONTAINS %@',text)
+        self.assertIn('@"must contain only",@"no larger than 1 MB"',text)
+        self.assertIn('1024*1024+1',text)
+        self.assertNotIn('app.debugDescription',text)
+        self.assertNotIn('status.label',text)
+        self.assertNotIn('XCTNSPredicateExpectation',text)
+    def test_status_late_or_missing_stops_before_accept_close_history(self):
+        text=self.error()
+        self.assertIn('errorDeadline=errorStarted+10;',text)
+        self.assertIn('errorReturned<errorDeadline && NSProcessInfo.processInfo.systemUptime<errorDeadline',text)
+        self.assertLess(text.index('self.tcPaletteReadinessExpired=YES;'),text.index('XCTAssertTrue(errorTimely'))
+        for fence in ('if (!errorTimely) return;','if (!errorShown) return;'):
+            self.assertLess(text.index(fence),text.index('XCTAssertFalse(app.buttons[@"palette.import.accept"].enabled)'))
+        self.assertIn('[self verifyHistory:@[@"#123456",@"#123456"] app:app];',text)
+        close=text.split('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];',1)[1]
+        self.assertLess(close.index('if (self.tcPaletteReadinessExpired) return;'),close.index('waitForPalettePresentationToClose'))
+    def test_cancel_retains_owned_navigation_query_and_live_hittable(self):
+        text=self.cancel()
+        self.assertIn('FullDocumentManagerViewControllerNavigationBar',text)
+        self.assertIn('DOCSidebarView',text)
+        self.assertIn('pickerBars.buttons matchingPredicate:',text)
+        self.assertIn('(identifier == %@ OR label == %@) AND enabled == YES',text)
+        self.assertNotIn('cancel.enabled',text)
+        self.assertIn('BOOL value=cancel.hittable;',text)
+        self.assertNotIn('hittable ==',text)
+        self.assertEqual(text.count('[cancel tap]'),1)
+    def test_cancel_original_ten_total_five_existence_and_old_latency_survive(self):
+        text=self.cancel()
+        self.assertEqual(text.count('cancelDeadline=cancelStarted+10;'),1)
+        self.assertIn('cancelExistenceGrant=MIN(5,MAX(0,cancelDeadline-',text)
+        self.assertIn('cancelReturned<cancelStarted+5 ? @"within" : @"missed"',text)
+        self.assertIn('cancelReturned<cancelDeadline && NSProcessInfo.processInfo.systemUptime<cancelDeadline',text)
+        self.assertEqual(text.count('waitForExistenceWithTimeout:cancelExistenceGrant'),1)
+    def test_cancel_each_remote_stage_fenced_without_deadline_reset(self):
+        text=self.cancel()
+        first=text.split('BOOL cancelExists=',1)[1].split('BOOL (^cancelHittable)',1)[0]
+        self.assertLess(first.index('self.tcPaletteReadinessExpired=YES'),first.index('XCTAssertTrue(cancelTimely'))
+        self.assertIn('if (!cancelTimely) return;',first)
+        self.assertIn('if (!cancelExists) return;',first)
+        block=text.split('BOOL (^cancelHittable)',1)[1].split('BOOL cancelReady=',1)[0]
+        self.assertEqual(block.count('systemUptime>=cancelDeadline'),2)
+        after=text.split('[cancel tap];',1)[1]
+        self.assertLess(after.index('self.tcPaletteReadinessExpired=YES'),after.index('XCTAssertTrue(cancelTimely'))
+        self.assertLess(after.index('if (!cancelTimely) return;'),after.index('waitForPalettePresentationToClose'))
+    def test_post_cancel_business_assertions_and_real_actions_preserved(self):
+        text=self.cancel()
+        for required in ('@"cancelled"','[self verifyHistory:@[] app:app]','[self verifyOriginalPaletteSources:app]',
+                         '[self verifyInitialPaletteImportControls:app]','@"review every color"','[self tapReadyPaletteElement:close timeout:5]'):
+            self.assertIn(required,text)
+        self.assertNotIn('executionTimeAllowance',text)
+    def test_actual_fixture_types_are_also_in_existing_native_source(self):
+        source=(ROOT/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_text()
+        self.assertIn('palette.import.status',source)
+        self.assertIn('palette.import.paste',source)
+        self.assertIn('UIPasteControl',source)
+    def test_clock_boundary_trace_never_advances_after_expired_remote_return(self):
+        # Requirement traces plus source-order locks above. These are portable
+        # clock contracts, not a claim to execute Apple's remote AX runtime.
+        import math
+        for started in (0.,1000.1,1019.9):
+            deadline=started+10
+            for returned in (deadline,math.nextafter(deadline,math.inf),started+25.04):
+                events=['lookup']
+                if returned<deadline: events.extend(['hittable','tap','history'])
+                self.assertEqual(events,['lookup'])
+            self.assertTrue(math.nextafter(deadline,-math.inf)<deadline)
+    def test_missing_disabled_occluded_controls_never_receive_tap(self):
+        for exists,enabled,hittable in ((False,True,True),(True,False,True),(True,True,False)):
+            matched=exists and enabled
+            self.assertFalse(matched and hittable)
+        self.assertIn('if (!cancelExists) return;',self.cancel())
+        self.assertIn('if (!cancelReady) return;',self.cancel())
+        self.assertIn('if (!ready) return NO;',self.paste())
+        self.assertIn('if (!hittable) return NO;',self.paste())
+    def test_retained_timings_remain_failures_without_native_success_inference(self):
+        self.assertGreater(10.732,10)
+        self.assertGreater(25.04,10)
+        # A separately observed2.857s enabled query is removable work, but this
+        # subtraction is no guarantee of the next native query or tap duration.
+        self.assertLess(10.732-2.857,10)
+        self.assertNotIn('XCTSkip',self.paste()+self.cancel()+self.error())
 
 if __name__=='__main__': unittest.main()

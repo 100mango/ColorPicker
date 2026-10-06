@@ -35,10 +35,14 @@ class Fixture:
         self.app = parent / 'products/TouchColor.app'; self.app.mkdir(parents=True)
         self.debug = debug
         self.project = {'objects': {
-            'app': {'isa': 'PBXNativeTarget', 'name': 'TouchColor', 'buildPhases': ['sources']},
+            'app': {'isa': 'PBXNativeTarget', 'name': 'TouchColor', 'buildPhases': ['sources', 'resources']},
             'unit': {'isa': 'PBXNativeTarget', 'name': 'TouchColorTests'},
             'ui': {'isa': 'PBXNativeTarget', 'name': 'TouchColorUITests'},
             'sources': {'isa': 'PBXSourcesBuildPhase', 'files': ['build']},
+            'resources': {'isa': 'PBXResourcesBuildPhase', 'files': ['privacy-build']},
+            'privacy-build': {'isa': 'PBXBuildFile', 'fileRef': 'privacy-file'},
+            'privacy-file': {'isa': 'PBXFileReference', 'path': package.POLICY_SOURCE,
+                             'sourceTree': '<group>', 'lastKnownFileType': 'text.html'},
             'build': {'isa': 'PBXBuildFile', 'fileRef': 'import'},
             'import': {'isa': 'PBXFileReference', 'path': 'TouchColorPhoneCompanion/PhonePaletteImportController.swift'}}}
         self.project['objects']['sources']['files'] = []
@@ -52,7 +56,7 @@ class Fixture:
         color = self.root / 'ColorPicker'; color.mkdir()
         for name in ('ColorAppDelegate.m', 'ColorMainViewController.h', 'ColorMainViewController.m', 'TCWorkspaceViewController.m'):
             (color / name).write_text('// synthetic original-iOS product\n')
-        for name in ('TouchColor-Info.plist', 'PrivacyInfo.xcprivacy'):
+        for name in ('TouchColor-Info.plist', 'PrivacyInfo.xcprivacy', 'PrivacyPolicy.html'):
             (color / name).write_bytes((package.ROOT / 'ColorPicker' / name).read_bytes())
         self.metadata = plistlib.loads((color / 'TouchColor-Info.plist').read_bytes())
         self.metadata.update(CFBundleIdentifier='com.mango.touchColor', CFBundleExecutable='TouchColor',
@@ -63,6 +67,7 @@ class Fixture:
         self.write_info()
         (self.app / 'Assets.car').write_bytes(b'synthetic compiled icon')
         (self.app / 'PrivacyInfo.xcprivacy').write_bytes((color / 'PrivacyInfo.xcprivacy').read_bytes())
+        (self.app / 'PrivacyPolicy.html').write_bytes((color / 'PrivacyPolicy.html').read_bytes())
         for language in ('en', 'zh-Hans'):
             directory = self.app / (language + '.lproj'); directory.mkdir()
             for name in ('Localizable.strings', 'InfoPlist.strings'):
@@ -231,6 +236,79 @@ class PackageTests(unittest.TestCase):
         graph = package.source_graph(package.ROOT)
         self.assertEqual(graph['source_paths'].count('TouchColorPhoneCompanion/PhonePaletteImportController.swift'), 1)
         self.assertFalse(any('Inbox' in p for p in graph['source_paths']))
+        self.assertEqual(graph['resource_paths'].count(package.POLICY_SOURCE), 1)
+        self.assertEqual(graph['privacy_policy']['sha256'], package.POLICY_SHA256)
+
+    def test_release_and_debug_ship_exact_reviewed_privacy_bytes_and_receipts(self):
+        for debug in (False, True):
+            with self.subTest(debug=debug):
+                f = self.fixture(debug); result = f.verify()
+                source = (f.root / package.POLICY_SOURCE).read_bytes()
+                self.assertEqual((f.app / 'PrivacyPolicy.html').read_bytes(), source)
+                receipt = {'bytes': len(source), 'sha256': hashlib.sha256(source).hexdigest()}
+                self.assertEqual(result['files'][package.POLICY_PRODUCT], receipt)
+                self.assertEqual(result['source']['privacy_policy'], {'path': package.POLICY_SOURCE, **receipt})
+
+    def test_missing_relocated_or_linked_privacy_resource_rejects(self):
+        for debug in (False, True):
+            for placement in ('missing', 'subdirectory', 'test-bundle', 'symlink', 'directory'):
+                with self.subTest(debug=debug, placement=placement):
+                    f = self.fixture(debug); policy = f.app / 'PrivacyPolicy.html'
+                    raw = policy.read_bytes(); policy.unlink()
+                    if placement in ('subdirectory', 'test-bundle'):
+                        destination = f.app / ('en.lproj' if placement == 'subdirectory' else 'PlugIns/TouchColorTests.xctest')
+                        destination.mkdir(parents=True, exist_ok=True)
+                        (destination / 'PrivacyPolicy.html').write_bytes(raw)
+                    elif placement == 'symlink':
+                        policy.symlink_to(f.root / package.POLICY_SOURCE)
+                    elif placement == 'directory':
+                        policy.mkdir()
+                    with self.assertRaises(ValueError): f.verify()
+
+    def test_tampered_or_malformed_packaged_privacy_resource_rejects(self):
+        for debug in (False, True):
+            for raw in (b'', b'\xff\xfe\x00', b'<html><body>truncated',
+                        b'<html><body>Changed policy</body></html>',
+                        b'<html><script src="https://example.com/policy.js"></script></html>'):
+                with self.subTest(debug=debug, raw=raw):
+                    f = self.fixture(debug); (f.app / 'PrivacyPolicy.html').write_bytes(raw)
+                    with self.assertRaisesRegex(ValueError, 'Bundled privacy policy differs from reviewed source bytes'):
+                        f.verify()
+        f = self.fixture(); policy = f.app / 'PrivacyPolicy.html'
+        policy.write_bytes(policy.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, 'Bundled privacy policy differs from reviewed source bytes'):
+            f.verify()
+
+    def test_changed_source_cannot_redefine_reviewed_privacy_resource(self):
+        f = self.fixture(); raw = b'<html><body>Altered source and product together</body></html>'
+        (f.root / package.POLICY_SOURCE).write_bytes(raw); (f.app / 'PrivacyPolicy.html').write_bytes(raw)
+        with self.assertRaisesRegex(ValueError, 'Reviewed privacy policy source bytes changed'):
+            f.verify()
+        f = self.fixture(); (f.root / package.POLICY_SOURCE).unlink()
+        with self.assertRaisesRegex(ValueError, 'Missing or linked reviewed privacy policy source'):
+            f.verify()
+
+    def test_privacy_resource_graph_missing_duplicate_wrong_phase_or_reference_rejects(self):
+        for change in ('missing', 'duplicate', 'second-phase', 'sources-only', 'foreign-path', 'wrong-type', 'wrong-tree'):
+            with self.subTest(change=change):
+                f = self.fixture(); objects = f.project['objects']
+                if change == 'missing':
+                    objects['resources']['files'] = []
+                elif change == 'duplicate':
+                    objects['resources']['files'].append('privacy-build')
+                elif change == 'second-phase':
+                    objects['second-resources'] = copy.deepcopy(objects['resources'])
+                    objects['app']['buildPhases'].append('second-resources')
+                elif change == 'sources-only':
+                    objects['resources']['isa'] = 'PBXSourcesBuildPhase'
+                elif change == 'foreign-path':
+                    objects['privacy-file']['path'] = 'Other/PrivacyPolicy.html'
+                elif change == 'wrong-type':
+                    objects['privacy-file']['lastKnownFileType'] = 'folder'
+                elif change == 'wrong-tree':
+                    objects['privacy-file']['sourceTree'] = 'SOURCE_ROOT'
+                f.write_project()
+                with self.assertRaises(ValueError): f.verify()
 
     def test_renamed_foreign_platform_binary_is_rejected(self):
         f = self.fixture(); (f.app / 'unexpected.dylib').write_bytes(macho(platform=4, kind=6, payload=b'foreign'))

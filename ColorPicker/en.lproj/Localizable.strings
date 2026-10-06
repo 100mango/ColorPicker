@@ -1,1 +1,4 @@
 /* English UI uses the source string as its fallback. */
+
+"Reload" = "Reload";
+"The local privacy policy could not load. Reload to try again." = "The local privacy policy could not load. Reload to try again.";

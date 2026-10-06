@@ -26,7 +26,7 @@
 
 "Close" = "关闭";
 "Retry" = "重试";
-"The privacy policy could not load. Check your connection and try again." = "无法载入隐私政策。请检查网络连接后重试。";
+"The local privacy policy could not load. Reload to try again." = "本地隐私政策无法载入。请重新载入后再试。";
 
 "Zoom" = "缩放";
 "Selected pixel" = "已选择的像素";
@@ -100,3 +100,5 @@
 "The palette must contain only #rrggbb colors. Nothing was imported." = "调色板只能包含 #rrggbb 格式的颜色，未导入任何数据。";
 
 "Watch transfer is unavailable on this device. You can import a palette using Files or Paste." = "此设备不支持 Apple Watch 传输。您可以通过文件或粘贴导入调色板。";
+
+"Reload" = "重新载入";

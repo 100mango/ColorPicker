@@ -344,7 +344,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     NSString *selected=self.app.staticTexts[@"sampledColor"].label;
     NSString *marker=self.app.images[@"sampleMarker"].value;
     CGFloat imageWidth=self.app.images[@"sampleImage"].frame.size.width;
-    [self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app];
+    if (![self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app]) return;
     [self verifyPaletteRows:@[@"#112233",@"#112233"] app:self.app];
     XCUIElement *close=self.app.buttons[@"palette.import.close"];[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5];[self assertPresentationDisappears:close];
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0u,@"Cancel preserves the palette");
@@ -361,7 +361,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     NSString *selected=self.app.staticTexts[@"sampledColor"].label;
     NSString *marker=self.app.images[@"sampleMarker"].value;
     CGFloat imageWidth=self.app.images[@"sampleImage"].frame.size.width;
-    [self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app];
+    if (![self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app]) return;
     [self verifyPaletteRows:@[@"#112233",@"#112233"] app:self.app];
     XCUIElement *close=self.app.buttons[@"palette.import.close"];
     [self tapReadyPaletteElement:self.app.buttons[@"palette.import.accept"] timeout:5];[self assertPresentationDisappears:close];
@@ -385,7 +385,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     for (NSUInteger index=0;index<2;index++) {
         if (index==0) [self openPaletteAction:@"palette.import.open" app:self.app];
         else {
-            [self pastePalette:@"[123]" app:self.app];
+            if (![self pastePalette:@"[123]" app:self.app]) return;
             XCUIElement *status=self.app.cells[@"palette.import.status"].staticTexts.firstMatch;
             XCTNSPredicateExpectation *invalid=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'must contain only'"] object:status];
             XCTAssertEqual([XCTWaiter waitForExpectations:@[invalid] timeout:10],XCTWaiterResultCompleted);
@@ -406,6 +406,11 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     [self importFixture];
     [self.app.buttons[@"privacyPolicy"] tap];
     XCTAssertTrue([self.app.buttons[@"privacy.close"] waitForExistenceWithTimeout:5]);
+    XCUIElement *policy=self.app.webViews[@"privacy.content"];
+    XCUIElement *chinese=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid、QRCatcher 和 TouchColor'"]].firstMatch;
+    XCUIElement *english=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid, QRCatcher, and TouchColor'"]].firstMatch;
+    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The bundled Chinese policy body must render locally");
+    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The bundled English policy body must render locally");
     [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
     XCTAssertTrue([self.app.staticTexts[@"sampledColor"].label containsString:@"#ff00ff"]);

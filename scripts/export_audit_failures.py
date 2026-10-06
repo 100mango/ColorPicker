@@ -221,7 +221,7 @@ count = export_named('TouchColorUITests', [functional_prefix + '1'], 1)
 count += export_named('AccessibilityAudits', [
     'touchcolor-audit-failure-live', 'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
     'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
-    'touchcolor-audit-failure-policy',
+    'touchcolor-audit-failure-policy-error', 'touchcolor-audit-failure-policy-local-body',
     'touchcolor-audit-failure-import', 'touchcolor-audit-failure-import-help',
 ], limit - count)
 if count < limit:
@@ -239,5 +239,7 @@ if family == 'iPhoneLarge' and count < limit:
 if family == 'iPadLarge' and 'AccessibilityAudits' in exports:
     required = require_requested_audit_frames(exports['AccessibilityAudits'][1], emitted_images)
     print('REQUESTED_AUDIT_FRAMES:' + json.dumps({'required':required,'all_emitted':True},sort_keys=True))
+if count < limit:
+    count += export_named('AccessibilityAudits', ['touchcolor-policy-local-body'], limit - count)
 if count > limit: raise ValueError('Device image allocation exceeded')
 print('EVIDENCE_IMAGES:' + json.dumps({'family': family, 'count': count, 'allocation': limit}))

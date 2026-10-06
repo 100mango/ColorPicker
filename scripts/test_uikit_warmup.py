@@ -845,7 +845,7 @@ elif args[:2]==['simctl','addmedia']:
         self.assertEqual(re.findall(r'^      max-parallel: (\d+)\s*$', native, re.M), ['2'])
         self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]', uikit)
         self.assertIn('cancel-in-progress: false', uikit)
-        self.assertIn('    timeout-minutes: 60', uikit)
+        self.assertIn("    timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}", uikit)
         self.assertEqual(re.findall(r'^    runs-on: (.+)$', uikit, re.M), ['xcode-27', 'xcode-27'])
         # Both closed plans preserve the two other projects' serial reservations.
         # Canonical: native2 + canonicalUIKit1 + QR1 + Cell1.

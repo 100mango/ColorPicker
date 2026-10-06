@@ -96,6 +96,13 @@
     XCTAssertTrue(element.hittable,@"%@",self.app.debugDescription);
     XCTAssertTrue(CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)),@"The entire control must remain inside its scroll viewport");
 }
+- (void)assertLocalPolicyBody {
+    XCUIElement *policy=self.app.webViews[@"privacy.content"];
+    XCUIElement *chinese=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid、QRCatcher 和 TouchColor'"]].firstMatch;
+    XCUIElement *english=[policy.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label BEGINSWITH 'Celluloid, QRCatcher, and TouchColor'"]].firstMatch;
+    XCTAssertTrue([chinese waitForExistenceWithTimeout:30],@"The bundled Chinese policy body must render locally");
+    XCTAssertTrue([english waitForExistenceWithTimeout:30],@"The bundled English policy body must render locally");
+}
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     for (NSUInteger attempt=0; attempt<2; attempt++) {
         XCUIElement *privacy=self.app.buttons[@"privacyPolicy"];
@@ -105,19 +112,21 @@
         XCUIElement *close=self.app.buttons[@"privacy.close"];
         XCTAssertTrue([close waitForExistenceWithTimeout:5],@"%@",self.app.debugDescription);
         XCTAssertTrue(close.hittable);
+        [self assertLocalPolicyBody];
         if (attempt==0) {
             [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];
             [self.app activate];
             XCTAssertTrue(close.hittable);
+            [self assertLocalPolicyBody];
         }
         [close tap];
         XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
         XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
     }
 }
-- (void)testPrivacyOfflineRetryAndClose {
+- (void)testPrivacyLocalErrorReloadAndClose {
     [self.app terminate];
-    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-policy-offline"];
+    self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-policy-local-error"];
     [self.app launch];
     [self.app.buttons[@"privacyPolicy"] tap];
     XCTAssertTrue([self.app.staticTexts[@"privacy.error"] waitForExistenceWithTimeout:5]);
@@ -126,8 +135,7 @@
     [retry tap];
     XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
     XCTAssertTrue(self.app.webViews[@"privacy.content"].exists);
-    XCUIElement *policyText=[self.app.webViews.staticTexts matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'TouchColor'"]].firstMatch;
-    XCTAssertTrue([policyText waitForExistenceWithTimeout:30],@"The approved policy body must load after Retry");
+    [self assertLocalPolicyBody];
     [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
     XCTAssertTrue(self.app.buttons[@"choosePhoto"].hittable);
@@ -355,10 +363,10 @@
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
     [self assertMarkerAtImageX:x y:y];
 }
-- (void)testLargestTextOfflinePolicyCanScrollRetryAndCloseInLandscape {
+- (void)testLargestTextLocalPolicyCanScrollReloadAndCloseInLandscape {
     [self.app terminate];
     // This route uses production navigation: no unrelated Debug fixture button crowds the SE navigation bar.
-    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-policy-offline",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
+    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-policy-local-error",@"--ui-test-dark",@"-AppleLanguages",@"(en)",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"];
     [self.app launch];
     XCTAssertTrue([self.app.buttons[@"privacyPolicy"] waitForExistenceWithTimeout:5]);
     [self.app.buttons[@"privacyPolicy"] tap];
@@ -369,6 +377,14 @@
     XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable);
     [retry tap];
     XCTAssertFalse(self.app.staticTexts[@"privacy.error"].exists);
+    [self assertLocalPolicyBody];
+    XCUIElement *policy=self.app.webViews[@"privacy.content"];
+    XCUIElement *published=[policy.links matchingPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'Open published policy in browser'"]].firstMatch;
+    XCTAssertTrue(published.exists);
+    // Reach the end of the real long local body at the largest size without opening a website.
+    for (NSUInteger attempt=0;attempt<16 && !published.hittable;attempt++) [policy swipeUpWithVelocity:XCUIGestureVelocityFast];
+    XCTAssertTrue(published.hittable,@"The end-of-policy external action must be reachable at largest text");
+    XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable);
     [self.app.buttons[@"privacy.close"] tap];
     XCTAssertTrue([self.app.buttons[@"choosePhoto"] waitForExistenceWithTimeout:5]);
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationPortrait;
