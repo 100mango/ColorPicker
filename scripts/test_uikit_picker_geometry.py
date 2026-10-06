@@ -218,11 +218,13 @@ assert(!TCFilesRouteFrameIsUsable(0,62,440,NAN));
         self.assertIn('routeSnapshot.label,routeSnapshot.identifier,NSStringFromCGRect(routeSnapshot.frame)', flow)
         self.assertIn('waitForReadyPaletteElement:route timeout:5', flow)
         self.assertIn('waitForReadyPaletteElement:state timeout:readiness', flow)
-        self.assertIn('folderDeadline=NSProcessInfo.processInfo.systemUptime+10;', flow)
+        self.assertIn('folderDeadline=folderStarted+15;', flow)
+        self.assertIn('folderDeadline=folderStarted+10;', flow)
         self.assertIn('XCTAssertGreaterThan(remaining,0,', flow)
         self.assertIn('if (remaining<=0) return;', flow)
-        self.assertIn('NSProcessInfo.processInfo.systemUptime<=folderDeadline', flow)
-        self.assertIn('if (!found || !withinBudget) return;', flow)
+        self.assertIn('folderReturned<folderDeadline && NSProcessInfo.processInfo.systemUptime<folderDeadline', flow)
+        self.assertIn('if (!withinBudget) return;', flow)
+        self.assertIn('if (!found) return;', flow)
 
     def test_geometry_rejects_invalid_or_unsafe_regions(self):
         self.run_helper('''

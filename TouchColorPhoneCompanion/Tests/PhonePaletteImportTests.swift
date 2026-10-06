@@ -20,7 +20,7 @@ import ColorPaletteLegacy
     }
 }
 
-/// Integrated UIKit review lifecycle and unsupported-companion behavior.
+/// Integrated UIKit review lifecycle and staged original-product import preservation.
 @MainActor final class PhonePaletteImportTests: XCTestCase {
     func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult() async throws {
         let suite = "TouchColor.close-action.\(UUID())", defaults = UserDefaults(suiteName: suite)!
@@ -131,15 +131,46 @@ import ColorPaletteLegacy
         XCTAssertNil(content.selection, "Dismissal invalidates a previously issued import generation")
         XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), original)
     }
-    func testUnsupportedCompanionExplainsIndependentPaletteImport() throws {
-        let suite = "TouchColor.inbox-unavailable.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+    func testOriginalIOSImportIsPresentWithoutCompanion() throws {
+        XCTAssertNotNil(NSClassFromString("TCPaletteImportController"))
+        XCTAssertNil(NSClassFromString("TCWatchPaletteInbox"))
+        XCTAssertNil(NSClassFromString("TouchColor.PhonePaletteInboxController"))
+        let suite = "TouchColor.original-ios-import.\(UUID())", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let inbox = PhonePaletteInbox(defaults: defaults, domain: suite)
-        guard !inbox.isSupported else { throw XCTSkip("Requires a device without WatchConnectivity support, such as iPad") }
-        inbox.activate()
-        XCTAssertEqual(inbox.status, NSLocalizedString("Watch transfer is unavailable on this device. You can import a palette using Files or Paste.", comment: "Unsupported companion"))
-        XCTAssertTrue(try inbox.pending().isEmpty)
-        XCTAssertNil(defaults.object(forKey: "colorArray"))
+        let retained: [String: Any] = [
+            "colorArray": ["#123456", "#123456", "#abcdef"],
+            "colorArrayRecoveryBackup": ["#ABCDEF", "invalid"],
+            "colorInboxPendingV1": Data("retained pending bytes".utf8),
+            "colorInboxAcceptedV1": ["accepted-before-staging"],
+            "colorInboxRejectedV1": ["rejected-before-staging"],
+            "unrelatedPreference": "untouched"]
+        defaults.setPersistentDomain(retained, forName: suite)
+        let content = PhonePaletteImportController(defaults: defaults); content.loadViewIfNeeded()
+        XCTAssertNil(content.selection)
+        XCTAssertEqual(content.tableView.accessibilityIdentifier, "palette.import.review")
+        XCTAssertEqual(content.numberOfSections(in: content.tableView), 3)
+        XCTAssertEqual(content.tableView(content.tableView, numberOfRowsInSection: 0), 2)
+        XCTAssertEqual(content.tableView(content.tableView, numberOfRowsInSection: 1), 1)
+        XCTAssertEqual(content.tableView(content.tableView, numberOfRowsInSection: 2), 0)
+        let file = content.tableView(content.tableView, cellForRowAt: IndexPath(row: 0, section: 0))
+        XCTAssertEqual(file.accessibilityIdentifier, "palette.import.file")
+        XCTAssertEqual(file.textLabel?.text, NSLocalizedString("Choose JSON File", comment: "Palette import source"))
+        let paste = content.tableView(content.tableView, cellForRowAt: IndexPath(row: 1, section: 0))
+        func findPaste(_ view: UIView) -> UIView? {
+            if view.accessibilityIdentifier == "palette.import.paste" { return view }
+            return view.subviews.lazy.compactMap { findPaste($0) }.first
+        }
+        XCTAssertNotNil(findPaste(paste))
+        let status = content.tableView(content.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
+        XCTAssertEqual(status.accessibilityIdentifier, "palette.import.status")
+        XCTAssertEqual(status.textLabel?.text, NSLocalizedString("Choose a JSON file or paste a JSON palette, then review every color before adding it.", comment: "Palette import help"))
+        let close = try XCTUnwrap(content.navigationItem.leftBarButtonItem)
+        XCTAssertEqual(close.accessibilityIdentifier, "palette.import.close")
+        XCTAssertTrue(close.isEnabled); XCTAssertTrue(close.target === content); XCTAssertNotNil(close.action)
+        let add = try XCTUnwrap(content.navigationItem.rightBarButtonItem)
+        XCTAssertEqual(add.accessibilityIdentifier, "palette.import.accept"); XCTAssertFalse(add.isEnabled)
+        XCTAssertEqual(defaults.stringArray(forKey: "colorArray"), ["#123456", "#123456", "#abcdef"])
+        XCTAssertEqual(defaults.persistentDomain(forName: suite) as NSDictionary?, retained as NSDictionary)
     }
     func testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead() throws {
         let suite = "TouchColor.palette-review.\(UUID())", defaults = UserDefaults(suiteName: suite)!

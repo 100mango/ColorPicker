@@ -26,5 +26,4 @@
 - (void)openLiveColor;
 - (void)openPrivacyPolicy;
 - (void)openPaletteImport;
-- (void)openWatchInbox;
 @end

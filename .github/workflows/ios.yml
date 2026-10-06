@@ -1,7 +1,7 @@
-name: Combined UIKit import qualification
+name: Original-product iPhone and iPad qualification
 on:
   push:
-    branches: [codex/platform-integration, codex/uikit-hosted-repair]
+    branches: [codex/ios-original-release]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   compile-prerequisites:
-    name: Compile and verify combined UIKit prerequisites
+    name: Compile and verify original iOS prerequisites
     runs-on: xcode-27
     timeout-minutes: 20
     env:
@@ -26,7 +26,8 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          [[ "$GITHUB_REF" == refs/heads/codex/platform-integration || "$GITHUB_REF" == refs/heads/codex/uikit-hosted-repair ]]
+          test "$GITHUB_REF" = refs/heads/codex/ios-original-release
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/codex/ios-original-release
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -40,18 +41,16 @@ jobs:
           xcodebuild -showsdks > /tmp/touchcolor-prerequisite-sdks.txt
           cat /tmp/touchcolor-prerequisite-sdks.txt
           grep -F 'iphoneos27.0' /tmp/touchcolor-prerequisite-sdks.txt
-          grep -F 'watchos27.0' /tmp/touchcolor-prerequisite-sdks.txt
       - name: Validate generated projects and bounded evidence helpers
         run: |
           python3 scripts/generate_project.py
-          python3 scripts/generate_watch_project.py
           python3 scripts/generate_palette_fixture_project.py
-          git diff --exit-code -- TouchColor.xcodeproj TouchColorWatch.xcodeproj TestFixtures
+          git diff --exit-code -- TouchColor.xcodeproj TestFixtures
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
           python3 scripts/verify_privacy_manifest.py ColorPicker/PrivacyInfo.xcprivacy selected
           python3 -m unittest discover -s scripts -p test_decode_log_screenshots.py
           python3 -m unittest discover -s scripts -p test_export_audit_evidence.py
-          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_palette_readiness test_uikit_fixture_handoff
+          PYTHONPATH=scripts python3 -m unittest test_uikit_runtime_diagnostics test_palette_lifecycle_diagnostics test_uikit_picker_geometry test_uikit_warmup test_uikit_managed_device test_uikit_managed_tests test_uikit_palette_readiness test_uikit_fixture_handoff test_original_ios_package
           xcodebuild -list -project TouchColor.xcodeproj
       - name: Compile and test shared packages
         timeout-minutes: 6
@@ -62,7 +61,7 @@ jobs:
           set -euo pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release \
             -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
-          python3 scripts/verify_embedded_watch.py build/device/Build/Products/Release-iphoneos/TouchColor.app device
+          python3 scripts/verify_original_ios_package.py build/device/Build/Products/Release-iphoneos/TouchColor.app device --report build/original-ios-release-package.json
           python3 - <<'PY'
           import plistlib
           from pathlib import Path
@@ -73,17 +72,17 @@ jobs:
           if list(app.rglob('*PaletteFixtures*')):
               raise SystemExit('Synthetic fixture host leaked into Release')
           PY
-      - name: Build original hosted UI audit and paired simulator test products
+      - name: Build original hosted UI and audit simulator test products
         timeout-minutes: 8
         run: |
           set -euo pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator build-for-testing
-          python3 scripts/verify_embedded_watch.py build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app simulator --debug --build-for-testing
+          python3 scripts/verify_original_ios_package.py build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app simulator --debug --build-for-testing --report build/original-ios-debug-package.json
           test -f build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app/PlugIns/TouchColorTests.xctest/TouchColorTests
           test -f build/simulator/Build/Products/Debug-iphonesimulator/TouchColorUITests-Runner.app/PlugIns/TouchColorUITests.xctest/TouchColorUITests
           strings build/simulator/Build/Products/Debug-iphonesimulator/TouchColorUITests-Runner.app/PlugIns/TouchColorUITests.xctest/TouchColorUITests > /tmp/touchcolor-prerequisite-ui-classes.txt
-          for class in TouchColorUITests TouchColorIPadUITests TouchColorAccessibilityUITests PhonePairedTransferTests; do
+          for class in TouchColorUITests TouchColorIPadUITests TouchColorAccessibilityUITests; do
             grep -F "$class" /tmp/touchcolor-prerequisite-ui-classes.txt
           done
       - name: Build separate synthetic palette fixture host
@@ -105,7 +104,7 @@ jobs:
     name: ${{ matrix.family }}
     strategy:
       fail-fast: false
-      max-parallel: ${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}
+      max-parallel: 2
       matrix:
         family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27
@@ -126,7 +125,8 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          [[ "$GITHUB_REF" == refs/heads/codex/platform-integration || "$GITHUB_REF" == refs/heads/codex/uikit-hosted-repair ]]
+          test "$GITHUB_REF" = refs/heads/codex/ios-original-release
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/codex/ios-original-release
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -150,8 +150,7 @@ jobs:
       - name: Validate checked-in project and metadata
         run: |
           python3 scripts/generate_project.py
-          python3 scripts/generate_watch_project.py
-          git diff --exit-code -- TouchColor.xcodeproj TouchColorWatch.xcodeproj
+          git diff --exit-code -- TouchColor.xcodeproj
           python3 scripts/generate_palette_fixture_project.py
           git diff --exit-code -- TestFixtures
           plutil -lint ColorPicker/TouchColor-Info.plist ColorPicker/PrivacyInfo.xcprivacy
@@ -166,7 +165,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
-          python3 scripts/verify_embedded_watch.py build/device/Build/Products/Release-iphoneos/TouchColor.app device
+          python3 scripts/verify_original_ios_package.py build/device/Build/Products/Release-iphoneos/TouchColor.app device --report build/original-ios-release-package.json
       - name: Analyze production Objective-C source
         timeout-minutes: 5
         run: |
@@ -204,6 +203,7 @@ jobs:
           xcodebuild -project TouchColor.xcodeproj -scheme TouchColor -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator \
             build-for-testing
+          python3 scripts/verify_original_ios_package.py build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app simulator --debug --build-for-testing --report build/original-ios-debug-package.json
       - name: Build independent simulator-only palette fixture host
         id: build-fixture
         timeout-minutes: 4

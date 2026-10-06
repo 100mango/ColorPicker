@@ -183,9 +183,8 @@ def require_hosted(family, setup):
             value.get('command', {}).get('host_cleanup_confirmed') is True,
             'Full timely hosted success is required before fixture preparation')
     fields = value.get('summary', {}).get('fields', {})
-    skips = 1 if family.startswith('iPhone') else 0
-    expected = {'result': 'Passed', 'totalTestCount': 53, 'passedTests': 53 - skips,
-                'failedTests': 0, 'skippedTests': skips, 'expectedFailures': 0,
+    expected = {'result': 'Passed', 'totalTestCount': 53, 'passedTests': 53,
+                'failedTests': 0, 'skippedTests': 0, 'expectedFailures': 0,
                 'qualified': True, 'device': setup['binding']['identity']['udid']}
     require(value.get('summary', {}).get('status') == 'complete' and 'error' not in value and
             all(type(fields.get(k)) is type(v) and fields[k] == v for k, v in expected.items()),
@@ -245,6 +244,29 @@ def preparation_failure(binding, observation, error_type):
     return line
 
 
+def completed_bootstatus(raw, expected):
+    """Fail closed on any output outside the retained public Xcode27 shape."""
+    require(isinstance(raw,str) and 0<len(raw.encode())<=65536,'Missing or oversized bootstatus output')
+    header='Monitoring boot status for '+expected['name']+' ('+expected['device']+').\n'
+    proof={'stdout_sha256':hashlib.sha256(raw.encode()).hexdigest(),'stdout_bytes':len(raw.encode())}
+    # This wording is separately retained from an actual Xcode27 bootstatus -b
+    # stdout. It proves no terminal status/Finished field; current operation
+    # completion/cleanup and unchanged owned binding are checked by the caller.
+    if raw==header+'Device already booted, nothing to do.\n\n':
+        return {**proof,'completion_kind':'already_booted_no_work',
+                'completion_message':'Device already booted, nothing to do.'}
+    stamp=r'\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} \+[0-9]{4}\] '
+    elapsed=r'Elapsed=[0-9]{2}:[0-5][0-9]\.\n'
+    # Intermediate status/detail blocks are bounded, unqualified progress.
+    # Only the final known terminal outcome contributes readiness evidence.
+    progress=stamp+r'Status=(?!4294967295,)[0-9]{1,10}, isTerminal=NO, '+elapsed+\
+             r'(?:\t{1,4}(?!Finished\n)[^\x00-\x1f\x7f]{1,1024}\n){1,16}\n'
+    finished=stamp+r'Status=4294967295, isTerminal=YES, '+elapsed+r'\tFinished\n\n'
+    require(re.fullmatch(re.escape(header)+'(?:'+progress+')*'+finished,raw) is not None,
+                 'Unknown bootstatus output or missing exact owned terminal Finished')
+    return {**proof,'completion_kind':'terminal_finished','terminal_status':4294967295,'isTerminal':True,'terminal_message':'Finished'}
+
+
 class ManagedWarmup(Warmup):
     def __init__(self, *args, host_runner=setup_capture, **kwargs):
         super().__init__(*args, **kwargs)
@@ -252,6 +274,8 @@ class ManagedWarmup(Warmup):
         self.runner = self.absolute_runner
         self.operation_deadline = None
         self.fixture_observation = None
+        self.fixture_readiness = None
+        self.last_fixture_operation = None
 
     def command(self, arguments, seconds, **kwargs):
         self.operation_deadline = min(self.clock() + seconds, self.deadline - CLEANUP)
@@ -306,15 +330,29 @@ class ManagedWarmup(Warmup):
             current = read_managed_device_state(self.family, self.command, self.require_time)
             require(current['binding'] == setup['binding'], 'Post-hosted binding differs from setup')
             device = self.bind_owned_device(current['binding'])
+            readiness = {'schema': 2, 'device': device,
+                'binding_sha256': current['binding']['receipt_sha256'],
+                'basis': 'owned_booted_inventory_snapshot_only', 'completion': None,
+                'operations': [], 'observed_monotonic': self.clock()}
             if current['state'] == 'Shutdown':
                 self.fixture_command(['xcrun', 'simctl', 'boot', device], 180)
+                readiness['operations'].append(self.last_fixture_operation)
                 self.require_identity()
-                self.fixture_command(['xcrun', 'simctl', 'bootstatus', device, '-b'], 240)
+                raw = self.fixture_command(['xcrun', 'simctl', 'bootstatus', device, '-b'], 240)
+                readiness['operations'].append(self.last_fixture_operation)
                 self.require_identity()
-                current = read_managed_device_state(self.family, self.command, self.require_time)
-            require(current['binding'] == self.managed_binding and current['state'] == 'Booted',
-                    'Same owned simulator must be Booted before fixture installation')
+                readiness.update(basis='owned_bootstatus_completion_observation_only',
+                    completion=completed_bootstatus(raw, {'device': device,
+                        'name': current['binding']['receipt']['requested_name']}),
+                    observed_monotonic=self.clock())
+            else:
+                require(current['state'] == 'Booted', 'Unknown owned pre-fixture state')
+            # No second global inventory: bootstatus is a completion observation,
+            # not a continuously Booted state or a fresh JSON snapshot.
             self.require_identity()
+            self.require_time()
+            validate_fixture_readiness(readiness, setup)
+            self.fixture_readiness = readiness
             return device
         except BaseException:
             self.stop_fixture()
@@ -333,7 +371,11 @@ class ManagedWarmup(Warmup):
         self.fixture_observation = {'argv': arguments, 'exit_code': None,
             'host_cleanup_confirmed': None, 'stderr_complete': False}
         try:
-            return self.command(arguments, seconds)
+            raw = self.command(arguments, seconds)
+            self.last_fixture_operation = {key: self.fixture_observation[key] for key in
+                ('argv', 'exit_code', 'host_cleanup_confirmed', 'started_monotonic',
+                 'returned_monotonic', 'deadline_monotonic')}
+            return raw
         except BaseException as error:
             # A known nonzero return removed Warmup's uncertainty marker. Keep
             # a terminal stop fence as well; failure is never a retry grant.
@@ -370,13 +412,59 @@ def fixture_seed(family, started=STARTED):
     warmup.seed(device)
     warmup.require_identity()
     require(load_setup(family) == setup, 'Setup changed during fixture preparation')
-    write_json(record_path(family, 'fixtures'), {'schema': 1, 'setup': setup, 'complete': True}, limit=16384)
+    write_json(record_path(family, 'fixtures'), {'schema': 2, 'setup': setup, 'complete': True,
+        'readiness': warmup.fixture_readiness}, limit=16384)
     warmup.require_time()
+
+
+def validate_fixture_readiness(value, setup):
+    """Closed source-produced fixture handoff; never upgrade an old receipt."""
+    binding = setup['binding']; device = binding['identity']['udid']
+    require(isinstance(value, dict) and set(value) == {'schema', 'device', 'binding_sha256',
+        'basis', 'completion', 'operations', 'observed_monotonic'} and
+        type(value['schema']) is int and value['schema'] == 2 and value['device'] == device and
+        value['binding_sha256'] == binding['receipt_sha256'], 'Foreign fixture readiness')
+    observed = value['observed_monotonic']
+    require(type(observed) in (int, float) and math.isfinite(observed) and observed >= 0,
+            'Unknown fixture observation time')
+    if value['basis'] == 'owned_booted_inventory_snapshot_only':
+        require(value['completion'] is None and value['operations'] == [], 'Conflicting inventory basis')
+        return
+    require(value['basis'] == 'owned_bootstatus_completion_observation_only', 'Unknown fixture readiness basis')
+    operations = value['operations']
+    require(isinstance(operations, list) and len(operations) == 2, 'Exact boot/readiness pair required')
+    previous = None
+    for op, command, cap in zip(operations,
+            (['xcrun', 'simctl', 'boot', device], ['xcrun', 'simctl', 'bootstatus', device, '-b']), (180, 240)):
+        require(isinstance(op, dict) and set(op) == {'argv', 'exit_code', 'host_cleanup_confirmed',
+            'started_monotonic', 'returned_monotonic', 'deadline_monotonic'} and op['argv'] == command and
+            type(op['exit_code']) is int and op['exit_code'] == 0 and op['host_cleanup_confirmed'] is True,
+            'Unknown or unsuccessful owned handoff operation')
+        start, finish, deadline = (op[k] for k in ('started_monotonic', 'returned_monotonic', 'deadline_monotonic'))
+        require(all(type(t) in (int, float) and math.isfinite(t) for t in (start, finish, deadline)) and
+            0 <= start <= finish < deadline <= start + cap and finish <= observed and
+            (previous is None or previous <= start), 'Late or contradictory handoff timing')
+        previous = finish
+    proof = value['completion']
+    require(isinstance(proof, dict) and type(proof.get('stdout_bytes')) is int and
+        0 < proof['stdout_bytes'] <= 65536 and isinstance(proof.get('stdout_sha256'), str) and
+        re.fullmatch('[0-9a-f]{64}', proof['stdout_sha256']) is not None, 'Missing bounded bootstatus output identity')
+    common = {'stdout_sha256', 'stdout_bytes', 'completion_kind'}
+    if proof.get('completion_kind') == 'terminal_finished':
+        require(set(proof) == common | {'terminal_status', 'isTerminal', 'terminal_message'} and
+            type(proof['terminal_status']) is int and proof['terminal_status'] == 4294967295 and
+            proof['isTerminal'] is True and proof['terminal_message'] == 'Finished', 'Invalid Finished evidence')
+    else:
+        require(set(proof) == common | {'completion_message'} and proof['completion_kind'] == 'already_booted_no_work' and
+            proof['completion_message'] == 'Device already booted, nothing to do.', 'Unknown completion wording')
 
 
 def require_fixtures(family, setup):
     value = strict_json(read_regular(record_path(family, 'fixtures'), 16384))
-    require(type(value.get('schema')) is int and value == {'schema': 1, 'setup': setup, 'complete': True}, 'Same-device Files and Photos fixture required')
+    require(type(value.get('schema')) is int and value.get('schema') == 2 and
+            set(value) == {'schema', 'setup', 'complete', 'readiness'} and
+            value['setup'] == setup and value['complete'] is True, 'Same-device Files and Photos fixture required')
+    validate_fixture_readiness(value['readiness'], setup)
     seed = strict_json(read_regular(Path('build') / (family + '-fixture-seeded'), 8192))
     require(seed == setup['binding']['identity'], 'Photo seed identity differs')
 
@@ -437,13 +525,12 @@ def summary_fields(raw, family, suite, identity, began, finished, code):
     value = strict_json(raw)
     fields = ('totalTestCount', 'passedTests', 'failedTests', 'skippedTests', 'expectedFailures')
     require(all(type(value.get(k)) is int and value[k] >= 0 for k in fields), 'Invalid summary counts')
-    count = STEPS[suite][2] if suite != 'TouchColorUITests' else (15 if family.startswith('iPad') else 17)
+    count = STEPS[suite][2] if suite != 'TouchColorUITests' else (16 if family.startswith('iPad') else 17)
     require(value['totalTestCount'] == count and
             value['passedTests'] + value['failedTests'] + value['skippedTests'] == count and
             value['expectedFailures'] == 0, 'Incomplete or changed full-target inventory')
-    expected_skips = 1 if suite == 'TouchColorTests' and family.startswith('iPhone') else 0
-    # Preserve the declared WatchConnectivity capability skip in hosted phone tests.
-    require(value['skippedTests'] == expected_skips, 'Unexpected skipped tests')
+    # Staged feature-absence/import coverage replaces the former capability skip.
+    require(value['skippedTests'] == 0, 'Unexpected skipped tests')
     require(all(type(value.get(k)) in (int, float) and math.isfinite(value[k]) for k in ('startTime', 'finishTime'))
             and began <= value['startTime'] <= value['finishTime'] <= finished, 'Stale or foreign summary interval')
     devices = value.get('devicesAndConfigurations')

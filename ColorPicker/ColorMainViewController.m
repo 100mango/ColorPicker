@@ -49,9 +49,9 @@
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 70;
     [self.view addSubview:self.tableView];
-    NSArray *titles = @[NSLocalizedString(@"Choose Photo", nil), NSLocalizedString(@"Take Photo", nil), NSLocalizedString(@"Live Color", nil), NSLocalizedString(@"Import Palette", nil), NSLocalizedString(@"Watch Inbox", nil)];
-    NSArray *identifiers = @[@"choosePhoto", @"takePhoto", @"liveColor", @"palette.import.open", @"watch.inbox.open"];
-    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down", @"applewatch"];
+    NSArray *titles = @[NSLocalizedString(@"Choose Photo", nil), NSLocalizedString(@"Take Photo", nil), NSLocalizedString(@"Live Color", nil), NSLocalizedString(@"Import Palette", nil)];
+    NSArray *identifiers = @[@"choosePhoto", @"takePhoto", @"liveColor", @"palette.import.open"];
+    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down"];
     UIStackView *buttons = [UIStackView new];
     self.sourceButtons = buttons;
     buttons.axis = UILayoutConstraintAxisVertical;
@@ -140,7 +140,7 @@
         self.sourceButtons.axis = axis;
         self.sourceButtons.distribution = wide ? UIStackViewDistributionFillEqually : UIStackViewDistributionFill;
     }
-    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down", @"applewatch"];
+    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down"];
     BOOL hideIcons = UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
     for (UIButton *button in self.sourceButtons.arrangedSubviews) {
         BOOL hasImage = button.configuration.image != nil;
@@ -240,13 +240,6 @@
     __weak typeof(self) weakSelf = self;
     [TCPaletteImportController presentFrom:presenter completion:^{ [weakSelf sourceFlowActive:NO]; }];
 }
-- (void)openWatchInbox {
-    UIViewController *presenter = [self sourcePresenter];
-    if (presenter.presentedViewController || self.loading.isAnimating) return;
-    [self sourceFlowActive:YES];
-    __weak typeof(self) weakSelf = self;
-    [[TCWatchPaletteInbox sharedInbox] presentInboxFrom:presenter completion:^{ [weakSelf sourceFlowActive:NO]; }];
-}
 - (void)showMessage:(NSString *)message {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"TouchColor", nil) message:message preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
@@ -266,7 +259,6 @@
     else if (button.tag == 1) [self takePhoto];
     else if (button.tag == 2) [self openLiveColor];
     else if (button.tag == 3) [self openPaletteImport];
-    else if (button.tag == 4) [self openWatchInbox];
 }
 - (void)choosePhoto {
     PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];

@@ -17,10 +17,8 @@ from palette_lifecycle_diagnostics import require, strict_json, valid_uuid
 from uikit_runtime_diagnostics import read_identity, validate_identity
 
 REPOSITORY = '100mango/ColorPicker'
-REF = 'refs/heads/codex/platform-integration'
+REF = 'refs/heads/codex/ios-original-release'
 WORKFLOW = REPOSITORY + '/.github/workflows/ios.yml@' + REF
-REPAIR_REF = 'refs/heads/codex/uikit-hosted-repair'
-REPAIR_WORKFLOW = REPOSITORY + '/.github/workflows/ios.yml@' + REPAIR_REF
 RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'
 PROFILES = {'iPadMini': 'iPad mini (A17 Pro)',
             'iPadLarge': 'iPad Pro 13-inch (M5)',
@@ -36,8 +34,8 @@ def require_job(family):
     """Host-only current canonical context. This does not verify checkout bytes."""
     require(family in PROFILES, 'Unknown canonical UIKit family')
     ref = os.environ.get('GITHUB_REF')
-    require(ref in (REF, REPAIR_REF), 'Unknown UIKit qualification branch')
-    workflow = WORKFLOW if ref == REF else REPAIR_WORKFLOW
+    require(ref == REF, 'Unknown staged iOS qualification branch')
+    workflow = WORKFLOW
     expected = {'GITHUB_REPOSITORY': REPOSITORY, 'GITHUB_REF': ref,
                 'GITHUB_WORKFLOW_REF': workflow, 'GITHUB_ACTIONS': 'true',
                 'GITHUB_JOB': 'compatibility', 'RUNNER_OS': 'macOS',

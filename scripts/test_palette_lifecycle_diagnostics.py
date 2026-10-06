@@ -13,6 +13,12 @@ from unittest.mock import patch
 
 import palette_lifecycle_diagnostics as d
 
+
+# The parent observes this exact file as producer readiness. Publish a complete
+# synthetic owned PID, never the intermediate empty file from write_text.
+PRODUCER_PID_PUBLICATION = ('Path("producer.pid.tmp").write_text(str(os.getpid()))\n'
+                            'os.replace("producer.pid.tmp", "producer.pid")\n')
+
 TOKEN = '11111111-1111-4111-8111-111111111111'
 PRESENTATION = '22222222-2222-4222-8222-222222222222'
 IDENTITY = {'family': 'iPhoneLarge', 'udid': 'D2B249EB-2AC1-445A-BE5C-E80D6FBCCDF5',
@@ -337,6 +343,29 @@ class HelpGrammarTests(unittest.TestCase):
 
 
 class CancellationTests(unittest.TestCase):
+    def test_producer_pid_is_unobservable_until_complete_atomic_publication(self):
+        # Exercise the exact producer statement with a deterministic observation
+        # after open/truncation and before data write, then before rename.
+        old = Path.cwd()
+        observations = []
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                os.chdir(directory)
+                def observed_write(path, text):
+                    self.assertEqual(path, Path('producer.pid.tmp'))
+                    with path.open('w') as stream:
+                        observations.append((Path('producer.pid').exists(), path.read_text()))
+                        stream.write(text); stream.flush()
+                        observations.append((Path('producer.pid').exists(), path.read_text()))
+                    return len(text)
+                with patch.object(Path, 'write_text', new=observed_write):
+                    exec(PRODUCER_PID_PUBLICATION, {'Path': Path, 'os': os})
+                self.assertEqual(observations, [(False, ''), (False, str(os.getpid()))])
+                self.assertEqual(int(Path('producer.pid').read_text()), os.getpid())
+                self.assertFalse(Path('producer.pid.tmp').exists())
+            finally:
+                os.chdir(old)
+
     def probe(self, phase, first_signal, *, entry=False):
         """Own both driver and producer; never signal an inventory-derived PID."""
         import ctypes
@@ -354,7 +383,7 @@ class CancellationTests(unittest.TestCase):
             producer = root / 'producer.py'
             producer.write_text('import os,signal,time\nfrom pathlib import Path\n'
                                 'signal.signal(signal.SIGTERM,signal.SIG_IGN)\n'
-                                'Path("producer.pid").write_text(str(os.getpid()))\n'
+                                + PRODUCER_PID_PUBLICATION
                                 + ('while True: os.write(1,b"x"*4096)\n' if phase == 'bytes' else 'time.sleep(30)\n'))
             driver = root / 'driver.py'
             driver.write_text(r'''
@@ -570,8 +599,13 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         import hashlib
         self.assertEqual(hashlib.sha256((self.root/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_bytes()).hexdigest(),
                          '32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1')
-        self.assertEqual(hashlib.sha256(self.swift.split('    func testUnsupportedCompanionExplainsIndependentPaletteImport()', 1)[1].encode()).hexdigest(),
-                         'c976d98177c262cbce4afd9c9cd0c8ed2479c5a939d34adf222d98eccac09317')
+        self.assertEqual(hashlib.sha256(self.swift.split('    func testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead()', 1)[1].encode()).hexdigest(),
+                         'f3cb0b39635819efea36defdcc6b17f865e410c7f74edbdb9f940beff1f9430e')
+
+    def test_real_swift_close_gate_body_stays_byte_exact(self):
+        import hashlib
+        body=self.swift.split('    func testActualCloseBarActionDismissesFullScreenErrorAndRejectsLateResult()',1)[1].split('    func testOriginalIOSImportIsPresentWithoutCompanion',1)[0]
+        self.assertEqual(hashlib.sha256(body.encode()).hexdigest(),'ff08fdc43c4cf6a1932591fade35e7e6ed2830bb307b1a0d4b0445e8857b8a4e')
 
     def test_controller_and_workspace_geometry_assertions_are_byte_exact(self):
         import hashlib
@@ -582,6 +616,14 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         for start,end,expected in locks:
             start_index=self.objc.index(start)
             actual=self.objc[start_index:self.objc.index(end,start_index)]
+            if start == '- (void)exerciseSize:':
+                staged = '''                NSArray *expectedSources=@[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open"];
+                UIStackView *sourceButtons=[main valueForKey:@"sourceButtons"];
+                XCTAssertEqualObjects([sourceButtons.arrangedSubviews valueForKey:@"accessibilityIdentifier"],expectedSources);
+                XCTAssertNil(TCLayoutView(main.view,@"watch.inbox.open"));
+                for (NSString *identifier in expectedSources) {'''
+                self.assertEqual(actual.count(staged),1)
+                actual=actual.replace(staged,'                for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {')
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(),expected)
 
     def test_swift_gates_preserve_waiter_relative_three_seconds(self):
@@ -614,7 +656,7 @@ class HostedGateSchedulingContracts(unittest.TestCase):
             self.assertIn('phase='+phase+' ',self.swift)
         self.assertLess(self.swift.index('guard presentationTimely'),self.swift.index('let token = content.begin()'))
         self.assertLess(self.swift.index('guard dismissalTimely'),self.swift.index('content.apply(.success(late)'))
-        self.assertNotIn('XCTSkip',self.swift.split('    func testUnsupportedCompanion',1)[0])
+        self.assertNotIn('XCTSkip',self.swift)
 
     def test_objc_owner_is_real_one_shot_event_and_geometry_is_guarded(self):
         self.assertIn('void (^observed)(void)=self.onAppearance; self.onAppearance=nil;',self.objc)
@@ -799,13 +841,13 @@ class HostedGateSchedulingContracts(unittest.TestCase):
             guard=body.split('if (waited!=XCTWaiterResultCompleted',1)[1].split('{',1)[0]
             self.assertNotIn('responsive',guard)
 
-    def test_only_two_objc_gates_change_and_outer_bounds_and_swift_are_preserved(self):
+    def test_original_gate_bounds_and_reviewed_staged_swift_inventory(self):
         import hashlib
         self.assertEqual(self.objc.count('timeout:15'),2)
         self.assertEqual(self.objc.count('phaseDeadline=waitStarted+15'),2)
         self.assertEqual(self.objc.count('responsivenessDeadline=waitStarted+3'),2)
         self.assertEqual(hashlib.sha256(self.swift.encode()).hexdigest(),
-                         '55d1574d3c95716d32bcf6589d22bf1bd9acc2abe695ce1527ad2af73827042c')
+                         '6a25635f308ebb13b0385fd971b5d1b133a50154624d70759d1f34618c29530b')
         managed=(self.root/'scripts/uikit_managed_tests.py').read_text()
         self.assertIn("'TouchColorTests': (600, 500, 53)",managed)
         self.assertIn("'-default-test-execution-time-allowance', '180', '-maximum-test-execution-time-allowance', '240'",managed)

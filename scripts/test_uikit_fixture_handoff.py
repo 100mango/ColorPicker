@@ -36,6 +36,11 @@ class FixtureHandoff(ManagedFixture):
         documents = self.container / 'Documents'; documents.mkdir(parents=True)
         (documents / 'TouchColor-Ordered-Colors.json').write_text('["#445566", "#445566", "#AABBCC"]')
         self.states = ['Shutdown', 'Booted']
+        self.bootstatus = ('Monitoring boot status for '+self.binding['receipt']['requested_name']+' ('+NEW+').\n'
+            '[2026-10-06 01:04:59 +0000] Status=4, isTerminal=NO, Elapsed=00:47.\n'
+            '\tWaiting on System App\n\n'
+            '[2026-10-06 01:05:15 +0000] Status=4294967295, isTerminal=YES, Elapsed=01:03.\n'
+            '\tFinished\n\n')
         self.inventories = []
         self.calls = []
         self.action = None
@@ -56,6 +61,8 @@ class FixtureHandoff(ManagedFixture):
             output = self.binding['context']['sha']
         elif command == device_module.READBACK:
             output = json.dumps(self.inventories.pop(0) if self.inventories else self.after(state=self.states.pop(0)))
+        elif command[:3] == ['xcrun', 'simctl', 'bootstatus']:
+            output = self.bootstatus
         elif command[:3] == ['xcrun', 'simctl', 'get_app_container']:
             output = str(self.container)
         else:
@@ -90,14 +97,15 @@ class FixtureHandoff(ManagedFixture):
         self.assertEqual(self.paths()[0].read_bytes(), self.identity_bytes)
         self.assertEqual(self.paths()[1].read_bytes(), self.binding_bytes)
 
-    def test_shutdown_boots_once_waits_once_and_revalidates_same_booted(self):
+    def test_shutdown_boots_once_observes_completion_without_postboot_global_inventory(self):
         self.run_seed()
-        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus', 'list',
+        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus',
             'install', 'launch', 'get_app_container', 'terminate', 'spawn', 'xcodebuild', 'addmedia'])
         grants = {command[2]: grant for command, grant in self.calls if command[:2] == ['xcrun', 'simctl']}
         self.assertEqual(grants['boot'], 180)
         self.assertEqual(grants['bootstatus'], 240)
-        self.assertEqual(grants['install'], 90)
+        self.assertLessEqual(grants['install'], 90)
+        self.assertAlmostEqual(grants['install'], 90)
         self.assertFalse(self.controller.pending.exists())
         managed.require_fixtures('iPadMini', self.setup)
         self.assert_binding_unchanged()
@@ -108,6 +116,9 @@ class FixtureHandoff(ManagedFixture):
         self.run_seed()
         self.assertEqual(self.operations()[:4], ['git', 'git', 'list', 'install'])
         self.assertNotIn('boot', self.operations()); self.assertNotIn('bootstatus', self.operations())
+        self.assertEqual(self.controller.fixture_readiness['basis'], 'owned_booted_inventory_snapshot_only')
+        self.assertIsNone(self.controller.fixture_readiness['completion'])
+        self.assertEqual(self.controller.fixture_readiness['operations'], [])
         self.assert_binding_unchanged()
 
     def test_hosted_cleanup_must_be_confirmed_before_any_command(self):
@@ -141,17 +152,16 @@ class FixtureHandoff(ManagedFixture):
         self.assertEqual(self.operations(), ['git', 'git', 'list']); self.no_seed()
         self.assertTrue(self.controller.pending.exists())
 
-    def test_revalidated_shutdown_stops_before_install(self):
-        self.states = ['Shutdown', 'Shutdown']
+    def test_missing_completion_stops_before_install(self):
+        self.bootstatus = ''
         with self.assertRaises(ValueError): self.run_seed()
-        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus', 'list']); self.no_seed()
+        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus']); self.no_seed()
         self.assertTrue(self.controller.pending.exists())
 
-    def test_revalidated_different_uuid_stops_before_install(self):
-        changed = self.after(state='Booted'); changed['devices'][device_module.RUNTIME][0]['udid'] = OTHER
-        self.inventories = [self.after(), changed]
+    def test_foreign_bootstatus_uuid_stops_before_install(self):
+        self.bootstatus = self.bootstatus.replace(NEW, OTHER)
         with self.assertRaises(ValueError): self.run_seed()
-        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus', 'list']); self.no_seed()
+        self.assertEqual(self.operations(), ['git', 'git', 'list', 'boot', 'bootstatus']); self.no_seed()
         self.assertTrue(self.controller.pending.exists())
 
     def test_duplicate_state_key_stops_before_boot(self):
@@ -165,11 +175,10 @@ class FixtureHandoff(ManagedFixture):
         self.assertEqual(self.operations(), ['git', 'git', 'list']); self.no_seed()
         self.assertTrue(self.controller.pending.exists())
 
-    def test_duplicate_revalidated_owned_uuid_stops_before_install(self):
-        changed = self.after(state='Booted'); changed['devices'][device_module.RUNTIME] *= 2
-        self.inventories = [self.after(), changed]
+    def test_duplicate_bootstatus_terminal_stops_before_install(self):
+        self.bootstatus += self.bootstatus
         with self.assertRaises(ValueError): self.run_seed()
-        self.assertEqual(self.operations()[-1], 'list'); self.no_seed()
+        self.assertEqual(self.operations()[-1], 'bootstatus'); self.no_seed()
         self.assertTrue(self.controller.pending.exists())
 
     def test_current_binding_reader_keeps_unchanged_original_contract(self):
@@ -317,16 +326,85 @@ class FixtureHandoff(ManagedFixture):
         self.assertAlmostEqual(boot, 170)
         self.assertEqual(self.controller.deadline, 700)
 
-    def test_late_revalidated_inventory_stops_before_install(self):
-        reads = []
+    def test_late_initial_inventory_stops_before_boot(self):
         def late(command, timeout):
-            if command == device_module.READBACK:
-                reads.append(command)
-                if len(reads) == 2: self.tick += timeout
+            if command == device_module.READBACK: self.tick += timeout
         self.action = late
         with self.assertRaises(ValueError): self.run_seed()
-        self.assertEqual(self.operations()[-1], 'list'); self.no_seed()
+        self.assertEqual(self.operations(), ['git', 'git', 'list']); self.no_seed()
         self.assertTrue(self.controller.pending.exists())
+
+    def test_binding_change_after_readiness_stops_before_install(self):
+        def mutate(command, timeout):
+            if command[2:3] == ['bootstatus']: self.paths()[1].write_text('{}')
+        self.action = mutate
+        with self.assertRaises(Exception): self.run_seed()
+        self.assertEqual(self.operations()[-1], 'bootstatus'); self.no_seed()
+        self.assertTrue(self.controller.pending.exists())
+
+    def test_recognized_already_booted_form_preserves_distinct_observation(self):
+        self.bootstatus = self.bootstatus.split('\n', 1)[0] + '\nDevice already booted, nothing to do.\n\n'
+        self.run_seed()
+        proof = self.controller.fixture_readiness
+        self.assertEqual(proof['basis'], 'owned_bootstatus_completion_observation_only')
+        self.assertEqual(proof['completion']['completion_kind'], 'already_booted_no_work')
+        self.assertNotIn('terminal_status', proof['completion'])
+        self.assertEqual(self.operations().count('list'), 1)
+        managed.require_fixtures('iPadMini', self.setup)
+
+    def test_new_receipt_binds_exact_commands_hashes_and_completion_without_state_claim(self):
+        self.run_seed()
+        value = json.loads(managed.record_path('iPadMini', 'fixtures').read_text())
+        self.assertEqual(value['schema'], 2)
+        proof = value['readiness']
+        self.assertEqual(proof['binding_sha256'], self.binding['receipt_sha256'])
+        self.assertEqual(proof['basis'], 'owned_bootstatus_completion_observation_only')
+        self.assertEqual(proof['completion']['stdout_sha256'], hashlib.sha256(self.bootstatus.encode()).hexdigest())
+        self.assertEqual(proof['completion']['stdout_bytes'], len(self.bootstatus.encode()))
+        self.assertEqual(proof['completion']['terminal_message'], 'Finished')
+        self.assertNotIn('state', proof)
+        for op, verb in zip(proof['operations'], ('boot', 'bootstatus')):
+            self.assertEqual(op['argv'][2], verb)
+            self.assertEqual(op['argv'][3], NEW)
+            self.assertEqual(op['exit_code'], 0)
+            self.assertIs(op['host_cleanup_confirmed'], True)
+            self.assertLess(op['returned_monotonic'], op['deadline_monotonic'])
+
+    def test_old_fixture_receipt_cannot_be_upgraded(self):
+        self.run_seed()
+        managed.record_path('iPadMini', 'fixtures').write_text(json.dumps(
+            {'schema': 1, 'setup': self.setup, 'complete': True}))
+        with self.assertRaises(ValueError): managed.require_fixtures('iPadMini', self.setup)
+
+    def test_conflicting_or_late_completion_receipts_fail(self):
+        self.run_seed()
+        original = self.controller.fixture_readiness
+        changes = [lambda v: v.update(device=OTHER),
+            lambda v: v.update(binding_sha256='0'*64),
+            lambda v: v.update(basis='Booted'),
+            lambda v: v['operations'][1].update(host_cleanup_confirmed=None),
+            lambda v: v['operations'][1].update(exit_code=149),
+            lambda v: v['operations'][1].update(argv=['xcrun','simctl','bootstatus',OTHER,'-b']),
+            lambda v: v['operations'][1].update(returned_monotonic=v['operations'][1]['deadline_monotonic']),
+            lambda v: v['completion'].update(terminal_status=1),
+            lambda v: v['completion'].update(isTerminal=False),
+            lambda v: v['completion'].update(stdout_bytes=0)]
+        for change in changes:
+            value = copy.deepcopy(original); change(value)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                managed.validate_fixture_readiness(value, self.setup)
+
+    def test_unknown_mixed_malformed_foreign_bootstatus_never_authorizes_install(self):
+        raw = self.bootstatus
+        variants = [raw.replace(self.binding['receipt']['requested_name'], 'Foreign name'),
+            raw.replace('4294967295', '4'), raw.replace('isTerminal=YES', 'isTerminal=NO'),
+            raw.replace('\tFinished', '\tNot Finished'), raw.replace('Elapsed=01:03', 'Elapsed=01:99'),
+            raw+'Device already booted, nothing to do.\n\n', raw.rstrip(), raw.replace('\tWaiting on System App','\tFinished'),
+            raw+'extra\n', raw.replace('Status=4, isTerminal=NO', 'Status=4, isTerminal=YES'),
+            raw.replace('\tWaiting on System App', '\tbad\x00detail'), 'x'*65537]
+        for value in variants:
+            with self.subTest(raw=value), self.assertRaises(ValueError):
+                managed.completed_bootstatus(value, {'name':self.binding['receipt']['requested_name'], 'device':NEW})
 
     def test_failure_before_dispatch_retains_unknown_stderr_and_cleanup(self):
         def fail(command, timeout):

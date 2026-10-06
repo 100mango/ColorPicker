@@ -55,9 +55,9 @@
 }
 - (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
 - (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
-- (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
+- (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }
 - (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
-- (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
+- (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }
 - (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)emitPaletteLifecycleCase:(NSString *)event pid:(NSNumber *)pid {
     NSDictionary *fields=@{@"event":event,@"case":@"testInvalidPalettePastePreservesHistory",
@@ -78,7 +78,7 @@
     self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
-    if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndWatchInboxReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
+    if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndImportReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
         self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-palette-lifecycle"];
     if ([self.name isEqualToString:@"-[TouchColorUITests testInvalidPalettePastePreservesHistory]"]) {
         self.paletteLifecycleToken=NSUUID.UUID.UUIDString;
@@ -277,7 +277,7 @@
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"palette.import.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
-    [self revealControl:self.app.buttons[@"watch.inbox.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self verifyOriginalPaletteSources:self.app];
     [self.app.buttons[@"Sample Fixture"] tap];
     XCTAssertTrue([self.app.buttons[@"sampleCenter"] waitForExistenceWithTimeout:5]);
     [self revealControl:self.app.buttons[@"sampleCenter"] inScrollView:self.app.scrollViews[@"photoControls"]];
@@ -300,7 +300,7 @@
     [self revealControl:self.app.buttons[@"takePhoto"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"liveColor"] inScrollView:self.app.scrollViews[@"sourceControls"]];
     [self revealControl:self.app.buttons[@"palette.import.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
-    [self revealControl:self.app.buttons[@"watch.inbox.open"] inScrollView:self.app.scrollViews[@"sourceControls"]];
+    [self verifyOriginalPaletteSources:self.app];
     XCTAssertGreaterThan(table.frame.size.height,44);
     for (NSUInteger i=0;i<4 && !CGRectContainsRect(table.frame,CGRectInset(detail.frame,1,1));i++) {
         if (CGRectGetMinY(detail.frame) < CGRectGetMinY(table.frame)) [table swipeDown]; else [table swipeUp];

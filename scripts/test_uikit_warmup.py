@@ -841,7 +841,7 @@ elif args[:2]==['simctl','addmedia']:
         root = Path(warmup.__file__).parent.parent
         uikit = (root / '.github/workflows/ios.yml').read_text()
         native = (root / '.github/workflows/apple-platforms.yml').read_text()
-        self.assertEqual(re.findall(r'^      max-parallel: (.+)$', uikit, re.M), ["${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}"])
+        self.assertEqual(re.findall(r'^      max-parallel: (.+)$', uikit, re.M), ['2'])
         self.assertEqual(re.findall(r'^      max-parallel: (\d+)\s*$', native, re.M), ['2'])
         self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]', uikit)
         self.assertIn('cancel-in-progress: false', uikit)

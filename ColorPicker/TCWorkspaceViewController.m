@@ -74,8 +74,7 @@
     UIAction *live = [UIAction actionWithTitle:NSLocalizedString(@"Live Color", nil) image:[UIImage systemImageNamed:@"viewfinder"] identifier:nil handler:^(UIAction *action) { [weakSelf.palette openLiveColor]; }];
     UIAction *privacy = [UIAction actionWithTitle:NSLocalizedString(@"Privacy Policy", nil) image:[UIImage systemImageNamed:@"hand.raised"] identifier:nil handler:^(UIAction *action) { [weakSelf.palette openPrivacyPolicy]; }];
     UIAction *paletteImport = [UIAction actionWithTitle:NSLocalizedString(@"Import Palette", nil) image:[UIImage systemImageNamed:@"square.and.arrow.down"] identifier:@"palette.import.open" handler:^(UIAction *action) { [weakSelf.palette openPaletteImport]; }];
-    UIAction *inbox = [UIAction actionWithTitle:NSLocalizedString(@"Watch Inbox", nil) image:[UIImage systemImageNamed:@"applewatch"] identifier:@"watch.inbox.open" handler:^(UIAction *action) { [weakSelf.palette openWatchInbox]; }];
-    UIBarButtonItem *sources = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] menu:[UIMenu menuWithTitle:NSLocalizedString(@"Color Sources", nil) children:@[photo,camera,live,paletteImport,inbox,privacy]]];
+    UIBarButtonItem *sources = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] menu:[UIMenu menuWithTitle:NSLocalizedString(@"Color Sources", nil) children:@[photo,camera,live,paletteImport,privacy]]];
     sources.accessibilityLabel = NSLocalizedString(@"Color Sources", nil);
     sources.accessibilityIdentifier = @"workspace.sources";
     canvas.navigationItem.rightBarButtonItems = @[sources];

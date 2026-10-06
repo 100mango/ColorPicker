@@ -51,9 +51,9 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
 }
 - (void)testPalettePasteReviewAcceptAndRelaunch { [self exercisePalettePasteReviewAcceptAndRelaunch:self.app]; }
 - (void)testInvalidPalettePastePreservesHistory { [self exerciseInvalidPalettePastePreservesHistory:self.app]; }
-- (void)testPaletteFileCancellationAndWatchInboxReturn { [self exercisePaletteFileCancelAndWatchInboxReturn:self.app]; }
+- (void)testPaletteFileCancellationAndImportReturn { [self exercisePaletteFileCancelAndImportReturn:self.app]; }
 - (void)testPaletteFileSelectionReviewAndRelaunch { [self exercisePaletteFileSelectionReviewAndRelaunch:self.app]; }
-- (void)testLargestTextPaletteReviewAndInbox { [self exerciseLargestTextPaletteReviewAndInbox:self.app]; }
+- (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }
 - (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)setUp {
     self.tcPaletteReadinessExpired=NO;
@@ -66,7 +66,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     }];self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
-    if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndWatchInboxReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
+    if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndImportReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
         self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-palette-lifecycle"];
     XCUIDevice.sharedDevice.orientation=UIDeviceOrientationLandscapeLeft;
     [self.app launch];
@@ -302,8 +302,9 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
 }
 - (void)testLargestTextNativePaletteAndCanvasControls {
     [self.app terminate];self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-dark",@"-UIPreferredContentSizeCategoryName",@"UICTContentSizeCategoryAccessibilityXXXL"]];[self.app launch];
+    [self verifyOriginalPaletteSources:self.app];
     XCUIElement *sources=self.app.scrollViews[@"sourceControls"];
-    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open",@"watch.inbox.open"]) {
+    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"palette.import.open"]) {
         XCUIElement *button=self.app.buttons[identifier];
         for (NSUInteger i=0;i<5 && (!button.hittable || !CGRectContainsRect(sources.frame,CGRectInset(button.frame,1,1)));i++) [self scrollTowardElement:button inScroll:sources];
         XCTAssertTrue(button.hittable,@"%@",self.app.debugDescription);
@@ -336,7 +337,7 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     [self importFixture];
     XCTAssertTrue(self.app.buttons[@"saveColor"].enabled);
 }
-- (void)testFullScreenPaletteReviewRetainsPhotoAndKeyboardState {
+- (void)testFullScreenPaletteCancelRetainsPhotoAndKeyboardState {
     [self importFixture];
     [self.app.images[@"sampleImage"] tap];
     [self.app typeKey:@"+" modifierFlags:0];
@@ -350,14 +351,27 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
     XCTAssertEqualObjects(self.app.images[@"sampleMarker"].value,marker);
     XCTAssertEqualWithAccuracy(self.app.images[@"sampleImage"].frame.size.width,imageWidth,2);
+    [self.app typeKey:@"+" modifierFlags:0];
+    XCTAssertGreaterThan(self.app.images[@"sampleImage"].frame.size.width,imageWidth,@"Photo keyboard focus returns after full-screen dismissal");
+}
+- (void)testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState {
+    [self importFixture];
+    [self.app.images[@"sampleImage"] tap];
+    [self.app typeKey:@"+" modifierFlags:0];
+    NSString *selected=self.app.staticTexts[@"sampledColor"].label;
+    NSString *marker=self.app.images[@"sampleMarker"].value;
+    CGFloat imageWidth=self.app.images[@"sampleImage"].frame.size.width;
     [self pastePalette:@"[\"#112233\",\"#112233\"]" app:self.app];
     [self verifyPaletteRows:@[@"#112233",@"#112233"] app:self.app];
+    XCUIElement *close=self.app.buttons[@"palette.import.close"];
     [self tapReadyPaletteElement:self.app.buttons[@"palette.import.accept"] timeout:5];[self assertPresentationDisappears:close];
     XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,2u,@"Dismissal refreshes the retained palette controller");
     for (NSUInteger index=0;index<2;index++) XCTAssertTrue([[self.app.tables[@"colorHistory"].cells elementBoundByIndex:index].label containsString:@"#112233"]);
     XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
-    [self openPaletteAction:@"watch.inbox.open" app:self.app];
-    close=self.app.buttons[@"watch.inbox.close"];XCTAssertTrue([close waitForExistenceWithTimeout:5]);[self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
+    XCTAssertFalse(self.app.buttons[@"watch.inbox.open"].exists);
+    [self openPaletteAction:@"palette.import.open" app:self.app];
+    XCTAssertFalse(self.app.buttons[@"palette.import.accept"].enabled);
+    close=self.app.buttons[@"palette.import.close"];XCTAssertTrue([close waitForExistenceWithTimeout:5]);[self tapReadyPaletteElement:close timeout:5];[self assertPresentationDisappears:close];
     XCTAssertEqualObjects(self.app.staticTexts[@"sampledColor"].label,selected);
     XCTAssertEqualObjects(self.app.images[@"sampleMarker"].value,marker);
     [self.app typeKey:@"+" modifierFlags:0];
@@ -367,11 +381,17 @@ static void TCObservePhotosSnapshot(id<XCUIElementSnapshot> snapshot, TCPickerSn
     [self.app.buttons[@"liveColor"] tap];
     XCTAssertTrue([self.app.staticTexts[@"cameraStatus"] waitForExistenceWithTimeout:5]);
     XCTAssertFalse(self.app.buttons[@"saveLiveColor"].enabled);
-    NSArray *actions=@[@"palette.import.open",@"watch.inbox.open"];
-    NSArray *closers=@[@"palette.import.close",@"watch.inbox.close"];
-    for (NSUInteger index=0;index<actions.count;index++) {
-        [self openPaletteAction:actions[index] app:self.app];
-        XCUIElement *close=self.app.buttons[closers[index]];
+    XCTAssertFalse(self.app.buttons[@"watch.inbox.open"].exists);
+    for (NSUInteger index=0;index<2;index++) {
+        if (index==0) [self openPaletteAction:@"palette.import.open" app:self.app];
+        else {
+            [self pastePalette:@"[123]" app:self.app];
+            XCUIElement *status=self.app.cells[@"palette.import.status"].staticTexts.firstMatch;
+            XCTNSPredicateExpectation *invalid=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"label CONTAINS 'must contain only'"] object:status];
+            XCTAssertEqual([XCTWaiter waitForExpectations:@[invalid] timeout:10],XCTWaiterResultCompleted);
+        }
+        XCTAssertFalse(self.app.buttons[@"palette.import.accept"].enabled);
+        XCUIElement *close=self.app.buttons[@"palette.import.close"];
         XCTAssertTrue([close waitForExistenceWithTimeout:5]);
         XCTAssertFalse(self.app.buttons[@"saveLiveColor"].hittable,@"Inactive live controls must not be actionable under the full-screen flow");
         if (index==1) { [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome];[self.app activate];XCTAssertTrue(close.hittable); }

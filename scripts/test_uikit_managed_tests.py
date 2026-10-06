@@ -19,14 +19,14 @@ from palette_lifecycle_diagnostics import CaptureStopped
 ROOT = Path(__file__).resolve().parents[1]
 DEVICE = '7EBB1450-0922-41FE-984D-B2B14D1C34C3'
 IDENTITY = {'family': 'iPadMini', 'udid': DEVICE, 'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', 'started': 1}
-SETUP = {'schema': 1, 'binding': {'identity': IDENTITY, 'context': {'sha': 'a'*40}},
+SETUP = {'schema': 1, 'binding': {'identity': IDENTITY, 'context': {'sha': 'a'*40}, 'receipt_sha256': 'c'*64},
          'products': {'tree_sha256': 'b'*64, 'files': 1, 'bytes': 1, 'claim': 'built_product_bytes_only'}}
 
 
 def summary(family='iPadMini', suite='TouchColorTests', failures=0):
-    total = {'TouchColorTests': 53, 'TouchColorUITests': 15 if family.startswith('iPad') else 17,
+    total = {'TouchColorTests': 53, 'TouchColorUITests': 16 if family.startswith('iPad') else 17,
              'AccessibilityAudits': 7}[suite]
-    skips = int(suite == 'TouchColorTests' and family.startswith('iPhone'))
+    skips = 0
     fields = {'totalTestCount': total, 'passedTests': total-skips-failures, 'failedTests': failures,
               'skippedTests': skips, 'expectedFailures': 0}
     return {**fields, 'result': 'Failed' if failures else 'Passed', 'startTime': 1000.1, 'finishTime': 1000.9,
@@ -64,8 +64,16 @@ class SummaryTests(unittest.TestCase):
             with self.subTest(mutate=mutate),self.assertRaises(ValueError):self.check(value)
         with self.assertRaises(ValueError):self.check(summary(),code=65)
         with self.assertRaises(ValueError):self.check(summary(failures=1),code=0)
-    def test_phone_capability_skip_not_inherited_by_ipad(self):
-        with self.assertRaises(ValueError):self.check(summary('iPhoneCompact'))
+    def test_former_phone_capability_skip_rejected_on_every_staged_profile(self):
+        for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge'):
+            value=summary(family)
+            value.update(passedTests=52,skippedTests=1)
+            value['devicesAndConfigurations'][0].update(passedTests=52,skippedTests=1)
+            with self.subTest(family=family),self.assertRaises(ValueError):self.check(value,family)
+    def test_complete_staged_matrix_requires_306_passes_and_zero_skips(self):
+        receipts=[summary(family,suite) for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge') for suite in m.STEPS]
+        self.assertEqual(sum(r['passedTests'] for r in receipts),306)
+        self.assertEqual(sum(r['skippedTests'] for r in receipts),0)
     def test_duplicates_fail(self):
         raw=json.dumps(summary()).replace('"passedTests": 53','"passedTests": 53, "passedTests": 53',1)
         with self.assertRaises(ValueError):m.summary_fields(raw,'iPadMini','TouchColorTests',IDENTITY,1000,1001,0)
@@ -399,6 +407,14 @@ class ReceiptTests(unittest.TestCase):
     def test_full_hosted_receipt_required(self):
         value=self.hosted();m.write_json(m.record_path('iPadMini','TouchColorTests'),value)
         self.assertEqual(m.require_hosted('iPadMini',SETUP),value)
+    def test_old_52_plus_one_receipt_cannot_seed_any_staged_profile(self):
+        for family in ('iPadMini','iPadLarge','iPhoneCompact','iPhoneLarge'):
+            value=self.hosted()
+            m.write_json(m.record_path(family,'TouchColorTests'),value)
+            self.assertEqual(m.require_hosted(family,SETUP),value)
+            value['summary']['fields'].update(passedTests=52,skippedTests=1)
+            m.write_json(m.record_path(family,'TouchColorTests'),value)
+            with self.subTest(family=family),self.assertRaises(ValueError):m.require_hosted(family,SETUP)
     def test_flags_alone_cannot_hide_failed_or_missing_counts(self):
         changes=[lambda v:v['summary'].update(status='pending'),lambda v:v['summary'].update(fields={}),
             lambda v:v['summary']['fields'].update(totalTestCount=1),lambda v:v['summary']['fields'].update(failedTests=1),
@@ -408,7 +424,10 @@ class ReceiptTests(unittest.TestCase):
             value=self.hosted();change(value);m.write_json(m.record_path('iPadMini','TouchColorTests'),value)
             with self.subTest(change=change),self.assertRaises(ValueError):m.require_hosted('iPadMini',SETUP)
     def test_fixture_receipt_and_seed_both_bound(self):
-        m.write_json(m.record_path('iPadMini','fixtures'),{'schema':1,'setup':SETUP,'complete':True})
+        m.write_json(m.record_path('iPadMini','fixtures'),{'schema':2,'setup':SETUP,'complete':True,
+            'readiness':{'schema':2,'device':DEVICE,'binding_sha256':'c'*64,
+                'basis':'owned_booted_inventory_snapshot_only','completion':None,'operations':[],
+                'observed_monotonic':100}})
         m.write_json(Path('build/iPadMini-fixture-seeded'),IDENTITY)
         m.require_fixtures('iPadMini',SETUP)
         value={**IDENTITY,'udid':'foreign'};m.write_json(Path('build/iPadMini-fixture-seeded'),value)
@@ -459,7 +478,7 @@ class SourceTests(unittest.TestCase):
         files+=['TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift']
         count=sum(len(re.findall(r'(?:-\s*\(void\)\s*|func\s+)(test\w+)\b', (ROOT/p).read_text())) for p in files)
         self.assertEqual(count,53)
-        for name,count in [('TouchColorUITests',17),('TouchColorIPadUITests',15),('TouchColorAccessibilityUITests',7)]:
+        for name,count in [('TouchColorUITests',17),('TouchColorIPadUITests',16),('TouchColorAccessibilityUITests',7)]:
             text=(ROOT/'TouchColorUITests'/(name+'.m')).read_text()
             self.assertEqual(len(re.findall(r'-\s*\(void\)\s*(test\w+)\s*\{',text)),count)
     def test_closed_workflow_budgets_and_gates(self):
@@ -467,7 +486,7 @@ class SourceTests(unittest.TestCase):
         text=(ROOT/'.github/workflows/ios.yml').read_text()
         job=text.split('  compatibility:\n',1)[1]
         self.assertIn('    timeout-minutes: 60\n',job)
-        self.assertEqual(re.findall(r'^      max-parallel: (.+)$',job,re.M),["${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}"])
+        self.assertEqual(re.findall(r'^      max-parallel: (.+)$',job,re.M),['2'])
         def step(name):return job.split('      - name: '+name+'\n',1)[1].split('      - name:',1)[0]
         hosted=step('Unit and constrained-window layout tests')
         functional=step('Functional UI tests')

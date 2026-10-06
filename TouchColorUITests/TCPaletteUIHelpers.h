@@ -12,10 +12,12 @@
 - (void)pastePalette:(NSString *)JSON app:(XCUIApplication *)app;
 - (void)verifyPaletteRows:(NSArray<NSString *> *)colors app:(XCUIApplication *)app;
 - (BOOL)waitForPaletteFilesPresentation:(XCUIApplication *)app;
+- (void)verifyOriginalPaletteSources:(XCUIApplication *)app;
+- (void)verifyInitialPaletteImportControls:(XCUIApplication *)app;
 - (void)exercisePalettePasteReviewAcceptAndRelaunch:(XCUIApplication *)app;
 - (void)exerciseInvalidPalettePastePreservesHistory:(XCUIApplication *)app;
-- (void)exercisePaletteFileCancelAndWatchInboxReturn:(XCUIApplication *)app;
+- (void)exercisePaletteFileCancelAndImportReturn:(XCUIApplication *)app;
 - (void)exercisePaletteFileSelectionReviewAndRelaunch:(XCUIApplication *)app;
 - (void)exerciseLargestTextPaletteRotationReplacesSelection:(XCUIApplication *)app;
-- (void)exerciseLargestTextPaletteReviewAndInbox:(XCUIApplication *)app;
+- (void)exerciseLargestTextPaletteReviewAndImportHelp:(XCUIApplication *)app;
 @end

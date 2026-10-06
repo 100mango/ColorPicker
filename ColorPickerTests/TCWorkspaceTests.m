@@ -46,6 +46,16 @@
     XCTAssertEqual(((ColorDetectView *)[canvas valueForKey:@"colorDetectView"]).imageView.image,image,@"No downsampling or replacement of the imported image");
     if (workspace.collapsed || workspace.displayMode!=UISplitViewControllerDisplayModeOneBesideSecondary) XCTAssertEqualObjects(canvas.navigationItem.leftBarButtonItem.accessibilityIdentifier,@"workspace.palette");
     XCTAssertEqualObjects(canvas.navigationItem.rightBarButtonItem.accessibilityIdentifier,@"workspace.sources");
+    NSArray<UIMenuElement *> *actions=canvas.navigationItem.rightBarButtonItem.menu.children;
+    NSArray *titles=@[NSLocalizedString(@"Choose Photo",nil),NSLocalizedString(@"Take Photo",nil),NSLocalizedString(@"Live Color",nil),NSLocalizedString(@"Import Palette",nil),NSLocalizedString(@"Privacy Policy",nil)];
+    XCTAssertEqual(actions.count,5u);
+    XCTAssertEqualObjects([actions valueForKey:@"title"],titles);
+    for (UIMenuElement *element in actions) {
+        XCTAssertTrue([element isKindOfClass:UIAction.class]);
+        XCTAssertNotEqualObjects(((UIAction *)element).identifier,@"watch.inbox.open");
+        XCTAssertNotEqualObjects(element.title,NSLocalizedString(@"Watch Inbox",nil));
+    }
+    XCTAssertEqualObjects(((UIAction *)actions[3]).identifier,@"palette.import.open");
     XCTAssertGreaterThanOrEqual(workspace.keyCommands.count,4);
 }
 - (void)testSourcePopoverInvalidatesAlreadyQueuedCameraSample {

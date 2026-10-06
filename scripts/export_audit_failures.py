@@ -222,12 +222,12 @@ count += export_named('AccessibilityAudits', [
     'touchcolor-audit-failure-live', 'touchcolor-audit-failure-photo', 'touchcolor-audit-failure-saved',
     'touchcolor-audit-failure-empty-compact', 'touchcolor-audit-failure-empty',
     'touchcolor-audit-failure-policy',
-    'touchcolor-audit-failure-import', 'touchcolor-audit-failure-inbox',
+    'touchcolor-audit-failure-import', 'touchcolor-audit-failure-import-help',
 ], limit - count)
 if count < limit:
     count += export_named('TouchColorUITests', [functional_prefix + '2'], limit - count)
 if family == 'iPadMini' and count < limit:
-    count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review', 'touchcolor-watch-inbox-status'], limit - count)
+    count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review', 'touchcolor-palette-import-help'], limit - count)
 if family == 'iPadMini' and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-mini-audit-photo-state', 'touchcolor-mini-audit-saved-state'], limit - count)
 if family == 'iPhoneCompact' and count < limit:
@@ -235,7 +235,7 @@ if family == 'iPhoneCompact' and count < limit:
 if family in ('iPhoneCompact', 'iPadLarge') and count < limit:
     count += export_named('AccessibilityAudits', ['touchcolor-palette-import-review'], limit - count)
 if family == 'iPhoneLarge' and count < limit:
-    count += export_named('AccessibilityAudits', ['touchcolor-watch-inbox-status'], limit - count)
+    count += export_named('AccessibilityAudits', ['touchcolor-palette-import-help'], limit - count)
 if family == 'iPadLarge' and 'AccessibilityAudits' in exports:
     required = require_requested_audit_frames(exports['AccessibilityAudits'][1], emitted_images)
     print('REQUESTED_AUDIT_FRAMES:' + json.dumps({'required':required,'all_emitted':True},sort_keys=True))

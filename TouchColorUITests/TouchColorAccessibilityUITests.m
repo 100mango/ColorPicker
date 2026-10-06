@@ -40,13 +40,13 @@
 - (void)recordAuditScreenshot:(NSString *)screen failure:(BOOL)failure {
     NSString *name=nil;
     if (failure) {
-        NSDictionary *states=@{@"palette import review":@"import",@"watch inbox status":@"inbox",@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
+        NSDictionary *states=@{@"palette import review":@"import",@"palette import help":@"import-help",@"empty palette":@"empty",@"empty palette in actual compact iPad window":@"empty-compact",@"live camera unavailable":@"live",@"offline policy error in dark appearance":@"policy",@"sampled photo with numeric RGB and hex":@"photo",@"saved palette with numeric RGB and hex":@"saved"};
         if (states[screen]) name=[@"touchcolor-audit-failure-" stringByAppendingString:states[screen]];
     } else {
         if ([screen isEqualToString:@"sampled photo with numeric RGB and hex"]) name=@"touchcolor-mini-audit-photo-state";
         if ([screen isEqualToString:@"saved palette with numeric RGB and hex"]) name=@"touchcolor-mini-audit-saved-state";
         if ([screen isEqualToString:@"palette import review"]) name=@"touchcolor-palette-import-review";
-        if ([screen isEqualToString:@"watch inbox status"]) name=@"touchcolor-watch-inbox-status";
+        if ([screen isEqualToString:@"palette import help"]) name=@"touchcolor-palette-import-help";
     }
     if (!name) return;
     NSData *bytes=UIImageJPEGRepresentation(XCUIScreen.mainScreen.screenshot.image,0.55);
@@ -123,10 +123,15 @@
     [self verifyPaletteRows:@[@"#112233",@"#aabbcc"] app:self.app];
     [self auditScreen:@"palette import review"];
 }
-- (void)testAccessibilityWatchInboxStatus {
-    [self openPaletteAction:@"watch.inbox.open" app:self.app];
-    XCTAssertTrue([self.app.cells[@"watch.inbox.status"] waitForExistenceWithTimeout:5]);
-    [self auditScreen:@"watch inbox status"];
+- (void)testAccessibilityPaletteImportHelp {
+    [self verifyOriginalPaletteSources:self.app];
+    UIPasteboard.generalPasteboard.string=@"[\"#112233\"]";
+    [self openPaletteAction:@"palette.import.open" app:self.app];
+    [self verifyInitialPaletteImportControls:self.app];
+    if (self.tcPaletteReadinessExpired) return;
+    XCTAssertTrue([self.app.cells[@"palette.import.status"] waitForExistenceWithTimeout:5]);
+    XCTAssertTrue([self.app.cells[@"palette.import.status"].staticTexts.firstMatch.label containsString:@"review every color"]);
+    [self auditScreen:@"palette import help"];
 }
 - (void)testAccessibilitySampledPhoto {
     [self importAndSample];
