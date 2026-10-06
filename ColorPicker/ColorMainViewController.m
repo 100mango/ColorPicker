@@ -456,6 +456,13 @@
             }
         }
     }];
+// BEGIN FIXED STORE DEBUG FIXTURE PRESENTATION
+    // Only the test-only fixture entry disappears. The ordinary image, sample,
+    // marker, save and history implementations below are not substituted.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-store-capture"]) {
+        self.navigationItem.leftBarButtonItem = nil;
+    }
+// END FIXED STORE DEBUG FIXTURE PRESENTATION
     [self showImage:image];
 }
 #endif
