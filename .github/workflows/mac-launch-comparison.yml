@@ -1,0 +1,72 @@
+name: Fixed Mac launch route comparison
+on:
+  push:
+    branches: [codex/mac-launch-comparison]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-mac-launch-comparison
+  cancel-in-progress: false
+jobs:
+  fixed-comparison:
+    name: One English contact case then one ordinary launch
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_JOB_PLATFORM: mac-launch-comparison
+      TOUCHCOLOR_JOB_LANE: mac-launch-comparison
+      TOUCHCOLOR_JOB_MINUTES: '25'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '3000000'
+    steps:
+      - name: Start exact job clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              stream.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
+      - name: Check out exact source
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Initialize separate fixed budget
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py initialize
+      - name: Run fixed comparison within original work pool
+        id: comparison
+        timeout-minutes: 18
+        run: python3 scripts/mac_launch_comparison.py run
+      - name: Retain bounded host-only evidence
+        id: evidence
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/mac_launch_comparison.py evidence
+      - name: Validate distinct observation packet
+        id: validation
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/mac_launch_comparison.py validate
+      - name: Verify full upload reserve
+        id: upload_budget
+        if: ${{ always() && steps.validation.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py check-upload
+      - name: Retain observation only for independent review
+        if: ${{ always() && steps.validation.outcome == 'success' && steps.upload_budget.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-mac-launch-comparison
+          path: build/evidence
+          retention-days: 1
+          compression-level: 9
+          if-no-files-found: error
+      - name: Preserve original contact assertion outcome after upload
+        if: always()
+        timeout-minutes: 1
+        run: python3 scripts/mac_launch_comparison.py contact-result
