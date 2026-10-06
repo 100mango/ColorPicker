@@ -94,9 +94,10 @@ class RunTests(unittest.TestCase):
         if self.read_inject:self.read_inject(kw)
         return subprocess.CompletedProcess(command,0,json.dumps(summary()).encode(),b'')
     def run_case(self,**kwargs):
+        products=kwargs.pop('products',lambda **kw:copy.deepcopy(SETUP['products']))
         return m.run_suite('iPadMini','TouchColorTests',started=0,clock=lambda:self.tick,
             wall=lambda:1000+self.tick,runner=self.runner,reader=self.reader,
-            products=lambda:copy.deepcopy(SETUP['products']),**kwargs)
+            products=products,**kwargs)
     def record(self):return json.loads(m.record_path('iPadMini','TouchColorTests').read_text())
     def pending(self):return Path('build/iPadMini-runtime-command-uncertain').exists()
     def test_exact_success(self):
@@ -185,6 +186,68 @@ class RunTests(unittest.TestCase):
     def test_changed_product_stops_before_summary(self):
         with patch.object(m,'read_binding',return_value={}):self.assertEqual(self.run_case(),3)
         self.assertEqual(self.reader_calls,[]);self.assertTrue(self.pending())
+    def test_post_product_scan_uses_original_phase_and_retains_failure(self):
+        seen=[];observation={'status':'failed','complete':False,'reason':'elapsed_limit',
+                           'files':204,'bytes':26142729,'elapsed_seconds':20.25}
+        self.inject=lambda value,deadline:value.update(exit_code=65)
+        def scan(**kw):
+            seen.append(kw);self.tick=21.25
+            raise m.ProductInventoryError(observation)
+        output=io.StringIO()
+        with contextlib.redirect_stdout(output):self.assertEqual(self.run_case(products=scan),3)
+        self.assertEqual(seen[0]['post_test_deadline'],560)
+        self.assertIsNotNone(seen[0]['clock']);self.assertEqual(self.reader_calls,[])
+        record=self.record();self.assertEqual(record['command']['exit_code'],65)
+        self.assertIs(record['command']['host_cleanup_confirmed'],True)
+        self.assertEqual(record['summary'],{'status':'not_started'})
+        self.assertEqual(record['product_inventory'],observation)
+        self.assertFalse(record['qualified']);self.assertTrue(self.pending())
+        printed=json.loads(output.getvalue().split('UIKIT_MANAGED_RESULT:',1)[1])
+        self.assertEqual(printed['product_inventory'],observation)
+        with patch.object(m,'read_managed_device') as inventory,patch.object(m,'setup_capture') as capture:
+            with self.assertRaises(Exception):m.fixture_seed('iPadMini',started=0)
+            with patch.object(sys,'argv',['tool','iPadMini','managed-shutdown']):
+                with self.assertRaises(Exception):m.main()
+            inventory.assert_not_called();capture.assert_not_called()
+    def test_changed_product_digest_remains_unqualified(self):
+        def scan(**kw):
+            kw['observation'].update(status='complete',complete=True,reason=None)
+            return {**SETUP['products'],'tree_sha256':'c'*64}
+        self.assertEqual(self.run_case(products=scan),3)
+        self.assertEqual(self.reader_calls,[]);self.assertTrue(self.pending())
+        self.assertEqual(self.record()['error'],'Post-test products changed')
+        self.assertTrue(self.record()['product_inventory']['complete'])
+        self.assertFalse(self.record()['qualified'])
+    def test_product_scan_at_phase_tail_cannot_start_summary(self):
+        def scan(**kw):
+            self.tick=kw['post_test_deadline']
+            return copy.deepcopy(SETUP['products'])
+        self.assertEqual(self.run_case(products=scan),3)
+        self.assertEqual(self.reader_calls,[]);self.assertTrue(self.pending())
+    def test_interrupted_real_scan_retains_completed_reads_and_command(self):
+        root=Path('build/simulator/Build/Products')
+        for path in (root/'Debug-iphonesimulator/TouchColor.app',
+                     root/'Debug-iphonesimulator/TouchColorUITests-Runner.app',
+                     Path('build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app')):
+            path.mkdir(parents=True);(path/'binary').write_bytes(b'binary')
+        (root/'TouchColor.xctestrun').write_bytes(b'configuration')
+        original=m.read_regular;calls=[0]
+        def interrupted(*args,**kw):
+            calls[0]+=1
+            if calls[0]==2:
+                self.tick=1.125
+                raise m.WarmupFailed('UIKit owned command interrupted by signal 15')
+            return original(*args,**kw)
+        self.inject=lambda value,deadline:value.update(exit_code=65)
+        with patch.object(m,'read_regular',side_effect=interrupted):
+            self.assertEqual(self.run_case(products=m.product_identity),3)
+        record=self.record();value=record['product_inventory']
+        self.assertEqual(value['reason'],'interrupted');self.assertEqual(value['status'],'failed')
+        self.assertFalse(value['complete']);self.assertEqual(value['files'],1)
+        self.assertEqual(value['bytes'],len(b'configuration'));self.assertEqual(value['elapsed_seconds'],.125)
+        self.assertEqual(record['command']['exit_code'],65);self.assertTrue(record['command']['host_cleanup_confirmed'])
+        self.assertEqual(record['summary'],{'status':'not_started'})
+        self.assertFalse(record['qualified']);self.assertTrue(self.pending());self.assertEqual(self.reader_calls,[])
     def test_repeated_result_refused(self):
         self.assertEqual(self.run_case(),0)
         with self.assertRaises(ValueError):self.run_case()
@@ -207,6 +270,121 @@ class RunTests(unittest.TestCase):
         w=m.ManagedWarmup('iPadMini',started=0,clock=lambda:self.tick,host_runner=late)
         with self.assertRaises(ValueError):w.command(['host-only-proof'],30,simulator=False)
         self.assertTrue(self.pending())
+
+
+class ProductInventoryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();self.old=Path.cwd();os.chdir(self.tmp.name)
+        self.tick=0.;self.observation={}
+        self.roots=(Path('build/simulator/Build/Products'),Path('build/palette-fixtures/Build/Products'))
+        self.bundles=(self.roots[0]/'Debug-iphonesimulator/TouchColor.app',
+                      self.roots[0]/'Debug-iphonesimulator/TouchColorUITests-Runner.app',
+                      self.roots[1]/'Debug-iphonesimulator/PaletteFixtures.app')
+        for bundle in self.bundles:
+            bundle.mkdir(parents=True);(bundle/'binary').write_bytes(b'built bytes')
+        (self.roots[0]/'TouchColor.xctestrun').write_bytes(b'configuration')
+    def tearDown(self):os.chdir(self.old);self.tmp.cleanup()
+    def scan(self,**kw):
+        return m.product_identity(clock=lambda:self.tick,observation=self.observation,**kw)
+    def failure(self,reason,**kw):
+        with self.assertRaises(m.ProductInventoryError) as raised:self.scan(**kw)
+        self.assertEqual(raised.exception.observation,self.observation)
+        self.assertEqual(self.observation['reason'],reason)
+        self.assertEqual(self.observation['status'],'failed');self.assertFalse(self.observation['complete'])
+        self.assertLess(len(json.dumps(self.observation).encode()),2048)
+        self.assertNotIn(str(Path.cwd()),json.dumps(self.observation))
+        return self.observation
+    def test_identity_recipe_and_full_auxiliary_scope_are_unchanged(self):
+        auxiliary=self.roots[0]/'unselected.swiftmodule';auxiliary.write_bytes(b'auxiliary')
+        expected=hashlib.sha256();count=size=0
+        for root in self.roots:
+            for parent,directories,files in os.walk(root):
+                directories.sort()
+                for name in sorted(files):
+                    path=Path(parent)/name;raw=path.read_bytes();count+=1;size+=len(raw)
+                    expected.update(path.as_posix().encode()+b'\0'+str(len(raw)).encode()+b'\0'+raw)
+        identity=self.scan()
+        self.assertEqual(identity,{'tree_sha256':expected.hexdigest(),'files':count,'bytes':size,
+                                   'claim':'built_product_bytes_only'})
+        self.assertTrue(self.observation['complete']);self.assertEqual(self.observation['allowance_seconds'],10)
+        self.tick=100;self.assertEqual(self.scan(post_test_deadline=200),identity)
+        self.assertEqual(self.observation['allowance_seconds'],20)
+        auxiliary.write_bytes(b'changedxx');self.assertNotEqual(self.scan(),identity)
+    def test_changed_consumed_binary_changes_identity(self):
+        identity=self.scan();binary=self.bundles[0]/'binary'
+        binary.write_bytes(b'other bytes');self.assertNotEqual(self.scan(),identity)
+    def test_initial_ten_second_boundary_is_unchanged(self):
+        original=m.read_regular
+        def slow(*args,**kw):
+            raw=original(*args,**kw);self.tick=10;return raw
+        with patch.object(m,'read_regular',side_effect=slow):value=self.failure('elapsed_limit')
+        self.assertEqual(value['allowance_seconds'],10);self.assertEqual(value['elapsed_seconds'],10)
+        self.assertEqual(value['files'],1);self.assertEqual(value['bytes'],len(b'configuration'))
+    def test_post_scan_accepts_ten_but_rejects_twenty_seconds(self):
+        original=m.read_regular
+        def slow(*args,**kw):
+            raw=original(*args,**kw);self.tick=10;return raw
+        with patch.object(m,'read_regular',side_effect=slow):self.scan(post_test_deadline=100)
+        self.assertTrue(self.observation['complete']);self.assertEqual(self.observation['elapsed_seconds'],10)
+        self.tick=0
+        def late(*args,**kw):
+            raw=original(*args,**kw);self.tick=20;return raw
+        with patch.object(m,'read_regular',side_effect=late):value=self.failure('elapsed_limit',post_test_deadline=100)
+        self.assertEqual(value['granted_seconds'],20)
+    def test_original_phase_clips_post_scan_and_refuses_expired_entry(self):
+        original=m.read_regular;self.tick=550
+        def late(*args,**kw):
+            raw=original(*args,**kw);self.tick=560;return raw
+        with patch.object(m,'read_regular',side_effect=late):value=self.failure('phase_deadline',post_test_deadline=560)
+        self.assertEqual(value['granted_seconds'],10);self.assertEqual(value['deadline_monotonic'],560)
+        with patch.object(m,'read_regular') as read:value=self.failure('phase_deadline',post_test_deadline=560)
+        read.assert_not_called();self.assertEqual(value['files'],0);self.assertEqual(value['granted_seconds'],0)
+    def test_final_hash_cost_cannot_escape_deadline(self):
+        real=hashlib.sha256()
+        class SlowDigest:
+            def update(inner,data):real.update(data);self.tick=20
+            def hexdigest(inner):return real.hexdigest()
+        with patch.object(m.hashlib,'sha256',return_value=SlowDigest()):
+            self.failure('elapsed_limit',post_test_deadline=100)
+    def test_directory_fanout_has_its_own_reason(self):
+        with patch.object(m.os,'walk',return_value=iter([(str(self.roots[0]),[],['x']*8193)])):
+            value=self.failure('directory_entries_limit')
+        self.assertEqual(value['directory_entries'],8193);self.assertEqual(value['files'],0)
+    def counted_walk(self,count):
+        def walk(root,**kw):
+            if Path(root)==self.roots[0]:
+                for start in range(0,count,1024):
+                    yield str(root),[],[str(i) for i in range(start,min(start+1024,count))]
+        return walk
+    def test_aggregate_file_count_boundary_is_unchanged(self):
+        with patch.object(m.os,'walk',side_effect=self.counted_walk(8192)),patch.object(m,'read_regular',return_value=b''):
+            self.assertEqual(self.scan()['files'],8192)
+        with patch.object(m.os,'walk',side_effect=self.counted_walk(8193)),patch.object(m,'read_regular',return_value=b''):
+            value=self.failure('file_count_limit')
+        self.assertEqual(value['files'],8193);self.assertEqual(value['bytes'],0)
+    def test_aggregate_byte_boundary_does_not_allocate_a_gibibyte(self):
+        class SizedBytes(bytes):
+            def __len__(self):return 128*1024*1024
+        def read(path,cap,**kw):
+            self.assertEqual(cap,128*1024*1024);return SizedBytes(b'x')
+        with patch.object(m.os,'walk',side_effect=self.counted_walk(8)),patch.object(m,'read_regular',side_effect=read):
+            self.assertEqual(self.scan()['bytes'],1024**3)
+        with patch.object(m.os,'walk',side_effect=self.counted_walk(9)),patch.object(m,'read_regular',side_effect=read):
+            value=self.failure('total_bytes_limit')
+        self.assertEqual(value['bytes'],9*128*1024*1024);self.assertEqual(value['files'],9)
+    def test_single_file_cap_remains_safety_failure(self):
+        with (self.roots[0]/'oversized').open('wb') as stream:stream.truncate(128*1024*1024+1)
+        value=self.failure('safety');self.assertEqual(value['safety_detail'],'unsafe_or_unreadable_file')
+        self.assertEqual(value['limits']['file_bytes'],128*1024*1024)
+    def test_linked_product_and_file_fail_without_disclosing_path(self):
+        (self.roots[0]/'linked').symlink_to(self.bundles[0]/'binary')
+        value=self.failure('safety');self.assertEqual(value['safety_detail'],'unsafe_or_unreadable_file')
+    def test_walk_read_error_is_not_silently_omitted(self):
+        def walk(root,**kw):
+            kw['onerror'](PermissionError('/private/unrelated/path'));return iter(())
+        with patch.object(m.os,'walk',side_effect=walk):value=self.failure('safety')
+        self.assertEqual(value['safety_detail'],'unreadable_directory')
+        self.assertNotIn('/private',json.dumps(value))
 
 
 class ReceiptTests(unittest.TestCase):
@@ -289,7 +467,7 @@ class SourceTests(unittest.TestCase):
         text=(ROOT/'.github/workflows/ios.yml').read_text()
         job=text.split('  compatibility:\n',1)[1]
         self.assertIn('    timeout-minutes: 60\n',job)
-        self.assertEqual(re.findall(r'^      max-parallel: (\d+)$',job,re.M),['1'])
+        self.assertEqual(re.findall(r'^      max-parallel: (.+)$',job,re.M),["${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}"])
         def step(name):return job.split('      - name: '+name+'\n',1)[1].split('      - name:',1)[0]
         hosted=step('Unit and constrained-window layout tests')
         functional=step('Functional UI tests')

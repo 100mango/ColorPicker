@@ -54,28 +54,85 @@ def read_regular(path, cap, *, allow_empty=False):
         os.close(fd)
 
 
-def product_identity(clock=time.monotonic):
-    """Same bounded local-tree recipe as the proven Mini, including Files host."""
-    began = clock(); digest = hashlib.sha256(); count = size = 0
-    roots = (Path('build/simulator/Build/Products'), Path('build/palette-fixtures/Build/Products'))
-    require(len(list(roots[0].glob('*.xctestrun'))) == 1, 'One fresh test configuration required')
-    for path in (roots[0] / 'Debug-iphonesimulator/TouchColor.app',
-                 roots[0] / 'Debug-iphonesimulator/TouchColorUITests-Runner.app',
-                 roots[1] / 'Debug-iphonesimulator/PaletteFixtures.app'):
-        require(path.is_dir() and not path.is_symlink(), 'Missing built product')
-    for root in roots:
-        require(root.is_dir() and not any(p.is_symlink() for p in (root, *root.parents)), 'Unsafe product tree')
-        for parent, directories, files in os.walk(root, followlinks=False):
-            require(clock() - began < 10 and len(directories) + len(files) <= 8192, 'Product inventory bound')
-            require(not any((Path(parent) / p).is_symlink() for p in directories), 'Linked product directory')
-            directories.sort()
-            for name in sorted(files):
-                path = Path(parent) / name
-                raw = read_regular(path, 128 * 1024 * 1024, allow_empty=True)
-                count += 1; size += len(raw)
-                require(count <= 8192 and size <= 1024**3 and clock() - began < 10, 'Product inventory bound')
-                digest.update(path.as_posix().encode() + b'\0' + str(len(raw)).encode() + b'\0' + raw)
-    return {'tree_sha256': digest.hexdigest(), 'files': count, 'bytes': size,
+class ProductInventoryError(ValueError):
+    def __init__(self, observation):
+        self.observation = dict(observation)
+        super().__init__('Product inventory ' + observation['reason'])
+
+
+def product_identity(clock=time.monotonic, *, post_test_deadline=None, observation=None):
+    """Hash the unchanged full product trees; diagnostics are not identity bytes.
+
+    Only the post-command host scan receives 20 seconds, clipped to the caller's
+    original phase minus its summary/cleanup tail. Initial scans retain 10.
+    File reads remain cooperative: a late read is rejected before hashing or
+    further work, and a late final hash is rejected before returning an identity.
+    """
+    began = clock(); seconds = 10 if post_test_deadline is None else 20
+    deadline = min(began + seconds, post_test_deadline) if post_test_deadline is not None else began + seconds
+    value = {'schema': 1, 'stage': 'initial' if post_test_deadline is None else 'post_test',
+             'status': 'scanning', 'complete': False, 'reason': None, 'safety_detail': None,
+             'files': 0, 'bytes': 0, 'directories': 0, 'directory_entries': 0,
+             'started_monotonic': began, 'deadline_monotonic': deadline,
+             'elapsed_seconds': 0., 'allowance_seconds': seconds,
+             'granted_seconds': max(0., deadline - began),
+             'limits': {'directory_entries': 8192, 'files': 8192,
+                        'bytes': 1024**3, 'file_bytes': 128 * 1024 * 1024}}
+    digest = hashlib.sha256()
+    def publish():
+        if observation is not None:
+            observation.clear(); observation.update(value)
+    def fail(reason, detail=None):
+        value.update(status='failed', reason=reason, safety_detail=detail,
+                     elapsed_seconds=max(0., clock() - began))
+        publish()
+        raise ProductInventoryError(value)
+    def check_time():
+        now = clock(); value['elapsed_seconds'] = max(0., now - began)
+        if now >= deadline:
+            fail('phase_deadline' if post_test_deadline is not None and
+                 post_test_deadline <= began + seconds else 'elapsed_limit')
+    def safe(condition, detail):
+        if not condition: fail('safety', detail)
+    def walk_error(error):
+        fail('safety', 'unreadable_directory')
+    try:
+        check_time()
+        roots = (Path('build/simulator/Build/Products'), Path('build/palette-fixtures/Build/Products'))
+        safe(len(list(roots[0].glob('*.xctestrun'))) == 1, 'test_configuration')
+        for path in (roots[0] / 'Debug-iphonesimulator/TouchColor.app',
+                     roots[0] / 'Debug-iphonesimulator/TouchColorUITests-Runner.app',
+                     roots[1] / 'Debug-iphonesimulator/PaletteFixtures.app'):
+            safe(path.is_dir() and not path.is_symlink(), 'missing_or_linked_product')
+        for root in roots:
+            safe(root.is_dir() and not any(p.is_symlink() for p in (root, *root.parents)), 'unsafe_tree')
+            for parent, directories, files in os.walk(root, followlinks=False, onerror=walk_error):
+                value['directories'] += 1
+                value['directory_entries'] = len(directories) + len(files)
+                if value['directory_entries'] > 8192: fail('directory_entries_limit')
+                check_time()
+                safe(not any((Path(parent) / p).is_symlink() for p in directories), 'linked_directory')
+                directories.sort()
+                for name in sorted(files):
+                    check_time()
+                    path = Path(parent) / name
+                    try: raw = read_regular(path, 128 * 1024 * 1024, allow_empty=True)
+                    except (ValueError, OSError): fail('safety', 'unsafe_or_unreadable_file')
+                    value['files'] += 1; value['bytes'] += len(raw)
+                    if value['files'] > 8192: fail('file_count_limit')
+                    if value['bytes'] > 1024**3: fail('total_bytes_limit')
+                    check_time()
+                    digest.update(path.as_posix().encode() + b'\0' + str(len(raw)).encode() + b'\0' + raw)
+                    check_time()
+        check_time()
+    except ProductInventoryError:
+        raise
+    except (WarmupFailed, KeyboardInterrupt):
+        fail('interrupted')
+    except (ValueError, OSError):
+        fail('safety', 'unreadable_tree')
+    value.update(status='complete', complete=True); publish()
+    return {'tree_sha256': digest.hexdigest(), 'files': value['files'], 'bytes': value['bytes'],
             'claim': 'built_product_bytes_only'}
 
 
@@ -432,7 +489,11 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         require(record['command'].get('status') == 'timely_exit' and
                 record['command'].get('host_cleanup_confirmed') is True and clock() < command_deadline,
                 'Uncertain or late XCTest; all later simulator operations blocked')
-        require(read_binding(family) == setup['binding'] and products() == setup['products'], 'Post-test binding changed')
+        require(read_binding(family) == setup['binding'], 'Post-test binding changed')
+        record['product_inventory'] = {'status': 'not_started'}
+        observed = products(clock=clock, post_test_deadline=deadline - SUMMARY - CLEANUP,
+                            observation=record['product_inventory'])
+        require(observed == setup['products'], 'Post-test products changed')
         require(clock() + SUMMARY + CLEANUP < deadline, 'Summary and owned cleanup cannot fit')
         # The read grant is derived again after the receipt write, without reset.
         summary_deadline = min(clock() + SUMMARY, deadline - CLEANUP)
@@ -458,6 +519,8 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         require(clock() < deadline, 'Final receipt exceeded original step')
         return 0 if record['qualified'] else (record['command']['exit_code'] or 3)
     except BaseException as error:
+        if isinstance(error, ProductInventoryError):
+            record['product_inventory'] = error.observation
         if record['summary'].get('status') == 'pending':
             record['summary'] = {'status': 'unavailable',
                                  'host_cleanup_confirmed': getattr(error, 'cleanup_confirmed', None)}
@@ -469,6 +532,7 @@ def run_suite(family, suite, *, started=STARTED, clock=time.monotonic, wall=time
         print('UIKIT_MANAGED_RESULT:' + json.dumps({'family': family, 'suite': suite,
               'source': setup['binding']['context'], 'command': record['command'],
               'summary': record['summary'], 'qualified': record['qualified'],
+              'product_inventory': record.get('product_inventory'),
               'error': record.get('error')}, sort_keys=True), flush=True)
 
 
@@ -488,5 +552,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, interrupted)
     try: raise SystemExit(main())
     except Exception as error:
+        if isinstance(error, ProductInventoryError):
+            print('UIKIT_PRODUCT_INVENTORY:' + json.dumps(error.observation, sort_keys=True), flush=True)
         print('BLOCKED managed UIKit: ' + str(error), file=sys.stderr, flush=True)
         raise SystemExit(3)

@@ -573,13 +573,15 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.swift.split('    func testUnsupportedCompanionExplainsIndependentPaletteImport()', 1)[1].encode()).hexdigest(),
                          'c976d98177c262cbce4afd9c9cd0c8ed2479c5a939d34adf222d98eccac09317')
 
-    def test_all_six_controller_geometry_assertions_are_byte_exact(self):
+    def test_controller_and_workspace_geometry_assertions_are_byte_exact(self):
         import hashlib
         locks = [('- (void)assertViewReadable:', '- (void)exerciseSize:', '2c68865a1a333b67b511b65f478d73e3f178449e550473ff91c62dacbd354a49'),
                  ('- (void)exerciseSize:', '- (void)test320x568', '732fee239a3ddcaa1f441e22005d517981b5e2749bb74b6402c071f47fea6219'),
-                 ('        XCTAssertEqualWithAccuracy(navigation.view.bounds.size.width', '        check(controller);', '04644ce5c3ab3f367c068fe4d2b9c6b87c0933872d1a3c88cc796affc549e15a')]
+                 ('        XCTAssertEqualWithAccuracy(navigation.view.bounds.size.width', '        check(controller);', '04644ce5c3ab3f367c068fe4d2b9c6b87c0933872d1a3c88cc796affc549e15a'),
+                 ('            [workspace.view.window layoutIfNeeded];[workspace.view layoutIfNeeded];[canvas.view layoutIfNeeded];', '\n@end', 'ca845fe2838d998cb12d622616d2930b8a6de249e26c3bb79492b85ae88b1265')]
         for start,end,expected in locks:
-            actual=self.objc[self.objc.index(start):self.objc.index(end)]
+            start_index=self.objc.index(start)
+            actual=self.objc[start_index:self.objc.index(end,start_index)]
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(),expected)
 
     def test_swift_gates_preserve_waiter_relative_three_seconds(self):
@@ -619,43 +621,206 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         self.assertIn('if (observed) observed();',self.objc)
         self.assertLess(self.objc.index('host.onAppearance=^'),self.objc.index('[window makeKeyAndVisible]'))
         self.assertNotIn('predicateWithFormat:@"appeared == true"',self.objc)
-        self.assertIn('waitForExpectations:@[appeared] timeout:3',self.objc)
-        self.assertLess(self.objc.index('if (waited!=XCTWaiterResultCompleted || !observedAttached || !attached)'),self.objc.index('        check(controller);'))
+        self.assertIn('waitForExpectations:@[appeared] timeout:15',self.objc)
+        self.assertLess(self.objc.index('if (waited!=XCTWaiterResultCompleted || !eventTimely || !observedAttached || !attached)'),self.objc.index('        check(controller);'))
         self.assertIn('- (void)setUp { [super setUp]; self.hostedGateUnproved=NO; }',self.objc)
         self.assertIn('if (self.hostedGateUnproved)',self.objc)
 
     def test_coordinator_callback_and_fallback_are_not_conflated(self):
         settle=self.objc.split('- (BOOL)settleWorkspace:',1)[1].split('- (void)testNativeWorkspace',1)[0]
-        self.assertIn('qualifyingEvent && attached && !fulfilled',settle)
+        self.assertIn('if (qualifyingEvent && !fulfilled)',settle)
+        self.assertNotIn('qualifyingEvent && attached',settle)
         self.assertLess(settle.index('fulfilled=YES;'),settle.index('[settled fulfill]'))
         self.assertEqual(settle.count('[settled fulfill]'),1)
         self.assertIn('observe(@"transition-completion",context.isCancelled ? 1 : 0,!context.isCancelled)',settle)
         self.assertIn('@"registration-rejected-main-turn" : @"no-coordinator-main-turn",-1,transition==nil',settle)
-        self.assertIn('waitForExpectations:@[settled] timeout:3',settle)
+        self.assertIn('waitForExpectations:@[settled] timeout:15',settle)
         self.assertIn('closed=YES;',settle)
         self.assertIn('if (closed) return;',settle)
         self.assertEqual(self.objc.count('if (![self settleWorkspace:'),3)
 
-    def test_exactly_once_model_preserves_rejected_registration_unknown(self):
-        def observe(events):
-            fulfilled=False;count=0
-            for qualifies,attached in events:
-                if qualifies and attached and not fulfilled:fulfilled=True;count+=1
-            return count
-        self.assertEqual(observe([(False,True),(True,True)]),1)
-        self.assertEqual(observe([(True,True),(True,True)]),1)
-        self.assertEqual(observe([(False,True)]),0)
-        self.assertEqual(observe([(True,False)]),0)
+    def test_attachment_observation_spends_only_original_phase_remaining_time(self):
+        settle=self.objc.split('- (BOOL)settleWorkspace:',1)[1].split('- (void)testNativeWorkspace',1)[0]
+        self.assertIn('NSTimeInterval phaseDeadline=waitStarted+15, responsivenessDeadline=waitStarted+3;',settle)
+        self.assertIn('BOOL eventTimely=fulfilled && observed>=actionStarted && observed<phaseDeadline;',settle)
+        self.assertIn('if (waited==XCTWaiterResultCompleted && eventTimely)',settle)
+        self.assertIn('NSTimeInterval remaining=MAX(0,phaseDeadline-NSProcessInfo.processInfo.systemUptime);',settle)
+        self.assertIn('if (remaining>0) attachmentResult=[XCTWaiter waitForExpectations:@[attachment] timeout:remaining];',settle)
+        self.assertIn('BOOL attachmentTimely=observedAttached && attachmentObserved>=observed && attachmentObserved<phaseDeadline;',settle)
+        predicate=settle.split('predicateWithBlock:',1)[1].split('}] object:expected]',1)[0]
+        self.assertIn('workspace.viewIfLoaded.window!=nil && expected.viewIfLoaded.window==workspace.viewIfLoaded.window',predicate)
+        self.assertLess(predicate.index('BOOL attached='),predicate.index('NSTimeInterval sampleTime='))
+        self.assertIn('if (!attached) return NO;',predicate)
+        self.assertIn('if (!observedAttached)',predicate)
+        self.assertIn('observedAttached=YES; attachmentObserved=sampleTime;',predicate)
+        self.assertIn('return sampleTime<phaseDeadline;',predicate)
+        self.assertLess(settle.index('waitForExpectations:@[settled]'),settle.index('predicateWithBlock:'))
+        self.assertLess(settle.index('waitForExpectations:@[attachment]'),settle.index('closed=YES;'))
+        self.assertEqual(settle.count('timeout:15'),1)
+        self.assertEqual(settle.count('phaseDeadline='),1)
+        self.assertNotIn('actionStarted+3',settle)
+        geometry=self.objc.split('- (void)testNativeWorkspace',1)[1]
+        self.assertNotIn('waitForExpectations:',geometry)
+        self.assertNotIn('XCTNSPredicateExpectation',geometry)
+
+    @staticmethod
+    def column_phase(events, samples, *, wait=102.0, action=100.0, current=True, completed=True, attachment_completed=True):
+        # Portable ordering model, not UIKit execution. Callback state is logged
+        # but cannot discard a genuine event; only later attachment proves readiness.
+        observed=None; kind=None; count=0
+        for event_kind, event_time, callback_attached, cancelled in events:
+            qualifies=(event_kind=='transition-completion' and not cancelled) or event_kind=='no-coordinator-main-turn'
+            if qualifies and observed is None:
+                observed=event_time; kind=event_kind; count+=1
+        deadline=wait+15
+        event_timely=observed is not None and action<=observed<deadline
+        attachment=None
+        if event_timely and completed:
+            attachment=next((at for at, attached in samples if attached and at>=max(wait,observed)),None)
+        proved=completed and event_timely and attachment_completed and attachment is not None and attachment<deadline and current
+        responsive=attachment is not None and attachment<wait+3
+        return {'proved':proved,'responsive':responsive,'observed':observed,'kind':kind,'count':count,'attachment':attachment}
+
+    def test_real_completion_before_attachment_is_retained(self):
+        # Mini 03bf: noncancelled callback was detached at +56 ms. A later
+        # within-deadline attachment sample is required; final state alone is not proof.
+        events=[('transition-completion',100.056,False,False)]
+        result=self.column_phase(events,[(100.060,False),(100.080,True)],wait=100.042)
+        self.assertTrue(result['proved'])
+        self.assertEqual((result['count'],result['observed'],result['attachment']),(1,100.056,100.080))
+        self.assertFalse(self.column_phase(events,[],wait=100.042,current=True)['proved'])
+        self.assertFalse(self.column_phase(events,[(100.080,True)],wait=100.042,current=False)['proved'])
+
+    def test_attachment_at_or_after_functional_deadline_stays_unproved(self):
+        events=[('transition-completion',116.8,False,False)]
+        self.assertTrue(self.column_phase(events,[(116.999999,True)])['proved'])
+        for at in (117.0,117.000001,131.799999):
+            with self.subTest(attachment=at):
+                self.assertFalse(self.column_phase(events,[(at,True)])['proved'])
+        # A completed callback or waiter cannot reset the functional phase.
+        for at in (117.0,117.000001):
+            self.assertFalse(self.column_phase([('transition-completion',at,True,False)],[(at,True)])['proved'])
+        self.assertTrue(self.column_phase([('transition-completion',101.0,False,False)],[(102.1,True)])['proved'])
+        self.assertFalse(self.column_phase([('transition-completion',99.9,True,False)],[(102.1,True)])['proved'])
+
+    def test_rejected_registration_requires_an_actual_noncancelled_callback(self):
+        rejected=[('registration-rejected-main-turn',102.0,True,False)]
+        result=self.column_phase(rejected,[(102.1,True)])
+        self.assertEqual((result['proved'],result['count'],result['observed']),(False,0,None))
+        result=self.column_phase(rejected+[('transition-completion',102.1,False,False)],[(102.2,True)])
+        self.assertEqual((result['proved'],result['count'],result['kind']),(True,1,'transition-completion'))
+        self.assertFalse(self.column_phase(rejected+[('transition-completion',102.1,True,True)],[(102.2,True)])['proved'])
+
+    def test_duplicates_do_not_refill_or_retime_completion(self):
+        events=[('transition-completion',102.1,False,False),('transition-completion',104.9,True,False)]
+        result=self.column_phase(events,[(104.95,True)])
+        self.assertEqual((result['proved'],result['count'],result['observed']),(True,1,102.1))
+        self.assertFalse(self.column_phase(events,[(117.0,True)])['proved'])
+        cancelled=[('transition-completion',102.0,True,True)]
+        self.assertEqual(self.column_phase(cancelled,[(102.1,True)])['count'],0)
+        self.assertEqual(self.column_phase(cancelled+events,[(104.95,True)])['count'],1)
+
+    def test_no_coordinator_fallback_is_distinct_and_still_requires_attachment(self):
+        events=[('no-coordinator-main-turn',102.1,False,False)]
+        result=self.column_phase(events,[(102.2,True)])
+        self.assertEqual((result['proved'],result['kind']),(True,'no-coordinator-main-turn'))
+        for samples in ([],[(102.2,False)],[(117.0,True)]):
+            self.assertFalse(self.column_phase(events,samples)['proved'])
+
+    @staticmethod
+    def owner_phase(event, *, wait=102.0, action=100.0, attached_at_event=True, current=True, completed=True):
+        event_timely=event is not None and action<=event<wait+15
+        proof=event if event is not None and attached_at_event and event>=action else None
+        return {'proved':completed and event_timely and attached_at_event and current,
+                'responsive':proof is not None and proof<wait+3}
+
+    def test_owner_absolute_deadline_rejects_completed_without_timely_state_proof(self):
+        owner=self.objc.split('- (void)withController:',1)[1].split('- (void)assertViewReadable:',1)[0]
+        self.assertIn('NSTimeInterval phaseDeadline=waitStarted+15, responsivenessDeadline=waitStarted+3;',owner)
+        self.assertIn('BOOL eventTimely=observed>=actionStarted && observed<phaseDeadline;',owner)
+        self.assertIn('if (waited!=XCTWaiterResultCompleted || !eventTimely || !observedAttached || !attached)',owner)
+        callback=owner.split('host.onAppearance=^{',1)[1].split('    };',1)[0]
+        self.assertLess(callback.index('observedAttached='),callback.index('observed=NSProcessInfo'))
+        self.assertIn('current.viewIfLoaded.window==window && window.rootViewController==current',callback)
+        for event in (None,99.999999,117.0,117.000001):
+            self.assertFalse(self.owner_phase(event,completed=True)['proved'])
+        for options in ({'attached_at_event':False},{'current':False},{'completed':False}):
+            self.assertFalse(self.owner_phase(113.0,**options)['proved'])
+        self.assertTrue(self.owner_phase(116.999999)['proved'])
+        self.assertTrue(self.owner_phase(101.0)['proved'])
+
+    def test_compact_late_owner_is_functional_but_retains_three_second_miss(self):
+        # Actual 03bf event clock, not the later GitHub log ingestion timestamp.
+        result=self.owner_phase(1417.393361,wait=1405.772130,action=1405.686686)
+        self.assertEqual(result,{'proved':True,'responsive':False})
+        # Completed is insufficient for missing landscape/column observations.
+        self.assertFalse(self.owner_phase(None,wait=1400.073622,action=1399.999130)['proved'])
+        self.assertFalse(self.column_phase([],[],wait=1417.473238,action=1417.434346)['proved'])
+
+    def test_owner_three_second_boundary_is_diagnostic_not_functional_failure(self):
+        self.assertEqual(self.owner_phase(104.999999),{'proved':True,'responsive':True})
+        for event in (105.0,105.000001,113.621231,116.999999):
+            self.assertEqual(self.owner_phase(event),{'proved':True,'responsive':False})
+        self.assertEqual(self.owner_phase(117.0),{'proved':False,'responsive':False})
+
+    def test_column_three_second_miss_never_claims_responsiveness(self):
+        events=[('transition-completion',102.1,False,False)]
+        self.assertTrue(self.column_phase(events,[(104.999999,True)])['responsive'])
+        for attachment in (105.0,105.000001,113.621231,116.999999):
+            result=self.column_phase(events,[(attachment,True)])
+            self.assertTrue(result['proved'])
+            self.assertFalse(result['responsive'])
+        late_event=[('transition-completion',113.0,False,False)]
+        self.assertTrue(self.column_phase(late_event,[(116.9,True)])['proved'])
+        self.assertFalse(self.column_phase(late_event,[(116.9,True)])['responsive'])
+
+    def test_column_completed_results_do_not_replace_event_attachment_or_current_state(self):
+        events=[('transition-completion',113.0,False,False)]
+        for samples in ([],[(114.0,False)],[(117.0,True)]):
+            self.assertFalse(self.column_phase(events,samples)['proved'])
+        for options in ({'current':False},{'completed':False},{'attachment_completed':False}):
+            self.assertFalse(self.column_phase(events,[(114.0,True)],**options)['proved'])
+        # Callback at +14.8 leaves only .2 seconds, not another 15-second window.
+        late=[('transition-completion',116.8,False,False)]
+        self.assertFalse(self.column_phase(late,[(117.1,True)])['proved'])
+
+    def test_owned_phase_logs_retain_proof_and_waiter_timings_and_three_second_miss(self):
+        for start,end in (('- (void)withController:','- (void)assertViewReadable:'),
+                          ('- (BOOL)settleWorkspace:','- (void)testNativeWorkspace')):
+            body=self.objc.split(start,1)[1].split(end,1)[0]
+            self.assertIn('BOOL responsive=proofObserved>=actionStarted && proofObserved<responsivenessDeadline;',body)
+            self.assertIn('proofObserved>=0 ? proofObserved-actionStarted : -1',body)
+            self.assertIn('proofObserved>=0 ? proofObserved-waitStarted : -1',body)
+            self.assertIn('waitReturned-waitStarted',body)
+            self.assertIn('responsive ? @"proved" : @"missed"',body)
+            for field in ('HOSTED_UI_GATE','proof=%.6f','actionToProof=%.6f','waitToProof=%.6f',
+                          'waitElapsed=%.6f','waitReturned=%.6f','responsivenessDeadline=%.6f','responsiveness3=%@'):
+                self.assertIn(field,body)
+            guard=body.split('if (waited!=XCTWaiterResultCompleted',1)[1].split('{',1)[0]
+            self.assertNotIn('responsive',guard)
+
+    def test_only_two_objc_gates_change_and_outer_bounds_and_swift_are_preserved(self):
+        import hashlib
+        self.assertEqual(self.objc.count('timeout:15'),2)
+        self.assertEqual(self.objc.count('phaseDeadline=waitStarted+15'),2)
+        self.assertEqual(self.objc.count('responsivenessDeadline=waitStarted+3'),2)
+        self.assertEqual(hashlib.sha256(self.swift.encode()).hexdigest(),
+                         '55d1574d3c95716d32bcf6589d22bf1bd9acc2abe695ce1527ad2af73827042c')
+        managed=(self.root/'scripts/uikit_managed_tests.py').read_text()
+        self.assertIn("'TouchColorTests': (600, 500, 53)",managed)
+        self.assertIn("'-default-test-execution-time-allowance', '180', '-maximum-test-execution-time-allowance', '240'",managed)
 
     def test_attachment_failure_blocks_later_geometry_and_actions(self):
-        body=self.objc.split('XCTWaiterResult attachmentResult=',1)[1]
-        self.assertIn('attachmentResult!=XCTWaiterResultCompleted || !canvasAttached',body)
+        body=self.objc.split('- (void)testNativeWorkspace',1)[1]
+        self.assertIn('BOOL canvasAttached=canvas.viewIfLoaded.window!=nil && canvas.viewIfLoaded.window==workspace.viewIfLoaded.window;',body)
+        self.assertIn('XCTAssertTrue(canvasAttached,@"Canvas must be attached before comparing column geometry")',body)
+        self.assertIn('if (!canvasAttached)',body)
         self.assertLess(body.index('readiness=unproved'),body.index('NSLog(@"SPLIT_GEOMETRY'))
 
     def test_completed_wait_with_lost_attachment_records_explicit_failure(self):
         for start, end, guard in (
-            ('- (void)withController:', '- (void)exerciseSize:', 'if (waited!=XCTWaiterResultCompleted || !observedAttached || !attached)'),
-            ('- (BOOL)settleWorkspace:', '- (void)testNativeWorkspace', 'if (waited!=XCTWaiterResultCompleted || !fulfilled || !observedAttached || !attached)'),
+            ('- (void)withController:', '- (void)exerciseSize:', 'if (waited!=XCTWaiterResultCompleted || !eventTimely || !observedAttached || !attached)'),
+            ('- (BOOL)settleWorkspace:', '- (void)testNativeWorkspace', 'if (waited!=XCTWaiterResultCompleted || !eventTimely || attachmentResult!=XCTWaiterResultCompleted || !attachmentTimely || !attached)'),
         ):
             body = self.objc.split(start, 1)[1].split(end, 1)[0]
             rejected = body.split(guard, 1)[1].split('return', 1)[0]
@@ -685,7 +850,7 @@ class HostedGateSchedulingContracts(unittest.TestCase):
         self.assertFalse(qualifies(104.0, observed_state=False))
         self.assertFalse(qualifies(104.0, current_state=False))
 
-    def test_no_new_wait_budget_retry_synthetic_lifecycle_or_animation_change(self):
+    def test_no_additional_retry_synthetic_lifecycle_or_animation_change(self):
         self.assertEqual(self.swift.count('owner.present('),1)
         self.assertEqual(self.swift.count('UIApplication.shared.sendAction('),1)
         self.assertEqual(self.objc.count('performWithoutAnimation:'),1)  # Existing workspace operation only.

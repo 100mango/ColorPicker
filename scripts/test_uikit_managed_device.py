@@ -608,7 +608,7 @@ class FixedRepairRouteTests(unittest.TestCase):
         self.assertNotIn('uikit-hosted-repair',native)
         self.assertIn('branches: [codex/platform-integration]',native)
         self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]',source)
-        self.assertIn('max-parallel: 1',source)
+        self.assertIn("max-parallel: ${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}",source)
 
 
 if __name__ == '__main__':

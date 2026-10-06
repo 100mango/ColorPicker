@@ -105,7 +105,7 @@ jobs:
     name: ${{ matrix.family }}
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: ${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}
       matrix:
         family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]
     runs-on: xcode-27

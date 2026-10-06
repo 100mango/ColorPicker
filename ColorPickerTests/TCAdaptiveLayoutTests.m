@@ -272,14 +272,20 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
         // Tearing a root down during its incoming appearance transition produces invalid lifecycle evidence.
         NSTimeInterval actionReturned=NSProcessInfo.processInfo.systemUptime;
         NSTimeInterval waitStarted=NSProcessInfo.processInfo.systemUptime;
-        XCTWaiterResult waited=[XCTWaiter waitForExpectations:@[appeared] timeout:3];
+        // Functional readiness and the original responsiveness observation are
+        // separate: a late but valid appearance is never reported as a fast one.
+        NSTimeInterval phaseDeadline=waitStarted+15, responsivenessDeadline=waitStarted+3;
+        XCTWaiterResult waited=[XCTWaiter waitForExpectations:@[appeared] timeout:15];
         host.onAppearance=nil;
         BOOL attached=host.appeared && host.viewIfLoaded.window==window && window.rootViewController==host;
+        BOOL eventTimely=observed>=actionStarted && observed<phaseDeadline;
+        NSTimeInterval proofObserved=observedAttached && observed>=actionStarted ? observed : -1;
+        BOOL responsive=proofObserved>=actionStarted && proofObserved<responsivenessDeadline;
         NSTimeInterval waitReturned=NSProcessInfo.processInfo.systemUptime;
-        NSLog(@"HOSTED_UI_GATE phase=owner controller=%@ size=%@ style=%ld action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f state=%d result=%ld",NSStringFromClass(controller.class),NSStringFromCGSize(size),(long)style,actionStarted,actionReturned,waitStarted,waitReturned,observed,attached,(long)waited);
+        NSLog(@"HOSTED_UI_GATE phase=owner controller=%@ size=%@ style=%ld action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f deadline=%.6f observed=%.6f proof=%.6f actionToProof=%.6f waitToProof=%.6f waitElapsed=%.6f responsivenessDeadline=%.6f responsiveness3=%@ state=%d result=%ld",NSStringFromClass(controller.class),NSStringFromCGSize(size),(long)style,actionStarted,actionReturned,waitStarted,waitReturned,phaseDeadline,observed,proofObserved,proofObserved>=0 ? proofObserved-actionStarted : -1,proofObserved>=0 ? proofObserved-waitStarted : -1,waitReturned-waitStarted,responsivenessDeadline,responsive ? @"proved" : @"missed",attached,(long)waited);
         XCTAssertEqual(waited,XCTWaiterResultCompleted);
-        if (waited!=XCTWaiterResultCompleted || !observedAttached || !attached) {
-            XCTFail(@"Owner event and current attachment must both be proved before geometry");
+        if (waited!=XCTWaiterResultCompleted || !eventTimely || !observedAttached || !attached) {
+            XCTFail(@"Owner event with attachment before the functional deadline and current attachment must all be proved before geometry");
             self.hostedGateUnproved=YES;
             NSLog(@"HOSTED_UI_GATE phase=owner geometry=unexecuted readiness=unproved"); return;
         }
@@ -399,15 +405,16 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
     id<UIViewControllerTransitionCoordinator> transition=workspace.transitionCoordinator;
     __block BOOL fulfilled=NO, closed=NO;
     __block NSTimeInterval observed=-1;
-    __block BOOL observedAttached=NO;
     __block NSString *observedKind=@"unobserved";
     void (^observe)(NSString *, NSInteger, BOOL)=^(NSString *kind, NSInteger cancelled, BOOL qualifyingEvent) {
         if (closed) return;
         BOOL attached=workspace.viewIfLoaded.window!=nil && expected.viewIfLoaded.window==workspace.viewIfLoaded.window;
         NSTimeInterval eventTime=NSProcessInfo.processInfo.systemUptime;
         NSLog(@"HOSTED_UI_GATE phase=column operation=%@ event=%@ action=%.6f observed=%.6f state=%d cancelled=%ld duplicate=%d",operation,kind,actionStarted,eventTime,attached,(long)cancelled,fulfilled);
-        if (qualifyingEvent && attached && !fulfilled) {
-            fulfilled=YES; observed=eventTime; observedAttached=attached; observedKind=kind;
+        // UIKit can complete the column transition before attaching its child.
+        // Retain the genuine event independently; attachment is observed below.
+        if (qualifyingEvent && !fulfilled) {
+            fulfilled=YES; observed=eventTime; observedKind=kind;
             [settled fulfill];
         }
     };
@@ -420,14 +427,40 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
         observe(transition ? @"registration-rejected-main-turn" : @"no-coordinator-main-turn",-1,transition==nil);
     });
     NSTimeInterval waitStarted=NSProcessInfo.processInfo.systemUptime;
-    XCTWaiterResult waited=[XCTWaiter waitForExpectations:@[settled] timeout:3];
+    NSTimeInterval phaseDeadline=waitStarted+15, responsivenessDeadline=waitStarted+3;
+    XCTWaiterResult waited=[XCTWaiter waitForExpectations:@[settled] timeout:15];
+    BOOL eventTimely=fulfilled && observed>=actionStarted && observed<phaseDeadline;
+    __block BOOL observedAttached=NO;
+    __block NSTimeInterval attachmentObserved=-1;
+    XCTWaiterResult attachmentResult=XCTWaiterResultTimedOut;
+    // The same action has one fifteen-second functional phase. After its completion,
+    // use only the remaining time to observe attachment, never a second event.
+    if (waited==XCTWaiterResultCompleted && eventTimely) {
+        XCTNSPredicateExpectation *attachment=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) {
+            if (closed) return NO;
+            BOOL attached=workspace.viewIfLoaded.window!=nil && expected.viewIfLoaded.window==workspace.viewIfLoaded.window;
+            NSTimeInterval sampleTime=NSProcessInfo.processInfo.systemUptime;
+            if (!attached) return NO;
+            if (!observedAttached) {
+                observedAttached=YES; attachmentObserved=sampleTime;
+                NSLog(@"HOSTED_UI_GATE phase=column operation=%@ event=attachment action=%.6f observed=%.6f deadline=%.6f state=%d",operation,actionStarted,attachmentObserved,phaseDeadline,attached);
+            }
+            return sampleTime<phaseDeadline;
+        }] object:expected];
+        NSTimeInterval remaining=MAX(0,phaseDeadline-NSProcessInfo.processInfo.systemUptime);
+        if (remaining>0) attachmentResult=[XCTWaiter waitForExpectations:@[attachment] timeout:remaining];
+    }
     closed=YES;
     BOOL attached=workspace.viewIfLoaded.window!=nil && expected.viewIfLoaded.window==workspace.viewIfLoaded.window;
+    BOOL attachmentTimely=observedAttached && attachmentObserved>=observed && attachmentObserved<phaseDeadline;
+    NSTimeInterval proofObserved=fulfilled && observed>=actionStarted && observedAttached && attachmentObserved>=observed ? attachmentObserved : -1;
+    BOOL responsive=proofObserved>=actionStarted && proofObserved<responsivenessDeadline;
     NSTimeInterval waitReturned=NSProcessInfo.processInfo.systemUptime;
-    NSLog(@"HOSTED_UI_GATE phase=column operation=%@ coordinator=%d registered=%d action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f observed=%.6f kind=%@ state=%d result=%ld",operation,transition!=nil,scheduled,actionStarted,actionReturned,waitStarted,waitReturned,observed,observedKind,attached,(long)waited);
-    XCTAssertEqual(waited,XCTWaiterResultCompleted,@"Actual completion or attached no-transition state is required");
-    if (waited!=XCTWaiterResultCompleted || !fulfilled || !observedAttached || !attached) {
-        XCTFail(@"Column completion and current attachment must both be proved");
+    NSLog(@"HOSTED_UI_GATE phase=column operation=%@ coordinator=%d registered=%d action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f deadline=%.6f observed=%.6f kind=%@ attachmentObserved=%.6f proof=%.6f actionToProof=%.6f waitToProof=%.6f waitElapsed=%.6f responsivenessDeadline=%.6f responsiveness3=%@ state=%d result=%ld attachmentResult=%ld",operation,transition!=nil,scheduled,actionStarted,actionReturned,waitStarted,waitReturned,phaseDeadline,observed,observedKind,attachmentObserved,proofObserved,proofObserved>=0 ? proofObserved-actionStarted : -1,proofObserved>=0 ? proofObserved-waitStarted : -1,waitReturned-waitStarted,responsivenessDeadline,responsive ? @"proved" : @"missed",attached,(long)waited,(long)attachmentResult);
+    XCTAssertEqual(waited,XCTWaiterResultCompleted,@"Actual completion or distinct no-coordinator observation is required");
+    XCTAssertEqual(attachmentResult,XCTWaiterResultCompleted,@"Expected controller attachment must be observed within the same functional column deadline");
+    if (waited!=XCTWaiterResultCompleted || !eventTimely || attachmentResult!=XCTWaiterResultCompleted || !attachmentTimely || !attached) {
+        XCTFail(@"Timely column completion, timely attachment observation and current attachment must all be proved");
         self.hostedGateUnproved=YES;
         NSLog(@"HOSTED_UI_GATE phase=column dependent=unexecuted readiness=unproved"); return NO;
     }
@@ -448,14 +481,11 @@ static UILabel *TCLayoutLabel(UIView *root, NSString *text) {
             // Wait for UIKit's transition/layout transaction rather than measuring a newly loaded,
             // still-unattached secondary view against an already laid-out primary column.
             if (![self settleWorkspace:workspace expected:canvas operation:@"show-canvas" actionStarted:showStarted actionReturned:showReturned]) return;
-            XCTNSPredicateExpectation *attached=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithBlock:^BOOL(id object, NSDictionary *bindings) { return canvas.view.window == workspace.view.window && canvas.view.window != nil; }] object:canvas];
-            NSTimeInterval attachmentWait=NSProcessInfo.processInfo.systemUptime;
-            XCTWaiterResult attachmentResult=[XCTWaiter waitForExpectations:@[attached] timeout:3];
+            // settleWorkspace observed this same show-canvas attachment within
+            // its original deadline; retain the current-state guard without a fresh wait.
             BOOL canvasAttached=canvas.viewIfLoaded.window!=nil && canvas.viewIfLoaded.window==workspace.viewIfLoaded.window;
-            NSTimeInterval attachmentReturned=NSProcessInfo.processInfo.systemUptime;
-            NSLog(@"HOSTED_UI_GATE phase=attachment operation=show-canvas action=%.6f returned=%.6f wait=%.6f waitReturned=%.6f state=%d result=%ld",showStarted,showReturned,attachmentWait,attachmentReturned,canvasAttached,(long)attachmentResult);
-            XCTAssertEqual(attachmentResult,XCTWaiterResultCompleted,@"Canvas must be attached before comparing column geometry");
-            if (attachmentResult!=XCTWaiterResultCompleted || !canvasAttached) {
+            XCTAssertTrue(canvasAttached,@"Canvas must be attached before comparing column geometry");
+            if (!canvasAttached) {
                 XCTFail(@"Canvas attachment must be proved before dependent geometry");
                 self.hostedGateUnproved=YES;
                 NSLog(@"HOSTED_UI_GATE phase=attachment geometry=unexecuted readiness=unproved"); return;

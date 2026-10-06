@@ -836,19 +836,23 @@ elif args[:2]==['simctl','addmedia']:
         self.assertIn("'build/simulator/Build/Products/Debug-iphonesimulator/TouchColor.app'], install_seconds)", source)
         self.assertIn("'build/palette-fixtures/Build/Products/Debug-iphonesimulator/PaletteFixtures.app'], 90)", source)
 
-    def test_uikit_serial_lane_preserves_other_project_capacity_and_row_scope(self):
+    def test_uikit_two_way_lane_preserves_profile_scope_and_declared_handoff(self):
         import re
         root = Path(warmup.__file__).parent.parent
         uikit = (root / '.github/workflows/ios.yml').read_text()
         native = (root / '.github/workflows/apple-platforms.yml').read_text()
-        self.assertEqual(re.findall(r'^      max-parallel: (\d+)\s*$', uikit, re.M), ['1'])
+        self.assertEqual(re.findall(r'^      max-parallel: (.+)$', uikit, re.M), ["${{ github.ref == 'refs/heads/codex/uikit-hosted-repair' && 2 || 1 }}"])
         self.assertEqual(re.findall(r'^      max-parallel: (\d+)\s*$', native, re.M), ['2'])
         self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]', uikit)
         self.assertIn('cancel-in-progress: false', uikit)
         self.assertIn('    timeout-minutes: 60', uikit)
         self.assertEqual(re.findall(r'^    runs-on: (.+)$', uikit, re.M), ['xcode-27', 'xcode-27'])
-        # Native2 + UIKit1 + the two other projects' reserved serial lanes.
+        # Both closed plans preserve the two other projects' serial reservations.
+        # Canonical: native2 + canonicalUIKit1 + QR1 + Cell1.
         self.assertEqual(2 + 1 + 1 + 1, 5)
+        # Repair: dedicatedVision1 + repairUIKit2 + QR1 + Cell1.
+        # Cross-workflow admission still excludes overlapping canonical/repair cohorts.
+        self.assertEqual(1 + 2 + 1 + 1, 5)
 
 
 if __name__ == '__main__':
