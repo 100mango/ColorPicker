@@ -270,20 +270,71 @@ static TCFilesRoute TCFilesRouteForSnapshot(id<XCUIElementSnapshot> snapshot, NS
     XCUIElement *table=app.tables[@"palette.import.review"];
     XCTNSPredicateExpectation *loaded=[[XCTNSPredicateExpectation alloc] initWithPredicate:[NSPredicate predicateWithFormat:@"enabled == true"] object:app.buttons[@"palette.import.accept"]];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[loaded] timeout:5],XCTWaiterResultCompleted,@"Real import must finish before its exact contents are reviewed");
-    for (NSUInteger index=0;index<colors.count;index++) {
-        XCUIElement *row=[self paletteElement:[NSString stringWithFormat:@"palette.import.color.%lu",(unsigned long)index] app:app];
-        // Large self-sizing status rows can put the next color outside UITableView's
-        // accessibility virtualization range. Scroll the real table to materialize it.
-        for (NSUInteger attempt=0;attempt<5 && (!row.exists || !row.hittable);attempt++) {
-            if (!row.exists) [table swipeUpWithVelocity:XCUIGestureVelocitySlow]; else [self scrollTowardElement:row inScroll:table];
+    // One immutable table snapshot supplies the rendered values for an unchanged
+    // review. Live hittability still controls materialization; every drag discards
+    // this local snapshot before another row/value observation.
+    __block id<XCUIElementSnapshot> tableSnapshot=nil;
+    __block NSArray<id<XCUIElementSnapshot>> *cells=nil;
+    BOOL (^captureRows)(void)=^BOOL {
+        NSError *error=nil;
+        NSTimeInterval started=NSProcessInfo.processInfo.systemUptime;
+        tableSnapshot=[table snapshotWithError:&error];
+        NSLog(@"PALETTE_ROW_SNAPSHOT elapsed=%.3f captured=%d",NSProcessInfo.processInfo.systemUptime-started,tableSnapshot!=nil);
+        XCTAssertNotNil(tableSnapshot,@"The owned review table snapshot must be available: %@",error);
+        if (!tableSnapshot) return NO;
+        NSMutableArray *pending=[NSMutableArray arrayWithArray:tableSnapshot.children], *observed=[NSMutableArray array];
+        NSInteger previous=-1;
+        while (pending.count) {
+            id<XCUIElementSnapshot> node=pending.firstObject;[pending removeObjectAtIndex:0];
+            [pending insertObjects:node.children atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0,node.children.count)]];
+            if (node.elementType!=XCUIElementTypeCell || ![node.identifier hasPrefix:@"palette.import.color."]) continue;
+            NSUInteger index=0;
+            while (index<colors.count && ![node.identifier isEqualToString:[NSString stringWithFormat:@"palette.import.color.%lu",(unsigned long)index]]) index++;
+            BOOL ordered=index<colors.count && (NSInteger)index>previous;
+            XCTAssertTrue(ordered,@"Rendered review cells must have unique expected identifiers in original order: %@",node.identifier);
+            if (!ordered) return NO;
+            previous=(NSInteger)index;[observed addObject:node];
         }
-        XCTAssertTrue([row waitForExistenceWithTimeout:5],@"%@",app.debugDescription);
+        cells=[observed copy];
+        return YES;
+    };
+    if (!captureRows()) return;
+    for (NSUInteger index=0;index<colors.count;index++) {
+        NSString *identifier=[NSString stringWithFormat:@"palette.import.color.%lu",(unsigned long)index];
+        XCUIElement *row=table.cells[identifier];
+        id<XCUIElementSnapshot> rendered=nil;
+        for (NSUInteger attempt=0;attempt<=5;attempt++) {
+            rendered=nil;
+            for (id<XCUIElementSnapshot> cell in cells) if ([cell.identifier isEqualToString:identifier]) rendered=cell;
+            if ((rendered && row.hittable) || attempt==5) break;
+            BOOL materialized=rendered!=nil;
+            tableSnapshot=nil;cells=nil;rendered=nil;
+            if (!materialized) [table swipeUpWithVelocity:XCUIGestureVelocitySlow]; else [self scrollTowardElement:row inScroll:table];
+            if (!captureRows()) return;
+        }
+        if (!rendered) {
+            BOOL exists=[row waitForExistenceWithTimeout:5];
+            XCTAssertTrue(exists,@"The exact color cell must materialize: %@",identifier);
+            if (!exists || !captureRows()) return;
+            for (id<XCUIElementSnapshot> cell in cells) if ([cell.identifier isEqualToString:identifier]) rendered=cell;
+        }
+        XCTAssertNotNil(rendered,@"The current table snapshot must contain the exact color cell: %@",identifier);
+        if (!rendered) return;
         unsigned int value=0;XCTAssertTrue([[NSScanner scannerWithString:[colors[index] substringFromIndex:1]] scanHexInt:&value]);
         NSString *RGB=[NSString stringWithFormat:@"R %u   G %u   B %u",(value>>16)&255,(value>>8)&255,value&255];
-        // UITableView exposes these as two actual StaticText children, not a
-        // synthesized label on the Cell. Assert both exact rendered values.
-        XCTAssertTrue(row.staticTexts[colors[index]].exists,@"%@",row.debugDescription);
-        XCTAssertTrue(row.staticTexts[RGB].exists,@"Numeric channels must be independently readable: %@",row.debugDescription);
+        // These are the two real StaticText children, never the Cell's synthesized
+        // label. Traversing immutable children makes no additional remote AX read.
+        NSMutableArray *pending=[NSMutableArray arrayWithArray:rendered.children];
+        BOOL hexFound=NO, rgbFound=NO;
+        while (pending.count) {
+            id<XCUIElementSnapshot> child=pending.firstObject;[pending removeObjectAtIndex:0];
+            [pending addObjectsFromArray:child.children];
+            if (child.elementType!=XCUIElementTypeStaticText) continue;
+            if ([child.label isEqualToString:colors[index]]) hexFound=YES;
+            if ([child.label isEqualToString:RGB]) rgbFound=YES;
+        }
+        XCTAssertTrue(hexFound,@"The exact rendered HEX must be independently readable: %@",colors[index]);
+        XCTAssertTrue(rgbFound,@"Numeric channels must be independently readable: %@",RGB);
     }
 }
 - (void)verifyHistory:(NSArray<NSString *> *)colors app:(XCUIApplication *)app {

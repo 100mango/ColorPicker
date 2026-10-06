@@ -117,7 +117,7 @@ class OfflinePrivacyContracts(unittest.TestCase):
             self.assertIn(token,entry)
         large=method(self.phone,'testLargestTextNativePolicyCanScrollAndCloseInLandscape')
         for token in ['UICTContentSizeCategoryAccessibilityXXXL','UIDeviceOrientationLandscapeLeft','attempt<16',
-                      'XCTAssertTrue(english.hittable','[self revealControl:button inScrollView:actions]',
+                      'XCTAssertTrue(english.hittable','[self revealPrivacyAction:button inScrollView:actions]',
                       'XCTAssertTrue(button.hittable)','privacy.close','choosePhoto']:
             self.assertIn(token,large)
         self.assertNotIn('--ui-test-policy-local-error',self.phone)
@@ -328,3 +328,38 @@ class ActualAssertionPreprocessorTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PrivacyFooterScrollContracts(unittest.TestCase):
+    def test_only_two_privacy_call_sites_use_seven_drag_helper(self):
+        text=(ROOT/'TouchColorUITests/TouchColorUITests.m').read_text()
+        self.assertEqual(text.count('[self revealPrivacyAction:button inScrollView:actions]'),2)
+        b=method(text,'revealPrivacyAction:')
+        self.assertIn('attempt<7',b)
+        general=method(text,'revealControl:')
+        self.assertIn('attempt<5',general)
+        self.assertNotIn('attempt<7',general)
+        for token in ('CGRectGetHeight(viewport)*0.45','CGVectorMake(8,0)',
+                      'pressForDuration:0.05','withVelocity:100 thenHoldForDuration:0.15',
+                      'XCTAssertTrue(hittable','CGRectContainsRect(viewport,CGRectInset(target,1,1))'):
+            self.assertIn(token,b)
+    def test_frame_pair_is_reused_until_actual_drag_then_read_again(self):
+        b=method((ROOT/'TouchColorUITests/TouchColorUITests.m').read_text(),'revealPrivacyAction:')
+        self.assertEqual(b.count('scroll.frame'),2);self.assertEqual(b.count('element.frame'),2)
+        self.assertEqual(b.count('element.hittable'),2)
+        self.assertNotIn('scrollTowardElement:',b)
+        self.assertLess(b.index('thenDragToCoordinate:'),b.index('viewport=scroll.frame;target=element.frame;'))
+        self.assertNotIn('debugDescription',b)
+        self.assertNotIn('executionTimeAllowance',b)
+    def test_actual_compact_five_drag_geometry_requires_another_step(self):
+        # Retained32f4 largest-policy case: exact frames, not predicted native proof.
+        viewport_top,viewport_bottom,height=241.5,375,77.5
+        observed=[579.5,533.5,484,436,388,340]
+        self.assertEqual(len(observed)-1,5)
+        self.assertEqual(observed[-1]+height-viewport_bottom,42.5)
+        self.assertTrue(all(a>b for a,b in zip(observed,observed[1:])))
+        # A sixth equal-to-last observed step would fit; native result still required.
+        projected=observed[-1]-(observed[-2]-observed[-1])
+        self.assertGreaterEqual(projected,viewport_top)
+        self.assertLessEqual(projected+height,viewport_bottom)
+        self.assertEqual(7-6,1)

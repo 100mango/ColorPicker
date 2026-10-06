@@ -96,6 +96,25 @@
     XCTAssertTrue(element.hittable,@"%@",self.app.debugDescription);
     XCTAssertTrue(CGRectContainsRect(scroll.frame,CGRectInset(element.frame,1,1)),@"The entire control must remain inside its scroll viewport");
 }
+- (void)revealPrivacyAction:(XCUIElement *)element inScrollView:(XCUIElement *)scroll {
+    // This footer has its own short viewport. The retained largest-text Compact
+    // trace needed a sixth drag; allow at most seven, leaving all other controls
+    // on their original five-drag policy.
+    CGRect viewport=scroll.frame, target=element.frame;
+    BOOL hittable=element.hittable;
+    for (NSUInteger attempt=0;attempt<7 && (!hittable || !CGRectContainsRect(viewport,CGRectInset(target,1,1)));attempt++) {
+        CGFloat limit=CGRectGetHeight(viewport)*0.45;
+        CGFloat distance=MAX(-limit,MIN(limit,CGRectGetMidY(target)-CGRectGetMidY(viewport)));
+        XCUICoordinate *start=[[scroll coordinateWithNormalizedOffset:CGVectorMake(0,0.5)] coordinateWithOffset:CGVectorMake(8,0)];
+        XCUICoordinate *end=[start coordinateWithOffset:CGVectorMake(0,-distance)];
+        NSLog(@"PRIVACY_ACTION_SCROLL attempt=%lu frame=%@ viewport=%@ gutterX=8 delta=%.2f",(unsigned long)attempt,NSStringFromCGRect(target),NSStringFromCGRect(viewport),distance);
+        [start pressForDuration:0.05 thenDragToCoordinate:end withVelocity:100 thenHoldForDuration:0.15];
+        viewport=scroll.frame;target=element.frame;hittable=element.hittable;
+    }
+    NSLog(@"PRIVACY_ACTION_VISIBLE frame=%@ viewport=%@ hittable=%d",NSStringFromCGRect(target),NSStringFromCGRect(viewport),hittable);
+    XCTAssertTrue(hittable,@"The independent native privacy action must remain live hittable");
+    XCTAssertTrue(CGRectContainsRect(viewport,CGRectInset(target,1,1)),@"The entire control must remain inside its scroll viewport");
+}
 - (void)assertLocalPolicyBody {
     XCUIElement *chinese=self.app.textViews[@"privacy.body.zh-Hans"];
     XCUIElement *english=self.app.textViews[@"privacy.body.en"];
@@ -135,7 +154,7 @@
         for (NSString *identifier in @[@"privacy.contact",@"privacy.externalPolicy"]) {
             XCUIElement *button=actions.buttons[identifier];
             XCTAssertTrue([button waitForExistenceWithTimeout:5]);
-            [self revealControl:button inScrollView:actions];
+            [self revealPrivacyAction:button inScrollView:actions];
             XCTAssertTrue(button.enabled);XCTAssertTrue(button.hittable);
         }
         XCTAssertFalse(self.app.staticTexts[@"privacy.externalError"].exists);
@@ -383,7 +402,7 @@
     XCUIElement *actions=self.app.scrollViews[@"privacy.actions"];
     for (NSString *identifier in @[@"privacy.contact",@"privacy.externalPolicy"]) {
         XCUIElement *button=actions.buttons[identifier];
-        XCTAssertTrue(button.exists);[self revealControl:button inScrollView:actions];
+        XCTAssertTrue(button.exists);[self revealPrivacyAction:button inScrollView:actions];
         XCTAssertTrue(button.enabled);XCTAssertTrue(button.hittable);
     }
     XCTAssertTrue(self.app.buttons[@"privacy.close"].hittable);
