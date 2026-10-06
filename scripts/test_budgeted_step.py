@@ -26,7 +26,7 @@ class BudgetControllerTests(unittest.TestCase):
         old=Path.cwd();os.chdir(self.temp.name);self.addCleanup(os.chdir,old)
         self.clock=Clock()
         self.environment={'GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123','TOUCHCOLOR_JOB_PLATFORM':'vision',
-            'TOUCHCOLOR_JOB_MINUTES':'25','TOUCHCOLOR_JOB_STARTED_EPOCH':str(self.clock.wall),
+            'TOUCHCOLOR_JOB_MINUTES':'35','TOUCHCOLOR_JOB_STARTED_EPOCH':str(self.clock.wall),
             'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(self.clock.mono)}
         env=patch.dict(os.environ,self.environment);env.start();self.addCleanup(env.stop)
         record=budgets.create_record(self.environment,wall=lambda:self.clock.wall,monotonic=lambda:self.clock.mono)
@@ -74,19 +74,19 @@ class BudgetControllerTests(unittest.TestCase):
     def test_cleanup_tail_is_only_for_exact_aggregate_aware_driver(self):
         process=FakeProcess()
         with patch.object(steps,'load',return_value=self.budget),patch.object(steps,'stop_group',return_value=True),contextlib.redirect_stderr(io.StringIO()):
-            code=steps.execute('python3 scripts/test_extra_platforms.py vision\n',label='native',seconds=1320,phase='work',cleanup_driver=True,process_factory=lambda *a,**k:process)
-        self.assertEqual(code,0);self.assertEqual(process.wait_timeout,1020+130)
-        for body,seconds,phase in [('echo synthetic',1320,'work'),('python3 scripts/test_extra_platforms.py watch',1320,'work'),('python3 scripts/test_extra_platforms.py vision',60,'work'),('python3 scripts/test_extra_platforms.py vision',1320,'evidence')]:
+            code=steps.execute('python3 scripts/test_extra_platforms.py vision\n',label='native',seconds=1500,phase='work',cleanup_driver=True,process_factory=lambda *a,**k:process)
+        self.assertEqual(code,0);self.assertEqual(process.wait_timeout,1500+130)
+        for body,seconds,phase in [('echo synthetic',1500,'work'),('python3 scripts/test_extra_platforms.py watch',1500,'work'),('python3 scripts/test_extra_platforms.py vision',60,'work'),('python3 scripts/test_extra_platforms.py vision',1500,'evidence')]:
             with patch.object(steps,'load',return_value=self.budget),patch.object(steps,'retain_metadata'),contextlib.redirect_stderr(io.StringIO()):
                 factory=unittest.mock.Mock()
                 self.assertNotEqual(steps.execute(body,label='invalid tail',seconds=seconds,phase=phase,cleanup_driver=True,process_factory=factory),0)
                 factory.assert_not_called()
     def test_native_driver_grace_cannot_make_late_zero_exit_successful(self):
         process=FakeProcess()
-        def late_return(timeout):self.clock.advance(1030);return 0
+        def late_return(timeout):self.clock.advance(1510);return 0
         process.wait=late_return
         with patch.object(steps,'load',return_value=self.budget),patch.object(steps,'stop_group',return_value=True),contextlib.redirect_stderr(io.StringIO()):
-            code=steps.execute('python3 scripts/test_extra_platforms.py vision',label='native late',seconds=1320,phase='work',cleanup_driver=True,process_factory=lambda *a,**k:process)
+            code=steps.execute('python3 scripts/test_extra_platforms.py vision',label='native late',seconds=1500,phase='work',cleanup_driver=True,process_factory=lambda *a,**k:process)
         self.assertEqual(code,124)
     def test_shell_timeout_cannot_claim_nested_session_cleanup(self):
         code,_,_=self.execute('timeout')
@@ -108,7 +108,7 @@ class BudgetControllerTests(unittest.TestCase):
         code,_,_=self.execute(phase='evidence')
         self.assertNotEqual(code,0)
     def test_expired_phase_does_not_start_body(self):
-        self.clock.advance(1100)
+        self.clock.advance(1580)
         code,calls,_=self.execute()
         self.assertNotEqual(code,0);self.assertEqual(calls,[])
     def test_retained_budget_metadata_needs_no_external_command(self):
@@ -141,7 +141,7 @@ class BudgetControllerTests(unittest.TestCase):
         self.assertLess(Path('build/evidence/job-budget.json').stat().st_size,budgets.METADATA_RESERVE)
     def test_core_runner_does_not_start_after_aggregate_work_expiry(self):
         import bounded_process
-        self.clock.advance(1100)
+        self.clock.advance(1580)
         with patch.object(budgets,'enabled_budget',return_value=self.budget),patch.object(bounded_process.subprocess,'Popen') as start:
             with self.assertRaises(budgets.BudgetExhausted):bounded_process.run_captured(['synthetic'],30)
         start.assert_not_called()

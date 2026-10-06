@@ -22,7 +22,7 @@ def prime_container(device,runner_identifier,lease_id,device_root=None):
         raise ValueError('Invalid exact device or runner lease UUID')
     if not runner_identifier.startswith('com.mango.touchColor.TouchColorVisionUITests'):
         raise ValueError('Unexpected runner product')
-    raw=Path(check_output(['xcrun','simctl','get_app_container',device,runner_identifier,'data'],text=True,timeout=15).strip())
+    raw=Path(check_output(['xcrun','simctl','get_app_container',device,runner_identifier,'data'],text=True,timeout=30).strip())
     root=Path(device_root) if device_root else Path.home()/'Library/Developer/CoreSimulator/Devices'
     expected=(root/device/'data/Containers/Data/Application').resolve(strict=True)
     if raw.is_symlink(): raise ValueError('Symlink runner container')

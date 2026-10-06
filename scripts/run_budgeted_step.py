@@ -16,7 +16,7 @@ def execute(body, *, label, seconds, phase, process_factory=subprocess.Popen, cl
     try:
         if cleanup_driver:
             expected='python3 scripts/test_paired_watch.py' if budget.record['platform']=='paired' else 'python3 scripts/test_extra_platforms.py '+budget.record['platform']
-            whole_work=budget.record['minutes']*60-STARTUP_MARGIN-sum(RESERVES.values())
+            whole_work=budget.record['minutes']*60-STARTUP_MARGIN-sum(budget.record['reserves'].values())
             if phase!='work' or budget.record['platform'] not in ('vision','watch','tv','paired') or body.strip()!=expected or seconds<whole_work:
                 raise ValueError('Cleanup tail requires an exact aggregate-budget-aware native driver and full work cap')
         if UNCLEAN.exists():

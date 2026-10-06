@@ -1,12 +1,11 @@
-name: Native Apple platform milestone
+name: Fixed Vision row repair qualification
 on:
   push:
-    branches: [codex/platform-integration]
-  workflow_dispatch:
+    branches: [codex/vision-row-repair]
 permissions:
   contents: read
 concurrency:
-  group: touchcolor-platforms-${{ github.ref }}
+  group: touchcolor-platforms-refs/heads/codex/platform-integration
   cancel-in-progress: false
 jobs:
   native-prerequisites:
@@ -26,7 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          test "$GITHUB_REF" = refs/heads/codex/vision-row-repair
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/vision-row-repair.yml@refs/heads/codex/vision-row-repair
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           sw_vers -buildVersion | grep -Fx 26A428
@@ -45,8 +45,8 @@ jobs:
         working-directory: scripts
         run: |
           set -euo pipefail
-          python3 -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_vision_result_snapshot test_vision_read_isolation test_vision_reader_receipt test_vision_diagnostic_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_native_text_rows test_native_text_evidence test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step test_watch_failure_continuation test_uikit_warmup
-          python3 -O -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_vision_result_snapshot test_vision_read_isolation test_vision_reader_receipt test_vision_diagnostic_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step test_watch_failure_continuation test_native_text_rows test_native_text_evidence
+          python3 -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_vision_result_snapshot test_vision_read_isolation test_vision_reader_receipt test_vision_diagnostic_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_bounded_process test_capture_checkpoint test_checkpoint_image test_decode_log_screenshots test_embedded_watch test_native_resources test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_native_runtime_diagnostics test_paired_watch_harness test_simulator_preparation test_vision_suites test_native_text_rows test_native_text_evidence test_watch_profiles test_watch_runtime_pair test_uikit_picker_geometry test_job_budget test_budgeted_step test_watch_failure_continuation test_uikit_warmup test_vision_repair_route
+          python3 -O -m unittest -v test_vision_runner_lease test_vision_capture_format test_vision_offline_result test_vision_result_snapshot test_vision_read_isolation test_vision_reader_receipt test_vision_diagnostic_result test_mac_action_diagnostic test_mac_accessibility_semantics test_retain_mac_evidence test_capture_checkpoint test_vision_photos_evidence test_native_content_size test_simulator_content_size test_atomic_json test_job_budget test_budgeted_step test_watch_failure_continuation test_native_text_rows test_native_text_evidence test_vision_repair_route
           python3 test_evidence_guard.py
           bash -n test_simulators.sh
       - name: Execute shared package tests
@@ -101,24 +101,12 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - platform: tv
-            minutes: 25
-            evidence_bytes: 2000000
-          - platform: mac
-            minutes: 40
-            evidence_bytes: 3000000
           - platform: vision
             lane: vision-chinese
             vision_case: chinese
             text_phase: normal
             minutes: 35
             evidence_bytes: 950000
-          - platform: vision
-            lane: vision-corrupt-audit
-            vision_case: corrupt-audit
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 650000
           - platform: vision
             lane: vision-canvas-audit
             vision_case: canvas-audit
@@ -134,12 +122,6 @@ jobs:
           - platform: vision
             lane: vision-png-export
             vision_case: png-export
-            text_phase: normal
-            minutes: 35
-            evidence_bytes: 900000
-          - platform: vision
-            lane: vision-json-export
-            vision_case: json-export
             text_phase: normal
             minutes: 35
             evidence_bytes: 900000
@@ -167,42 +149,6 @@ jobs:
             text_phase: system-largest
             minutes: 35
             evidence_bytes: 700000
-          - platform: vision
-            lane: vision-canvas-audit-system-largest
-            vision_case: canvas-audit
-            text_phase: system-largest
-            minutes: 35
-            evidence_bytes: 700000
-          - platform: ios
-            minutes: 20
-            evidence_bytes: 1000000
-          - platform: watch
-            lane: watch-smallest
-            watch_profile: smallest
-            text_phase: normal
-            minutes: 45
-            evidence_bytes: 1200000
-          - platform: watch
-            lane: watch-largest
-            watch_profile: largest
-            text_phase: normal
-            minutes: 45
-            evidence_bytes: 1200000
-          - platform: watch
-            lane: watch-smallest-system-largest
-            watch_profile: smallest
-            text_phase: system-largest
-            minutes: 45
-            evidence_bytes: 600000
-          - platform: watch
-            lane: watch-largest-system-largest
-            watch_profile: largest
-            text_phase: system-largest
-            minutes: 45
-            evidence_bytes: 600000
-          - platform: paired
-            minutes: 45
-            evidence_bytes: 1000000
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
     env:
@@ -239,7 +185,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/platform-integration
+          test "$GITHUB_REF" = refs/heads/codex/vision-row-repair
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/vision-row-repair.yml@refs/heads/codex/vision-row-repair
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           sw_vers

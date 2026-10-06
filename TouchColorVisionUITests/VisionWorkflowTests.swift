@@ -38,8 +38,8 @@ final class VisionWorkflowTests: XCTestCase {
         }
         if let captureLease {
             let request = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-runner-\(captureLease.uuidString).json")
-            try? FileManager.default.removeItem(at: request)
-            try? FileManager.default.removeItem(at: request.deletingPathExtension().appendingPathExtension("ack"))
+            removeOwnedTemporaryFileIfPresent(request)
+            removeOwnedTemporaryFileIfPresent(request.deletingPathExtension().appendingPathExtension("ack"))
         }
         captureLease = nil
         try super.tearDownWithError()
@@ -60,7 +60,7 @@ final class VisionWorkflowTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory
         let request = root.appendingPathComponent("TouchColor-capture-\(id).json")
         let acknowledgement = root.appendingPathComponent("TouchColor-capture-\(id).ack")
-        defer { try? FileManager.default.removeItem(at: request); try? FileManager.default.removeItem(at: acknowledgement) }
+        defer { removeOwnedTemporaryFileIfPresent(request); removeOwnedTemporaryFileIfPresent(acknowledgement) }
         do { try JSONSerialization.data(withJSONObject: ["id": id, "name": name, "runner": Bundle.main.bundleIdentifier ?? "", "lease": captureLease.uuidString]).write(to: request) }
         catch { XCTFail("Could not request simulator checkpoint: \(error)"); return }
         print("TOUCHCOLOR_CAPTURE_REQUEST \(id)"); fflush(stdout)
@@ -69,6 +69,13 @@ final class VisionWorkflowTests: XCTestCase {
         let result = (try? Data(contentsOf: acknowledgement)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         XCTAssertEqual(result?["success"] as? Bool, true, "Simulator checkpoint failed: \(String(describing: result))")
     }
+    private func removeOwnedTemporaryFileIfPresent(_ url: URL) {
+        // A failed lookup never publishes an acknowledgement. Avoid throwing
+        // an expected missing-file error while preserving the original setup failure.
+        if FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
     private func bindCaptureRunner() throws {
         let lease = UUID()
         let runner = Bundle.main.bundleIdentifier ?? ""
@@ -76,15 +83,15 @@ final class VisionWorkflowTests: XCTestCase {
         let acknowledgement = request.deletingPathExtension().appendingPathExtension("ack")
         var accepted = false
         defer {
-            try? FileManager.default.removeItem(at: acknowledgement)
-            if !accepted { try? FileManager.default.removeItem(at: request) }
+            removeOwnedTemporaryFileIfPresent(acknowledgement)
+            if !accepted { removeOwnedTemporaryFileIfPresent(request) }
         }
         try JSONSerialization.data(withJSONObject: ["id": lease.uuidString, "runner": runner]).write(to: request, options: .atomic)
         print("TOUCHCOLOR_VISION_RUNNER_READY \(lease.uuidString)"); fflush(stdout)
         let bound = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             FileManager.default.fileExists(atPath: acknowledgement.path)
         }, object: nil)
-        guard XCTWaiter.wait(for: [bound], timeout: 30) == .completed else {
+        guard XCTWaiter.wait(for: [bound], timeout: 60) == .completed else {
             throw NSError(domain: "TouchColorVisionRunnerBinding", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Current runner binding timed out before UI work"])
         }

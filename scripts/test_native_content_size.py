@@ -243,10 +243,10 @@ class NativeContentSizeTests(unittest.TestCase):
     def test_actual_ui_runner_rejects_insufficient_whole_case_budget_before_launch(self):
         from job_budget import JobBudget,create_record
         from test_job_budget import Clock
-        clock=Clock();record=create_record({'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_JOB_MINUTES':'25',
+        clock=Clock();record=create_record({'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_JOB_MINUTES':'35',
             'TOUCHCOLOR_JOB_STARTED_EPOCH':str(clock.wall),'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(clock.mono),
             'GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123'},wall=lambda:clock.wall,monotonic=lambda:clock.mono)
-        budget=JobBudget(record,wall=lambda:clock.wall,monotonic=lambda:clock.mono);clock.advance(601)
+        budget=JobBudget(record,wall=lambda:clock.wall,monotonic=lambda:clock.mono);clock.advance(budget.remaining()-419)
         with tempfile.TemporaryDirectory() as folder:
             state=self.driver_runner(folder,Mock())
             with patch('job_budget.enabled_budget',return_value=budget),patch('job_budget.fail_record'),patch('subprocess.Popen') as launch:

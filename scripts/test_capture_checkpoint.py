@@ -165,8 +165,18 @@ class PrimedRunnerCaptureTests(unittest.TestCase):
     def prime(self):
         with patch.object(checkpoint,'check_output',return_value=str(self.container)) as lookup:
             value=checkpoint.prime_container(self.device,self.runner,self.lease,device_root=self.root)
-        lookup.assert_called_once_with(['xcrun','simctl','get_app_container',self.device,self.runner,'data'],text=True,timeout=15)
+        lookup.assert_called_once_with(['xcrun','simctl','get_app_container',self.device,self.runner,'data'],text=True,timeout=30)
         return value
+
+    def test_lookup_timeout_never_publishes_ack_or_installs_binding(self):
+        with patch.object(checkpoint,'check_output',side_effect=subprocess.TimeoutExpired('owned lookup',30)) as lookup:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                checkpoint.prime_container(self.device,self.runner,self.lease,device_root=self.root)
+        self.assertEqual(lookup.call_args.kwargs['timeout'],30)
+        self.assertEqual(checkpoint._containers,{})
+        self.assertEqual(checkpoint._bindings,{})
+        self.assertFalse(self.lease_file.with_suffix('.ack').exists())
+        self.assertTrue(self.lease_file.is_file())
 
     def test_current_runner_nonce_binds_supported_container_lookup_and_capture(self):
         binding=self.prime()

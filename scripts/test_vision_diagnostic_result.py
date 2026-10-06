@@ -17,7 +17,7 @@ import vision_diagnostic_result as diagnostic
 import vision_offline_result as offline
 from native_text_rows import row
 from simulator_content_size import LARGEST
-from test_vision_offline_result import SHA, DEVICE, RUNTIME, CASE, Reader, synthetic_reader, attachment_export
+from test_vision_offline_result import SHA, DEVICE, RUNTIME, CASE, Reader, synthetic_reader, synthetic_reader_guard, attachment_export
 
 ROOT=Path(__file__).resolve().parents[1]
 ROW=row('vision','system-largest','canvas-audit','',SHA)
@@ -52,7 +52,8 @@ class VisionDiagnosticTests(unittest.TestCase):
         env=patch.dict(os.environ,{'TOUCHCOLOR_BUDGET_PHASE':'','GITHUB_SHA':'','TOUCHCOLOR_JOB_PLATFORM':'',
                                   'TOUCHCOLOR_TEXT_PHASE':'','TOUCHCOLOR_VISION_CASE':''})
         env.start();self.addCleanup(env.stop)
-        selected=patch.object(offline,'selected_reader',return_value=synthetic_reader());selected.start();self.addCleanup(selected.stop)
+        selected=patch.object(offline,'selected_reader',side_effect=synthetic_reader);selected.start();self.addCleanup(selected.stop)
+        guard=patch.object(offline,'verify_reader_file',side_effect=synthetic_reader_guard);guard.start();self.addCleanup(guard.stop)
 
     def prepare(self, setting, command, contract, stage):
         return diagnostic.prepare_failed_largest(setting,command,contract,[CASE],SHA,DEVICE,RUNTIME,stage,row_binding=ROW)
@@ -219,7 +220,7 @@ class VisionDiagnosticTests(unittest.TestCase):
             (root/'build/vision-runtime/runtime.json').write_text(json.dumps(runtime))
             manifest=root/'build/evidence/vision-largest-text-screenshots/manifest.json'
             environment={'GITHUB_SHA':SHA,'GITHUB_RUN_ID':'1','TOUCHCOLOR_JOB_PLATFORM':'vision',
-                         'TOUCHCOLOR_JOB_MINUTES':'25','TOUCHCOLOR_JOB_STARTED_EPOCH':str(time.time()),
+                         'TOUCHCOLOR_JOB_MINUTES':'35','TOUCHCOLOR_JOB_STARTED_EPOCH':str(time.time()),
                          'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(time.monotonic()),'TOUCHCOLOR_EVIDENCE_LIMIT':'700000'}
             with contextlib.chdir(root),patch.dict(os.environ,environment):
                 job_budget.STATE.write_text(json.dumps(job_budget.create_record()))

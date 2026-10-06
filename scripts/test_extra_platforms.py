@@ -293,7 +293,9 @@ try:
     if kind=='vision':
         # Preserve a complete hosted result even if an independent spatial UI process stalls.
         hosted_command=test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests']
-        hosted_code=run(hosted_command,360,required=False)
+        # Outer process allowance includes measured pre-case Xcode cold start;
+        # per-case180/360 limits above are unchanged.
+        hosted_code=run(hosted_command,600,required=False)
         if hosted_code in (0,65):
             try:
                 pending_vision_hosted=prepare_vision_hosted(hosted_command,Path.cwd(),report['sha'],device['udid'],runtime,report['stages'][-1],row_binding=text_row)

@@ -67,13 +67,13 @@ class NativeTextRowTests(unittest.TestCase):
                 self.assertEqual(rows.vision_roles(largest),['hosted','largest'])
                 self.assertEqual(rows.vision_roles(normal),['hosted','normal'])
 
-    def test_matrix_has_exact_19_rows_20mb_and_585_minutes_without_concurrency_change(self):
+    def test_matrix_has_exact_19_rows_20mb_and_695_minutes_without_concurrency_change(self):
         source=(ROOT/'.github/workflows/apple-platforms.yml').read_text().split('  native-platform:',1)[1]
         parsed=[]
         for platform,body in re.findall(r'- platform: (\w+)(.*?)(?=\n          - platform:|\n    runs-on:)',source,re.S):
             fields=dict(re.findall(r'^            (\w+): ([\w-]+)$',body,re.M));fields['platform']=platform;parsed.append(fields)
         self.assertEqual(len(parsed),19)
-        self.assertEqual(sum(int(row['minutes']) for row in parsed),585)
+        self.assertEqual(sum(int(row['minutes']) for row in parsed),695)
         self.assertEqual(sum(int(row['evidence_bytes']) for row in parsed),20_000_000)
         self.assertEqual(len({row.get('lane',row['platform']) for row in parsed}),19)
         expected={row['lane']:row for row in self.bindings()}

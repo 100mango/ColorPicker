@@ -18,7 +18,7 @@ def row(platform, phase, case, profile, sha):
             raise ValueError('Unknown Vision text row case/profile')
         lane = 'vision-' + case
         budget = VISION_CASES[case][1] if phase == 'normal' else 700_000
-        minutes = 25
+        minutes = 35
     else:
         if case != '' or profile not in PROFILES:
             raise ValueError('Unknown Watch text row case/profile')
@@ -26,7 +26,7 @@ def row(platform, phase, case, profile, sha):
         budget = 1_200_000 if phase == 'normal' else 600_000
         minutes = 45
     if phase == 'system-largest': lane += '-system-largest'
-    return {'schema': 1, 'platform': platform, 'phase': phase, 'case': case, 'profile': profile,
+    return {'schema': 2 if platform == 'vision' else 1, 'platform': platform, 'phase': phase, 'case': case, 'profile': profile,
             'lane': lane, 'source_sha': sha, 'minutes': minutes, 'evidence_bytes': budget}
 
 

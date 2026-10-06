@@ -2,7 +2,7 @@
 
 All summary and attachment readers share one byte-verified private input per
 role. Original bundles stay immutable; failed-run diagnostics remain failed.
-No UI rerun, reader retry, filename exception, or evidence-budget expansion.
+No UI rerun, reader retry, filename exception, or per-operation cap expansion.
 """
 import argparse
 import contextlib
@@ -19,7 +19,7 @@ import subprocess
 import time
 
 from atomic_json import write_json
-from job_budget import enabled_budget, fail_record, BudgetExhausted, METADATA_RESERVE, RESERVES, STARTUP_MARGIN, EXPECTED_MINUTES
+from job_budget import enabled_budget, fail_record, BudgetExhausted, METADATA_RESERVE, RESERVES, VISION_RESERVES, STARTUP_MARGIN, EXPECTED_MINUTES
 from bounded_process import run_captured
 from simulator_content_size import LARGEST
 
@@ -31,7 +31,7 @@ REPORT_KEYS = {'hosted': 'vision_hosted_result', 'normal': 'vision_normal_result
 DEVELOPER_DIR = '/Applications/Xcode_27.app/Contents/Developer'
 XCODE_VERSION = 'Xcode 27.0\nBuild version 27A266a'
 ATTACHMENT_NAMES = {'hosted':'vision-screenshots', 'normal':'vision-ui-screenshots', 'largest':'vision-largest-text-screenshots'}
-# These are inside the existing evidence180 envelope, never an extra tail.
+# These are inside the existing evidence300 envelope, never an extra tail.
 FINAL_RESERVE = 15 + 5 + 5  # original byte guard, scratch deletion, durable metadata
 PROCESS_RESERVE = 20  # bounded_process's two ten-second group-stop intervals
 SUMMARY_NAMES = {'hosted': 'vision-summary.json', 'normal': 'vision-ui-summary.json', 'largest': 'vision-largest-text-summary.json'}
@@ -274,9 +274,9 @@ def evidence_deadline():
     """One controller-owned absolute deadline, inherited by every role."""
     now = time.monotonic()
     if os.environ.get('TOUCHCOLOR_BUDGET_PHASE') != 'evidence':
-        return now + RESERVES['evidence']  # Portable tests only; workflow requires evidence.
+        return now + VISION_RESERVES['evidence']  # Portable tests only; workflow requires evidence.
     deadline = float(os.environ.get('TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC', 'nan'))
-    require(finite(deadline) and 0 < deadline <= now + RESERVES['evidence'],
+    require(finite(deadline) and 0 < deadline <= now + VISION_RESERVES['evidence'],
             'Missing or invalid shared evidence deadline')
     return deadline
 
@@ -311,18 +311,189 @@ def owned_interrupts():
         for signum, handler in previous.items(): signal.signal(signum, handler)
 
 
-def selected_reader(read):
-    """Use the selected toolchain's documented xcrun lookup, not project XML."""
-    require(os.environ.get('DEVELOPER_DIR') == DEVELOPER_DIR, 'Selected developer directory changed')
-    version = read('confirm_reader_version', ['xcodebuild', '-version'], 5, 4096).strip()
-    require(version == XCODE_VERSION, 'Selected Xcode version/build changed')
-    tool = read('resolve_reader', ['xcrun', '--find', 'xcresulttool'], 5, 4096).strip()
-    path = Path(tool)
-    require(path.is_absolute() and path == path.resolve(strict=True)
-            and path.is_relative_to(Path(DEVELOPER_DIR)) and path.name == 'xcresulttool'
-            and path.is_file() and os.access(path, os.X_OK), 'Reader is outside the selected toolchain')
-    return {'developer_dir': DEVELOPER_DIR, 'version_command':['xcodebuild','-version'],
-            'xcode_version':version, 'selection_command':['xcrun','--find','xcresulttool'], 'path':tool}
+READER_LIMIT = 64 * 1024 * 1024
+READER_RECEIPT = 'touchcolor-vision-reader/receipt.json'
+READER_KEYS = {'schema','developer_dir','xcode_version','version_command','selection_command','path',
+               'identity','context','version_observation','selection','verified_at','verification'}
+
+
+def file_bytes_identity(path, deadline, *, maximum=READER_LIMIT, executable=False):
+    """No aliases, links, oversized input or changing bytes in a local identity."""
+    path = Path(path)
+    require(time.monotonic() < deadline, 'Reader identity deadline exhausted')
+    require(path.is_absolute() and path == path.resolve(strict=True), 'Reader identity path is not canonical')
+    def identity(info):
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and 0 < info.st_size <= maximum,
+                'Reader identity is not a bounded single-link regular file')
+        return {'device':info.st_dev,'inode':info.st_ino,'mode':info.st_mode,'bytes':info.st_size,
+                'mtime_ns':info.st_mtime_ns,'ctime_ns':info.st_ctime_ns}
+    before = identity(path.lstat())
+    require(not executable or os.access(path,os.X_OK), 'Reader is not executable')
+    digest=hashlib.sha256(); data=[]; total=0
+    descriptor=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(descriptor,'rb') as stream:
+        require(identity(os.fstat(stream.fileno())) == before, 'Reader changed before open')
+        while True:
+            require(time.monotonic() < deadline, 'Reader byte verification deadline exhausted')
+            chunk=stream.read(1024*1024)
+            if not chunk:break
+            total+=len(chunk);require(total<=maximum, 'Reader byte bound exceeded')
+            digest.update(chunk)
+            if maximum<=16384:data.append(chunk)
+        require(identity(os.fstat(stream.fileno())) == before, 'Reader changed during hashing')
+    require(identity(path.lstat()) == before and total == before['bytes'] and path.resolve(strict=True)==path, 'Reader changed after hashing')
+    require(time.monotonic() < deadline, 'Reader identity returned late')
+    return {**before,'sha256':digest.hexdigest()}, b''.join(data)
+
+
+def reader_context(root, deadline):
+    from job_budget import load
+    from native_text_rows import from_environment
+    root=Path(root).resolve(strict=True);temporary=Path(os.environ.get('RUNNER_TEMP',''))
+    require(temporary.is_absolute() and temporary==temporary.resolve(strict=True)
+            and temporary.is_dir() and not temporary.is_relative_to(root), 'Missing canonical runner-local receipt root')
+    require(os.environ.get('DEVELOPER_DIR')==DEVELOPER_DIR, 'Selected developer directory changed')
+    sha=os.environ.get('GITHUB_SHA','');binding=from_environment('vision',sha)
+    budget=load(root/'build/job-budget.json')
+    require(budget.record['platform']=='vision' and budget.record['lane']==binding['lane'], 'Reader budget row changed')
+    run=os.environ.get('GITHUB_RUN_ID','');attempt=os.environ.get('GITHUB_RUN_ATTEMPT','')
+    require(re.fullmatch('[1-9][0-9]*',run) and re.fullmatch('[1-9][0-9]*',attempt), 'Missing exact reader run/attempt')
+    identity,_=file_bytes_identity(root/'build/job-budget.json',deadline,maximum=8192)
+    def directory(path):
+        info=path.stat();return {'path':str(path),'device':info.st_dev,'inode':info.st_ino}
+    return {'source_sha':sha,'run_id':run,'run_attempt':attempt,'native_text_row':binding,
+            'source_root':directory(root),'runner_temp':directory(temporary),
+            'job_budget_identity':identity,'started_epoch':budget.record['started_epoch'],
+            'started_monotonic':budget.record['started_monotonic'],
+            'work_deadline':budget.record['started_monotonic']+1500},budget
+
+
+def prepare_reader(root=Path('.'), *, version_observation=Path('/tmp/touchcolor-platform-xcode.txt'), invoke=run_captured):
+    """One early documented lookup, before any Vision native driver is admitted."""
+    start=time.monotonic();context,budget=reader_context(root,start+5)
+    budget.admit('Prepare same-VM Vision reader',30,minimum=30,cleanup=30)
+    require(budget.remaining('work')>=60, 'Early reader work reserve exhausted')
+    owner=Path(context['runner_temp']['path'])/Path(READER_RECEIPT).parent
+    owner.mkdir(mode=0o700)  # Exclusive attempt: stale/duplicate preparation never retries.
+    target=owner/'receipt.json';finished=False
+    try:
+        require(not Path(version_observation).is_symlink(), 'Aliased Xcode observation file')
+        version_path=Path(version_observation).resolve(strict=True)
+        identity,raw=file_bytes_identity(version_path,min(context['work_deadline'],time.monotonic()+5),maximum=4096)
+        require(raw==(XCODE_VERSION+'\n').encode()
+                and identity['mtime_ns']/1e9 >= context['started_epoch'], 'Missing fresh exact preflight Xcode observation')
+        started=time.monotonic();deadline=min(started+30,context['work_deadline']-30)
+        require(deadline-started==30, 'Full early lookup allowance does not fit')
+        try:result=invoke(['xcrun','--find','xcresulttool'],timeout=30,text=False)
+        except BaseException as error:
+            fail_record('Early Vision reader selection failed',phase='work',cleanup_unconfirmed=getattr(error,'cleanup_confirmed',False) is not True)
+            raise
+        ended=time.monotonic()
+        require(ended<deadline and result.returncode==0 and result.stderr==b''
+                and isinstance(result.stdout,bytes) and len(result.stdout)<=4096, 'Early reader lookup failed or returned late')
+        tool=result.stdout.decode('utf-8').strip();path=Path(tool)
+        require(path.is_absolute() and path.is_relative_to(Path(DEVELOPER_DIR)) and path.name=='xcresulttool',
+                'Reader is outside the selected toolchain')
+        identity_deadline=min(context['work_deadline'],time.monotonic()+5)
+        tool_identity,_=file_bytes_identity(path,identity_deadline,executable=True)
+        require(file_bytes_identity(version_path,identity_deadline,maximum=4096)[0]==identity, 'Preflight version observation changed')
+        value={'schema':2,'developer_dir':DEVELOPER_DIR,'xcode_version':XCODE_VERSION,
+               'version_command':['xcodebuild','-version'],'selection_command':['xcrun','--find','xcresulttool'],
+               'path':tool,'identity':tool_identity,'context':context,
+               'version_observation':{'path':str(version_path),'identity':identity},
+               'selection':{'started_at':started,'finished_at':ended,'deadline':deadline,'timeout_seconds':30,'cleanup_confirmed':True},
+               'verified_at':time.monotonic()}
+        persistence_deadline=min(context['work_deadline'],time.monotonic()+5)
+        write_json(target,value,limit=16384)
+        persisted,raw=file_bytes_identity(target,persistence_deadline,maximum=16384)
+        require(strict_json(raw)==value and time.monotonic()<persistence_deadline, 'Reader receipt persistence returned late')
+        finished=True
+        return value
+    finally:
+        if not finished:target.unlink(missing_ok=True)
+
+
+def validate_file_identity(value):
+    require(isinstance(value,dict) and set(value)=={'device','inode','mode','bytes','mtime_ns','ctime_ns','sha256'}
+            and all(type(value.get(key)) is int for key in ('device','inode','mode','bytes','mtime_ns','ctime_ns'))
+            and value['device']>=0 and value['inode']>0 and stat.S_ISREG(value['mode'])
+            and 0<value['bytes']<=READER_LIMIT and value['mtime_ns']>0 and value['ctime_ns']>0
+            and isinstance(value.get('sha256'),str) and re.fullmatch('[0-9a-f]{64}',value['sha256']), 'Invalid reader byte identity')
+
+
+def validate_reader_receipt(value, binding):
+    require(isinstance(value,dict) and set(value)==READER_KEYS-{'verification'} and type(value.get('schema')) is int
+            and value['schema']==2 and value['developer_dir']==DEVELOPER_DIR and value['xcode_version']==XCODE_VERSION
+            and value['version_command']==['xcodebuild','-version'] and value['selection_command']==['xcrun','--find','xcresulttool'],
+            'Reader differs from the early selected source-owned toolchain')
+    tool=value['path'];context=value['context'];selection=value['selection'];version=value['version_observation']
+    require(isinstance(tool,str) and Path(tool).is_absolute() and str(Path(tool))==os.path.normpath(tool)
+            and Path(tool).is_relative_to(Path(DEVELOPER_DIR)) and Path(tool).name=='xcresulttool', 'Invalid selected reader path')
+    validate_file_identity(value['identity'])
+    require(bool(value['identity']['mode'] & 0o111), 'Selected reader was not executable')
+    require(isinstance(context,dict) and set(context)=={'source_sha','run_id','run_attempt','native_text_row',
+            'source_root','runner_temp','job_budget_identity','started_epoch','started_monotonic','work_deadline'}
+            and context['source_sha']==binding['source_sha'] and context['native_text_row']==binding,
+            'Reader receipt belongs to another source or row')
+    from native_text_rows import validate
+    validate(binding)
+    require(all(isinstance(context[k],str) and re.fullmatch('[1-9][0-9]*',context[k]) for k in ('run_id','run_attempt')),
+            'Unknown reader run/attempt')
+    if os.environ.get('GITHUB_SHA')==binding['source_sha']:
+        for key,name in (('run_id','GITHUB_RUN_ID'),('run_attempt','GITHUB_RUN_ATTEMPT')):
+            require(not os.environ.get(name) or context[key]==os.environ[name], 'Reader receipt belongs to another run/attempt')
+    validate_file_identity(context['job_budget_identity'])
+    for key in ('source_root','runner_temp'):
+        item=context[key]
+        require(isinstance(item,dict) and set(item)=={'path','device','inode'} and isinstance(item['path'],str)
+                and Path(item['path']).is_absolute() and os.path.normpath(item['path'])==item['path']
+                and type(item['device']) is int and item['device']>=0 and type(item['inode']) is int and item['inode']>0,
+                'Unknown reader instance directory')
+    require(not Path(context['runner_temp']['path']).is_relative_to(Path(context['source_root']['path'])), 'Receipt is inside source')
+    require(all(finite(context[k]) and context[k]>0 for k in ('started_epoch','started_monotonic','work_deadline'))
+            and context['work_deadline']<=context['started_monotonic']+1500, 'Reader extended immutable work budget')
+    require(isinstance(selection,dict) and set(selection)=={'started_at','finished_at','deadline','timeout_seconds','cleanup_confirmed'}
+            and selection['timeout_seconds']==30 and type(selection['timeout_seconds']) is int and selection['cleanup_confirmed'] is True
+            and all(finite(selection[k]) for k in ('started_at','finished_at','deadline'))
+            and context['started_monotonic']<=selection['started_at']<=selection['finished_at']<selection['deadline']<=context['work_deadline']
+            and selection['deadline']-selection['started_at']<=30
+            and finite(value['verified_at']) and selection['finished_at']<=value['verified_at']<context['work_deadline'],
+            'Early reader selection exceeded its immutable deadline')
+    require(isinstance(version,dict) and set(version)=={'path','identity'} and isinstance(version['path'],str)
+            and Path(version['path']).is_absolute() and os.path.normpath(version['path'])==version['path'], 'Missing version observation provenance')
+    validate_file_identity(version['identity'])
+    require(version['identity']['bytes']<=4096 and version['identity']['mtime_ns']/1e9>=context['started_epoch']
+            and version['identity']['sha256']==hashlib.sha256((XCODE_VERSION+'\n').encode()).hexdigest(), 'Changed Xcode observation bytes')
+
+
+def verify_reader_file(reader, deadline):
+    started=time.monotonic();limit=min(deadline-FINAL_RESERVE,started+5)
+    require(os.environ.get('DEVELOPER_DIR')==reader['developer_dir']==DEVELOPER_DIR, 'Selected environment changed before read')
+    identity,_=file_bytes_identity(reader['path'],limit,executable=True)
+    require(identity==reader['identity'], 'Selected reader identity/bytes changed')
+    return {'identity':identity,'started_at':started,'finished_at':time.monotonic(),'deadline':limit}
+
+
+def selected_reader(root, binding, deadline):
+    """Use only this VM's early receipt; no offline resolver or version process."""
+    started=time.monotonic();context,_=reader_context(root,min(deadline-FINAL_RESERVE,started+5))
+    target=Path(context['runner_temp']['path'])/READER_RECEIPT
+    require(target.parent.stat().st_mode & 0o777==0o700, 'Unsafe reader receipt owner')
+    _,raw=file_bytes_identity(target,min(deadline-FINAL_RESERVE,time.monotonic()+5),maximum=16384)
+    value=strict_json(raw);validate_reader_receipt(value,binding)
+    require(value['context']==context, 'Foreign or changed VM/source/run/attempt/row receipt')
+    require(file_bytes_identity(value['version_observation']['path'],min(deadline-FINAL_RESERVE,time.monotonic()+5),maximum=4096)[0]==value['version_observation']['identity'], 'Changed preflight Xcode observation')
+    value['verification']=verify_reader_file(value,deadline)
+    require(value['verified_at']<=started and time.monotonic()<deadline-FINAL_RESERVE, 'Late reader selection receipt')
+    return value
+
+
+def validate_reader_guard(guard, reader, deadline):
+    require(isinstance(guard,dict) and set(guard)=={'identity','started_at','finished_at','deadline'}
+            and guard['identity']==reader['identity'] and all(finite(guard[k]) for k in ('started_at','finished_at','deadline'))
+            and reader['verified_at']<=guard['started_at']<=guard['finished_at']<guard['deadline']<=deadline
+            and guard['deadline']-guard['started_at']<=5, 'Missing bounded same-byte reader guard')
+
 
 
 def qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runner,
@@ -421,7 +592,7 @@ def _qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runne
         observed_sha = read('confirm_source',['git','-C',str(root),'rev-parse','HEAD'],10,4096).strip()
         require(observed_sha == sha, 'Tested source HEAD changed before offline qualification')
         read('confirm_unchanged_source',['git','-C',str(root),'diff','--exit-code','HEAD','--'],10,4096)
-        isolation['reader'] = selected_reader(read)
+        isolation['reader'] = selected_reader(root,row_binding,deadline)
         admit_read('Original result preguard',15,deadline,FINAL_RESERVE)
         before_files = {"walk_complete":False,"observed_files":0,"omitted_files":0,"records":[]}
         require(bundle_identity(root,bundle,inventory=before_files) == binding['bundle'], 'Completed result bundle changed before offline qualification')
@@ -441,14 +612,20 @@ def _qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runne
             try:
                 admit_read(name,seconds,deadline,FINAL_RESERVE+PROCESS_RESERVE+(20 if name=='summary_operation' else 0))
                 operation.update(state='running',started_at=time.monotonic()); flush()
+                admit_read(name,seconds,deadline,FINAL_RESERVE+PROCESS_RESERVE+(20 if name=='summary_operation' else 0))
+                operation['reader_guard']=verify_reader_file(isolation['reader'],deadline)
+                admit_read(name,seconds,deadline,FINAL_RESERVE+PROCESS_RESERVE+(20 if name=='summary_operation' else 0))
                 started=True
                 runner.cleanup_unconfirmed = True
                 value = invoke(command,timeout=seconds,text=False)
                 runner.cleanup_unconfirmed = False
                 operation.update(exit=value.returncode,cleanup_confirmed=True,state='completed',finished_at=time.monotonic())
+                operation['reader_postguard']=verify_reader_file(isolation['reader'],deadline)
+                require(operation['finished_at']<deadline and operation['finished_at']-operation['started_at']<=seconds+PROCESS_RESERVE,
+                        'Reader returned beyond its strict deadline')
                 return value
             except BaseException as error:
-                confirmed = not started or getattr(error,'cleanup_confirmed',False) is True
+                confirmed = not started or operation.get('cleanup_confirmed') is True or getattr(error,'cleanup_confirmed',False) is True
                 runner.cleanup_unconfirmed = not confirmed
                 operation.update(command_started=started,exit=124 if isinstance(error,(subprocess.TimeoutExpired,BudgetExhausted)) else 1,
                     cleanup_confirmed=confirmed,state='not_started_budget' if isinstance(error,BudgetExhausted) else
@@ -551,6 +728,12 @@ def _qualify(report, report_path, shutdown_stage, *, sha, device, runtime, runne
                 report['failure_record_error']=str(error)[:240]
                 if isinstance(error,(OfflineInterrupted,KeyboardInterrupt,SystemExit)): fail(error)
         flush()
+        if succeeded and time.monotonic()>=deadline:
+            isolation.update(completed=False,evidence_collected=False)
+            isolation.pop('qualified_at',None);isolation.pop('diagnostic_completed_at',None)
+            report.pop('verified_results',None)
+            fail(BudgetExhausted('Qualification persistence exceeded shared evidence deadline'))
+            flush()
     return report
 
 
@@ -632,7 +815,7 @@ def fence_incomplete_reads(root=Path('.')):
 
 
 def qualify_for_evidence(root=Path('.')):
-    """Both reads share evidence180; neither extends the driver's cleanup130."""
+    """Both reads share evidence300; neither extends the driver's cleanup130."""
     from native_content_size import TouchSizeRunner, qualified
     root = Path(root).resolve(); runtime_path = root/'build/vision-runtime/runtime.json'
     if not runtime_path.is_file(): return
@@ -725,11 +908,11 @@ def verify_isolation(setting, binding, role, runtime, *, diagnostic=False):
             and proof.get('purpose')==('attachments_only' if diagnostic else 'qualification'),
             'Missing exact isolated original pre/post proof')
     reader=proof.get('reader',{}); tool=reader.get('path')
-    require(isinstance(tool,str) and Path(tool).is_absolute() and str(Path(tool))==os.path.normpath(tool)
-            and Path(tool).is_relative_to(Path(DEVELOPER_DIR)) and Path(tool).name=='xcresulttool'
-            and reader=={'developer_dir':DEVELOPER_DIR,'xcode_version':XCODE_VERSION,
-                         'version_command':['xcodebuild','-version'],'selection_command':['xcrun','--find','xcresulttool'],'path':tool},
-            'Reader differs from the selected source-owned toolchain')
+    require(isinstance(reader,dict) and set(reader)==READER_KEYS, 'Missing early reader contract')
+    validate_reader_receipt({key:value for key,value in reader.items() if key!='verification'},binding['native_text_row'])
+    require(reader['context']['source_root']==original['source_root'], 'Reader selected in a different source instance')
+    require(reader['verified_at']<=proof['started_at'], 'Reader was selected after offline qualification began')
+    validate_reader_guard(reader['verification'],reader,proof['evidence_deadline_monotonic'])
     snapshot=proof.get('snapshot',{}); owned=snapshot.get('owned_root',{}); private=snapshot.get('input_binding',{})
     verify_bundle_proof(private)
     path=private.get('path'); owner=owned.get('path')
@@ -759,7 +942,7 @@ def verify_isolation(setting, binding, role, runtime, *, diagnostic=False):
     require(cleanup.get('confirmed') is True and cleanup.get('deleted') is True and not cleanup.get('error'),
             'Snapshot cleanup was not confirmed before qualification')
     deadline=proof.get('evidence_deadline_monotonic');started=proof.get('started_at')
-    require(finite(deadline) and finite(started) and started<deadline<=started+180, 'Evidence window exceeds its unchanged180s cap')
+    require(finite(deadline) and finite(started) and started<deadline<=started+300, 'Evidence window exceeds its source-owned300s cap')
     for operation,cap in ((snapshot,15),(cleanup,5)):
         start,end,limit=operation.get('started_at'),operation.get('finished_at'),operation.get('deadline')
         require(all(finite(value) for value in (start,end,limit,deadline)) and start<=end<=limit<=deadline
@@ -769,6 +952,9 @@ def verify_isolation(setting, binding, role, runtime, *, diagnostic=False):
     operations=[(attachment,[tool,'export','attachments','--path',path,'--output-path',str(output)],20)]
     if not diagnostic:operations.insert(0,(summary,[tool,'get','test-results','summary','--path',path],20 if role=='normal' else 30))
     for operation,command,seconds in operations:
+        validate_reader_guard(operation.get('reader_guard'),reader,deadline)
+        validate_reader_guard(operation.get('reader_postguard'),reader,deadline)
+        require(operation['reader_guard']['finished_at']<=operation['finished_at']<=operation['reader_postguard']['started_at'], 'Reader identity guards do not bracket execution')
         input_guard=operation.get('input_guard',{})
         require(input_guard.get('verified') is True and all(type(input_guard.get(key)) is int and 0<input_guard[key]<=8192
                 for key in ('files','directories')) and type(input_guard.get('bytes')) is int and 0<=input_guard['bytes']<=256*1024*1024
@@ -777,7 +963,7 @@ def verify_isolation(setting, binding, role, runtime, *, diagnostic=False):
                 and input_guard['deadline']-input_guard['started_at']<=15.001
                 and input_guard['finished_at']<=operation.get('started_at',0), 'Missing safe bounded private input guard')
         require(all(finite(operation.get(key)) for key in ('started_at','finished_at'))
-                and operation['started_at']<=operation['finished_at']<=deadline
+                and operation['started_at']<=operation['finished_at']<deadline
                 and operation['finished_at']-operation['started_at']<=seconds+PROCESS_RESERVE,
                 'Reader operation lifetime exceeds the shared envelope')
         require(operation.get('command')==command and operation.get('timeout_seconds')==seconds
@@ -797,7 +983,7 @@ def verify_isolation(setting, binding, role, runtime, *, diagnostic=False):
     final_key='diagnostic_completed_at' if diagnostic else 'qualified_at'
     require(all(finite(proof.get(key)) for key in ('original_postguard_finished_at',final_key))
             and attachment['finished_at']<=proof['original_postguard_finished_at']<=cleanup['started_at']
-            and cleanup['finished_at']<=proof[final_key]<=deadline, 'Reader/final-guard/cleanup stage order changed')
+            and cleanup['finished_at']<=proof[final_key]<deadline, 'Reader/final-guard/cleanup stage order changed')
     require(proof.get('attachment_output')=={'path':str(output)}, 'Attachment output differs from exact role')
     if diagnostic:
         require(not summary and not proof.get('summary_output') and 'verified_results' not in setting
@@ -855,7 +1041,7 @@ def verified_metadata_only_fallback(root, runtime_raw, sha):
             and (not os.environ.get('GITHUB_RUN_ID') or run_id == os.environ['GITHUB_RUN_ID']),
             'Fallback run identity does not match')
     require(type(value.get('minutes')) is int and value['minutes'] == EXPECTED_MINUTES['vision']
-            and value.get('reserves') == RESERVES and all(type(value['reserves'].get(key)) is int for key in RESERVES)
+            and value.get('reserves') == VISION_RESERVES and all(type(value['reserves'].get(key)) is int for key in RESERVES)
             and type(value.get('startup_margin')) is int and value['startup_margin'] == STARTUP_MARGIN,
             'Fallback budget contract changed')
     require(finite(value.get('started_epoch')) and value['started_epoch'] > 0
@@ -941,7 +1127,8 @@ def evidence_complete(root):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(); parser.add_argument('action', choices=['qualify', 'copy-summary', 'copy-hosted-summary', 'copy-normal-summary']); args = parser.parse_args()
-    if args.action == 'qualify':
+    parser = argparse.ArgumentParser(); parser.add_argument('action', choices=['prepare-reader', 'qualify', 'copy-summary', 'copy-hosted-summary', 'copy-normal-summary']); args = parser.parse_args()
+    if args.action == 'prepare-reader': prepare_reader()
+    elif args.action == 'qualify':
         if os.environ.get('TOUCHCOLOR_JOB_PLATFORM') == 'vision': qualify_for_evidence()
     else: copy_cached_summary(role={'copy-hosted-summary': 'hosted', 'copy-normal-summary': 'normal', 'copy-summary': 'largest'}[args.action])

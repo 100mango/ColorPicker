@@ -57,14 +57,52 @@ class RunnerLeaseSourceTests(unittest.TestCase):
         self.assertIn('let lease = UUID()', binding)
         self.assertIn('options: .atomic', binding)
         self.assertIn('TOUCHCOLOR_VISION_RUNNER_READY', binding)
-        self.assertIn('timeout: 30) == .completed else', binding)
+        self.assertIn('timeout: 60) == .completed else', binding)
         self.assertEqual(binding.count('throw NSError('), 2)
         for proof in ['binding?["success"] as? Bool == true',
                       'binding?["lease"] as? String == lease.uuidString',
                       'binding?["runner"] as? String == runner']:
             self.assertLess(binding.index(proof), binding.index('captureLease = lease'))
-        self.assertIn('if !accepted { try? FileManager.default.removeItem(at: request) }', binding)
+        self.assertIn('if !accepted { removeOwnedTemporaryFileIfPresent(request) }', binding)
         self.assertLess(binding.index('captureLease = lease'), binding.index('accepted = true'))
+
+    def test_owned_cleanup_checks_existence_without_accepting_failed_binding(self):
+        cleanup=swift_method(self.source,'removeOwnedTemporaryFileIfPresent')
+        self.assertLess(cleanup.index('fileExists(atPath: url.path)'),cleanup.index('try? FileManager.default.removeItem(at: url)'))
+        self.assertEqual(self.source.count('FileManager.default.removeItem'),1)
+        for method in ('bindCaptureRunner','capture','tearDownWithError'):
+            self.assertIn('removeOwnedTemporaryFileIfPresent',swift_method(self.source,method))
+        binding=swift_method(self.source,'bindCaptureRunner')
+        self.assertIn('Current runner binding timed out before UI work',binding)
+        self.assertIn('Current runner binding acknowledgement did not match',binding)
+        self.assertEqual(binding.count('throw NSError('),2)
+        self.assertLess(binding.index('binding?["success"]'),binding.index('captureLease = lease'))
+        # Source order preserves failed writes and malformed/mismatched ack as failures.
+        self.assertLess(binding.index('defer {'),binding.index('.write(to: request'))
+        self.assertIn('if !accepted { removeOwnedTemporaryFileIfPresent(request) }',binding)
+
+    def test_only_outer_hosted_and_binding_allowances_change(self):
+        source=(ROOT/'scripts/test_extra_platforms.py').read_text()
+        self.assertIn('hosted_code=run(hosted_command,600,required=False)',source)
+        self.assertIn("'-default-test-execution-time-allowance','180' if kind=='vision'",source)
+        self.assertIn("'-maximum-test-execution-time-allowance','360' if kind=='vision'",source)
+        self.assertNotIn('hosted_code=run(hosted_command,360',source)
+        from job_budget import JobBudget,create_record
+        from test_job_budget import Clock
+        clock=Clock()
+        env={'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_JOB_MINUTES':'35','GITHUB_SHA':'a'*40,
+             'TOUCHCOLOR_JOB_STARTED_EPOCH':str(clock.wall),'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(clock.mono)}
+        budget=JobBudget(create_record(env,wall=lambda:clock.wall,monotonic=lambda:clock.mono),wall=lambda:clock.wall,monotonic=lambda:clock.mono)
+        self.assertEqual(budget.remaining(),1500)
+        # Actual pre-hosted cost rounded up224s; two600s outer grants leave76s work.
+        clock.mono+=224
+        self.assertEqual(budget.admit('hosted',600,minimum=420,cleanup=0),600)
+        clock.mono+=600
+        self.assertEqual(budget.admit('UI',600,minimum=420,cleanup=0),600)
+        self.assertEqual(budget.remaining()-600,76)
+        clock.mono+=257
+        from job_budget import BudgetExhausted
+        with self.assertRaises(BudgetExhausted):budget.admit('UI',600,minimum=420,cleanup=0)
 
     def test_unbound_setup_cannot_request_teardown_capture(self):
         teardown = swift_method(self.source, 'tearDownWithError')
@@ -100,8 +138,8 @@ class RunnerLeaseSourceTests(unittest.TestCase):
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(swift_method(self.source, name).encode()).hexdigest(), digest)
 
-    def test_capture_helper_identity_checks_and_command_caps_are_byte_unchanged(self):
-        self.assertEqual(hashlib.sha256((ROOT/'scripts/capture_simulator_checkpoint.py').read_bytes()).hexdigest(),
+    def test_capture_helper_changes_only_owned_lookup_15_to_30(self):
+        self.assertEqual(hashlib.sha256((ROOT/'scripts/capture_simulator_checkpoint.py').read_bytes().replace(b"device,runner_identifier,'data'],text=True,timeout=30)",b"device,runner_identifier,'data'],text=True,timeout=15)",1)).hexdigest(),
                          '204bdb363a3345d92527dba66e7865e86243a37ba35b2f0d1af829c1e7c07a47')
 
 
@@ -140,6 +178,17 @@ class RunnerLeaseDriverTests(unittest.TestCase):
                 stage = self.state['report']['stages'][-1]
                 self.assertTrue(stage['process_group_gone']); self.assertTrue(stage['capture_reader_finished'])
         self.fail.assert_not_called()
+
+    def test_outer_timeout_before_case_output_is_incomplete_without_ui_binding(self):
+        # The74cc paste row emitted no Test Suite/Case or runner-ready before
+        # its360s outer stop. Exercise the same run path with a short local clock.
+        with patch('job_budget.enabled_budget',return_value=None):
+            code=self.state['run']([sys.executable,'-c','import time; time.sleep(3)'],.05,required=False)
+        self.assertEqual(code,124)
+        stage=self.state['report']['stages'][-1]
+        self.assertTrue(stage['started']);self.assertTrue(stage['timed_out'])
+        self.prime.assert_not_called();self.capture.assert_not_called()
+        self.assertNotIn('vision_hosted_result',self.state['report'])
 
     def test_unknown_binding_cleanup_stops_capture_and_next_command(self):
         error = subprocess.TimeoutExpired('synthetic lookup', 15); error.cleanup_confirmed = False
@@ -190,7 +239,7 @@ class RunnerLeaseIdentityTests(unittest.TestCase):
     def prime(self, lease=LEASE):
         with patch.object(checkpoint, 'check_output', return_value=str(self.container)) as lookup:
             result = checkpoint.prime_container(DEVICE, RUNNER, lease, device_root=self.root)
-        lookup.assert_called_once_with(['xcrun', 'simctl', 'get_app_container', DEVICE, RUNNER, 'data'], text=True, timeout=15)
+        lookup.assert_called_once_with(['xcrun', 'simctl', 'get_app_container', DEVICE, RUNNER, 'data'], text=True, timeout=30)
         return result
 
     def blocked_capture(self, request=REQUEST):

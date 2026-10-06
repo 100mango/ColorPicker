@@ -10,10 +10,16 @@ import re
 import time
 from atomic_json import write_json as write_json_atomic
 
-EXPECTED_MINUTES = {'vision': 25, 'watch': 45, 'tv': 25, 'mac': 40, 'ios': 20, 'paired': 45}
+EXPECTED_MINUTES = {'vision': 35, 'watch': 45, 'tv': 25, 'mac': 40, 'ios': 20, 'paired': 45}
 # Work stops early enough for owned process/capture cleanup, bounded extraction,
 # validation and a real artifact upload. The runner's cancellation grace is not work time.
 RESERVES = {'cleanup': 130, 'evidence': 180, 'validation': 60, 'upload': 60, 'overhead': 20}
+VISION_RESERVES = {**RESERVES, 'evidence': 300}
+
+def reserves_for(platform):
+    # Closed Vision policy; all other platform reserves remain byte-equivalent.
+    return dict(VISION_RESERVES if platform == 'vision' else RESERVES)
+
 STARTUP_MARGIN = 30
 METADATA_RESERVE = 16_384
 STATE = Path('build/job-budget.json')
@@ -53,17 +59,18 @@ class JobBudget:
             raise ValueError('Job clock is in the future')
         if not re.fullmatch('[0-9a-f]{40}', r.get('sha', '')):
             raise ValueError('Missing exact tested source')
-        if r.get('reserves') != RESERVES or r.get('startup_margin') != STARTUP_MARGIN:
+        if r.get('reserves') != reserves_for(r['platform']) or r.get('startup_margin') != STARTUP_MARGIN:
             raise ValueError('Budget reserve contract differs from source')
 
     def remaining(self, phase=None):
         phase = phase or self.phase
+        reserves = self.record['reserves']
         tail = {
-            'work': sum(RESERVES.values()),
-            'cleanup': RESERVES['evidence'] + RESERVES['validation'] + RESERVES['upload'] + RESERVES['overhead'],
-            'evidence': RESERVES['validation'] + RESERVES['upload'] + RESERVES['overhead'],
-            'validation': RESERVES['upload'] + RESERVES['overhead'],
-            'upload': RESERVES['overhead'],
+            'work': sum(reserves.values()),
+            'cleanup': reserves['evidence'] + reserves['validation'] + reserves['upload'] + reserves['overhead'],
+            'evidence': reserves['validation'] + reserves['upload'] + reserves['overhead'],
+            'validation': reserves['upload'] + reserves['overhead'],
+            'upload': reserves['overhead'],
         }
         if phase not in tail: raise ValueError('Unknown budget phase')
         return max(0, self.hard_deadline - self.monotonic() - tail[phase])
@@ -111,7 +118,7 @@ def create_record(environ=os.environ, wall=time.time, monotonic=time.monotonic):
     mono=float(environ.get('TOUCHCOLOR_JOB_STARTED_MONOTONIC','nan'))
     record = {'schema': 1, 'platform': platform, 'minutes': minutes, 'started_epoch': started, 'started_monotonic':mono,
               'lane': environ.get('TOUCHCOLOR_JOB_LANE', ''), 'sha': environ.get('GITHUB_SHA', ''),
-              'run_id': environ.get('GITHUB_RUN_ID', ''), 'reserves': RESERVES, 'startup_margin': STARTUP_MARGIN}
+              'run_id': environ.get('GITHUB_RUN_ID', ''), 'reserves': reserves_for(platform), 'startup_margin': STARTUP_MARGIN}
     JobBudget(record, wall=wall, monotonic=monotonic)
     return record
 

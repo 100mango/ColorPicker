@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 
 import vision_offline_result as offline
 import vision_result_snapshot as snapshots
-from test_vision_offline_result import (fixture, hosted_fixture, Reader, synthetic_reader,
+from test_vision_offline_result import (fixture, hosted_fixture, Reader, synthetic_reader, synthetic_reader_guard,
     attachment_export, SHA, DEVICE, RUNTIME, ROW)
 import test_vision_offline_result as fixtures
 
@@ -29,8 +29,9 @@ class VisionReadIsolationTests(unittest.TestCase):
             'TOUCHCOLOR_VISION_CASE':'','TOUCHCOLOR_TEXT_PHASE':'','TOUCHCOLOR_WATCH_PROFILE':'',
             'TOUCHCOLOR_JOB_LANE':'','TOUCHCOLOR_JOB_MINUTES':'','TOUCHCOLOR_EVIDENCE_LIMIT':''})
         env.start();self.addCleanup(env.stop)
-        selected=patch.object(offline,'selected_reader',return_value=synthetic_reader())
+        selected=patch.object(offline,'selected_reader',side_effect=synthetic_reader)
         selected.start();self.addCleanup(selected.stop)
+        guard=patch.object(offline,'verify_reader_file',side_effect=synthetic_reader_guard);guard.start();self.addCleanup(guard.stop)
 
     def qualify(self,*args,**kwargs):
         return fixtures.VisionOfflineTests.qualify(self,*args,**kwargs)
@@ -127,6 +128,9 @@ class VisionReadIsolationTests(unittest.TestCase):
                 lambda p:p['read_isolation']['snapshot']['cleanup'].update(deleted=False),
                 lambda p:p['read_isolation'].update(original_postguard_confirmed=False),
                 lambda p:p['read_isolation'].update(qualified_at=0),
+                lambda p:p['read_isolation'].update(qualified_at=p['read_isolation']['evidence_deadline_monotonic']),
+                lambda p:p['read_isolation']['reader'].update(schema=1),
+                lambda p:p['read_isolation']['reader']['context'].pop('run_attempt'),
                 lambda p:p['read_isolation']['snapshot']['reader_input_guard'].update(verified=False),
                 lambda p:p['summary_operation']['input_guard'].update(files=999999),
                 lambda p:p['attachment_operation']['input_guard'].update(bytes=10**20),
@@ -209,7 +213,7 @@ class VisionReadIsolationTests(unittest.TestCase):
                 manifest=root/'build/evidence'/offline.ATTACHMENT_NAMES[role]/'manifest.json'
                 self.assertTrue(manifest.is_file())
                 environment={'GITHUB_SHA':SHA,'GITHUB_RUN_ID':'1','TOUCHCOLOR_JOB_PLATFORM':'vision',
-                    'TOUCHCOLOR_JOB_MINUTES':'25','TOUCHCOLOR_JOB_STARTED_EPOCH':str(time.time()),
+                    'TOUCHCOLOR_JOB_MINUTES':'35','TOUCHCOLOR_JOB_STARTED_EPOCH':str(time.time()),
                     'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(time.monotonic()),'TOUCHCOLOR_EVIDENCE_LIMIT':'700000',
                     'GITHUB_OUTPUT':str(root/'outputs')}
                 with contextlib.chdir(root),patch.dict(os.environ,environment):
@@ -322,18 +326,29 @@ class VisionReadIsolationTests(unittest.TestCase):
             with patch.dict(os.environ,{'TOUCHCOLOR_BUDGET_PHASE':'evidence','TOUCHCOLOR_EVIDENCE_DEADLINE_MONOTONIC':value}):
                 with self.assertRaises(ValueError):offline.evidence_deadline()
 
-    def test_selected_reader_uses_live_toolchain_version_and_documented_lookup(self):
+    def test_missing_or_foreign_receipt_never_starts_a_result_reader(self):
+        for reason in ('Missing receipt','Foreign source/run/attempt/row receipt'):
+            with tempfile.TemporaryDirectory() as folder:
+                root=Path(folder).resolve();report,summary,shutdown=self.role_fixture(root,'largest')
+                with patch.object(offline,'selected_reader',side_effect=ValueError(reason)):
+                    result,_,query=self.qualify(root,report,summary,shutdown)
+                query.assert_not_called();self.assertNotIn('snapshot',result['read_isolation'])
+                self.assertFalse(offline.role_qualified(result,'largest'))
+
+    def test_post_persistence_deadline_revokes_qualification(self):
         with tempfile.TemporaryDirectory() as folder:
-            developer=Path(folder).resolve();tool=developer/'usr/bin/xcresulttool';tool.parent.mkdir(parents=True)
-            tool.write_bytes(b'portable tool');tool.chmod(0o700);seen=[]
-            def read(label,command,seconds,limit):
-                seen.append((command,seconds));return offline.XCODE_VERSION+'\n' if command[0]=='xcodebuild' else str(tool)+'\n'
-            with patch.object(offline,'DEVELOPER_DIR',str(developer)),patch.dict(os.environ,{'DEVELOPER_DIR':str(developer)}):
-                value=REAL_READER(read)
-                self.assertEqual(value['path'],str(tool));self.assertEqual(seen,[(['xcodebuild','-version'],5),(['xcrun','--find','xcresulttool'],5)])
-                with self.assertRaises(ValueError):REAL_READER(lambda *a:'Xcode other')
-                tool.unlink();tool.symlink_to('/bin/echo')
-                with self.assertRaises(ValueError):REAL_READER(read)
+            root=Path(folder).resolve();report,summary,shutdown=self.role_fixture(root,'largest')
+            now=[time.monotonic()];deadline=now[0]+300
+            def persist():
+                if report.get('read_isolation',{}).get('completed'):now[0]=deadline
+            with patch.object(offline.time,'monotonic',side_effect=lambda:now[0]):
+                result,_,_=self.qualify(root,report,summary,shutdown,deadline=deadline,persist=persist)
+            self.assertFalse(offline.role_qualified(result,'largest'))
+            self.assertNotIn('verified_results',result)
+            self.assertFalse(result['read_isolation']['completed'])
+            self.assertIn('persistence exceeded',result['summary_error'])
+            saved=json.loads((root/'build/vision-runtime/largest-offline-result.json').read_bytes())
+            self.assertFalse(saved['read_isolation']['completed'])
 
     def test_real_sigterm_and_sigint_unwind_owned_child_and_snapshot(self):
         child_script='''import os,signal,subprocess,sys,time
@@ -352,10 +367,11 @@ while True:time.sleep(1)
 from pathlib import Path
 import vision_offline_result as o
 from bounded_process import run_captured
-from test_vision_offline_result import fixture,Reader,synthetic_reader,attachment_export,SHA,DEVICE,RUNTIME
+from test_vision_offline_result import fixture,Reader,synthetic_reader, synthetic_reader_guard,attachment_export,SHA,DEVICE,RUNTIME
 root=Path(sys.argv[1]);stage=sys.argv[2]
 report,summary,shutdown,*_=fixture(root)
-o.selected_reader=lambda read:synthetic_reader()
+o.selected_reader=synthetic_reader
+o.verify_reader_file=synthetic_reader_guard
 def blocked(command,**kwargs):return run_captured([sys.executable,str(root/'owned.py'),str(root/'ready')],timeout=30,text=False)
 def query(command,**kwargs):return subprocess.CompletedProcess(command,0,json.dumps(summary).encode(),b'')
 o.qualify(report,root/'build/vision-runtime/largest-offline-result.json',shutdown,sha=SHA,device=DEVICE,runtime=RUNTIME,runner=Reader(),summary_path=root/'build/vision-runtime/largest-summary.json',summary_runner=blocked if stage=='summary' else query,attachment_runner=blocked if stage=='attachment' else attachment_export)

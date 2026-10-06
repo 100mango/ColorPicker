@@ -65,11 +65,28 @@ def hosted_fixture(root, summary, shutdown, row_binding=ROW):
     return report,hosted
 
 
-def synthetic_reader():
-    # Portable command double; the actual selected-tool verifier has separate tests.
-    return {'developer_dir':offline.DEVELOPER_DIR,'xcode_version':offline.XCODE_VERSION,
-            'version_command':['xcodebuild','-version'],'selection_command':['xcrun','--find','xcresulttool'],
-            'path':offline.DEVELOPER_DIR+'/usr/bin/xcresulttool'}
+def synthetic_reader(root=None,binding=ROW,deadline=None):
+    # Explicit schema2 portable proof double; live selection has separate adversaries.
+    root=Path(root or '.').resolve();now=time.monotonic();wall=time.time();st=root.stat()
+    identity={'device':1,'inode':2,'mode':0o100700,'bytes':24,'mtime_ns':int(wall*1e9),'ctime_ns':int(wall*1e9),'sha256':'a'*64}
+    version=dict(identity,bytes=len(offline.XCODE_VERSION)+1,sha256=hashlib.sha256((offline.XCODE_VERSION+'\n').encode()).hexdigest())
+    value={'schema':2,'developer_dir':offline.DEVELOPER_DIR,'xcode_version':offline.XCODE_VERSION,
+           'version_command':['xcodebuild','-version'],'selection_command':['xcrun','--find','xcresulttool'],
+           'path':offline.DEVELOPER_DIR+'/usr/bin/xcresulttool','identity':identity,
+           'context':{'source_sha':binding['source_sha'],'run_id':'1','run_attempt':'1','native_text_row':binding,
+                      'source_root':{'path':str(root),'device':st.st_dev,'inode':st.st_ino},
+                      'runner_temp':{'path':'/synthetic-runner-temp','device':1,'inode':3},'job_budget_identity':identity,
+                      'started_epoch':wall-100,'started_monotonic':now-100,'work_deadline':now+1400},
+           'version_observation':{'path':'/tmp/touchcolor-platform-xcode.txt','identity':version},
+           'selection':{'started_at':now-30,'finished_at':now-20,'deadline':now,'timeout_seconds':30,'cleanup_confirmed':True},
+           'verified_at':now-10}
+    value['verification']=synthetic_reader_guard(value,deadline or now+300)
+    return value
+
+
+def synthetic_reader_guard(reader,deadline):
+    now=time.monotonic()
+    return {'identity':reader['identity'],'started_at':now,'finished_at':now,'deadline':min(deadline,now+5)}
 
 
 def attachment_export(command, **kwargs):
@@ -97,7 +114,8 @@ class VisionOfflineTests(unittest.TestCase):
         self.deadline=time.monotonic()+180
         env = patch.dict(os.environ, {'TOUCHCOLOR_BUDGET_PHASE': '', 'GITHUB_SHA': '', 'TOUCHCOLOR_JOB_PLATFORM':'', 'TOUCHCOLOR_VISION_CASE':'','TOUCHCOLOR_TEXT_PHASE':'','TOUCHCOLOR_WATCH_PROFILE':'','TOUCHCOLOR_JOB_LANE':'','TOUCHCOLOR_JOB_MINUTES':'','TOUCHCOLOR_EVIDENCE_LIMIT':''})
         env.start(); self.addCleanup(env.stop)
-        selection=patch.object(offline,"selected_reader",return_value=synthetic_reader());selection.start();self.addCleanup(selection.stop)
+        selection=patch.object(offline,"selected_reader",side_effect=synthetic_reader);selection.start();self.addCleanup(selection.stop)
+        guard=patch.object(offline,'verify_reader_file',side_effect=synthetic_reader_guard);guard.start();self.addCleanup(guard.stop)
 
     def qualify(self, folder, report, summary, shutdown, **kwargs):
         reader = kwargs.pop('runner', Reader())
@@ -301,7 +319,7 @@ class VisionOfflineTests(unittest.TestCase):
     def test_insufficient_evidence_budget_starts_no_summary_and_preserves_tail(self):
         from job_budget import JobBudget, create_record
         from test_job_budget import Clock
-        clock=Clock(); record=create_record({'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_JOB_MINUTES':'25',
+        clock=Clock(); record=create_record({'TOUCHCOLOR_JOB_PLATFORM':'vision','TOUCHCOLOR_JOB_MINUTES':'35',
             'TOUCHCOLOR_JOB_STARTED_EPOCH':str(clock.wall),'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(clock.mono),
             'GITHUB_SHA':SHA,'GITHUB_RUN_ID':'1'}, wall=lambda:clock.wall, monotonic=lambda:clock.mono)
         budget=JobBudget(record, wall=lambda:clock.wall, monotonic=lambda:clock.mono);budget.phase='evidence'
@@ -408,7 +426,7 @@ class VisionOfflineTests(unittest.TestCase):
         self.assertTrue(offline.evidence_complete(evidence))
         environment={**os.environ,'GITHUB_SHA':SHA,'GITHUB_RUN_ID':'1','TOUCHCOLOR_JOB_PLATFORM':'vision',
             'TOUCHCOLOR_VISION_CASE':'canvas-audit','TOUCHCOLOR_TEXT_PHASE':'system-largest','TOUCHCOLOR_WATCH_PROFILE':'',
-            'TOUCHCOLOR_JOB_LANE':'vision-canvas-audit-system-largest','TOUCHCOLOR_JOB_MINUTES':'25','TOUCHCOLOR_EVIDENCE_LIMIT':'700000',
+            'TOUCHCOLOR_JOB_LANE':'vision-canvas-audit-system-largest','TOUCHCOLOR_JOB_MINUTES':'35','TOUCHCOLOR_EVIDENCE_LIMIT':'700000',
             'TOUCHCOLOR_JOB_STARTED_EPOCH':str(time.time()),'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(time.monotonic()),
             'GITHUB_OUTPUT':str(root/'outputs.txt'),'TOUCHCOLOR_BUDGET_PHASE':'evidence'}
         with contextlib.chdir(root),patch.dict(os.environ,environment):
@@ -499,7 +517,7 @@ class VisionOfflineTests(unittest.TestCase):
                        'vision_offline_case': case, 'vision_offline_expected': ['hosted', 'normal']}
             env = {'GITHUB_SHA': SHA, 'TOUCHCOLOR_JOB_PLATFORM': 'vision', 'TOUCHCOLOR_VISION_CASE': case,
                    'TOUCHCOLOR_TEXT_PHASE': 'system-largest', 'TOUCHCOLOR_WATCH_PROFILE': '',
-                   'TOUCHCOLOR_JOB_LANE': binding['lane'], 'TOUCHCOLOR_JOB_MINUTES': '25', 'TOUCHCOLOR_EVIDENCE_LIMIT': '700000'}
+                   'TOUCHCOLOR_JOB_LANE': binding['lane'], 'TOUCHCOLOR_JOB_MINUTES': '35', 'TOUCHCOLOR_EVIDENCE_LIMIT': '700000'}
             with patch.dict(os.environ, env):
                 with self.assertRaisesRegex(ValueError, 'current row'): offline.expected_roles(runtime)
 
@@ -586,7 +604,7 @@ class VisionOfflineTests(unittest.TestCase):
 
     def test_source_budgets_and_cached_export_order_remain_explicit(self):
         workflow=(ROOT/'.github/workflows/apple-platforms.yml').read_text()
-        self.assertIn("--seconds 180 --phase evidence",workflow)
+        self.assertIn("--seconds ${{ matrix.platform == 'vision' && 300 || 180 }} --phase evidence",workflow)
         self.assertLess(workflow.index('vision_offline_result.py qualify'),workflow.index('for platform in vision watch;'))
         branch=workflow.split('for platform in vision watch;',1)[1].split('done',1)[0]
         self.assertIn('if test "$platform" = vision;',branch);self.assertIn('vision_offline_result.py copy-summary',branch)

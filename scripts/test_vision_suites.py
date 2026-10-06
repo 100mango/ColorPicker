@@ -26,7 +26,7 @@ class VisionSuiteTests(unittest.TestCase):
         self.assertEqual({case for _, case, _, _ in rows}, set(CASES))
         for lane, case, minutes, budget in rows:
             self.assertEqual(lane, case)
-            self.assertEqual(int(minutes), 25)
+            self.assertEqual(int(minutes), 35)
             self.assertEqual(int(budget), CASES[case][1])
         self.assertEqual(sum(budget for _, budget in CASES.values()), 8_000_000)
         self.assertEqual(sum(map(int, re.findall(r'evidence_bytes: (\d+)', workflow))), 20_000_000)

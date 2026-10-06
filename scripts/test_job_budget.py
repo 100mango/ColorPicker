@@ -3,23 +3,23 @@ import hashlib
 from pathlib import Path
 import re
 import unittest
-from job_budget import JobBudget, BudgetExhausted, create_record, RESERVES
+from job_budget import JobBudget, BudgetExhausted, create_record, RESERVES, reserves_for
 
 class Clock:
     def __init__(self): self.wall = 10000.; self.mono = 100.
     def advance(self, seconds): self.wall += seconds; self.mono += seconds
 
 class JobBudgetTests(unittest.TestCase):
-    def budget(self, platform='vision', minutes=25):
+    def budget(self, platform='tv', minutes=25):
         c=Clock(); env={'TOUCHCOLOR_JOB_PLATFORM':platform,'TOUCHCOLOR_JOB_MINUTES':str(minutes),'TOUCHCOLOR_JOB_STARTED_EPOCH':str(c.wall),'TOUCHCOLOR_JOB_STARTED_MONOTONIC':str(c.mono),'GITHUB_SHA':'a'*40,'GITHUB_RUN_ID':'123'}
         record=create_record(env,wall=lambda:c.wall,monotonic=lambda:c.mono)
         return c, JobBudget(record,wall=lambda:c.wall,monotonic=lambda:c.mono)
     def test_exact_job_rows_include_setup_and_all_tail_reserves(self):
-        for platform,minutes in [('vision',25),('watch',45),('tv',25),('mac',40),('ios',20),('paired',45)]:
+        for platform,minutes in [('vision',35),('watch',45),('tv',25),('mac',40),('ios',20),('paired',45)]:
             c,b=self.budget(platform,minutes)
-            self.assertEqual(b.remaining(),minutes*60-30-sum(RESERVES.values()))
+            self.assertEqual(b.remaining(),minutes*60-30-sum(reserves_for(platform).values()))
             c.advance(75)
-            self.assertEqual(b.remaining(),minutes*60-105-sum(RESERVES.values()))
+            self.assertEqual(b.remaining(),minutes*60-105-sum(reserves_for(platform).values()))
             self.assertGreater(b.remaining('cleanup'),b.remaining())
             self.assertEqual(b.remaining('upload')-b.remaining('validation'),60)
         with self.assertRaises(ValueError): self.budget('vision',30)
@@ -42,7 +42,7 @@ class JobBudgetTests(unittest.TestCase):
         watch_rows=0
         for platform,body in rows:
             minutes=int(re.search(r'            minutes: (\d+)',body).group(1))
-            expected={'watch':45,'vision':25,'tv':25,'mac':40,'ios':20,'paired':45}[platform]
+            expected={'watch':45,'vision':35,'tv':25,'mac':40,'ios':20,'paired':45}[platform]
             self.assertEqual(minutes,expected)
             if platform=='watch':watch_rows+=1;self.assertIn('evidence_bytes: '+('600000' if 'text_phase: system-largest' in body else '1200000'),body)
         self.assertEqual(watch_rows,4)
@@ -112,7 +112,7 @@ class JobBudgetTests(unittest.TestCase):
                 actual[label]=hashlib.sha256(body.encode()).hexdigest()
         self.assertEqual(actual,expected)
         self.assertLess(source.index('Start exact native job clock'),source.index('Initialize exact row budget'))
-        self.assertIn("--seconds 180 --phase evidence",source)
+        self.assertIn("--seconds ${{ matrix.platform == 'vision' && 300 || 180 }} --phase evidence",source)
         self.assertIn("limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384",source)
         self.assertIn("steps.upload_budget.outcome == 'success'",source)
         self.assertIn('retention-days: 1',source)
