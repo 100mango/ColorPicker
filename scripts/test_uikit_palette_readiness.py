@@ -54,6 +54,25 @@ class ReadinessSourceContracts(unittest.TestCase):
         for required in ['#112233','@"#aabbcc"','#445566','[self verifyHistory:@[] app:app]','[self verifyHistory:colors app:app]','[app terminate]','[app launch]']:
             self.assertIn(required,body)
         self.assertEqual(body.count('[self verifyHistory:appended app:app]'),2)
+    def test_three_argument_tap_selector_is_declared_for_external_callers(self):
+        header=(ROOT/'TouchColorUITests/TCPaletteUIHelpers.h').read_text()
+        signature='- (void)tapReadyPaletteElement:(XCUIElement *)element timeout:(NSTimeInterval)timeout existenceTimeout:(NSTimeInterval)existenceTimeout'
+        self.assertEqual(header.count(signature+';'),1)
+        self.assertEqual(HELPER.count(signature+' {'),1)
+        self.assertIn('@interface XCTestCase (TCPaletteUIHelpers)',header)
+        # The new external call is in the iPad file; invalid-paste's other
+        # changed call is within this category's own implementation file.
+        callers=[]
+        for path in sorted((ROOT/'TouchColorUITests').glob('*.m')):
+            if path.name=='TCPaletteUIHelpers.m': continue
+            source=path.read_text()
+            for line in source.splitlines():
+                if '[self tapReadyPaletteElement:' in line and 'existenceTimeout:' in line:
+                    callers.append(path.name)
+                    self.assertIn('#import "TCPaletteUIHelpers.h"',source)
+                    self.assertIn('[self tapReadyPaletteElement:close timeout:10 existenceTimeout:5]',line)
+        self.assertEqual(callers,['TouchColorIPadUITests.m'])
+
     def test_existing_wrapper_grants_are_unchanged(self):
         self.assertIn('readyUntil:started+timeout started:started existenceTimeout:timeout',HELPER)
         self.assertIn('[self tapReadyPaletteElement:element timeout:timeout existenceTimeout:timeout]',HELPER)
