@@ -1,9 +1,10 @@
-"""Retain one failed phone palette case and query only its app lifecycle receipts.
+"""Observe two closed phone palette cases with one bounded fixed log query.
 
-No logging configuration, log archive, process inventory or fallback query. The
-query is unavailable unless target help confirms this one documented route.
-Acquisition and both pipes have finite caps, before JSON parsing/retention.
+No logging configuration, log archive, process inventory or fallback query.
+Complete safe help with an unknown layout permits the same reviewed query;
+permission/errors and uncertain completion stop acquisition.
 """
+import base64
 import datetime
 import hashlib
 import json
@@ -21,18 +22,25 @@ import uuid
 from atomic_json import write_json
 from bounded_process import group_exists, stop_group
 
-CASE = 'testInvalidPalettePastePreservesHistory'
+CASES = ('testInvalidPalettePastePreservesHistory', 'testPalettePasteReviewAcceptAndRelaunch')
+CASE = CASES[0]
 XCTEST_CASE = '-[TouchColorUITests ' + CASE + ']'
+XCTEST_CASES = {case: '-[TouchColorUITests ' + case + ']' for case in CASES}
 PREFIX = 'PALETTE_LIFECYCLE '
 MARKER = re.compile(r'TouchColorUITests-Runner\[[1-9][0-9]*:[0-9]+\] PALETTE_CASE (\{.*\})$')
 SOURCES = ('TouchColorPhoneCompanion/PhonePaletteImportController.swift',
            'TouchColorUITests/TouchColorUITests.m', 'TouchColorUITests/TCPaletteUIHelpers.m',
            'scripts/palette_lifecycle_diagnostics.py', 'scripts/test_simulators.sh')
-BOOL_FIELDS = ('visible', 'dismissing', 'navigationDismissing', 'transition', 'busy', 'finished')
+BOOL_FIELDS = ('visible', 'dismissing', 'navigationDismissing', 'transition', 'busy', 'finished',
+               'selectionExists', 'selectionNonempty', 'buttonEnabled')
 TYPE_FIELDS = ('controller', 'presenter', 'presented', 'navigationPresenter', 'navigationPresented')
 EVENTS = {'appeared', 'file-present-requested', 'file-present-completed',
-          'close-action-received', 'close-dismiss-completed', 'disappeared', 'finished'}
+          'close-action-received', 'close-dismiss-completed', 'disappeared', 'finished',
+          'accept-enter', 'apply-applied'}
 MAX_RECORD = 12 * 1024
+MAX_HELP_LOG_BYTES = 136 * 1024
+HELP_FRAME = 'PALETTE_HELP_RECEIPT:'
+MAX_ACQUISITION_BYTES = 360 * 1024
 
 
 def require(condition, message):
@@ -78,8 +86,8 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
     previous = {}
     process = None
     stopped = None
-    errors = bytearray()
-    stderr_observed_bytes = 0
+    output, errors = bytearray(), bytearray()
+    stdout_observed_bytes = stderr_observed_bytes = 0
     selector = selectors.DefaultSelector()
 
     def interrupted(signum, frame):
@@ -118,18 +126,14 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
                     selector.unregister(key.fileobj)
                     continue
                 total += len(data)
-                if key.fileobj is process.stderr:
-                    stderr_observed_bytes += len(data)
-                if total > cap:
-                    if key.fileobj is process.stderr:
-                        # Count the already-read overflow chunk, but retain only
-                        # the prefix that still fits the original capture cap.
-                        errors.extend(data[:max(0, min(4096-len(errors), cap+len(data)-total))])
-                    raise RuntimeError('byte-limit')
+                destination = output if key.fileobj is process.stdout else errors
                 if key.fileobj is process.stdout:
-                    output.extend(data)
+                    stdout_observed_bytes += len(data)
                 else:
-                    errors.extend(data)
+                    stderr_observed_bytes += len(data)
+                destination.extend(data[:max(0, cap + len(data) - total)])
+                if total > cap:
+                    raise RuntimeError('byte-limit')
         check_cancelled()
         if time.monotonic() > deadline:
             raise RuntimeError('late-exit')
@@ -147,6 +151,9 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
         stopped = CaptureStopped(reason, confirmed, cancelled[0])
         # Preserve only bounded failure evidence already read by this capture.
         # A stopped producer never proves the complete stderr stream was seen.
+        stopped.stdout_prefix = bytes(output)
+        stopped.stdout_observed_bytes = stdout_observed_bytes
+        stopped.stderr_capture = bytes(errors)
         stopped.stderr_prefix = bytes(errors[:4096])
         stopped.stderr_observed_bytes = stderr_observed_bytes
         raise stopped from None
@@ -175,7 +182,10 @@ def source_identity(runner=capture):
     require(os.environ.get('GITHUB_WORKFLOW_SHA') == sha, 'Workflow/source mismatch')
     for arguments, expected in ((['git', 'rev-parse', 'HEAD'], sha),
                                 (['git', 'diff', '--quiet', 'HEAD', '--'], '')):
+        began = time.monotonic()
         result = runner(arguments, seconds=3, cap=4096)
+        if time.monotonic() - began > 3:
+            raise CaptureStopped('late-source-exit', True)
         require(result.returncode == 0 and result.stdout.decode().strip() == expected, 'Unverified source')
     run = {key: os.environ.get(key, '') for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
     require(all(re.fullmatch('[1-9][0-9]{0,19}', value) for value in run.values()), 'Missing current run identity')
@@ -185,7 +195,7 @@ def source_identity(runner=capture):
 
 def validate_case(value):
     require(isinstance(value, dict) and set(value) == {'case', 'token', 'event', 'started', 'epoch', 'pid'}, 'Invalid case fields')
-    require(value['case'] == CASE and valid_uuid(value['token']), 'Wrong case/token')
+    require(value['case'] in CASES and valid_uuid(value['token']), 'Wrong case/token')
     require(value['event'] in ('started', 'failed'), 'Wrong case event')
     require(number(value['started']) and number(value['epoch']) and
             0 < value['started'] <= value['epoch'] <= value['started'] + 240, 'Invalid case time')
@@ -196,47 +206,60 @@ def validate_case(value):
 
 class CaseRetainer:
     def __init__(self):
-        self.active = False
-        self.seen = False
-        self.begin = None
-        self.failure = None
-        self.ended = False
+        self.active = None
+        self.states = {case: {'seen': False, 'begin': None, 'failure': None, 'ended': False}
+                       for case in CASES}
         self.rejected = False
 
     def line(self, line):
         if self.rejected:
             return
         try:
-            if line.rstrip().endswith("Test Case '" + XCTEST_CASE + "' started."):
-                require(not self.seen, 'Repeated target case')
-                self.seen = self.active = True
+            for case, name in XCTEST_CASES.items():
+                if line.rstrip().endswith("Test Case '" + name + "' started."):
+                    state = self.states[case]
+                    require(self.active is None and not state['seen'], 'Repeated/overlapping target case')
+                    state['seen'] = True
+                    self.active = case
             if 'PALETTE_CASE ' in line:
                 match = MARKER.search(line.rstrip())
-                require(match is not None and self.active, 'Unbound case marker')
+                require(match is not None and self.active is not None, 'Unbound case marker')
                 value = validate_case(strict_json(match.group(1)))
+                require(value['case'] == self.active, 'Crossed testcase marker')
+                state = self.states[self.active]
                 if value['event'] == 'started':
-                    require(self.begin is None and self.failure is None, 'Duplicate start')
-                    self.begin = value
+                    require(state['begin'] is None and state['failure'] is None, 'Duplicate start')
+                    require(all(other['begin'] is None or other['begin']['token'] != value['token']
+                                for other in self.states.values()), 'Repeated testcase token')
+                    state['begin'] = value
                 else:
-                    require(self.begin is not None and self.failure is None, 'Duplicate/unbound failure')
-                    require(all(value[key] == self.begin[key] for key in ('token', 'started', 'case')), 'Mismatched failure')
-                    self.failure = value
-            if ("Test Case '" + XCTEST_CASE + "' failed (") in line:
-                require(self.active and self.failure is not None, 'Missing failed-case metadata')
-                self.active = False
-                self.ended = True
-            elif ("Test Case '" + XCTEST_CASE + "' passed (") in line:
-                require(self.active and self.failure is None, 'Inconsistent case outcome')
-                self.active = False
+                    require(state['begin'] is not None and state['failure'] is None, 'Duplicate/unbound failure')
+                    require(all(value[key] == state['begin'][key] for key in ('token', 'started', 'case')), 'Mismatched failure')
+                    state['failure'] = value
+            for case, name in XCTEST_CASES.items():
+                for outcome in ('failed', 'passed'):
+                    if ("Test Case '" + name + "' " + outcome + " (") in line:
+                        state = self.states[case]
+                        require(self.active == case and state['begin'] is not None and
+                                (state['failure'] is not None) == (outcome == 'failed'), 'Inconsistent case outcome')
+                        self.active = None
+                        state['ended'] = True
         except (ValueError, TypeError, KeyError):
             self.rejected = True
 
     def result(self):
-        if self.rejected or (self.failure is not None and not self.ended):
+        if self.rejected or self.active is not None:
             return {'status': 'rejected-case-metadata'}
-        if self.failure is None:
-            return {'status': 'no-target-failure'}
-        return {'status': 'bound-failure', 'case': self.failure}
+        cases = []
+        for case, state in self.states.items():
+            row = {'case': case, 'status': 'not-observed'}
+            if state['ended']:
+                row['status'] = 'bound-failure' if state['failure'] else 'no-target-failure'
+                if state['failure']:
+                    row['failure'] = state['failure']
+            cases.append(row)
+        return {'status': 'bound-failure' if any(row['status'] == 'bound-failure' for row in cases)
+                else 'no-target-failure', 'cases': cases}
 
 
 def retain(family):
@@ -287,61 +310,151 @@ def retain(family):
     write_json(path, result, limit=MAX_RECORD)
 
 
-def load_case(identity):
-    path = Path('build') / (identity['family'] + '-palette-case.json')
-    if not path.is_file():
-        return None
-    require(not path.is_symlink() and not path.parent.is_symlink(), 'Unsafe case metadata path')
-    with path.open('rb') as stream:
-        raw = stream.read(MAX_RECORD + 1)
-    require(len(raw) <= MAX_RECORD, 'Oversized case metadata')
+def command_interval(identity, source):
+    """Read the existing selected command receipt; retainer lifetime is not its interval."""
+    from uikit_managed_tests import read_regular, record_path, test_argv, STEPS, CLEANUP, SUMMARY
+    from uikit_managed_device import read_binding
+    from uikit_completion import selection
+    selected = selection(identity['family'], 'TouchColorUITests')
+    require(selected is not None, 'Selected functional command proof unavailable')
+    binding = read_binding(identity['family'])
+    context = binding['context']
+    require(binding['identity'] == identity and context['sha'] == source['sha'] and
+            context['workflow_sha'] == source['workflow_sha'] and
+            context['run_id'] == source['run']['GITHUB_RUN_ID'] and
+            context['run_attempt'] == source['run']['GITHUB_RUN_ATTEMPT'], 'Foreign functional command source')
+    raw = read_regular(record_path(identity['family'], 'TouchColorUITests'), 32768)
     value = strict_json(raw)
+    require(isinstance(value, dict) and isinstance(value.get('setup'), dict) and
+            isinstance(value.get('command'), dict) and isinstance(value.get('timing'), dict),
+            'Malformed functional command receipt')
+    require(value.get('schema') == 3 and type(value.get('schema')) is int and
+            value.get('suite') == 'TouchColorUITests' and value.get('selection') == selected and
+            value.get('setup', {}).get('binding') == binding and
+            value.get('summary_qualification_only') is True and
+            value.get('case_identity_basis') == 'fixed_executed_argv_and_complete_summary' and
+            value.get('per_case_log_reconciliation') == 'pending_external_review', 'Wrong functional command receipt')
+    command, timing = value.get('command', {}), value.get('timing', {})
+    require(command.get('status') == 'timely_exit' and command.get('host_cleanup_confirmed') is True and
+            type(command.get('exit_code')) is int and command['exit_code'] in (0, 65) and
+            command.get('argv') == test_argv(identity['family'], 'TouchColorUITests', identity['udid']),
+            'Unconfirmed or wrong functional command')
+    keys = ('phase_started_monotonic', 'phase_deadline_monotonic', 'admitted_monotonic',
+            'command_origin_monotonic', 'command_wall_started', 'command_wall_finished')
+    require(all(number(timing.get(key)) for key in keys), 'Missing functional command timing')
+    times = [command.get(key) for key in ('started_monotonic', 'finished_monotonic', 'deadline_monotonic')]
+    seconds, grant = STEPS['TouchColorUITests'][:2]
+    require(all(number(item) for item in times) and
+            0 <= timing['phase_started_monotonic'] <= timing['admitted_monotonic'] <=
+            timing['command_origin_monotonic'] <= times[0] <= times[1] < times[2] and
+            timing['phase_deadline_monotonic'] == timing['phase_started_monotonic'] + seconds and
+            times[2] == timing['command_origin_monotonic'] + grant and
+            timing['admitted_monotonic'] + grant + 2 * CLEANUP + SUMMARY < timing['phase_deadline_monotonic'] and
+            identity['started'] <= timing['command_wall_started'] <= timing['command_wall_finished'] <= time.time(),
+            'Invalid original functional command interval')
+    return {'source': context, 'receipt_sha256': hashlib.sha256(raw).hexdigest(), 'receipt_bytes': len(raw),
+            'started': timing['command_wall_started'], 'ended': timing['command_wall_finished']}
+
+
+def load_case(identity, runner=capture):
+    from uikit_managed_tests import read_regular
+    path = Path('build') / (identity['family'] + '-palette-case.json')
+    if not path.exists() and not path.is_symlink():
+        return None
+    value = strict_json(read_regular(path, MAX_RECORD))
+    require(isinstance(value, dict), 'Malformed case retention')
     require(value.get('identity') == identity, 'Case belongs to another owned simulator')
-    require(value.get('source') == source_identity(), 'Case belongs to another source')
+    require(value.get('source') == source_identity(runner), 'Case belongs to another source')
     require(value.get('status') == 'bound-failure', 'Case unavailable')
-    case = validate_case(value['case'])
-    require(case['event'] == 'failed' and number(value['capture_started']) and number(value['capture_ended']) and
-            identity['started'] <= value['capture_started'] <= case['started'] <= case['epoch'] <= value['capture_ended'] <= time.time(),
-            'Case outside current test execution')
+    rows = value.get('cases')
+    require(isinstance(rows, list) and len(rows) == 2 and all(isinstance(row, dict) for row in rows) and
+            [row.get('case') for row in rows] == list(CASES), 'Wrong two-case schema')
+    command = command_interval(identity, value['source'])
+    require(number(value['capture_started']) and number(value['capture_ended']) and
+            identity['started'] <= value['capture_started'] <= value['capture_ended'] <= time.time(),
+            'Invalid case retention interval')
+    tokens, cases = set(), []
+    for row in rows:
+        require(row['status'] in ('bound-failure', 'no-target-failure', 'not-observed') and
+                set(row) == ({'case', 'status', 'failure'} if row['status'] == 'bound-failure' else {'case', 'status'}),
+                'Invalid case envelope')
+        if row['status'] != 'bound-failure':
+            continue
+        case = validate_case(row['failure'])
+        require(case['case'] == row['case'] and case['event'] == 'failed' and case['token'] not in tokens and
+                value['capture_started'] <= case['started'] <= case['epoch'] <= value['capture_ended'] and
+                command['started'] <= case['started'] <= case['epoch'] <= command['ended'],
+                'Case outside actual functional command or crossed identity')
+        tokens.add(case['token']); cases.append(case)
+    require(cases, 'No current failed case')
+    value['command_interval'] = command
     return value
 
 
-def log_command(identity, case):
-    # Date arguments are rounded outward by at most one second. Each event's exact
-    # app timestamp is checked again before retaining any field.
-    start = datetime.datetime.fromtimestamp(math.floor(case['started']), datetime.timezone.utc)
-    end = datetime.datetime.fromtimestamp(math.ceil(case['epoch']), datetime.timezone.utc)
-    predicate = ('processID == %d AND process == "TouchColor" AND eventMessage BEGINSWITH "PALETTE_LIFECYCLE " '
-                 'AND eventMessage CONTAINS "%s"' % (case['pid'], case['token']))
+def failed_cases(value):
+    return [row['failure'] for row in value['cases'] if row['status'] == 'bound-failure']
+
+
+def log_command(identity, cases):
+    # One explicitly broader outer union. Every event is rechecked against its
+    # own exact <=240-second case interval, inside the original functional argv.
+    require(1 <= len(cases) <= 2, 'Wrong query branch count')
+    start = datetime.datetime.fromtimestamp(math.floor(min(case['started'] for case in cases)), datetime.timezone.utc)
+    end = datetime.datetime.fromtimestamp(math.ceil(max(case['epoch'] for case in cases)), datetime.timezone.utc)
+    branches = ['(processID == %d AND eventMessage CONTAINS "%s")' % (case['pid'], case['token']) for case in cases]
+    predicate = ('process == "TouchColor" AND eventMessage BEGINSWITH "PALETTE_LIFECYCLE " AND (' +
+                 ' OR '.join(branches) + ')')
     return ['xcrun', 'simctl', 'spawn', identity['udid'], 'log', 'show', '--style', 'json',
             '--start', start.strftime('%Y-%m-%d %H:%M:%S%z'), '--end', end.strftime('%Y-%m-%d %H:%M:%S%z'),
             '--predicate', predicate]
 
 
-def lifecycle_rows(raw, case):
+def case_envelopes(value):
+    rows = []
+    for row in value['cases']:
+        item = {'case': row['case'], 'status': row['status']}
+        if row['status'] == 'bound-failure':
+            case = row['failure']
+            item.update({key: case[key] for key in ('token', 'pid', 'started', 'epoch')})
+            item['controller'] = 'PhonePaletteImportController'
+        rows.append(item)
+    return rows
+
+
+class ObservationOverflow(ValueError):
+    pass
+
+
+def lifecycle_rows(raw, cases):
     records = strict_json(raw)
-    require(isinstance(records, list) and len(records) <= 24, 'Unexpected log record count')
+    require(isinstance(records, list), 'Unexpected log record shape')
+    if len(records) > 24:
+        raise ObservationOverflow('combined-event-limit')
     rows, seen = [], set()
     expected = set(BOOL_FIELDS + TYPE_FIELDS) | {'event', 'token', 'pid', 'epoch', 'presentation', 'sequence'}
     for record in records:
-        require(isinstance(record, dict) and type(record.get('processID')) is int and record['processID'] == case['pid'], 'Wrong process receipt')
-        require(record.get('processImagePath', '').endswith('/TouchColor.app/TouchColor'), 'Wrong app receipt')
+        require(isinstance(record, dict) and type(record.get('processID')) is int, 'Wrong process receipt')
+        require(isinstance(record.get('processImagePath'), str) and
+                record['processImagePath'].endswith('/TouchColor.app/TouchColor'), 'Wrong app receipt')
         message = record.get('eventMessage')
         require(isinstance(message, str) and message.startswith(PREFIX), 'Wrong message receipt')
         value = strict_json(message[len(PREFIX):])
         require(isinstance(value, dict) and set(value) == expected, 'Wrong lifecycle fields')
-        require(value['token'] == case['token'] and type(value['pid']) is int and value['pid'] == case['pid'], 'Wrong correlation')
+        matches = [case for case in cases if value['token'] == case['token'] and
+                   type(value['pid']) is int and value['pid'] == case['pid'] == record['processID']]
+        require(len(matches) == 1, 'Wrong or ambiguous case correlation')
+        case = matches[0]; case_index = CASES.index(case['case'])
         require(valid_uuid(value['presentation']) and type(value['sequence']) is int and 1 <= value['sequence'] <= 24, 'Wrong presentation identity')
         require(value['event'] in EVENTS and value['controller'] == 'PhonePaletteImportController', 'Wrong event/controller')
-        require(number(value['epoch']) and case['started'] <= value['epoch'] <= case['epoch'], 'Outside test window')
+        require(number(value['epoch']) and case['started'] <= value['epoch'] <= case['epoch'], 'Outside own test window')
         require(all(type(value[key]) is bool for key in BOOL_FIELDS), 'Wrong lifecycle boolean')
         require(all(isinstance(value[key], str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_.]{0,79}', value[key]) for key in TYPE_FIELDS), 'Wrong lifecycle type')
         key = (value['presentation'], value['sequence'])
         require(key not in seen, 'Duplicate lifecycle receipt')
         seen.add(key)
-        rows.append(value)
-    rows.sort(key=lambda value: (value['epoch'], value['presentation'], value['sequence']))
-    require(len(json.dumps(rows).encode()) <= MAX_RECORD, 'Oversized sanitized receipt')
+        rows.append({'case_index': case_index, **{key: item for key, item in value.items()
+                                               if key not in ('token', 'pid', 'controller')}})
+    rows.sort(key=lambda value: (value['epoch'], value['case_index'], value['presentation'], value['sequence']))
     return rows
 
 
@@ -407,49 +520,162 @@ def confirmed_help(kind, process):
     return False
 
 
+def help_commands(identity):
+    return [(['xcrun', 'simctl', 'help', 'spawn'], 'spawn'),
+            (['xcrun', 'simctl', 'spawn', identity['udid'], 'log', 'help', 'show'], 'show'),
+            (['xcrun', 'simctl', 'spawn', identity['udid'], 'log', 'help', 'predicates'], 'predicates')]
+
+
+def help_has_error(process):
+    if type(process.returncode) is not int or process.returncode not in (0, 64):
+        return True
+    try:
+        text = (process.stdout + b'\n' + process.stderr).decode('utf-8')
+    except UnicodeError:
+        return True
+    if not text.strip():
+        return True
+    # Complete help may discuss failed operations. Only diagnostic-shaped lines
+    # are error evidence; prose keywords neither establish failure nor support.
+    diagnostic = re.compile(
+        r'^(?:(?:log|simctl|xcrun):\s*)?(?:error(?::|\s+Domain=)|'
+        r'(?:unsupported|unrecognized|unavailable)(?::|$| (?:option|flag|argument|key|command|format)\b)|'
+        r'unknown (?:option|flag|argument|key|command|format)\b|invalid option\b|'
+        r'not (?:supported|available|recognized|implemented)\b|permission denied\b|'
+        r'operation not permitted\b|access denied\b|insufficient privileges\b|must be root\b|'
+        r'not authorized\b|failed to\b|failure:|'
+        r'an error was encountered processing the command\b|'
+        r'(?:access to logs|this (?:command|operation)) requires? (?:administrator|root) privileges\b)|'
+        r'^(?:log|simctl|xcrun):\s*(?:failed|failure)\b', re.I)
+    return any(diagnostic.search(line.strip()) is not None for line in text.splitlines())
+
+
+
+def stream_receipt(raw, *, complete, observed=None):
+    return {'base64': base64.b64encode(raw).decode('ascii'), 'bytes': len(raw),
+            'sha256': hashlib.sha256(raw).hexdigest(), 'complete': complete,
+            'observed_bytes': len(raw) if observed is None else observed}
+
+
+def emit_help_receipts(records):
+    require(len(records) == 3, 'Expected three fixed help stages')
+    lines = [HELP_FRAME + json.dumps(row, sort_keys=True, separators=(',', ':')) + '\n' for row in records]
+    require(sum(len(line.encode()) + 128 for line in lines) <= MAX_HELP_LOG_BYTES,
+            'Complete help framing exceeds phone allocation')
+    for line in lines:
+        print(line, end='', flush=True)
+
+
 def collect_lifecycle(identity, runner=capture):
     result = {'status': 'unavailable', 'simulator_commands_completed': True, 'events': []}
-    # 35 seconds including source checks, help, query and a 4-second cleanup
-    # reserve. This fits beside the existing 3+20-second service query in 2min.
+    # One original 35s acquisition, including 2x3s source checks, 3x3s help,
+    # one <=8s query and the unchanged two 2s owned cleanup phases.
     deadline = time.monotonic() + 35
+    help_records = []
+    acquired = 0
+    def bounded(command, *, seconds, cap):
+        nonlocal acquired
+        granted = min(seconds, deadline - time.monotonic() - 4)
+        require(granted > 0, 'No shared acquisition budget')
+        process = runner(command, seconds=granted, cap=cap)
+        count = len(process.stdout) + len(process.stderr)
+        acquired += count
+        if count > cap or acquired > MAX_ACQUISITION_BYTES:
+            error = CaptureStopped('byte-limit', True)
+            error.stdout_prefix = process.stdout[:cap]
+            error.stderr_capture = process.stderr[:max(0, cap - len(error.stdout_prefix))]
+            error.stdout_observed_bytes = len(process.stdout)
+            error.stderr_observed_bytes = len(process.stderr)
+            raise error
+        return process
     try:
-        value = load_case(identity)
+        value = load_case(identity, runner=bounded)
         if value is None:
             result['reason'] = 'no-current-case-metadata'
             return result
-        case = value['case']
-        result.update({'case': CASE, 'source_sha': value['source']['sha'], 'token': case['token'],
-                       'failed_pid': case['pid'], 'started': case['started'], 'failed': case['epoch']})
-        commands = [(['xcrun', 'simctl', 'help', 'spawn'], 'spawn'),
-                    (['xcrun', 'simctl', 'spawn', identity['udid'], 'log', 'help', 'show'], 'show'),
-                    (['xcrun', 'simctl', 'spawn', identity['udid'], 'log', 'help', 'predicates'], 'predicates')]
-        for command, kind in commands:
+        cases = failed_cases(value)
+        envelopes = case_envelopes(value)
+        interval = value['command_interval']
+        result.update({'source_sha': value['source']['sha'], 'cases': envelopes,
+                       'functional_command': {key: item for key, item in interval.items() if key != 'source'},
+                       'query_window': {'case_union_started': min(case['started'] for case in cases),
+                                        'case_union_ended': max(case['epoch'] for case in cases),
+                                        'query_started': math.floor(min(case['started'] for case in cases)),
+                                        'query_ended': math.ceil(max(case['epoch'] for case in cases)),
+                                        'scope': 'outer_union_only_each_event_uses_own_case_window'}})
+        for command, kind in help_commands(identity):
+            help_records.append({'schema': 1, 'family': identity['family'], 'deviceId': identity['udid'],
+                'source': interval['source'], 'stage': kind, 'argv': command, 'status': 'not_requested',
+                'exit_code': None, 'started_monotonic': None, 'deadline_monotonic': None,
+                'returned_monotonic': None, 'complete': False, 'recognized_layout': False,
+                'stdout': stream_receipt(b'', complete=False), 'stderr': stream_receipt(b'', complete=False)})
+        recognized = True
+        for row in help_records:
             granted = min(3, deadline - time.monotonic() - 4)
             require(granted > 0, 'No help budget')
             began = time.monotonic()
-            process = runner(command, seconds=granted, cap=32 * 1024)
-            if time.monotonic() - began > granted:
+            row.update(status='running', started_monotonic=began, deadline_monotonic=began + granted)
+            try:
+                process = bounded(row['argv'], seconds=granted, cap=32 * 1024)
+            except CaptureStopped as error:
+                row.update(status='incomplete', returned_monotonic=time.monotonic(),
+                           host_client_cleanup_confirmed=error.cleanup_confirmed,
+                           stdout=stream_receipt(getattr(error, 'stdout_prefix', b''), complete=False,
+                               observed=getattr(error, 'stdout_observed_bytes', 0)),
+                           stderr=stream_receipt(getattr(error, 'stderr_capture', getattr(error, 'stderr_prefix', b'')),
+                               complete=False, observed=getattr(error, 'stderr_observed_bytes', 0)))
+                raise
+            finished = time.monotonic()
+            row.update(exit_code=process.returncode, returned_monotonic=finished,
+                       stdout=stream_receipt(process.stdout, complete=True),
+                       stderr=stream_receipt(process.stderr, complete=True))
+            if finished > began + granted:
+                row['status'] = 'late-exit'
                 raise CaptureStopped('late-help-exit', True)
-            if not confirmed_help(kind, process):
-                result['reason'] = 'documented-route-not-confirmed'
+            row.update(status='complete', complete=True,
+                       recognized_layout=confirmed_help(row['stage'], process))
+            if help_has_error(process):
+                row['status'] = 'complete-error'
+                result['reason'] = 'help-command-error'
                 return result
+            recognized = recognized and row['recognized_layout']
+        # Unknown layout alone does not authorize new argv or prove support.
+        # This is the one source-reviewed compatibility attempt, never fallback.
+        result['query_route'] = 'recognized-help' if recognized else 'fixed-query-compatibility'
         granted = min(8, deadline - time.monotonic() - 4)
         require(granted > 0, 'No query budget')
         began = time.monotonic()
-        process = runner(log_command(identity, case), seconds=granted, cap=256 * 1024)
+        result['query_argv'] = log_command(identity, cases)
+        process = bounded(result['query_argv'], seconds=granted, cap=256 * 1024)
         if time.monotonic() - began > granted:
             raise CaptureStopped('late-query-exit', True)
-        if process.returncode != 0:
+        if process.returncode != 0 or help_has_error(process):
             result['reason'] = 'query-failed'
             return result
-        result['events'] = lifecycle_rows(process.stdout, case)
-        result['status'] = 'receipts-retained' if result['events'] else 'observation-gap'
+        events = lifecycle_rows(process.stdout, cases)
+        observation = {'cases': envelopes, 'events': events}
+        if len(json.dumps(observation, sort_keys=True, separators=(',', ':')).encode()) > MAX_RECORD:
+            raise ObservationOverflow('sanitized-byte-limit')
+        require(time.monotonic() <= deadline, 'Observation exceeded original acquisition clock')
+        result['events'] = events
+        result['status'] = 'receipts-retained' if events else 'observation-gap'
         result['reason'] = 'absence-does-not-prove-nondelivery'
+    except ObservationOverflow as error:
+        result.update(status='unknown', reason=str(error), events=[], observation_complete=False)
     except CaptureStopped as error:
         result.update({'reason': 'command-exit-unconfirmed', 'simulator_commands_completed': False,
                        'host_client_cleanup_confirmed': error.cleanup_confirmed})
     except (ValueError, OSError, TypeError, KeyError, UnicodeError):
         result['reason'] = 'invalid-or-unavailable-evidence'
+    finally:
+        if help_records:
+            emit_help_receipts(help_records)
+            # Host output is bounded by bytes inside the existing diagnostic
+            # tail. A late write cannot preserve a successful observation under
+            # the original clock, or undo an already observed command exit.
+            if time.monotonic() > deadline and result['status'] in ('receipts-retained', 'observation-gap'):
+                result.update(status='unavailable', reason='help-output-exceeded-original-clock',
+                              events=[], observation_complete=False)
     return result
 
 

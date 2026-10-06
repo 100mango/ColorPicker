@@ -21,7 +21,7 @@ from test_uikit_managed_tests import DEVICE, ROOT, SETUP
 FULL_OR_SELECTED_HOSTED = m.require_hosted
 
 
-def environment(group='ipad-mini-canvas'):
+def environment(group='ipad-mini'):
     return {'GITHUB_REPOSITORY': d.REPOSITORY, 'GITHUB_REF': c.REF,
         'GITHUB_WORKFLOW_REF': c.WORKFLOW, 'GITHUB_ACTIONS': 'true', 'GITHUB_JOB': 'completion',
         'RUNNER_OS': 'macOS', 'TC_TEST_FAMILY': c.GROUPS[group]['family'], 'TC_COMPLETION_GROUP': group,
@@ -39,27 +39,54 @@ def summary(selected, failed=0):
 
 
 class ClosedGroups(unittest.TestCase):
-    def test_all58_existing_ui_cases_are_exactly_partitioned(self):
-        self.assertEqual(list(c.GROUPS), ['iphone-compact', 'iphone-large', 'ipad-mini-palette',
-            'ipad-mini-canvas', 'ipad-large-palette', 'ipad-large-canvas'])
+    def test_ten_remaining_cases_are_the_exact_closed_source_inventory(self):
+        expected = {
+            'iphone-compact': ('iPhoneCompact', ('testInvalidPalettePastePreservesHistory',), ()),
+            'iphone-large': ('iPhoneLarge', ('testInvalidPalettePastePreservesHistory',
+                'testLargestTextPaletteReviewAndImportHelp', 'testPalettePasteReviewAcceptAndRelaunch'), ()),
+            'ipad-mini': ('iPadMini', ('testPaletteFileCancellationAndImportReturn',
+                'testPrivacyCloseRetainsPhotoSelection'), ('testAccessibilityLiveCameraUnavailable',)),
+            'ipad-large': ('iPadLarge', ('testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState',
+                'testPalettePasteReviewAcceptAndRelaunch', 'testLiveCanvasPickerCancellationAndSceneLifecycle'), ()),
+        }
+        self.assertEqual(list(c.GROUPS), list(expected))
         self.assertEqual([(len(g['functional']),len(g['audits'])) for g in c.GROUPS.values()],
-                         [(5,1),(5,1),(8,0),(8,7),(8,0),(8,7)])
-        self.assertEqual(sum(len(g['functional'])+len(g['audits']) for g in c.GROUPS.values()),58)
-        self.assertEqual(c.PHONE_PALETTE, ('testPalettePasteReviewAcceptAndRelaunch',
-            'testInvalidPalettePastePreservesHistory', 'testPaletteFileSelectionReviewAndRelaunch',
-            'testLargestTextPaletteReviewAndImportHelp', 'testLargestTextPaletteRotationReplacesSelection'))
-        actual = set(re.findall(r'-\s*\(void\)\s*(test\w+)\s*\{',
-            (ROOT/'TouchColorUITests/TouchColorIPadUITests.m').read_text()))
-        self.assertFalse(set(c.PALETTE) & set(c.CANVAS))
-        self.assertEqual(set(c.PALETTE) | set(c.CANVAS), actual)
-        audits = set(re.findall(r'-\s*\(void\)\s*(test\w+)\s*\{',
-            (ROOT/'TouchColorUITests/TouchColorAccessibilityUITests.m').read_text()))
-        self.assertEqual({case.rsplit('/',1)[1] for case in c.AUDITS},audits)
+                         [(1,0),(3,0),(2,1),(3,0)])
+        self.assertEqual(sum(len(g['functional']) for g in c.GROUPS.values()), 9)
+        self.assertEqual(sum(len(g['audits']) for g in c.GROUPS.values()), 1)
+        for identity, (family, functional, audits) in expected.items():
+            selected = c.GROUPS[identity]
+            cls = 'TouchColorIPadUITests' if family.startswith('iPad') else 'TouchColorUITests'
+            self.assertEqual(selected['id'], identity)
+            self.assertEqual(selected['family'], family)
+            self.assertEqual(selected['functional'], tuple('TouchColorUITests/'+cls+'/'+name for name in functional))
+            self.assertEqual(selected['audits'], tuple('TouchColorUITests/TouchColorAccessibilityUITests/'+name for name in audits))
+            for selector in selected['functional'] + selected['audits']:
+                target, klass, method = selector.split('/')
+                self.assertEqual(target, 'TouchColorUITests')
+                source = (ROOT/target/(klass+'.m')).read_text()
+                self.assertIn('@implementation '+klass, source)
+                self.assertEqual(len(re.findall(r'-\s*\(void\)\s*'+method+r'\s*\{', source)), 1)
         hosted=(ROOT/'TouchColorPhoneCompanion/Tests/PhonePaletteImportTests.swift').read_text()
+        self.assertEqual(c.BOOTSTRAP, (
+            'TouchColorTests/PhonePaletteImportTests/testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses',
+            'TouchColorTests/PhonePaletteImportTests/testOriginalIOSImportIsPresentWithoutCompanion'))
         for case in c.BOOTSTRAP:self.assertEqual(hosted.count('func '+case.rsplit('/',1)[1]+'('),1)
         executions=[(g['family'],case) for g in c.GROUPS.values() for case in g['bootstrap']]
-        self.assertEqual(len(executions),12);self.assertEqual(len(set(executions)),8)
-        self.assertEqual(212+36+58+4,310)  # 4 new Add Colors family points, never 12 new points.
+        self.assertEqual(len(executions),8);self.assertEqual(len(set(executions)),8)
+        self.assertEqual(212+36+48+4+10,310)  # Retained per-case sources; no new whole-row qualification.
+
+    def test_retired_split_groups_reject_in_all_route_guards(self):
+        for family in ('iPadMini', 'iPadLarge'):
+            for identity in ('ipad-mini-palette', 'ipad-mini-canvas',
+                             'ipad-large-palette', 'ipad-large-canvas'):
+                with self.subTest(family=family, group=identity), patch.dict(os.environ,
+                        {**environment(), 'TC_COMPLETION_GROUP':identity, 'TC_TEST_FAMILY':family}, clear=True):
+                    with self.assertRaises(ValueError):c.completion_group(family)
+                    with self.assertRaises(ValueError):d.require_job(family)
+                    for suite in m.STEPS:
+                        with self.assertRaises(ValueError):c.selection(family,suite)
+                        with self.assertRaises(ValueError):m.test_argv(family,suite,DEVICE)
 
     def test_exact_group_context_and_distinct_owned_names(self):
         names=[]
@@ -69,13 +96,13 @@ class ClosedGroups(unittest.TestCase):
                 self.assertEqual(context['completion_group'],key)
                 self.assertFalse(context['full_original_row'])
                 names.append(d.owned_name(context))
-        self.assertEqual(len(set(names)),6)
+        self.assertEqual(len(set(names)),4)
 
     def test_foreign_source_ref_workflow_job_group_and_attempt_reject(self):
         mutations={'GITHUB_REPOSITORY':'other/ColorPicker','GITHUB_REF':d.REF,'GITHUB_WORKFLOW_REF':d.WORKFLOW,
             'GITHUB_JOB':'compatibility','GITHUB_WORKFLOW_SHA':'b'*40,'GITHUB_RUN_ID':'0',
             'GITHUB_RUN_ATTEMPT':'0','GITHUB_EVENT_NAME':'pull_request','TC_TEST_FAMILY':'iPhoneLarge',
-            'TC_COMPLETION_GROUP':'ipad-large-canvas','RUNNER_OS':'Linux'}
+            'TC_COMPLETION_GROUP':'ipad-large','RUNNER_OS':'Linux'}
         for key,value in mutations.items():
             with self.subTest(key=key),patch.dict(os.environ,{**environment(),key:value},clear=True):
                 with self.assertRaises(ValueError):d.require_job('iPadMini')
@@ -103,22 +130,26 @@ class ClosedGroups(unittest.TestCase):
             self.assertEqual([v for v in m.test_argv('iPadMini','TouchColorTests',DEVICE) if v.startswith('-only-testing:')],
                              ['-only-testing:TouchColorTests'])
 
-    def test_workflow_has_six_closed_groups_and_original_finite_ceiling(self):
+    def test_workflow_has_four_closed_groups_and_original_finite_ceiling(self):
         text=(ROOT/'.github/workflows/ios-completion.yml').read_text()
         self.assertIn('branches: [codex/ios-original-completion]',text)
         self.assertIn('group: touchcolor-ios-refs/heads/codex/ios-original-release',text)
         self.assertIn('cancel-in-progress: false',text);self.assertIn('max-parallel: 2',text)
         self.assertNotIn('inputs:',text)
         for key,g in c.GROUPS.items():self.assertIn('{group: '+key+', family: '+g['family']+', audits: '+str(bool(g['audits'])).lower()+'}',text)
+        matrix = re.findall(r'\{group: ([a-z-]+), family: ([A-Za-z]+), audits: (true|false)\}', text)
+        self.assertEqual(matrix, [(key,g['family'],str(bool(g['audits'])).lower()) for key,g in c.GROUPS.items()])
+        for retired in ('ipad-mini-palette','ipad-mini-canvas','ipad-large-palette','ipad-large-canvas'):
+            self.assertNotIn(retired,text)
         self.assertLess(text.index('- name: Execute required selected StrictAll audits'),text.index('- name: Read bounded app diagnostics after required UI and audits'))
         audit=text.split('- name: Execute required selected StrictAll audits',1)[1].split('- name:',1)[0]
         self.assertIn("steps.seed-device.outcome == 'success'",audit)
         self.assertNotIn("functional-tests.outcome == 'success'",audit)
         self.assertIn('test_uikit_completion test_uikit_completion_evidence',text)
         self.assertIn("timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}",text)
-        self.assertEqual(sum(70 if g['family']=='iPadMini' else 60 for g in c.GROUPS.values()),380)
-        self.assertEqual(sum((800 if g['family']=='iPadMini' else 500)+1100+(620 if g['audits'] else 0) for g in c.GROUPS.values()),12680)
-        self.assertEqual(sum((960 if g['family']=='iPadMini' else 600)+1200+(720 if g['audits'] else 0) for g in c.GROUPS.values()),14400)
+        self.assertEqual(sum(70 if g['family']=='iPadMini' else 60 for g in c.GROUPS.values()),250)
+        self.assertEqual(sum((800 if g['family']=='iPadMini' else 500)+1100+(620 if g['audits'] else 0) for g in c.GROUPS.values()),7320)
+        self.assertEqual(sum((960 if g['family']=='iPadMini' else 600)+1200+(720 if g['audits'] else 0) for g in c.GROUPS.values()),8280)
 
 
 class SelectedExecution(unittest.TestCase):
@@ -198,7 +229,7 @@ class SelectedExecution(unittest.TestCase):
         self.assertEqual(self.receipt()['summary']['fields']['failedTests'],1)
         self.suite='AccessibilityAudits';self.tick=0.;self.failures=0
         self.assertEqual(self.execute(),0);self.assertEqual(len(self.calls),2)
-        self.assertEqual(self.receipt()['summary']['fields']['totalTestCount'],7)
+        self.assertEqual(self.receipt()['summary']['fields']['totalTestCount'],1)
 
     def test_unknown_xctest_stops_before_readers_and_every_later_device_command(self):
         self.suite='TouchColorUITests'

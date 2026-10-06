@@ -7,6 +7,7 @@
 @property (nonatomic, strong) id<NSObject> failClosedInterruption;
 @property (nonatomic, strong) XCUIApplication *app;
 @property (nonatomic) BOOL recordingIssue;
+@property (nonatomic, copy) NSString *paletteLifecycleCase;
 @property (nonatomic, copy) NSString *paletteLifecycleToken;
 @property (nonatomic) NSTimeInterval paletteLifecycleStarted;
 @end
@@ -38,8 +39,12 @@
     if (self.paletteLifecycleToken) {
         NSRegularExpression *pattern=[NSRegularExpression regularExpressionWithPattern:@"^Attributes: Application, [^\\n]*pid: ([1-9][0-9]*), label: 'TouchColor'" options:0 error:nil];
         NSArray<NSTextCheckingResult *> *matches=[pattern matchesInString:failureDescription options:0 range:NSMakeRange(0,failureDescription.length)];
+        NSArray<NSString *> *arguments=self.app.launchArguments;
+        NSUInteger tokenIndex=[arguments indexOfObject:@"--ui-test-palette-lifecycle-token"];
+        BOOL launchBound=[arguments containsObject:@"--ui-test-palette-lifecycle"] && tokenIndex!=NSNotFound &&
+            tokenIndex+1<arguments.count && [arguments[tokenIndex+1] isEqualToString:self.paletteLifecycleToken];
         NSNumber *pid=@0;
-        if (matches.count==1) pid=@([[failureDescription substringWithRange:[matches.firstObject rangeAtIndex:1]] longLongValue]);
+        if (matches.count==1 && launchBound) pid=@([[failureDescription substringWithRange:[matches.firstObject rangeAtIndex:1]] longLongValue]);
         [self emitPaletteLifecycleCase:@"failed" pid:pid];
     }
     [self observeFailedPalettePresentation:self.app caseName:self.name];
@@ -60,7 +65,7 @@
 - (void)testLargestTextPaletteReviewAndImportHelp { [self exerciseLargestTextPaletteReviewAndImportHelp:self.app]; }
 - (void)testLargestTextPaletteRotationReplacesSelection { [self exerciseLargestTextPaletteRotationReplacesSelection:self.app]; }
 - (void)emitPaletteLifecycleCase:(NSString *)event pid:(NSNumber *)pid {
-    NSDictionary *fields=@{@"event":event,@"case":@"testInvalidPalettePastePreservesHistory",
+    NSDictionary *fields=@{@"event":event,@"case":self.paletteLifecycleCase,
         @"token":self.paletteLifecycleToken,@"started":@(self.paletteLifecycleStarted),
         @"epoch":@(NSDate.date.timeIntervalSince1970),@"pid":pid};
     NSData *data=[NSJSONSerialization dataWithJSONObject:fields options:NSJSONWritingSortedKeys error:nil];
@@ -78,9 +83,13 @@
     self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
     self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
-    if ([self.name containsString:@"testInvalidPalettePastePreservesHistory"] || [self.name containsString:@"testPaletteFileCancellationAndImportReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
+    self.paletteLifecycleCase=@{
+        @"-[TouchColorUITests testInvalidPalettePastePreservesHistory]":@"testInvalidPalettePastePreservesHistory",
+        @"-[TouchColorUITests testPalettePasteReviewAcceptAndRelaunch]":@"testPalettePasteReviewAcceptAndRelaunch"
+    }[self.name];
+    if (self.paletteLifecycleCase || [self.name containsString:@"testPaletteFileCancellationAndImportReturn"] || [self.name containsString:@"testPaletteFileSelectionReviewAndRelaunch"])
         self.app.launchArguments=[self.app.launchArguments arrayByAddingObject:@"--ui-test-palette-lifecycle"];
-    if ([self.name isEqualToString:@"-[TouchColorUITests testInvalidPalettePastePreservesHistory]"]) {
+    if (self.paletteLifecycleCase) {
         self.paletteLifecycleToken=NSUUID.UUID.UUIDString;
         self.paletteLifecycleStarted=NSDate.date.timeIntervalSince1970;
         self.app.launchArguments=[self.app.launchArguments arrayByAddingObjectsFromArray:@[@"--ui-test-palette-lifecycle-token",self.paletteLifecycleToken]];

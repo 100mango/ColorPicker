@@ -25,8 +25,14 @@ import ColorPaletteLegacy
     private var lifecycleSequence = 0
     // Read-only observations for the failing import cases. No data, object
     // addresses or accessibility mutations; absent from Release and audits.
-    private func tracePresentation(_ event: String) {
+    private func tracePresentation(_ event: String, requiresToken: Bool = false) {
         guard ProcessInfo.processInfo.arguments.contains("--ui-test-palette-lifecycle") else { return }
+        let arguments = ProcessInfo.processInfo.arguments
+        let token: UUID?
+        if let index = arguments.firstIndex(of: "--ui-test-palette-lifecycle-token"),
+           arguments.indices.contains(index + 1) { token = UUID(uuidString: arguments[index + 1]) }
+        else { token = nil }
+        guard !requiresToken || token != nil else { return }
         func typeName(_ value: UIViewController?) -> String { value.map { String(describing: type(of: $0)) } ?? "none" }
         let navigation = navigationController
         var fields: [String: Any] = ["event": event, "controller": typeName(self),
@@ -37,9 +43,10 @@ import ColorPaletteLegacy
             "navigationDismissing": navigation?.isBeingDismissed ?? false,
             "transition": transitionCoordinator != nil, "busy": busy, "finished": finished]
         // Correlation is test-owned metadata only. Existing lifecycle semantics stay unchanged.
-        let arguments = ProcessInfo.processInfo.arguments
-        if let index = arguments.firstIndex(of: "--ui-test-palette-lifecycle-token"),
-           arguments.indices.contains(index + 1), let token = UUID(uuidString: arguments[index + 1]) {
+        if let token {
+            fields["selectionExists"] = selection != nil
+            fields["selectionNonempty"] = !(selection?.colors.isEmpty ?? true)
+            fields["buttonEnabled"] = addButton?.isEnabled ?? false
             lifecycleSequence += 1
             fields["presentation"] = lifecyclePresentation
             fields["sequence"] = lifecycleSequence
@@ -86,6 +93,9 @@ import ColorPaletteLegacy
         case .failure(let error): status = error.localizedDescription
         }
         reload()
+#if DEBUG
+        tracePresentation("apply-applied", requiresToken: true)
+#endif
     }
     func chooseFile() {
         _ = begin()
@@ -129,6 +139,9 @@ import ColorPaletteLegacy
         }
     }
     @objc private func accept() {
+#if DEBUG
+        tracePresentation("accept-enter", requiresToken: true)
+#endif
         guard !busy, let selection, !selection.colors.isEmpty else { return }
         busy = true; addButton.isEnabled = false
         LegacyPalette(defaults: defaults).append(selection.colors)

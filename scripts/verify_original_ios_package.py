@@ -19,7 +19,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_ENTRIES, MAX_BYTES, MAX_SECONDS = 8192, 1024 * 1024 * 1024, 30
-IMPORT_SHA = "32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1"
+IMPORT_SHA = "9174667d6dd918f5f8d10ab17e1d3beba08f08d7083387db74c9f18c759cbf97"
 POLICY_LOCALIZATIONS = {'en': 'eaaff16f7db2531ea3c518ab7918ab28a4517cf3bbfda8dd373e5a857456f8b5', 'zh-Hans': '02074237db3a5589d8c9fc6c98ae99596660519fb1c4457493ab50364d62b78a'}
 APP_SOURCES = sorted(['ColorPicker/' + name for name in (
     'main.m', 'ColorAppDelegate.m', 'ColorSceneDelegate.m', 'ColorMainViewController.m',

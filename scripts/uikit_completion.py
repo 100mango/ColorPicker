@@ -1,8 +1,11 @@
-"""Six closed original-iOS completion groups, never a full-profile receipt.
+"""Four closed original-iOS remaining-failure groups, never a full-profile receipt.
 
-Historical 212 hosted and 36 retained UI points remain external per-case provenance.
-This route executes 58 outstanding or helper-affected UI points plus a fresh two-case bootstrap
-on each of six owned devices. It does not qualify a 54-case hosted target.
+Historical 212 hosted and 36 UI points, plus 48 selected UI passes and four distinct
+new hosted profile points from 2d65c7321990eae57b7c9b661a1d5d1180dffc03,
+run 37501950379 attempt 1, remain external per-case provenance. This route executes
+nine functional failures and one audit failure, plus a fresh two-case bootstrap on
+each of four owned devices. It does not qualify a 54-case hosted target or migrate
+any retained result to this source. The former split iPad identities are retired.
 """
 import os
 from palette_lifecycle_diagnostics import require
@@ -12,47 +15,27 @@ WORKFLOW = '100mango/ColorPicker/.github/workflows/ios-completion.yml@' + REF
 BOOTSTRAP = tuple('TouchColorTests/PhonePaletteImportTests/' + name for name in (
     'testActualAddColorsBarActionAppendsDuplicateSelectionAndDismisses',
     'testOriginalIOSImportIsPresentWithoutCompanion'))
-PALETTE = (
-    'testPalettePasteReviewAcceptAndRelaunch',
-    'testInvalidPalettePastePreservesHistory',
-    'testPaletteFileCancellationAndImportReturn',
-    'testPaletteFileSelectionReviewAndRelaunch',
-    'testLargestTextPaletteReviewAndImportHelp',
-    'testLargestTextPaletteRotationReplacesSelection',
-    'testFullScreenPaletteCancelRetainsPhotoAndKeyboardState',
-    'testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState')
-CANVAS = (
-    'testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch',
-    'testKeyboardImportSamplingZoomSaveAndRotation',
-    'testCancelPhotoLoadingRetainsTheCurrentCanvasAndPalette',
-    'testLargestTextNativePaletteAndCanvasControls',
-    'testLiveCanvasPickerCancellationAndSceneLifecycle',
-    'testFullScreenPaletteFlowsResumeLiveUnavailableState',
-    'testPrivacyCloseRetainsPhotoSelection',
-    'testZNativeWindowResizePreservesSelectionAndPaletteReturn')
-AUDITS = tuple('TouchColorUITests/TouchColorAccessibilityUITests/' + name for name in (
-    'testAccessibilityEmptyPalette', 'testAccessibilityPaletteImportReview',
-    'testAccessibilityPaletteImportHelp', 'testAccessibilitySampledPhoto',
-    'testAccessibilitySavedPalette', 'testAccessibilityLiveCameraUnavailable',
-    'testAccessibilityNativePolicyBodyAndActions'))
-
 def group(identity, family, names, audits, images):
     cls = 'TouchColorIPadUITests' if family.startswith('iPad') else 'TouchColorUITests'
     return {'id': identity, 'family': family, 'bootstrap': BOOTSTRAP,
             'functional': tuple('TouchColorUITests/' + cls + '/' + n for n in names),
             'audits': audits, 'images': images}
 
-PHONE_PALETTE = (PALETTE[0], PALETTE[1], PALETTE[3], PALETTE[4], PALETTE[5])
-
 GROUPS = {
     'iphone-compact': group('iphone-compact', 'iPhoneCompact',
-        PHONE_PALETTE, (AUDITS[1],), 2),
+        ('testInvalidPalettePastePreservesHistory',), (), 2),
     'iphone-large': group('iphone-large', 'iPhoneLarge',
-        PHONE_PALETTE, (AUDITS[1],), 2),
-    'ipad-mini-palette': group('ipad-mini-palette', 'iPadMini', PALETTE, (), 1),
-    'ipad-mini-canvas': group('ipad-mini-canvas', 'iPadMini', CANVAS, AUDITS, 1),
-    'ipad-large-palette': group('ipad-large-palette', 'iPadLarge', PALETTE, (), 2),
-    'ipad-large-canvas': group('ipad-large-canvas', 'iPadLarge', CANVAS, AUDITS, 2),
+        ('testInvalidPalettePastePreservesHistory',
+         'testLargestTextPaletteReviewAndImportHelp',
+         'testPalettePasteReviewAcceptAndRelaunch'), (), 2),
+    'ipad-mini': group('ipad-mini', 'iPadMini',
+        ('testPaletteFileCancellationAndImportReturn',
+         'testPrivacyCloseRetainsPhotoSelection'),
+        ('TouchColorUITests/TouchColorAccessibilityUITests/testAccessibilityLiveCameraUnavailable',), 2),
+    'ipad-large': group('ipad-large', 'iPadLarge',
+        ('testFullScreenPaletteAcceptRetainsPhotoAndKeyboardState',
+         'testPalettePasteReviewAcceptAndRelaunch',
+         'testLiveCanvasPickerCancellationAndSceneLifecycle'), (), 4),
 }
 
 def completion_group(family):

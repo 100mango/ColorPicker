@@ -10,20 +10,19 @@ import subprocess
 import sys
 
 from uikit_runtime_diagnostics import MAX_OUTPUT_BYTES, MAX_PREPARATION_OUTPUT_BYTES
+from palette_lifecycle_diagnostics import MAX_HELP_LOG_BYTES
 from uikit_completion import completion_group, REF as COMPLETION_REF
 
-# The original four hosts retain their checked-in allocations. Completion splits
-# the iPads across six fresh hosts without increasing the ten-image envelope.
+# The four remaining-failure groups retain the original per-family allocations
+# on four fresh hosts without increasing the ten-image envelope.
 # Ten images at most; include base64, metadata and bounded child diagnostics.
 # Raw attachment manifests and result bundles are read locally, never emitted.
 ALLOCATIONS = {'iPadMini': 2, 'iPadLarge': 4, 'iPhoneCompact': 2, 'iPhoneLarge': 2}
 COMPLETION_EVIDENCE_GROUPS = {
     'iphone-compact': ('iPhoneCompact', 2),
     'iphone-large': ('iPhoneLarge', 2),
-    'ipad-mini-palette': ('iPadMini', 1),
-    'ipad-mini-canvas': ('iPadMini', 1),
-    'ipad-large-palette': ('iPadLarge', 2),
-    'ipad-large-canvas': ('iPadLarge', 2),
+    'ipad-mini': ('iPadMini', 2),
+    'ipad-large': ('iPadLarge', 4),
 }
 COMPLETION_ALLOCATIONS = {name: allocation for name, (_, allocation) in COMPLETION_EVIDENCE_GROUPS.items()}
 MAX_IMAGE_BYTES = 500 * 1024
@@ -34,7 +33,7 @@ MAX_ISSUE_SOURCE_BYTES = 8 * 1024
 MAX_EXPORTS_PER_DEVICE = 2  # Functional and accessibility result bundles.
 MAX_RUNTIME_DIAGNOSTIC_BYTES = MAX_OUTPUT_BYTES + MAX_PREPARATION_OUTPUT_BYTES
 MAX_COMPLETION_SUMMARY_LOG_BYTES = 4 * 1024  # Budget, required-frame and image summaries per group.
-COMPLETION_SUITE_INVOCATIONS = 6 + 6 + 4  # Bootstrap, functional and nonempty audit selections.
+COMPLETION_SUITE_INVOCATIONS = 4 + 4 + 1  # Bootstrap, functional and nonempty audit selections.
 MAX_COMPLETION_RESULT_LOG_BYTES = 36 * 1024  # 32 KiB receipt fields plus command/case framing.
 # The same 32 KiB slot now contains at most 24 KiB runtime + 8 KiB preparation.
 if MAX_RUNTIME_DIAGNOSTIC_BYTES != 32 * 1024: raise ValueError('Profile diagnostic allocation changed')
@@ -46,7 +45,8 @@ ORIGINAL_RESERVED_LOG_BYTES = (sum(ALLOCATIONS.values()) * IMAGE_SLOT_LOG_BYTES
 COMPLETION_RESERVED_LOG_BYTES = (sum(COMPLETION_ALLOCATIONS.values()) * IMAGE_SLOT_LOG_BYTES
                                  + len(COMPLETION_ALLOCATIONS) * (DEVICE_DIAGNOSTIC_LOG_BYTES
                                                                 + MAX_COMPLETION_SUMMARY_LOG_BYTES)
-                                 + COMPLETION_SUITE_INVOCATIONS * MAX_COMPLETION_RESULT_LOG_BYTES)
+                                 + COMPLETION_SUITE_INVOCATIONS * MAX_COMPLETION_RESULT_LOG_BYTES
+                                 + 2 * MAX_HELP_LOG_BYTES)
 if any(sum(count for candidate, count in COMPLETION_EVIDENCE_GROUPS.values() if candidate == device) != allocation
        for device, allocation in ALLOCATIONS.items()):
     raise ValueError('Completion family image allocations differ from the original envelope')
@@ -97,7 +97,8 @@ if group is not None:
     budget.update(completion_group=group['id'], diagnostic_groups=len(COMPLETION_ALLOCATIONS),
                   maximum_group_summary_bytes=MAX_COMPLETION_SUMMARY_LOG_BYTES,
                   selected_suite_invocations=COMPLETION_SUITE_INVOCATIONS,
-                  maximum_selected_result_bytes=MAX_COMPLETION_RESULT_LOG_BYTES)
+                  maximum_selected_result_bytes=MAX_COMPLETION_RESULT_LOG_BYTES,
+                  phone_help_groups=2, maximum_phone_help_bytes=MAX_HELP_LOG_BYTES)
 print('EVIDENCE_BUDGET:' + json.dumps(budget, sort_keys=True))
 exports = {}
 emitted_images = []

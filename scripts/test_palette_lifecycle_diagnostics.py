@@ -25,7 +25,19 @@ IDENTITY = {'family': 'iPhoneLarge', 'udid': 'D2B249EB-2AC1-445A-BE5C-E80D6FBCCD
             'runtime': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', 'started': 10.0}
 CASE = {'case': d.CASE, 'token': TOKEN, 'started': 100.125, 'epoch': 134.75,
         'pid': 32708, 'event': 'failed'}
-SOURCE = {'sha': 'e' * 40, 'workflow_sha': 'e' * 40, 'files': {}}
+SOURCE = {'sha': 'e' * 40, 'workflow_sha': 'e' * 40, 'files': {},
+          'run': {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}}
+CONTEXT = {'sha': 'e' * 40, 'workflow_sha': 'e' * 40, 'run_id': '123', 'run_attempt': '1',
+           'completion_group': 'iphone-large', 'family': 'iPhoneLarge'}
+INTERVAL = {'started': 99.0, 'ended': 500.0, 'source': CONTEXT, 'receipt_sha256': 'a' * 64, 'receipt_bytes': 1000}
+
+
+def retained(cases=(CASE,)):
+    return {'status': 'bound-failure', 'source': SOURCE, 'identity': IDENTITY,
+            'capture_started': 98.0, 'capture_ended': 501.0, 'command_interval': INTERVAL,
+            'cases': [{'case': name, 'status': 'bound-failure', 'failure': case}
+                      if (case := next((item for item in cases if item['case'] == name), None))
+                      else {'case': name, 'status': 'no-target-failure'} for name in d.CASES]}
 
 
 # Synthetic format fixtures only, not captured target-runner capability proof.
@@ -72,7 +84,7 @@ class RetentionTests(unittest.TestCase):
         parser.line("Test Case '-[TouchColorUITests testLater]' started.")
         parser.line('Terminate com.mango.touchColor:32708')
         parser.line('Requesting snapshot of accessibility hierarchy for app with pid 55668')
-        self.assertEqual(parser.result()['case']['pid'], 32708)
+        self.assertEqual(parser.result()['cases'][0]['failure']['pid'], 32708)
 
     def test_duplicate_mismatched_or_missing_metadata_never_falls_back(self):
         mutations = [dict(CASE, token='33333333-3333-4333-8333-333333333333'),
@@ -119,18 +131,18 @@ class RetentionTests(unittest.TestCase):
     def test_case_without_failure_remains_gap(self):
         parser = ready_retainer()
         parser.line("Test Case '" + d.XCTEST_CASE + "' passed (12.000 seconds).")
-        self.assertEqual(parser.result(), {'status': 'no-target-failure'})
+        self.assertEqual(parser.result()['status'], 'no-target-failure')
+        self.assertEqual(parser.result()['cases'][0]['status'], 'no-target-failure')
 
     def test_load_rejects_source_udid_time_stale_and_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
             previous = Path.cwd(); os.chdir(directory)
             try:
                 Path('build').mkdir(); path = Path('build/iPhoneLarge-palette-case.json')
-                value = {'status': 'bound-failure', 'identity': IDENTITY, 'source': SOURCE,
-                         'case': CASE, 'capture_started': 99, 'capture_ended': 135}
-                with patch.object(d, 'source_identity', return_value=SOURCE):
+                value = retained()
+                with patch.object(d, 'source_identity', return_value=SOURCE), patch.object(d, 'command_interval', return_value=INTERVAL):
                     path.write_text(json.dumps(value))
-                    self.assertEqual(d.load_case(IDENTITY)['case']['pid'], 32708)
+                    self.assertEqual(d.load_case(IDENTITY)['cases'][0]['failure']['pid'], 32708)
                     changes = [('identity', dict(IDENTITY, udid=TOKEN)), ('source', {}),
                                ('status', 'no-target-failure'), ('capture_started', 101), ('capture_ended', 134)]
                     for key, replacement in changes:
@@ -148,7 +160,7 @@ class ReceiptTests(unittest.TestCase):
         values = [entry('appeared', 1), entry('close-action-received', 2, 122),
                   entry('close-dismiss-completed', 3, 123),
                   entry('appeared', 1, 130, TOKEN)]
-        rows = d.lifecycle_rows(json.dumps(values), CASE)
+        rows = d.lifecycle_rows(json.dumps(values), [CASE])
         self.assertEqual(len(rows), 4)
         self.assertNotEqual(rows[0]['presentation'], rows[-1]['presentation'])
         encoded = json.dumps(rows)
@@ -164,24 +176,24 @@ class ReceiptTests(unittest.TestCase):
             record = entry(); value = json.loads(record['eventMessage'][len(d.PREFIX):])
             value[key] = replacement; record['eventMessage'] = d.PREFIX + json.dumps(value)
             with self.assertRaises((ValueError, TypeError)):
-                d.lifecycle_rows(json.dumps([record]), CASE)
+                d.lifecycle_rows(json.dumps([record]), [CASE])
         for key, replacement in [('processID', 33046), ('processID', True),
                                  ('processImagePath', '/Unrelated.app/TouchColor'), ('eventMessage', '<private>')]:
             with self.assertRaises(ValueError):
-                d.lifecycle_rows(json.dumps([dict(entry(), **{key: replacement})]), CASE)
+                d.lifecycle_rows(json.dumps([dict(entry(), **{key: replacement})]), [CASE])
 
     def test_duplicate_extra_missing_redacted_or_oversized_receipts_are_rejected(self):
-        with self.assertRaises(ValueError): d.lifecycle_rows(json.dumps([entry(), entry()]), CASE)
-        with self.assertRaises(ValueError): d.lifecycle_rows(json.dumps([entry()] * 25), CASE)
+        with self.assertRaises(ValueError): d.lifecycle_rows(json.dumps([entry(), entry()]), [CASE])
+        with self.assertRaises(ValueError): d.lifecycle_rows(json.dumps([entry()] * 25), [CASE])
         for operation in ('extra', 'missing'):
             record = entry(); value = json.loads(record['eventMessage'][len(d.PREFIX):])
             if operation == 'extra': value['secret'] = 'do not emit'
             else: del value['token']
             record['eventMessage'] = d.PREFIX + json.dumps(value)
-            with self.assertRaises(ValueError): d.lifecycle_rows(json.dumps([record]), CASE)
+            with self.assertRaises(ValueError): d.lifecycle_rows(json.dumps([record]), [CASE])
 
     def test_exact_server_side_pid_app_token_and_time_filter(self):
-        command = d.log_command(IDENTITY, CASE)
+        command = d.log_command(IDENTITY, [CASE])
         self.assertEqual(command[:6], ['xcrun', 'simctl', 'spawn', IDENTITY['udid'], 'log', 'show'])
         predicate = command[command.index('--predicate') + 1]
         for fragment in ['processID == 32708', 'process == "TouchColor"', 'BEGINSWITH "PALETTE_LIFECYCLE "', TOKEN]:
@@ -193,7 +205,7 @@ class ReceiptTests(unittest.TestCase):
 
 class AcquisitionTests(unittest.TestCase):
     def value(self):
-        return {'case': CASE, 'source': SOURCE}
+        return retained()
 
     def runner(self, calls, output=None, help_ok=True):
         def run(command, **options):
@@ -213,7 +225,7 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(len(calls), 4)
         self.assertEqual([options['cap'] for _, options in calls], [32768, 32768, 32768, 262144])
         self.assertEqual([options['seconds'] for _, options in calls], [3, 3, 3, 8])
-        self.assertEqual(result['failed_pid'], 32708)
+        self.assertEqual(result['cases'][0]['pid'], 32708)
 
     def test_unavailable_help_or_case_never_queries_or_tries_alternate_flags(self):
         for value in (None, self.value()):
@@ -315,19 +327,19 @@ class HelpGrammarTests(unittest.TestCase):
         ]:
             self.assertFalse(self.confirms(kind, raw))
 
-    def test_missing_exact_process_key_stops_after_three_help_calls(self):
+    def test_unknown_complete_help_layout_uses_only_reviewed_fixed_query(self):
         calls = []
         def runner(command, **options):
             calls.append(command)
-            raw = HELP[command[-1]]
+            raw = HELP[command[-1]] if 'help' in command else b'[]'
             if command[-1] == 'predicates':
                 raw = raw.replace(b'    process      (string)\n', b'')
             return subprocess.CompletedProcess(command, 0, raw, b'')
-        with patch.object(d, 'load_case', return_value={'case': CASE, 'source': SOURCE}):
+        with patch.object(d, 'load_case', return_value=retained()):
             result = d.collect_lifecycle(IDENTITY, runner)
-        self.assertEqual(len(calls), 3)
-        self.assertEqual(result['reason'], 'documented-route-not-confirmed')
-        self.assertTrue(all('help' in command for command in calls))
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(result['query_route'], 'fixed-query-compatibility')
+        self.assertEqual(calls[-1], d.log_command(IDENTITY, [CASE]))
 
     def test_rejected_help_never_starts_query_or_alternate_command(self):
         for bad_kind in HELP:
@@ -336,10 +348,344 @@ class HelpGrammarTests(unittest.TestCase):
                 calls.append(command)
                 kind = command[-1]
                 return subprocess.CompletedProcess(command, 0, b'unsupported: ' + HELP[kind] if kind == bad_kind else HELP[kind], b'')
-            with patch.object(d, 'load_case', return_value={'case': CASE, 'source': SOURCE}):
+            with patch.object(d, 'load_case', return_value=retained()):
                 result = d.collect_lifecycle(IDENTITY, runner)
-            self.assertEqual(result['reason'], 'documented-route-not-confirmed')
+            self.assertEqual(result['reason'], 'help-command-error')
             self.assertEqual(len(calls), ['spawn', 'show', 'predicates'].index(bad_kind) + 1)
+
+
+class TwoCaseObservationTests(unittest.TestCase):
+    def setUp(self):
+        self.second = dict(CASE, case=d.CASES[1], token='33333333-3333-4333-8333-333333333333',
+                           pid=33046, started=375.0, epoch=409.349)
+        self.value = retained((CASE, self.second))
+
+    def run_collection(self, value=None, output=b'[]', helper=None):
+        import contextlib
+        calls, frames = [], io.StringIO()
+        def runner(command, **options):
+            calls.append((command, options))
+            if helper is not None and 'help' in command:
+                return helper(command, options)
+            return subprocess.CompletedProcess(command, 0, HELP[command[-1]] if 'help' in command else output, b'')
+        with patch.object(d, 'load_case', return_value=value or self.value), contextlib.redirect_stdout(frames):
+            result = d.collect_lifecycle(IDENTITY, runner)
+        rows = [json.loads(line[len(d.HELP_FRAME):]) for line in frames.getvalue().splitlines()]
+        return result, calls, rows, frames.getvalue()
+
+    def record_for(self, case, event='accept-enter', sequence=1, **changes):
+        record = entry(event, sequence, case['started'] + 1,
+                       PRESENTATION if case == CASE else '44444444-4444-4444-8444-444444444444')
+        value = json.loads(record['eventMessage'][len(d.PREFIX):])
+        value.update(token=case['token'], pid=case['pid']); value.update(changes)
+        record.update(processID=case['pid'], eventMessage=d.PREFIX + json.dumps(value))
+        return record
+
+    def test_two_cases_retain_independent_observed_pid_token_and_outcome(self):
+        parser = d.CaseRetainer()
+        for case in (CASE, self.second):
+            name = d.XCTEST_CASES[case['case']]
+            parser.line("Test Case '" + name + "' started.")
+            parser.line(marker(dict(case, event='started', pid=0, epoch=case['started'])))
+            parser.line(marker(case))
+            parser.line("Test Case '" + name + "' failed (34.330 seconds).")
+        self.assertEqual(d.failed_cases(parser.result()), [CASE, self.second])
+        self.assertEqual(len({row['token'] for row in d.failed_cases(parser.result())}), 2)
+
+    def test_crossed_case_token_pid_or_repeated_case_fails_closed(self):
+        for case in (dict(self.second, case=CASE['case']), dict(self.second, token=CASE['token'])):
+            parser = ready_retainer()
+            parser.line(marker(CASE)); parser.line("Test Case '" + d.XCTEST_CASE + "' failed (34.330 seconds).")
+            parser.line("Test Case '" + d.XCTEST_CASES[d.CASES[1]] + "' started.")
+            parser.line(marker(dict(case, event='started', pid=0, epoch=case['started'])))
+            self.assertEqual(parser.result()['status'], 'rejected-case-metadata')
+        for changes in ({'token': CASE['token']}, {'pid': CASE['pid']}, {'epoch': 200.0}, {'epoch': CASE['started'] + 2}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                d.lifecycle_rows(json.dumps([self.record_for(self.second, **changes)]), [CASE, self.second])
+
+    def test_one_query_uses_closed_or_branches_and_explicit_broader_union(self):
+        records = [self.record_for(CASE), self.record_for(self.second)]
+        result, calls, _, _ = self.run_collection(output=json.dumps(records).encode())
+        self.assertEqual(len(calls), 4)
+        self.assertEqual([item[1]['cap'] for item in calls], [32768, 32768, 32768, 262144])
+        self.assertEqual(calls[-1][0], d.log_command(IDENTITY, [CASE, self.second]))
+        predicate = calls[-1][0][-1]
+        self.assertEqual(predicate.count(' OR '), 1)
+        self.assertIn('(processID == 32708 AND eventMessage CONTAINS "' + CASE['token'] + '")', predicate)
+        self.assertIn('(processID == 33046 AND eventMessage CONTAINS "' + self.second['token'] + '")', predicate)
+        self.assertAlmostEqual(result['query_window']['case_union_ended'] - result['query_window']['case_union_started'], 309.224)
+        self.assertEqual(result['query_window']['query_ended'] - result['query_window']['query_started'], 310)
+        self.assertEqual(result['query_argv'], calls[-1][0])
+        self.assertEqual([event['case_index'] for event in result['events']], [0, 1])
+        self.assertNotIn('token', result['events'][0]); self.assertNotIn('pid', result['events'][0])
+        self.assertNotIn('controller', result['events'][0])
+        self.assertEqual(result['cases'][0]['controller'], 'PhonePaletteImportController')
+
+    def test_passed_case_never_borrows_failed_cases_identity(self):
+        result, calls, _, _ = self.run_collection(retained((self.second,)))
+        self.assertEqual(result['cases'][0], {'case': CASE['case'], 'status': 'no-target-failure'})
+        self.assertNotIn('32708', calls[-1][0][-1]); self.assertNotIn(CASE['token'], calls[-1][0][-1])
+        self.assertNotIn(' OR ', calls[-1][0][-1])
+
+    def test_complete_unknown_layout_retains_all_three_full_streams_and_exact_stage(self):
+        import base64, hashlib
+        def helper(command, options):
+            return subprocess.CompletedProcess(command, 0, b'Installed help layout\n' + b'x' * 16362,
+                                                b'Supplemental help\n' + b'y' * 16365)
+        result, calls, rows, text = self.run_collection(helper=helper)
+        self.assertEqual(result['query_route'], 'fixed-query-compatibility')
+        self.assertEqual(len(rows), 3); self.assertEqual(len(calls), 4)
+        self.assertLessEqual(len(text.encode()) + 3 * 128, 136 * 1024)
+        for row, (argv, _) in zip(rows, calls):
+            self.assertEqual(row['argv'], argv)
+            self.assertEqual(row['stage'], argv[-1]); self.assertTrue(row['complete'])
+            self.assertEqual(row['source'], CONTEXT); self.assertEqual(row['exit_code'], 0)
+            self.assertLessEqual(row['started_monotonic'], row['returned_monotonic'])
+            self.assertLessEqual(row['returned_monotonic'], row['deadline_monotonic'])
+            for stream in ('stdout', 'stderr'):
+                raw = base64.b64decode(row[stream]['base64'], validate=True)
+                self.assertEqual(len(raw), row[stream]['bytes'])
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), row[stream]['sha256'])
+                self.assertTrue(row[stream]['complete'])
+
+    def test_complete_help_prose_about_failed_operations_does_not_stop_fixed_query(self):
+        prose = b'\nThis reference documents successful and failed log operations.\n'
+        process = subprocess.CompletedProcess([], 0, HELP['show'] + prose, b'')
+        self.assertTrue(d.confirmed_help('show', process))
+        self.assertFalse(d.help_has_error(process))
+        for code in (0, 64):
+            def helper(command, options):
+                return subprocess.CompletedProcess(command, code, HELP[command[-1]] + prose, b'')
+            result, calls, rows, _ = self.run_collection(helper=helper)
+            self.assertEqual(result['status'], 'observation-gap')
+            self.assertEqual(result['query_route'], 'recognized-help')
+            self.assertEqual(len(calls), 4)
+            self.assertEqual(calls[-1][0], d.log_command(IDENTITY, [CASE, self.second]))
+            self.assertTrue(all(row['complete'] for row in rows))
+
+    def test_failure_prose_is_distinct_from_explicit_command_diagnostics(self):
+        for text in (b'This reference documents a failure and failed operations.',
+                     b'The example explains a permission denied result.',
+                     b'When an option is unsupported, consult the documentation.',
+                     b'Error handling is documented below.', b'Unsupported options are described below.'):
+            self.assertFalse(d.help_has_error(subprocess.CompletedProcess([], 0, HELP['show'] + b'\n' + text, b'')))
+        for text in (b'log: failed to open log store', b'Failed to open log store', b'failure: unavailable store',
+                     b'log: failure opening store', b'simctl: error: blocked',
+                     b'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=1):'):
+            for code in (0, 64):
+                self.assertTrue(d.help_has_error(subprocess.CompletedProcess([], code, HELP['show'], text)))
+        self.assertTrue(d.help_has_error(subprocess.CompletedProcess([], 1, HELP['show'], b'')))
+
+    def test_late_help_emission_downgrades_observation_without_changing_completed_commands(self):
+        original_emit = d.emit_help_receipts
+        for output in (b'[]', json.dumps([self.record_for(CASE)]).encode()):
+            for finished in (35.0, 35.001):
+                clock = [0.0]
+                def emit(records):
+                    original_emit(records)
+                    clock[0] = finished
+                with patch.object(d.time, 'monotonic', side_effect=lambda: clock[0]), \
+                        patch.object(d, 'emit_help_receipts', side_effect=emit):
+                    result, calls, rows, _ = self.run_collection(output=output)
+                self.assertEqual(len(calls), 4); self.assertEqual(len(rows), 3)
+                self.assertTrue(result['simulator_commands_completed'])
+                self.assertTrue(all(row['complete'] for row in rows))
+                if finished > 35:
+                    self.assertEqual(result['status'], 'unavailable')
+                    self.assertEqual(result['reason'], 'help-output-exceeded-original-clock')
+                    self.assertEqual(result['events'], [])
+                    self.assertFalse(result['observation_complete'])
+                else:
+                    self.assertEqual(result['status'], 'observation-gap' if output == b'[]' else 'receipts-retained')
+
+    def test_late_host_emission_cannot_clear_existing_command_uncertainty(self):
+        original_emit = d.emit_help_receipts
+        clock = [0.0]
+        def emit(records):
+            original_emit(records); clock[0] = 35.001
+        def stopped(command, options):
+            raise d.CaptureStopped('duration-limit', True)
+        with patch.object(d.time, 'monotonic', side_effect=lambda: clock[0]), \
+                patch.object(d, 'emit_help_receipts', side_effect=emit):
+            result, calls, _, _ = self.run_collection(helper=stopped)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(result['simulator_commands_completed'])
+        self.assertEqual(result['reason'], 'command-exit-unconfirmed')
+
+    def test_permission_error_nonzero_and_uncertainty_stop_future_commands_but_frame_three_stages(self):
+        for error in (b'Permission denied', b'Operation not permitted', b'error: blocked', b'unknown option --style', b'log: Must be root to run this command',
+                      b'log: insufficient privileges', b'Access to logs requires administrator privileges.'):
+            def helper(command, options):
+                return subprocess.CompletedProcess(command, 0, HELP['spawn'], error)
+            result, calls, rows, _ = self.run_collection(helper=helper)
+            self.assertEqual(len(calls), 1); self.assertEqual(result['reason'], 'help-command-error')
+            self.assertEqual([row['status'] for row in rows], ['complete-error', 'not_requested', 'not_requested'])
+            self.assertTrue(rows[0]['stderr']['complete'])
+        def stopped(command, options):
+            error = d.CaptureStopped('byte-limit', True)
+            error.stdout_prefix = b'x' * 32768; error.stdout_observed_bytes = 32769
+            raise error
+        result, calls, rows, _ = self.run_collection(helper=stopped)
+        self.assertEqual(len(calls), 1); self.assertFalse(result['simulator_commands_completed'])
+        self.assertFalse(rows[0]['complete']); self.assertFalse(rows[0]['stdout']['complete'])
+        self.assertEqual(rows[0]['stdout']['observed_bytes'], 32769)
+        self.assertEqual(rows[0]['stdout']['bytes'], 32768)
+
+    def test_combined_24_event_envelopes_fit_but_actual_serialized_overflow_is_unknown(self):
+        records = [self.record_for(CASE if i < 12 else self.second, sequence=i % 12 + 1,
+                                  event='accept-enter' if i % 2 else 'apply-applied') for i in range(24)]
+        result, _, _, _ = self.run_collection(output=json.dumps(records).encode())
+        self.assertEqual(result['status'], 'receipts-retained'); self.assertEqual(len(result['events']), 24)
+        self.assertEqual(result['events'][0]['sequence'], 1); self.assertEqual(result['events'][-1]['sequence'], 12)
+        measured = len(json.dumps({key: result[key] for key in ('cases', 'events')}, separators=(',', ':'), sort_keys=True).encode())
+        self.assertLessEqual(measured, 12288)
+        for record in records:
+            value = json.loads(record['eventMessage'][len(d.PREFIX):])
+            value.update({key: 'X' * 80 for key in d.TYPE_FIELDS if key != 'controller'})
+            record['eventMessage'] = d.PREFIX + json.dumps(value)
+        result, _, _, _ = self.run_collection(output=json.dumps(records).encode())
+        self.assertEqual(result['status'], 'unknown'); self.assertEqual(result['reason'], 'sanitized-byte-limit')
+        self.assertEqual(result['events'], []); self.assertFalse(result['observation_complete'])
+        result, _, _, _ = self.run_collection(output=json.dumps(records + [records[0]]).encode())
+        self.assertEqual(result['reason'], 'combined-event-limit'); self.assertEqual(result['events'], [])
+
+    def test_guard_states_and_late_apply_are_preserved_without_mutation_or_inference(self):
+        states = [
+            dict(busy=False, selectionExists=True, selectionNonempty=True, buttonEnabled=True),
+            dict(busy=True, selectionExists=True, selectionNonempty=True, buttonEnabled=False),
+            dict(busy=False, selectionExists=False, selectionNonempty=False, buttonEnabled=False),
+            dict(busy=False, selectionExists=True, selectionNonempty=False, buttonEnabled=False),
+            dict(busy=False, selectionExists=True, selectionNonempty=True, buttonEnabled=True),
+        ]
+        records = [self.record_for(CASE, sequence=index + 1, epoch=CASE['started'] + index + 1,
+                                  event='apply-applied' if index == 4 else 'accept-enter', **state)
+                   for index, state in enumerate(states)]
+        original = copy.deepcopy(records)
+        rows = d.lifecycle_rows(json.dumps(records), [CASE])
+        self.assertEqual(records, original)
+        self.assertEqual([row['event'] for row in rows], ['accept-enter'] * 4 + ['apply-applied'])
+        for row, state in zip(rows, states):
+            self.assertEqual({key: row[key] for key in state}, state)
+            self.assertNotIn('guard_passed', row)
+            self.assertNotIn('nondelivery', row)
+
+    def test_malformed_log_shapes_return_explicit_unavailable(self):
+        for raw in (b'null', b'[null]', json.dumps([dict(entry(), processImagePath=None)]).encode()):
+            result, calls, _, _ = self.run_collection(output=raw)
+            self.assertEqual(len(calls), 4)
+            self.assertEqual(result['status'], 'unavailable')
+            self.assertEqual(result['reason'], 'invalid-or-unavailable-evidence')
+            self.assertEqual(result['events'], [])
+
+    def test_three_help_framing_fits_with_maximum_run_identity_and_split_padding(self):
+        import contextlib
+        import uikit_managed_device as managed
+        import uikit_completion as completion
+        maximum_context = dict(CONTEXT, repository=managed.REPOSITORY, ref=completion.REF,
+            workflow_ref=completion.WORKFLOW, run_id='9' * 20, run_attempt='9' * 20,
+            event='workflow_dispatch', job='completion', full_original_row=False)
+        value = copy.deepcopy(self.value); value['command_interval']['source'] = maximum_context
+        def helper(command, options):
+            return subprocess.CompletedProcess(command, 64, b'x' * 16384, b'y' * 16384)
+        result, _, frames, text = self.run_collection(value, helper=helper)
+        self.assertEqual(result['query_route'], 'fixed-query-compatibility')
+        self.assertEqual(len(frames), 3)
+        self.assertEqual(sum(row['stdout']['bytes'] + row['stderr']['bytes'] for row in frames), 96 * 1024)
+        self.assertLessEqual(len(text.encode()) + 128 * 3, d.MAX_HELP_LOG_BYTES)
+
+    def test_collector_load_checks_sources_once_and_shared_clock_cannot_reset(self):
+        import contextlib
+        clock, calls = [0.0], []
+        def load(identity, runner):
+            for argv in (['git', 'rev-parse', 'HEAD'], ['git', 'diff', '--quiet', 'HEAD', '--']):
+                runner(argv, seconds=3, cap=4096)
+            return self.value
+        def runner(command, **options):
+            calls.append((command, options)); clock[0] += options['seconds']
+            raw = b'x' * 4096 if command[0] == 'git' else HELP[command[-1]] if 'help' in command else b'[]'
+            return subprocess.CompletedProcess(command, 0, raw, b'')
+        with patch.object(d, 'load_case', side_effect=load), patch.object(d.time, 'monotonic', side_effect=lambda: clock[0]), \
+                contextlib.redirect_stdout(io.StringIO()):
+            result = d.collect_lifecycle(IDENTITY, runner)
+        self.assertEqual(result['status'], 'observation-gap'); self.assertEqual(len(calls), 6)
+        self.assertEqual(sum(item[1]['cap'] for item in calls), 360 * 1024)
+        self.assertEqual([item[1]['seconds'] for item in calls], [3, 3, 3, 3, 3, 8])
+        self.assertEqual(clock[0], 23); self.assertLessEqual(clock[0] + 4, 35)
+
+
+class FunctionalCommandIntervalTests(unittest.TestCase):
+    def setUp(self):
+        import uikit_managed_tests as managed
+        self.managed = managed
+        self.binding = {'identity': IDENTITY, 'context': CONTEXT}
+        self.selected = {'group': 'iphone-large', 'suite': 'TouchColorUITests',
+                         'cases': ['TouchColorUITests/TouchColorUITests/' + case for case in d.CASES],
+                         'kind': 'selected_completion', 'full_target': False, 'full_original_row': False}
+        with patch.object(managed, 'selection', return_value=self.selected):
+            argv = managed.test_argv('iPhoneLarge', 'TouchColorUITests', IDENTITY['udid'])
+        self.value = {'schema': 3, 'suite': 'TouchColorUITests', 'selection': self.selected,
+            'setup': {'binding': self.binding}, 'summary_qualification_only': True,
+            'case_identity_basis': 'fixed_executed_argv_and_complete_summary',
+            'per_case_log_reconciliation': 'pending_external_review',
+            'command': {'status': 'timely_exit', 'host_cleanup_confirmed': True, 'exit_code': 65,
+                        'argv': argv, 'started_monotonic': 12.0, 'finished_monotonic': 320.0, 'deadline_monotonic': 1111.0},
+            'timing': {'phase_started_monotonic': 0.0, 'phase_deadline_monotonic': 1200.0,
+                       'admitted_monotonic': 10.0, 'command_origin_monotonic': 11.0,
+                       'command_wall_started': 99.0, 'command_wall_finished': 500.0}}
+
+    def read(self, value=None, binding=None):
+        import uikit_managed_device as device
+        import uikit_completion as completion
+        raw = json.dumps(value or self.value).encode()
+        with patch.object(self.managed, 'selection', return_value=self.selected), \
+                patch.object(completion, 'selection', return_value=self.selected), \
+                patch.object(self.managed, 'read_regular', return_value=raw), \
+                patch.object(device, 'read_binding', return_value=binding or self.binding):
+            return d.command_interval(IDENTITY, SOURCE)
+
+    def test_actual_immutable_functional_argv_interval_is_hashed(self):
+        import hashlib
+        result = self.read()
+        self.assertEqual((result['started'], result['ended']), (99., 500.))
+        raw = json.dumps(self.value).encode()
+        self.assertEqual(result['receipt_sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(result['receipt_bytes'], len(raw))
+
+    def test_wrong_source_run_identity_argv_exit_or_admission_never_infers_command(self):
+        for branch, key, replacement in (
+            ('command', 'argv', ['xcodebuild']), ('command', 'exit_code', True),
+            ('command', 'status', 'forced_exit'), ('command', 'host_cleanup_confirmed', False),
+            ('command', 'deadline_monotonic', 1112.), ('command', 'finished_monotonic', 1112.),
+            ('timing', 'phase_deadline_monotonic', 1201.), ('timing', 'command_wall_finished', 98.),
+            ('timing', 'admitted_monotonic', 150.), ('timing', 'command_wall_started', float('inf'))):
+            value = copy.deepcopy(self.value); value[branch][key] = replacement
+            with self.subTest(key=key), self.assertRaises(ValueError): self.read(value)
+        for key, replacement in (('sha', 'b' * 40), ('run_id', '124')):
+            binding = copy.deepcopy(self.binding); binding['context'][key] = replacement
+            with self.assertRaises(ValueError): self.read(binding=binding)
+
+    def test_malformed_receipt_and_case_shapes_fail_closed(self):
+        for key in ('setup', 'command', 'timing'):
+            value = copy.deepcopy(self.value); value[key] = None
+            with self.subTest(key=key), self.assertRaises(ValueError): self.read(value)
+        import uikit_managed_tests as managed
+        for value in (None, [], dict(retained(), cases=[None, {}])):
+            with patch.object(Path, 'exists', return_value=True), \
+                    patch.object(managed, 'read_regular', return_value=json.dumps(value).encode()), \
+                    patch.object(d, 'source_identity', return_value=SOURCE), self.assertRaises(ValueError):
+                d.load_case(IDENTITY)
+
+    def test_retainer_window_cannot_substitute_for_actual_command_window(self):
+        value = retained(); value['capture_started'] = 90.; value['capture_ended'] = 700.
+        with tempfile.TemporaryDirectory() as folder:
+            old = Path.cwd(); os.chdir(folder)
+            try:
+                Path('build').mkdir(); Path('build/iPhoneLarge-palette-case.json').write_text(json.dumps(value))
+                for interval in (dict(INTERVAL, started=101.), dict(INTERVAL, ended=130.)):
+                    with patch.object(d, 'source_identity', return_value=SOURCE), \
+                            patch.object(d, 'command_interval', return_value=interval), self.assertRaises(ValueError):
+                        d.load_case(IDENTITY)
+            finally: os.chdir(old)
 
 
 class CancellationTests(unittest.TestCase):
@@ -449,7 +795,7 @@ def observe_capture(command, **options):
 d.stop_group=owned_stop;d.capture=observe_capture
 # Supply only synthetic retained case metadata; exercise the real remaining
 # app collector and its first bounded help command through runtime.main.
-d.load_case=lambda identity: {'case': {'case': d.CASE, 'token': '11111111-1111-4111-8111-111111111111', 'pid': 32708, 'started': 100.125, 'epoch': 134.75}, 'source': {'sha': 'e'*40}}
+d.load_case=lambda identity, **options: {'cases': [{'case': d.CASES[0], 'status': 'bound-failure', 'failure': {'case': d.CASES[0], 'token': '11111111-1111-4111-8111-111111111111', 'pid': 32708, 'started': 100.125, 'epoch': 134.75}}, {'case': d.CASES[1], 'status': 'no-target-failure'}], 'source': {'sha': 'e'*40}, 'command_interval': {'started': 99, 'ended': 135, 'source': {'sha': 'e'*40, 'completion_group': 'iphone-large'}}}
 d.collect_lifecycle=lambda identity: original_collect(identity, runner=observe_capture)
 before={number:signal.getsignal(number) for number in (signal.SIGTERM,signal.SIGINT)}
 started=time.monotonic()
@@ -580,6 +926,105 @@ Path('result.json').write_text(json.dumps(result))
 
 
 class SourceBoundaryTests(unittest.TestCase):
+    def test_release_projection_matches_fixed_pre_observation_source(self):
+        import hashlib
+        app = (Path(__file__).resolve().parents[1]/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_bytes()
+        projected, active, parents = [], True, []
+        for line in app.splitlines(keepends=True):
+            directive = line.strip()
+            if directive == b'#if DEBUG':
+                parents.append(active)
+                active = False
+            elif directive == b'#else':
+                self.assertTrue(parents)
+                active = parents[-1] and not active
+            elif directive == b'#endif':
+                self.assertTrue(parents)
+                active = parents.pop()
+            else:
+                self.assertFalse(directive.startswith(b'#if'), 'Unreviewed conditional')
+                if active:
+                    projected.append(line)
+        self.assertFalse(parents)
+        projection = b''.join(projected)
+        self.assertEqual(len(projection), 10879)
+        self.assertEqual(hashlib.sha256(projection).hexdigest(),
+                         'cc623ea646e6a6c22a879ddd0b36a67a8ce168738aef1766221c5527eb0d9a5f')
+
+    def test_only_two_debug_observations_and_three_boolean_reads_are_added(self):
+        import hashlib
+        app = (Path(__file__).resolve().parents[1]/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_text()
+        token_binding = ('        let arguments = ProcessInfo.processInfo.arguments\n'
+                         '        let token: UUID?\n'
+                         '        if let index = arguments.firstIndex(of: "--ui-test-palette-lifecycle-token"),\n'
+                         '           arguments.indices.contains(index + 1) { token = UUID(uuidString: arguments[index + 1]) }\n'
+                         '        else { token = nil }\n'
+                         '        guard !requiresToken || token != nil else { return }\n')
+        additions = ('        if let token {\n'
+                     '            fields["selectionExists"] = selection != nil\n'
+                     '            fields["selectionNonempty"] = !(selection?.colors.isEmpty ?? true)\n'
+                     '            fields["buttonEnabled"] = addButton?.isEnabled ?? false\n')
+        original_binding = ('        let arguments = ProcessInfo.processInfo.arguments\n'
+                            '        if let index = arguments.firstIndex(of: "--ui-test-palette-lifecycle-token"),\n'
+                            '           arguments.indices.contains(index + 1), let token = UUID(uuidString: arguments[index + 1]) {\n')
+        self.assertEqual(app.count(token_binding), 1)
+        self.assertEqual(app.count(additions), 1)
+        self.assertLess(app.index(token_binding), app.index('        func typeName('))
+        # Missing/invalid tokens cannot admit either new event or new fields.
+        restored = app.replace(', requiresToken: Bool = false', '')
+        restored = restored.replace(token_binding, '').replace(additions, original_binding)
+        for event in ('accept-enter', 'apply-applied'):
+            observation = '#if DEBUG\n        tracePresentation("' + event + '", requiresToken: true)\n#endif\n'
+            self.assertEqual(restored.count(observation), 1)
+            restored = restored.replace(observation, '')
+        # Exact inverse locks all earlier no-token DEBUG events and metadata.
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1')
+        accept = app.split('    @objc private func accept() {\n', 1)[1].split('    @objc private func close()', 1)[0]
+        self.assertTrue(accept.startswith('#if DEBUG\n        tracePresentation("accept-enter", requiresToken: true)\n#endif\n'
+                                         '        guard !busy, let selection, !selection.colors.isEmpty else { return }\n'))
+        apply = app.split('    func apply(_ result: Result<PaletteSelection, Error>, name: String, token: UInt64) {\n', 1)[1].split('    func chooseFile()', 1)[0]
+        self.assertTrue(apply.startswith('        guard gate.accepts(token) else { return }; busy = false\n'))
+        self.assertTrue(apply.endswith('        reload()\n#if DEBUG\n        tracePresentation("apply-applied", requiresToken: true)\n#endif\n    }\n'))
+
+    def test_exact_two_case_bindings_preserve_started_failed_marker_schema(self):
+        import re
+        test = (Path(__file__).resolve().parents[1]/'TouchColorUITests/TouchColorUITests.m').read_text()
+        bindings = test.split('    self.paletteLifecycleCase=@{\n', 1)[1].split('    }[self.name];', 1)[0]
+        self.assertEqual(re.findall(r'@"-\[TouchColorUITests ([^\]]+)\]":@"([^"]+)"', bindings),
+                         [(name, name) for name in ('testInvalidPalettePastePreservesHistory',
+                                                   'testPalettePasteReviewAcceptAndRelaunch')])
+        setup = test.split('- (void)setUp {', 1)[1].split('- (void)revealControl:', 1)[0]
+        token = setup.split('    if (self.paletteLifecycleCase) {\n', 1)[1].split('\n    }', 1)[0]
+        self.assertIn('self.paletteLifecycleToken=NSUUID.UUID.UUIDString;', token)
+        self.assertIn('self.paletteLifecycleStarted=NSDate.date.timeIntervalSince1970;', token)
+        self.assertIn('@[@"--ui-test-palette-lifecycle-token",self.paletteLifecycleToken]', token)
+        self.assertIn('[self emitPaletteLifecycleCase:@"started" pid:@0];', token)
+        self.assertEqual(test.count('self.paletteLifecycleToken=NSUUID.UUID.UUIDString;'), 1)
+        marker = test.split('- (void)emitPaletteLifecycleCase:', 1)[1].split('- (void)setUp', 1)[0]
+        self.assertEqual(re.findall(r'@"(\w+)":', marker), ['event', 'case', 'token', 'started', 'epoch', 'pid'])
+        self.assertIn('@"case":self.paletteLifecycleCase', marker)
+        self.assertEqual(test.count('[self emitPaletteLifecycleCase:@"failed" pid:pid];'), 1)
+
+    def test_failure_pid_requires_current_launch_token_and_reuses_original_snapshot(self):
+        import hashlib
+        test = (Path(__file__).resolve().parents[1]/'TouchColorUITests/TouchColorUITests.m').read_text()
+        issue = test.split('- (void)recordIssue:(XCTIssue *)issue {\n', 1)[1].split('- (void)emitScreenshot:', 1)[0]
+        binding = ('        NSArray<NSString *> *arguments=self.app.launchArguments;\n'
+                   '        NSUInteger tokenIndex=[arguments indexOfObject:@"--ui-test-palette-lifecycle-token"];\n'
+                   '        BOOL launchBound=[arguments containsObject:@"--ui-test-palette-lifecycle"] && tokenIndex!=NSNotFound &&\n'
+                   '            tokenIndex+1<arguments.count && [arguments[tokenIndex+1] isEqualToString:self.paletteLifecycleToken];\n')
+        self.assertEqual(issue.count(binding), 1)
+        self.assertIn('NSNumber *pid=@0;\n        if (matches.count==1 && launchBound) pid=', issue)
+        self.assertEqual(issue.count('self.app.debugDescription'), 1)
+        restored = issue.replace(binding, '').replace('if (matches.count==1 && launchBound)', 'if (matches.count==1)')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '90ee4ede6bc703b31786e070b69ede696e2f879ead125e37b5a91f0b50e7135c')
+        # The final normal-case relaunch intentionally has no observation token.
+        helper = (Path(__file__).resolve().parents[1]/'TouchColorUITests/TCPaletteUIHelpers.m').read_text()
+        normal = helper.split('- (void)exercisePalettePasteReviewAcceptAndRelaunch:', 1)[1].split('- (void)exerciseInvalidPalettePastePreservesHistory:', 1)[0]
+        self.assertIn('[app terminate];app.launchArguments=@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];[app launch];', normal)
+
     def test_no_new_ax_pid_query_and_release_behavior_unchanged(self):
         root = Path(__file__).resolve().parent.parent
         app = (root/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_text()
@@ -606,7 +1051,7 @@ class HostedGateSchedulingContracts(unittest.TestCase):
     def test_product_and_unrelated_close_methods_are_unchanged(self):
         import hashlib
         self.assertEqual(hashlib.sha256((self.root/'TouchColorPhoneCompanion/PhonePaletteImportController.swift').read_bytes()).hexdigest(),
-                         '32de83ef1894d1f2c73f1976a380f2295bf542eb99e16efd41e3ad84960248f1')
+                         '9174667d6dd918f5f8d10ab17e1d3beba08f08d7083387db74c9f18c759cbf97')
         self.assertEqual(hashlib.sha256(self.swift.split('    func testCancelledFileSelectionAndUnsupportedPasteRejectLatePriorRead()', 1)[1].encode()).hexdigest(),
                          'f3cb0b39635819efea36defdcc6b17f865e410c7f74edbdb9f940beff1f9430e')
 

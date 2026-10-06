@@ -108,12 +108,10 @@ jobs:
       max-parallel: 2
       matrix:
         include:
-          - {group: iphone-compact, family: iPhoneCompact, audits: true}
-          - {group: iphone-large, family: iPhoneLarge, audits: true}
-          - {group: ipad-mini-palette, family: iPadMini, audits: false}
-          - {group: ipad-mini-canvas, family: iPadMini, audits: true}
-          - {group: ipad-large-palette, family: iPadLarge, audits: false}
-          - {group: ipad-large-canvas, family: iPadLarge, audits: true}
+          - {group: iphone-compact, family: iPhoneCompact, audits: false}
+          - {group: iphone-large, family: iPhoneLarge, audits: false}
+          - {group: ipad-mini, family: iPadMini, audits: true}
+          - {group: ipad-large, family: iPadLarge, audits: false}
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.family == 'iPadMini' && 70 || 60 }}
     env:
