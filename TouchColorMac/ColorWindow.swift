@@ -17,6 +17,9 @@ struct ColorWindow: View {
     }
 
     var body: some View {
+        #if DEBUG
+        let _ = MacPassiveLifecycle.shared?.checkpoint(.colorWindowBody)
+        #endif
         NavigationSplitView {
             PaletteSidebar(library: library, session: session)
                 // A sheet dims and blocks the workspace. Its inactive content must

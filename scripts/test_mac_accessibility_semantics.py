@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import unittest
+from test_mac_reset_source_helpers import restore_english_setup
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTACT_LABEL = "Contact the developer about privacy"
@@ -228,7 +229,7 @@ class MacAccessibilitySemanticsContracts(unittest.TestCase):
             self.assertEqual(dict(entries).get(CONTACT_LABEL), expected)
 
     def test_contact_locales_are_independent_cases_selected_before_single_exact_product_launch(self):
-        setup = self.ui.split('override func setUpWithError()', 1)[1].split('override func tearDownWithError()', 1)[0]
+        setup = restore_english_setup(self.ui).split('override func setUpWithError()', 1)[1].split('override func tearDownWithError()', 1)[0]
         cases = [('English', 'en', 'en_US', CONTACT_LABEL),
                  ('SimplifiedChinese', 'zh-Hans', 'zh_CN', '联系开发者咨询隐私问题')]
         self.assertEqual(setup.count('app.launch()'), 1)
