@@ -18,7 +18,10 @@ from vision_capture_format import verify_generated as verify_capture_format
 from vision_diagnostic_result import begin_largest_execution, prepare_failed_largest
 from native_text_rows import from_environment as text_row_from_environment, vision_roles
 kind=sys.argv[1]
-if kind not in ('vision','watch','tv'): raise ValueError('Unknown native platform')
+if kind != 'watch': raise ValueError('Focused candidate admits Watch only')
+if os.environ.get('TOUCHCOLOR_WATCH_PROFILE') != 'smallest' or os.environ.get('TOUCHCOLOR_TEXT_PHASE') != 'normal':
+    raise ValueError('Focused candidate admits only the existing 40mm normal-text row')
+FOCUSED_CASE='TouchColorWatchUITests/WatchWorkflowTests/testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder'
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
@@ -201,6 +204,8 @@ try:
     if kind=='watch':
         size=text_row['profile']
         runtime,device,inventory=select_profile(devices,runtime_suffix,size)
+        if device.get('deviceTypeIdentifier') != 'com.apple.CoreSimulator.SimDeviceType.Apple-Watch-SE-3-40mm':
+            raise RuntimeError('Focused case requires the observed SE3 40mm profile before any device mutation')
         report['watch_profile']=size;report['watch_available_inventory']=inventory
         print('WATCH_AVAILABLE_PROFILE_INVENTORY',json.dumps(inventory),flush=True)
         runtimes=json.loads(check_output(['xcrun','simctl','list','runtimes','-j'],timeout=30))['runtimes']
@@ -342,11 +347,11 @@ try:
         # install/hosted startup consumed much of a shared840s command, so later UI
         # cases never ran. Each phase remains bounded on the same fresh VM; the
         # source-bound Watch job budget and per-case120/240s allowances remain finite.
-        report['xctest_summary_scope']='hosted tests only; watch-ui-summary.json contains the separate UI result'
-        run(test_common+test_arguments+['-resultBundlePath','build/watch-tests.xcresult','-only-testing:TouchColorWatchTests'],480)
+        report['xctest_summary_scope']='single copy/edit/delete/relaunch UI regression; no new hosted coverage'
+        report['hosted_tests']='not rerun; historical evidence remains separately source-bound'
         if text_phase=='normal':
-            normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult','-only-testing:TouchColorWatchUITests',
-                '-skip-testing:TouchColorWatchUITests/WatchWorkflowTests/testPublicLargestTraitChineseColorEditorSave']
+            normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult',
+                '-only-testing:'+FOCUSED_CASE, '-test-iterations','1']
             report['watch_inputs_before_normal']=watch_checkpoint(report,device=device['udid'],runtime=runtime)
             if report.get('cleanup_unconfirmed'): raise RuntimeError('Watch checkpoint cleanup unconfirmed; normal UI not started')
             normal_code=run(normal_command,840,required=False)

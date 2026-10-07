@@ -162,18 +162,36 @@ struct WatchColorEditor: View {
     private static let limits = ["lifecycle": 32, "focusVisible": 16, "focusHidden": 16,
                                  "writeVisible": 16, "writeHidden": 16]
     private static var seen: [String: Int] = [:]
+    // Reserve half of each existing focus bucket for the second editor. The
+    // first editor's repeated focus events cannot consume the copy's evidence.
+    // Two identities at most; no reset or additional process-wide allowance.
+    private static var focusEditors: [UUID] = []
+    private static var focusSeen: [String: Int] = [:]
+    private static var emitted: [String: Int] = [:]
     private static let testCase = String((ProcessInfo.processInfo.environment["TOUCHCOLOR_TEST_CASE"] ?? "unscoped")
         .map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == ".") ? $0 : "_" }.prefix(120))
     private static let logger = Logger(subsystem: "com.mango.touchColor.WatchDiagnostics", category: "editor")
     private static func emit(_ kind: String, _ id: UUID, bucket: String, focused: Bool? = nil, visible: Bool) {
         seen[bucket, default: 0] += 1
-        guard seen[bucket, default: 0] <= limits[bucket, default: 0] else { return }
-        let dropped = seen.reduce(0) { $0 + max(0, $1.value - limits[$1.key, default: 0]) }
+        if bucket == "focusVisible" || bucket == "focusHidden" {
+            guard let ordinal = focusEditors.firstIndex(of: id) else { return }
+            let key = "\(ordinal).\(bucket)"
+            focusSeen[key, default: 0] += 1
+            guard focusSeen[key, default: 0] <= 8 else { return }
+        } else {
+            guard seen[bucket, default: 0] <= limits[bucket, default: 0] else { return }
+        }
+        guard emitted[bucket, default: 0] < limits[bucket, default: 0] else { return }
+        emitted[bucket, default: 0] += 1
+        let dropped = seen.reduce(0) { $0 + max(0, $1.value - emitted[$1.key, default: 0]) }
         // Only onChange(of: crownFocused) supplies a measured focus value.
         let focus = focused.map { " focused=\($0)" } ?? ""
         logger.notice("WATCH_EDITOR \(kind, privacy: .public) case=\(testCase, privacy: .public) id=\(id.uuidString, privacy: .public) visible=\(visible)\(focus, privacy: .public) active=\(visibleEditors.count) dropped=\(dropped)")
     }
-    static func appeared(_ id: UUID) { visibleEditors.insert(id); emit("appear", id, bucket: "lifecycle", visible: true) }
+    static func appeared(_ id: UUID) {
+        if focusEditors.count < 2 && !focusEditors.contains(id) { focusEditors.append(id) }
+        visibleEditors.insert(id); emit("appear", id, bucket: "lifecycle", visible: true)
+    }
     static func disappeared(_ id: UUID) { visibleEditors.remove(id); emit("disappear", id, bucket: "lifecycle", visible: false) }
     static func focus(_ id: UUID, focused: Bool, visible: Bool) { emit("focus", id, bucket: visible ? "focusVisible" : "focusHidden", focused: focused, visible: visible) }
     static func writeback(_ id: UUID, changed: Bool, visible: Bool) { emit(changed ? "component_changed" : "component_unchanged", id, bucket: visible ? "writeVisible" : "writeHidden", visible: visible) }
