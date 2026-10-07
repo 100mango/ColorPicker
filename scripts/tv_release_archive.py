@@ -19,11 +19,13 @@ import time
 import xml.etree.ElementTree as ET
 
 import tv_release_package as package
+import tv_archive_diagnostics as diagnostics
 from tv_archive_capture import capture, CaptureStopped
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '74ccaa93ae3f0cb5d0a63f6957460e9e8e576add'
 BASE_TREE = 'c6bb5466a57dfd919b5dbd0edb3b58b7bf5a8683'
+PARENT = '50ff85eb6fc22a0ebcac7db8c5ab66b37decb4b1'
 BRANCH = 'refs/heads/codex/tv-release-archive'
 WORKFLOW = '.github/workflows/tv-release-archive.yml'
 CATALOG = 'TouchColorTV/Assets.xcassets/AppIcon.brandassets/'
@@ -34,6 +36,7 @@ MODIFIED_PATHS = tuple(CATALOG + p + 'Contents.json' for p in SCALED)
 NEW_PATHS = (WORKFLOW, 'scripts/tv_release_archive.py', 'scripts/test_tv_release_archive.py',
              'scripts/tv_release_package.py', 'scripts/tv_release_contract.json',
              'scripts/tv_archive_capture.py', 'scripts/test_tv_archive_capture.py',
+             'scripts/tv_archive_diagnostics.py', 'scripts/test_tv_archive_diagnostics.py',
              'scripts/materialize_tv_2x_assets.py', 'scripts/test_tv_2x_assets.py') + tuple(
              CATALOG + p + ('Transparent-2x.png' if '/Front.' in p else 'Icon-2x.png') for p in SCALED)
 ARCHIVE = Path('build/TouchColor.xcarchive')
@@ -123,7 +126,7 @@ def source_identity(env, run, root=ROOT):
     need(git('rev-parse', 'HEAD') == identity['GITHUB_SHA'], 'head-mismatch')
     need(git('rev-parse', BASE + '^{tree}') == BASE_TREE, 'base-tree-mismatch')
     lineage = git('rev-list', '--parents', '-n', '1', 'HEAD').split()
-    need(lineage == [identity['GITHUB_SHA'], BASE], 'source-sole-parent-mismatch')
+    need(lineage == [identity['GITHUB_SHA'], PARENT], 'source-sole-parent-mismatch')
     identity['parents'] = lineage[1:]
     need(git('status', '--porcelain', '--untracked-files=all') == '', 'source-not-clean')
     differences = git('diff', '--name-status', BASE, 'HEAD', '--').splitlines()
@@ -151,55 +154,64 @@ def file_identity(value):
 
 
 def scan(archive, deadline, *, clock=time.monotonic, hash_files=True):
-    """One bounded walk. Rechecking all directory identities detects new entries."""
-    deadline = min(deadline, clock() + SCAN_SECONDS)
-    root_stat = archive.lstat()
-    need(stat.S_ISDIR(root_stat.st_mode), 'archive-missing-or-linked')
-    paths, pending, total = {'.': {'identity': file_identity(root_stat)}}, [archive], 0
-    while pending:
-        folder = pending.pop()
+    """Original strict predicates, with explicit context for the first rejection."""
+    current = {'path': '.', 'type': 'unread'}
+    try:
+        deadline = min(deadline, clock() + SCAN_SECONDS)
+        root_stat = archive.lstat()
+        current = diagnostics.record('.', root_stat)
+        need(stat.S_ISDIR(root_stat.st_mode), 'archive-missing-or-linked')
+        paths, pending, total = {'.': {'identity': file_identity(root_stat)}}, [archive], 0
+        while pending:
+            folder = pending.pop()
+            timely(deadline, clock)
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    path = Path(entry.path); key = path.relative_to(archive).as_posix()
+                    current = {'path': key[:1024], 'type': 'unread', 'path_truncated': len(key)>1024}
+                    timely(deadline, clock)
+                    need(len(paths) <= MAX_ENTRIES, 'archive-entry-limit')
+                    need(len(key) <= 1024, 'archive-path-limit')
+                    value = path.lstat(); mode = value.st_mode
+                    current = diagnostics.record(key, value)
+                    need(stat.S_ISDIR(mode) or stat.S_ISREG(mode), 'archive-linked-or-nonregular')
+                    need(not stat.S_ISREG(mode) or value.st_nlink == 1, 'archive-hardlink')
+                    need(path.name not in ('Watch', '_CodeSignature', 'CodeResources', 'embedded.mobileprovision')
+                         and path.suffix.lower() not in ('.appex', '.framework', '.xctest', '.dylib', '.mobileprovision')
+                         and 'PaletteFixtures' not in key, 'unexpected-code-or-signature')
+                    need(path.suffix not in ('.app', '.dSYM') or key in (APP, DSYM), 'unexpected-product')
+                    allowed = key in ('Info.plist', 'Products', 'Products/Applications', APP, 'dSYMs', DSYM)
+                    allowed = allowed or key.startswith(APP + '/') or key.startswith(DSYM + '/')
+                    need(allowed, 'unexpected-archive-entry')
+                    receipt = {'identity': file_identity(value)}; paths[key] = receipt
+                    if stat.S_ISDIR(mode):
+                        pending.append(path); continue
+                    total += value.st_size
+                    need(total <= MAX_BYTES, 'archive-byte-limit')
+                    need(key in (APP + '/TouchColor', DWARF) or not mode & 0o111, 'unexpected-executable')
+                    if hash_files:
+                        h = hashlib.sha256(); count = 0; prefix = b''
+                        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+                        with os.fdopen(os.open(path, flags), 'rb') as stream:
+                            need(file_identity(os.fstat(stream.fileno())) == receipt['identity'], 'archive-file-changed')
+                            while chunk := stream.read(1024 * 1024):
+                                timely(deadline, clock); count += len(chunk)
+                                need(count <= value.st_size, 'archive-file-grew')
+                                if not prefix: prefix = chunk[:4]
+                                h.update(chunk)
+                            need(file_identity(os.fstat(stream.fileno())) == receipt['identity'], 'archive-file-changed')
+                        need(count == value.st_size, 'archive-file-changed')
+                        need(prefix not in MACH_MAGICS or key in (APP + '/TouchColor', DWARF), 'unexpected-mach-o')
+                        receipt.update(bytes=count, sha256=h.hexdigest())
+        for key, receipt in paths.items():
+            current = {'path': key, 'type': 'snapshot-recheck'}
+            timely(deadline, clock)
+            need(file_identity((archive / key).lstat()) == receipt['identity'], 'archive-snapshot-changed')
         timely(deadline, clock)
-        with os.scandir(folder) as entries:
-            for entry in entries:
-                timely(deadline, clock)
-                need(len(paths) <= MAX_ENTRIES, 'archive-entry-limit')
-                path = Path(entry.path); key = path.relative_to(archive).as_posix()
-                need(len(key) <= 1024, 'archive-path-limit')
-                value = path.lstat(); mode = value.st_mode
-                need(stat.S_ISDIR(mode) or stat.S_ISREG(mode), 'archive-linked-or-nonregular')
-                need(not stat.S_ISREG(mode) or value.st_nlink == 1, 'archive-hardlink')
-                need(path.name not in ('Watch', '_CodeSignature', 'CodeResources', 'embedded.mobileprovision')
-                     and path.suffix.lower() not in ('.appex', '.framework', '.xctest', '.dylib', '.mobileprovision')
-                     and 'PaletteFixtures' not in key, 'unexpected-code-or-signature')
-                need(path.suffix not in ('.app', '.dSYM') or key in (APP, DSYM), 'unexpected-product')
-                allowed = key in ('Info.plist', 'Products', 'Products/Applications', APP, 'dSYMs', DSYM)
-                allowed = allowed or key.startswith(APP + '/') or key.startswith(DSYM + '/')
-                need(allowed, 'unexpected-archive-entry')
-                receipt = {'identity': file_identity(value)}; paths[key] = receipt
-                if stat.S_ISDIR(mode):
-                    pending.append(path); continue
-                total += value.st_size
-                need(total <= MAX_BYTES, 'archive-byte-limit')
-                need(key in (APP + '/TouchColor', DWARF) or not mode & 0o111, 'unexpected-executable')
-                if hash_files:
-                    h = hashlib.sha256(); count = 0; prefix = b''
-                    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-                    with os.fdopen(os.open(path, flags), 'rb') as stream:
-                        need(file_identity(os.fstat(stream.fileno())) == receipt['identity'], 'archive-file-changed')
-                        while chunk := stream.read(1024 * 1024):
-                            timely(deadline, clock); count += len(chunk)
-                            need(count <= value.st_size, 'archive-file-grew')
-                            if not prefix: prefix = chunk[:4]
-                            h.update(chunk)
-                        need(file_identity(os.fstat(stream.fileno())) == receipt['identity'], 'archive-file-changed')
-                    need(count == value.st_size, 'archive-file-changed')
-                    need(prefix not in MACH_MAGICS or key in (APP + '/TouchColor', DWARF), 'unexpected-mach-o')
-                    receipt.update(bytes=count, sha256=h.hexdigest())
-    for key, receipt in paths.items():
-        timely(deadline, clock)
-        need(file_identity((archive / key).lstat()) == receipt['identity'], 'archive-snapshot-changed')
-    timely(deadline, clock)
-    return {'paths': paths, 'entries': len(paths) - 1, 'bytes': total}
+        return {'paths': paths, 'entries': len(paths) - 1, 'bytes': total}
+    except (Exception, KeyboardInterrupt) as error:
+        error.offending_entry = current
+        raise
 
 
 def matching_uuid(raw, executable, dwarf):
@@ -312,9 +324,12 @@ def report_bytes(report):
     raw = (json.dumps(report, sort_keys=True, default=json_value, allow_nan=False, separators=(',', ':')) + '\n').encode()
     if len(raw) > MAX_REPORT:
         report = {k: report[k] for k in ('schema', 'qualified', 'signing_qualified', 'store_qualified',
-                    'older_os_qualified', 'ui_qualification_separate')}
-        report.update(qualified=False, failure={'type': 'Rejected', 'reason': 'report-byte-limit'})
-        raw = (json.dumps(report, sort_keys=True) + '\n').encode()
+                    'older_os_qualified', 'ui_qualification_separate', 'failure', 'archive_diagnostic') if k in report}
+        report['qualified'] = False
+        report.setdefault('failure', {'type': 'Rejected', 'reason': 'report-byte-limit'})
+        report['retention_failure'] = {'reason': 'report-byte-limit', 'preserved': 'original failure and bounded archive diagnostic'}
+        raw = (json.dumps(report, sort_keys=True, default=json_value, allow_nan=False) + '\n').encode()
+        need(len(raw) <= MAX_REPORT, 'bounded-diagnostic-report-byte-limit')
     return raw
 
 
@@ -344,13 +359,14 @@ def execute(*, env=None, root=ROOT, clock=time.monotonic, runner=capture):
         need(report['toolchain']['xcode'].strip().splitlines() == ['Xcode 27.0', 'Build version 27A266a'], 'toolchain-mismatch')
         need('appletvos27.0' in report['toolchain']['sdks'], 'sdk-mismatch')
         for optimize in ([], ['-O']):
-            for test_file in ('test_tv_archive_capture.py', 'test_tv_release_archive.py'):
+            for test_file in ('test_tv_archive_capture.py', 'test_tv_archive_diagnostics.py', 'test_tv_release_archive.py'):
                 run([sys.executable, *optimize, '-m', 'unittest', 'discover', '-s', 'scripts',
                      '-p', test_file], seconds=40, cap=65536)
         timely(began + PHASE_END['prepare'], clock)
         phase = 'archive'; phase_deadline = min(began + PHASE_END[phase], clock() + 620)
         run(ARCHIVE_COMMAND, seconds=600, cap=512 * 1024, cleanup=10)
         phase = 'proof'; phase_deadline = min(began + PHASE_END[phase], clock() + 110)
+        report['archive_diagnostic'] = diagnostics.collect(root / ARCHIVE, phase_deadline, clock=clock)
         report['proof'] = verify_archive(root / ARCHIVE, run, phase_deadline, root=root, clock=clock)
         phase = 'final_source_pack'; phase_deadline = min(began + PHASE_END[phase], clock() + 30)
         report['clock']['report_ready_deadline'] = phase_deadline
@@ -362,6 +378,8 @@ def execute(*, env=None, root=ROOT, clock=time.monotonic, runner=capture):
         report['clock']['report_ready_deadline'] = min(report['clock']['report_ready_deadline'], clock() + 30)
         report['failure'] = {'phase': phase, 'type': type(error).__name__,
                              'reason': str(error)[:4096]}
+        if hasattr(error, 'offending_entry'):
+            report['failure']['offending_entry'] = error.offending_entry
     report['clock']['elapsed_seconds'] = clock() - began
     return report
 

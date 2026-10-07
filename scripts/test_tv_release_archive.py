@@ -300,13 +300,13 @@ class ArchiveTests(unittest.TestCase):
             args = argv[1:]
             if args == ['rev-parse', 'HEAD']: return (valid['GITHUB_SHA'] + '\n').encode()
             if args == ['rev-parse', archive.BASE + '^{tree}']: return (archive.BASE_TREE + '\n').encode()
-            if args == ['rev-list', '--parents', '-n', '1', 'HEAD']: return (valid['GITHUB_SHA'] + ' ' + archive.BASE + '\n').encode()
+            if args == ['rev-list', '--parents', '-n', '1', 'HEAD']: return (valid['GITHUB_SHA'] + ' ' + archive.PARENT + '\n').encode()
             if args == ['rev-parse', 'HEAD^{tree}']: return ('b' * 40 + '\n').encode()
             if args[:2] == ['diff', '--name-status']: return (''.join('A\t' + p + '\n' for p in archive.NEW_PATHS)+''.join('M\t' + p + '\n' for p in archive.MODIFIED_PATHS)).encode()
             return b''
         identity = archive.source_identity(valid, run)
         self.assertEqual(identity['base_tree'], archive.BASE_TREE)
-        self.assertEqual(identity['parents'], [archive.BASE])
+        self.assertEqual(identity['parents'], [archive.PARENT])
         for target, value in [('HEAD', b'bad\n'), ('status', b' M ColorPicker/main.m\n'),
                               ('diff', b'M\tColorPicker/main.m\n')]:
             def wrong(argv, **kwargs):
@@ -315,7 +315,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_source_descendant_merge_and_parentless_heads_reject(self):
         valid = environment()
-        for parents in (['b' * 40], [archive.BASE, 'b' * 40], ['b' * 40, archive.BASE], []):
+        for parents in (['b' * 40], [archive.PARENT, 'b' * 40], ['b' * 40, archive.PARENT], []):
             calls = []
             def run(argv, **kwargs):
                 calls.append(argv)
