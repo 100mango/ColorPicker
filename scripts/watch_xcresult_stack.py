@@ -25,6 +25,7 @@ REPORT = 'watch-stack-diagnostic.json'
 TOTAL_SECONDS = 50
 MAX_CALLS = 8
 MAX_META = 262144
+MAX_SELECTED_SUMMARY = 1048576
 MAX_TEXT = 262144
 MAX_REPORT = 65536
 ID = re.compile(r'[A-Za-z0-9_~+/=\-]{1,512}\Z')
@@ -204,10 +205,21 @@ def binding(runtime, before, after, sha):
     return {'sha': sha, 'case': TEST, 'pid': groups[0]['pid'], 'device': watch,
             'start': timestamp(stage['started_at']), 'end': timestamp(stage['finished_at'])}
 
-def object_json(budget, object_id=None):
+def object_json(budget, object_id=None, *, role):
+    need(role in {'invocation', 'test-plan', 'selected-failure-summary'} and
+         ((object_id is None) == (role == 'invocation')), 'invalid metadata object role')
+    # Only the exact failed case selected below receives the larger metadata
+    # allowance. Payload export, other objects and retained output stay bounded
+    # by their existing caps. No raw object content is retained in the report.
+    cap = MAX_SELECTED_SUMMARY if role == 'selected-failure-summary' else MAX_META
+    record = {'role': role, 'cap': cap, 'state': 'requested'}
+    budget.report.setdefault('objects', []).append(record)
     command = ['xcrun', 'xcresulttool', 'get', 'object', '--legacy', '--path', BUNDLE, '--format', 'json']
     if object_id is not None: command += ['--id', object_id]
-    raw = budget.run(command)
+    raw = budget.run(command, cap=cap)
+    # Keep the complete-read size/digest even when JSON or graph validation
+    # later rejects the object; this is distinct from an interrupted read.
+    record.update(state='read-complete', bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
     data = json.loads(raw)
     types, identifiers = set(), []
     for node, _ in walk(data):
@@ -215,8 +227,7 @@ def object_json(budget, object_id=None):
         if kind(node) in {'ActionTestMetadata', 'ActionTestSummary', 'ActionTestableSummary'} and len(identifiers) < 2:
             name = value(node, 'identifier') or value(node, 'targetName')
             if name: identifiers.append(label(name, 120))
-    budget.report.setdefault('objects', []).append({'type': label(kind(data), 60), 'types': sorted(types)[:6],
-        'identifiers': identifiers, 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
+    record.update(state='inspected', type=label(kind(data), 60), types=sorted(types)[:6], identifiers=identifiers)
     return data
 
 def attachment_candidates(summary, bound):
@@ -292,18 +303,18 @@ def collect(budget, report, bound, temp_root):
     need(report.get('phase') == 'preflight-verified', 'installed-tool compatibility was not verified')
     report.update(phase='collecting', binding=bound)
     need(Path(BUNDLE).is_dir() and not Path(BUNDLE).is_symlink() and not Path('build').is_symlink(), 'unsafe or absent result bundle')
-    invocation = object_json(budget)
+    invocation = object_json(budget, role='invocation')
     actions = [node for node, _ in walk(invocation) if kind(node) == 'ActionRecord' and
                value(node.get('runDestination', {}).get('targetDeviceRecord', {}), 'identifier') == bound['device']
                and 'testsRef' in node.get('actionResult', {})]
     need(len(actions) == 1, 'not one owned-device test action')
-    tests = object_json(budget, reference(actions[0]['actionResult'], 'testsRef'))
+    tests = object_json(budget, reference(actions[0]['actionResult'], 'testsRef'), role='test-plan')
     need(any(kind(n) == 'ActionTestableSummary' and value(n, 'targetName') == SUITE for n, _ in walk(tests)), 'test bundle identity missing')
     cases = [node for node, context in walk(tests) if kind(node) in {'ActionTestMetadata', 'ActionTestSummary'} and SUITE in context and
              (value(node, 'identifier') in {TEST, TEST + '()', SUITE + '/' + TEST, SUITE + '/' + TEST + '()'}
               or (value(node, 'identifier') in {METHOD, METHOD + '()'} and 'WatchWorkflowTests' in context and SUITE in context))]
     need(len(cases) == 1 and value(cases[0], 'testStatus') in {'Failure', 'Failed'}, 'selected failure is not unique')
-    summary = cases[0] if kind(cases[0]) == 'ActionTestSummary' else object_json(budget, reference(cases[0], 'summaryRef'))
+    summary = cases[0] if kind(cases[0]) == 'ActionTestSummary' else object_json(budget, reference(cases[0], 'summaryRef'), role='selected-failure-summary')
     need(kind(summary) == 'ActionTestSummary', 'unexpected referenced summary object')
     need(value(summary, 'identifier') in {None, TEST, TEST + '()', SUITE + '/' + TEST, SUITE + '/' + TEST + '()', METHOD, METHOD + '()'}, 'referenced summary is another case')
     candidates, report['attachments'] = attachment_candidates(summary, bound)

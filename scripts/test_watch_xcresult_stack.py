@@ -1,5 +1,6 @@
 """Synthetic metadata/stack tests. These are not native diagnostic evidence."""
 import copy
+import hashlib
 import json
 import os
 import signal
@@ -82,6 +83,116 @@ class Reader:
         return subprocess.CompletedProcess(command, 0, data, b'')
 
 class StackTests(unittest.TestCase):
+    def test_large_selected_summary_keeps_one_bounded_owned_stack_export(self):
+        data = objects()
+        summary = data['summary-1']
+        summary['padding'] = ''
+        summary['padding'] = 'x' * (d.MAX_SELECTED_SUMMARY - len(json.dumps(summary).encode()))
+        raw = json.dumps(summary).encode()
+        self.assertEqual(len(raw), 1048576)
+        report, calls = self.exercise(data)
+        self.assertEqual([options['cap'] for command, options in calls], [262144, 262144, 1048576, 8192])
+        self.assertEqual(report['evidence'], 'owned app main-thread stack')
+        self.assertEqual(sum('--bounded-export' in command for command, options in calls), 1)
+        self.assertFalse(report['qualified'])
+        record = report['objects'][-1]
+        self.assertEqual(record['role'], 'selected-failure-summary')
+        self.assertEqual(record['cap'], 1048576)
+        self.assertEqual(record['state'], 'inspected')
+        self.assertEqual(record['bytes'], len(raw))
+        self.assertEqual(record['sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertNotIn('padding', json.dumps(report))
+        self.assertLess(len(json.dumps(report).encode()), 65536)
+
+    def test_other_metadata_and_oversized_selected_summary_fail_without_retry(self):
+        for role, object_id, cap in (('invocation', None, 262144), ('test-plan', 'tests-1', 262144),
+                                     ('selected-failure-summary', 'summary-1', 1048576)):
+            report, calls = {}, []
+            def reader(command, **options):
+                calls.append((command, options))
+                return subprocess.CompletedProcess(command, 0, b'x' * (cap + 1), b'')
+            budget = d.Budget(report, 0, reader, now=lambda: 1)
+            with self.subTest(role=role), self.assertRaisesRegex(ValueError, 'byte contract'):
+                d.object_json(budget, object_id, role=role)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][1]['cap'], cap)
+            self.assertEqual(report['objects'], [{'role': role, 'cap': cap, 'state': 'requested'}])
+
+    def test_complete_read_digest_precedes_json_and_graph_validation(self):
+        deep = {'private': 'DO_NOT_RETAIN'}
+        for _ in range(34): deep = {'child': deep}
+        inputs = [b'{"invalid_json": "DO_NOT_RETAIN"', json.dumps(deep).encode(),
+                  json.dumps(['DO_NOT_RETAIN'] * 8193).encode()]
+        for raw in inputs:
+            report = {}
+            def reader(command, **options): return subprocess.CompletedProcess(command, 0, raw, b'')
+            budget = d.Budget(report, 0, reader, now=lambda: 1)
+            with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+                d.object_json(budget, 'summary-1', role='selected-failure-summary')
+            record = report['objects'][0]
+            self.assertEqual(record, {'role': 'selected-failure-summary', 'cap': 1048576,
+                'state': 'read-complete', 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
+            self.assertNotIn('DO_NOT_RETAIN', json.dumps(report))
+
+    def test_invalid_metadata_roles_stop_before_any_command(self):
+        for role, object_id in (('other', 'summary-1'), ('invocation', 'summary-1'),
+                                ('test-plan', None), ('selected-failure-summary', None)):
+            report = {}; reader = Reader(); budget = d.Budget(report, 0, reader, now=lambda: 1)
+            with self.subTest(role=role), self.assertRaisesRegex(ValueError, 'object role'):
+                d.object_json(budget, object_id, role=role)
+            self.assertEqual(reader.calls, []); self.assertNotIn('objects', report)
+
+    def test_larger_summary_read_requires_prior_unique_failed_case_selection(self):
+        for mutation in ('passed', 'other-case', 'duplicate'):
+            data = objects()
+            cases = data['tests-1']['summaries']['_values'][0]['tests']['_values']
+            if mutation == 'passed': cases[0]['testStatus'] = val('Success')
+            if mutation == 'other-case': cases[0]['identifier'] = val('Other/case')
+            if mutation == 'duplicate': cases.append(copy.deepcopy(cases[0]))
+            with tempfile.TemporaryDirectory() as directory:
+                old = Path.cwd()
+                try:
+                    os.chdir(directory); Path(d.BUNDLE).mkdir(parents=True)
+                    report = {'phase': 'preflight-verified', 'calls': 2}; reader = Reader(data)
+                    budget = d.Budget(report, 0, reader, now=lambda: 1)
+                    with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'selected failure'):
+                        d.collect(budget, report, owner(), Path(directory))
+                    self.assertEqual([options['cap'] for command, options in reader.calls], [262144, 262144])
+                    self.assertEqual([row['role'] for row in report['objects']], ['invocation', 'test-plan'])
+                finally: os.chdir(old)
+
+    def test_metadata_read_byte_limit_keeps_role_and_confirmed_cleanup(self):
+        report = {}
+        def reader(command, **options): raise d.CaptureStopped('byte-limit', True, None)
+        budget = d.Budget(report, 0, reader, now=lambda: 1)
+        with self.assertRaises(d.CaptureStopped):
+            d.object_json(budget, 'summary-1', role='selected-failure-summary')
+        self.assertEqual(report['objects'], [{'role': 'selected-failure-summary', 'cap': 1048576, 'state': 'requested'}])
+        self.assertIs(report['diagnostic_cleanup_confirmed'], True)
+        self.assertEqual(report['calls'], 1)
+
+    def test_large_summary_does_not_expand_payload_or_other_limits(self):
+        self.assertEqual((d.MAX_META, d.MAX_TEXT, d.MAX_REPORT, d.TOTAL_SECONDS, d.MAX_CALLS),
+                         (262144, 262144, 65536, 50, 8))
+        data = objects(); data['summary-1']['padding'] = 'x' * 262144
+        with tempfile.TemporaryDirectory() as directory:
+            old = Path.cwd()
+            try:
+                os.chdir(directory); Path(d.BUNDLE).mkdir(parents=True)
+                report = {'phase': 'preflight-verified', 'calls': 2}; reader = Reader(data)
+                def oversize_payload(command, **options):
+                    result = reader(command, **options)
+                    if '--bounded-export' in command: Path(command[-1]).write_bytes(b'x' * 262145)
+                    return result
+                budget = d.Budget(report, 0, oversize_payload, now=lambda: 1)
+                with self.assertRaisesRegex(ValueError, 'input exceeds byte cap'):
+                    d.collect(budget, report, owner(), Path(directory))
+                self.assertEqual(list(Path(directory).glob('watch-stack-*')), [])
+                self.assertNotIn('main_thread', report); self.assertNotIn('payload_bytes', report)
+                self.assertTrue(all(options['seconds'] == 8 and options['cleanup_grace'] == 10
+                                    for command, options in reader.calls))
+            finally: os.chdir(old)
+
     def test_source_and_native_completion_binding(self):
         runtime, source = inputs()
         self.assertEqual(d.binding(runtime, source, copy.deepcopy(source), SHA), owner())
