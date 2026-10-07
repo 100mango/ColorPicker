@@ -66,11 +66,11 @@ jobs:
         need(os.environ['GITHUB_EVENT_NAME']=='push' and os.environ['GITHUB_RUN_ATTEMPT']=='1','push/first attempt only')
         need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/codex/watch-copy-singlecase','wrong workflow source')
         need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'4991845e70c3c44cb9b2c865b3ed97a085949eab'],'not one child of exact combined parent')
+        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'4e31a5e14095e4921c94fa1787a7e097d991db66'],'not one child of exact combined parent')
         need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','4991845e70c3c44cb9b2c865b3ed97a085949eab','HEAD','--').splitlines()
-        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/test_extra_platforms.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'4991845e70c3c44cb9b2c865b3ed97a085949eab','changes':observed,'clean':True}
+        observed=git('diff','--name-status','--no-renames','4e31a5e14095e4921c94fa1787a7e097d991db66','HEAD','--').splitlines()
+        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tTouchColorWatch/WatchViews.swift', 'M\tTouchColorWatchUITests/WatchWorkflowTests.swift', 'M\tscripts/test_extra_platforms.py', 'M\tscripts/test_watch_touch_drag.py'],'changed-path scope mismatch')
+        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'4e31a5e14095e4921c94fa1787a7e097d991db66','changes':observed,'clean':True}
         (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
         PYTHON
         set -euo pipefail
@@ -87,7 +87,7 @@ jobs:
     - name: Initialize existing Watch lane budget
       timeout-minutes: 1
       run: python3 scripts/job_budget.py initialize
-    - name: Run only existing touch copy workflow on 40mm
+    - name: Run only direct-Crown copy entry on 40mm
       id: runtime
       timeout-minutes: 42
       shell: bash
@@ -183,7 +183,7 @@ jobs:
             need(os.environ['RUNTIME_OUTCOME']=='success' and os.environ['SUMMARY_OUTCOME']=='success' and os.environ['SOURCE_AFTER_OUTCOME']=='success','required step failed')
             text=raw.decode('utf8','replace')
             records=re.findall(r"^Test Case '-\[([^]]+)\]' (started\.|(?:passed|failed|skipped) \([^\n]+ seconds\)\.)$",text,re.M)
-            expected='TouchColorWatchUITests.WatchWorkflowTests testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder'
+            expected='TouchColorWatchUITests.WatchWorkflowTests testTouchCopyEntryDirectCrownAndButtonsRemainResponsive'
             need(len(records)==2 and records[0]==(expected,'started.') and records[1][0]==expected and records[1][1].startswith('passed ('),'not exactly one started/passed selected case')
             need(text.count('** TEST EXECUTE SUCCEEDED **')==1 and '** TEST EXECUTE FAILED **' not in text and 'exceeded execution time allowance' not in text,'missing/contradictory raw terminal')
             (out/'case-records.log').write_text('\n'.join(' '.join(row) for row in records)+'\n')

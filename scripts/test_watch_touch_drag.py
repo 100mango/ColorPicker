@@ -309,6 +309,15 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
     def test_touch_anchor_delta_preserves_all_other_methods_and_original_geometry(self):
         import hashlib
         source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
+        # The additive, separately scoped copy-entry case is validated below.
+        # Remove only those two additions before checking the original frozen
+        # methods; retain the original fingerprint and geometry protections.
+        new_case = source.index('    @MainActor func testTouchCopyEntryDirectCrownAndButtonsRemainResponsive()')
+        next_case = source.index('    func testRealDigitalCrownChangesRGBComponent()', new_case)
+        source = source[:new_case] + source[next_case:]
+        fixture = source.index('        if name.contains("TouchCopyEntryDirectCrownAndButtonsRemainResponsive") {')
+        launch = source.index('        app.launch()', fixture)
+        source = source[:fixture] + source[launch:]
         begin = source.index('    @MainActor private func reachSavedColorByTouch(')
         end = source.index('    @MainActor func testEditSavedCopy', begin)
         self.assertEqual(hashlib.sha256((source[:begin] + source[end:]).encode()).hexdigest(),
@@ -319,6 +328,46 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
             '2ce0ef79c234888cdf500257fa84a6a6123bc3070c769dd356c202cecec30894')
         validation = header[len(original) - len('#endif\n'):]
         self.assertNotRegex(validation, r'plan->\w+(?:\.\w+)?\s*=(?!=)')
+
+    def test_editor_uses_scoped_default_focus_without_lifecycle_focus_grabs(self):
+        source = (ROOT / 'TouchColorWatch/WatchViews.swift').read_text()
+        editor = source.split('struct WatchColorEditor: View {', 1)[1].split('@MainActor private enum WatchEditorDiagnostics', 1)[0]
+        self.assertIn('@Namespace private var crownFocusScope', editor)
+        self.assertEqual(editor.count('.focusScope(crownFocusScope)'), 1)
+        self.assertEqual(editor.count('.prefersDefaultFocus(in: crownFocusScope)'), 1)
+        self.assertIn('.focusable(editorIsVisible).focused($crownFocused)', editor)
+        appear = editor.split('.onAppear {', 1)[1].split('.onDisappear {', 1)[0]
+        self.assertIn('editorIsVisible = true', appear)
+        self.assertNotIn('crownFocused = true', appear)
+        self.assertIn('.onChange(of: channel) { _ in if editorIsVisible { crownFocused = true } }', editor)
+        self.assertEqual(editor.count('crownFocused = true'), 4)  # Preserve channel change, tap and +/-.
+        self.assertIn('editorIsVisible = false; crownFocused = false', editor)
+        self.assertIn('guard editorIsVisible else', editor)
+        self.assertIn('.digitalCrownRotation(component, from: 0, through: 255, by: 1', editor)
+
+    def test_copy_entry_requires_real_fixture_readback_and_direct_crown_before_buttons(self):
+        source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
+        fixture = source.split('if name.contains("TouchCopyEntryDirectCrownAndButtonsRemainResponsive") {', 1)[1].split('        app.launch()', 1)[0]
+        self.assertIn('app.launchArguments += ["-colorArray", "(\\"#fe0000\\", \\"#fe0000\\")"]', fixture)
+        case = source.split('func testTouchCopyEntryDirectCrownAndButtonsRemainResponsive()', 1)[1].split('    func testRealDigitalCrownChangesRGBComponent()', 1)[0]
+        self.assertIn('XCTAssertEqual(count.label, "2"', case)
+        self.assertIn('try reachSavedColorByTouch("watch.color.0")', case)
+        create_direct = case.split('app.buttons["watch.editor"].tap()', 1)[1].split('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)', 1)[0]
+        self.assertNotIn('.tap()', create_direct)
+        self.assertIn('XCTAssertEqual(createHex.label, "#ff0000")', create_direct)
+        self.assertIn('XCTAssertNotEqual(createChanged, "#ff0000"', case)
+        self.assertIn('XCTAssertTrue((0...254).contains(createRed))', case)
+        self.assertEqual(case.count('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)'), 2)
+        direct = case.split('copy.tap()', 1)[1].split('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)', 1)[0]
+        self.assertNotIn('.tap()', direct)
+        self.assertIn('XCTAssertEqual(hex.label, "#fe0000")', direct)
+        self.assertIn('XCTAssertNotEqual(changed, "#fe0000"', case)
+        self.assertIn('XCTAssertTrue((0...253).contains(red))', case)
+        self.assertIn('String(format: "#%02x0000", red + 1)', case)
+        self.assertIn('XCTAssertEqual(hex.label, changed)', case)
+        for forbidden in ('watch.save', 'watch.delete', 'XCTSkip', 'XCTExpectFailure', 'executionTimeAllowance', 'sleep(', 'waitForIdle'):
+            self.assertNotIn(forbidden, case)
+        self.assertIn('name.contains("Chinese") ? 240 : 120', source)
 
 
     def test_adaptive_exact_da9570_gap_states_keep_prior_dispatch_provenance(self):
