@@ -12,6 +12,7 @@ import tempfile
 import time
 import sys
 import unittest
+import zlib
 from unittest.mock import patch
 
 import tv_release_archive as archive
@@ -39,6 +40,19 @@ def macho(platform=3, minimum=17, kind=2, cpu=0x100000c, payload=b'TVColorWindow
         commands.append(struct.pack('<6I',0xc,size,24,0,0,0)+text+b'\0'*(size-24-len(text)))
     commands=b''.join(commands)
     return struct.pack('<8I',0xfeedfacf,cpu,0,kind,1+len(links),len(commands),0,0)+commands+payload
+
+def png_icon(width=32, height=24, *, cgbi=False):
+    def chunk(kind,data):
+        return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
+    raw=b'\x89PNG\r\n\x1a\n'
+    if cgbi:raw+=chunk(b'CgBI',b'\x00'*4)
+    raw+=chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,2,0,0,0))
+    # Valid ordinary fixtures encode every row; oversized/invalid-dimension cases
+    # remain tiny because dimension validation must reject before pixel decoding.
+    w,h=(width,height) if 0 < width <= 1280 and 0 < height <= 768 else (1,1)
+    raw+=chunk(b'IDAT',zlib.compress((b'\x00'+b'\xff\xff\xff'*w)*h))
+    return raw+chunk(b'IEND',b'')
+
 
 class Fixture:
     def __init__(self,parent):
@@ -108,6 +122,8 @@ class ArchiveFixture:
         return archive.verify_archive(self.archive, kwargs.pop('run', self.run), 100,
             root=self.root, clock=kwargs.pop('clock', lambda: 0), **kwargs)
 
+
+OBSERVED_ARCHIVE_PATHS = ['Assets', 'Assets/ProductIcon.png', 'Info.plist', 'Products', 'Products/Applications', 'Products/Applications/TouchColor.app', 'Products/Applications/TouchColor.app/Assets.car', 'Products/Applications/TouchColor.app/Info.plist', 'Products/Applications/TouchColor.app/PkgInfo', 'Products/Applications/TouchColor.app/PrivacyInfo.xcprivacy', 'Products/Applications/TouchColor.app/TouchColor', 'Products/Applications/TouchColor.app/en.lproj', 'Products/Applications/TouchColor.app/en.lproj/InfoPlist.strings', 'Products/Applications/TouchColor.app/en.lproj/Localizable.strings', 'Products/Applications/TouchColor.app/zh-Hans.lproj', 'Products/Applications/TouchColor.app/zh-Hans.lproj/InfoPlist.strings', 'Products/Applications/TouchColor.app/zh-Hans.lproj/Localizable.strings', 'dSYMs', 'dSYMs/TouchColor.app.dSYM', 'dSYMs/TouchColor.app.dSYM/Contents', 'dSYMs/TouchColor.app.dSYM/Contents/Info.plist', 'dSYMs/TouchColor.app.dSYM/Contents/Resources', 'dSYMs/TouchColor.app.dSYM/Contents/Resources/DWARF', 'dSYMs/TouchColor.app.dSYM/Contents/Resources/DWARF/TouchColor', 'dSYMs/TouchColor.app.dSYM/Contents/Resources/Relocations', 'dSYMs/TouchColor.app.dSYM/Contents/Resources/Relocations/aarch64', 'dSYMs/TouchColor.app.dSYM/Contents/Resources/Relocations/aarch64/TouchColor.yml']
 
 class ArchiveTests(unittest.TestCase):
     def fixture(self):
@@ -518,6 +534,61 @@ class ArchiveTests(unittest.TestCase):
                 archive.command(archive.ARCHIVE_COMMAND,deadline=30,seconds=10,cap=1024,receipts=receipts,
                     clock=lambda:0,runner=lambda *a,**k:result)
             self.assertFalse(receipts[0]['complete'])
+
+    def test_exact_observed_xcode_archive_icon_is_optional_bounded_metadata(self):
+        for dimensions,cgbi in [((32,24),False),((400,240),False),((1280,768),True)]:
+            f=self.fixture();directory=f.archive/'Assets';directory.mkdir()
+            (directory/'ProductIcon.png').write_bytes(png_icon(*dimensions,cgbi=cgbi))
+            result=f.verify();observed=result['archive']['paths']['Assets/ProductIcon.png']['png']
+            with self.subTest(dimensions=dimensions,cgbi=cgbi):
+                self.assertEqual((observed['width'],observed['height']),dimensions)
+                self.assertTrue(observed['container_qualified'])
+                self.assertFalse(observed['decoded_pixels_qualified'])
+                self.assertEqual(observed['cgbi'],cgbi)
+            self.assertEqual(set(result['app']['files']),{'app/'+p for p in archive.APP_FILES})
+        f=self.fixture();self.assertIn('app',f.verify())
+
+    def test_archive_assets_allowlist_does_not_expand_to_siblings_links_or_executable_icons(self):
+        for kind in ('extra','nested','directory','symlink','hardlink','executable','assets-file'):
+            f=self.fixture();directory=f.archive/'Assets'
+            if kind=='assets-file':directory.write_bytes(b'not a directory')
+            else:
+                directory.mkdir();icon=directory/'ProductIcon.png'
+                if kind=='directory':icon.mkdir()
+                elif kind=='symlink':icon.symlink_to(f.app/'TouchColor')
+                elif kind=='hardlink':os.link(f.app/'TouchColor',icon)
+                else:
+                    icon.write_bytes(png_icon())
+                    if kind=='extra':(directory/'other.png').write_bytes(png_icon())
+                    if kind=='nested':(directory/'Other').mkdir()
+                    if kind=='executable':icon.chmod(0o755)
+            with self.subTest(kind=kind),self.assertRaises(archive.Rejected):f.verify()
+
+    def test_archive_icon_png_signature_dimensions_crc_limits_and_terminal_boundary_reject(self):
+        valid=png_icon()
+        bad_crc=bytearray(valid);bad_crc[29]^=1
+        cases=(b'not a PNG',valid[:20],bytes(bad_crc),png_icon(0,24),png_icon(8193,24),
+               png_icon(8192,8192),valid+b'trailer',valid[:-12],b'x'*(archive.MAX_PRODUCT_ICON_BYTES+1))
+        for data in cases:
+            with self.subTest(length=len(data)),self.assertRaises(archive.Rejected) as caught:
+                archive.product_icon_png(data,100,clock=lambda:0)
+            self.assertEqual(caught.exception.icon_observation['bytes'],len(data))
+            self.assertLessEqual(len(caught.exception.icon_observation['prefix_hex']),128)
+        f=self.fixture();(f.archive/'Assets').mkdir();(f.archive/archive.PRODUCT_ICON).write_bytes(b'bad')
+        with self.assertRaisesRegex(archive.Rejected,'png-signature') as caught:f.verify()
+        self.assertEqual(caught.exception.offending_entry['path'],archive.PRODUCT_ICON)
+
+    def test_all_twenty_seven_observed_archive_paths_pass_remaining_structure_rules(self):
+        # Path inventory from actual source8838 run37552480445. Payloads remain synthetic;
+        # in particular the actual ProductIcon bytes were not retained in that report.
+        expected=OBSERVED_ARCHIVE_PATHS
+        f=self.fixture();(f.archive/'Assets').mkdir();(f.archive/archive.PRODUCT_ICON).write_bytes(png_icon())
+        relocation=f.archive/archive.DSYM/'Contents/Resources/Relocations/aarch64/TouchColor.yml'
+        relocation.parent.mkdir(parents=True);relocation.write_text('triple: arm64-apple-tvos17.0\n')
+        result=f.verify()
+        self.assertEqual(sorted(k for k in result['archive']['paths'] if k!='.'),expected)
+        self.assertEqual(result['archive']['entries'],27)
+        self.assertEqual(result['app']['metadata']['CFBundleSupportedPlatforms'],['AppleTVOS'])
 
     def test_fixed_workflow_source_and_budget(self):
         raw = (archive.ROOT / archive.WORKFLOW).read_text()

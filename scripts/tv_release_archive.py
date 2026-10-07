@@ -16,6 +16,7 @@ import stat
 import struct
 import sys
 import time
+import zlib
 import xml.etree.ElementTree as ET
 
 import tv_release_package as package
@@ -25,7 +26,7 @@ from tv_archive_capture import capture, CaptureStopped
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '74ccaa93ae3f0cb5d0a63f6957460e9e8e576add'
 BASE_TREE = 'c6bb5466a57dfd919b5dbd0edb3b58b7bf5a8683'
-PARENT = '50ff85eb6fc22a0ebcac7db8c5ab66b37decb4b1'
+PARENT = '8838d3a9b615a70571468b3804c28f649e186e5d'
 BRANCH = 'refs/heads/codex/tv-release-archive'
 WORKFLOW = '.github/workflows/tv-release-archive.yml'
 CATALOG = 'TouchColorTV/Assets.xcassets/AppIcon.brandassets/'
@@ -46,6 +47,8 @@ DWARF = DSYM + '/Contents/Resources/DWARF/TouchColor'
 APP_FILES = package.APP_FILES
 MAX_ENTRIES, MAX_BYTES, SCAN_SECONDS = 8192, 1024 ** 3, 30
 MAX_REPORT = 2 * 1024 ** 2
+PRODUCT_ICON = 'Assets/ProductIcon.png'
+MAX_PRODUCT_ICON_BYTES = 1024 * 1024
 ARCHIVE_COMMAND = ['xcodebuild', '-quiet', '-project', 'TouchColorTV.xcodeproj',
     '-scheme', 'TouchColorTV', '-configuration', 'Release', '-destination',
     'generic/platform=tvOS', '-archivePath', str(ARCHIVE), '-derivedDataPath',
@@ -153,6 +156,50 @@ def file_identity(value):
             value.st_size, value.st_mtime_ns, value.st_ctime_ns]
 
 
+def product_icon_png(raw, deadline, *, clock=time.monotonic):
+    """Bounded PNG container proof for Xcode's archive display icon; no pixel oracle."""
+    observation = {'bytes': len(raw), 'prefix_hex': raw[:64].hex(), 'decoded_pixels_qualified': False}
+    try:
+        timely(deadline, clock)
+        need(0 < len(raw) <= MAX_PRODUCT_ICON_BYTES, 'archive-icon-byte-limit')
+        need(raw[:8] == b'\x89PNG\r\n\x1a\n', 'archive-icon-png-signature')
+        offset, count, ihdr, idat, ended, cgbi = 8, 0, None, 0, False, False
+        while offset < len(raw):
+            timely(deadline, clock); count += 1
+            need(count <= 4096 and offset + 12 <= len(raw), 'archive-icon-chunk-bounds')
+            length = struct.unpack_from('>I', raw, offset)[0]
+            kind = raw[offset+4:offset+8]; end = offset + 12 + length
+            need(end <= len(raw) and all(65 <= x <= 90 or 97 <= x <= 122 for x in kind), 'archive-icon-chunk-bounds')
+            data = raw[offset+8:offset+8+length]
+            crc = struct.unpack_from('>I', raw, offset+8+length)[0]
+            need(zlib.crc32(kind + data) & 0xffffffff == crc, 'archive-icon-chunk-crc')
+            if kind == b'CgBI':
+                need(count == 1 and not cgbi and ihdr is None, 'archive-icon-cgbi-order'); cgbi = True
+            elif kind == b'IHDR':
+                need(ihdr is None and length == 13 and count == (2 if cgbi else 1), 'archive-icon-ihdr')
+                width, height, depth, color, compression, filtering, interlace = struct.unpack('>IIBBBBB', data)
+                need(0 < width <= 8192 and 0 < height <= 8192 and width * height <= 16 * 1024 * 1024, 'archive-icon-dimensions')
+                need(depth in {0:(1,2,4,8,16),2:(8,16),3:(1,2,4,8),4:(8,16),6:(8,16)}.get(color,()), 'archive-icon-pixel-format')
+                need(compression == filtering == 0 and interlace in (0,1), 'archive-icon-png-method')
+                ihdr = {'width':width,'height':height,'bit_depth':depth,'color_type':color,'interlace':interlace}
+                observation.update(ihdr)
+            elif kind == b'IDAT':
+                need(ihdr is not None and not ended, 'archive-icon-idat-order'); idat += length
+            elif kind == b'IEND':
+                need(length == 0 and ihdr is not None and idat > 0 and end == len(raw), 'archive-icon-terminal-boundary')
+                ended = True
+            else:
+                need(ihdr is not None and not ended, 'archive-icon-chunk-order')
+            offset = end
+        need(ihdr is not None and ended, 'archive-icon-incomplete-png')
+        timely(deadline, clock)
+        observation.update(chunks=count, cgbi=cgbi, container_qualified=True)
+        return observation
+    except Rejected as error:
+        error.icon_observation = observation
+        raise
+
+
 def scan(archive, deadline, *, clock=time.monotonic, hash_files=True):
     """Original strict predicates, with explicit context for the first rejection."""
     current = {'path': '.', 'type': 'unread'}
@@ -180,9 +227,13 @@ def scan(archive, deadline, *, clock=time.monotonic, hash_files=True):
                          and path.suffix.lower() not in ('.appex', '.framework', '.xctest', '.dylib', '.mobileprovision')
                          and 'PaletteFixtures' not in key, 'unexpected-code-or-signature')
                     need(path.suffix not in ('.app', '.dSYM') or key in (APP, DSYM), 'unexpected-product')
-                    allowed = key in ('Info.plist', 'Products', 'Products/Applications', APP, 'dSYMs', DSYM)
+                    allowed = key in ('Info.plist', 'Products', 'Products/Applications', APP, 'dSYMs', DSYM, 'Assets', PRODUCT_ICON)
                     allowed = allowed or key.startswith(APP + '/') or key.startswith(DSYM + '/')
                     need(allowed, 'unexpected-archive-entry')
+                    if key == 'Assets':
+                        need(stat.S_ISDIR(mode), 'archive-assets-not-directory')
+                    if key == PRODUCT_ICON:
+                        need(stat.S_ISREG(mode) and value.st_size <= MAX_PRODUCT_ICON_BYTES, 'archive-icon-not-bounded-regular-file')
                     receipt = {'identity': file_identity(value)}; paths[key] = receipt
                     if stat.S_ISDIR(mode):
                         pending.append(path); continue
@@ -191,6 +242,7 @@ def scan(archive, deadline, *, clock=time.monotonic, hash_files=True):
                     need(key in (APP + '/TouchColor', DWARF) or not mode & 0o111, 'unexpected-executable')
                     if hash_files:
                         h = hashlib.sha256(); count = 0; prefix = b''
+                        icon_raw = bytearray() if key == PRODUCT_ICON else None
                         flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
                         with os.fdopen(os.open(path, flags), 'rb') as stream:
                             need(file_identity(os.fstat(stream.fileno())) == receipt['identity'], 'archive-file-changed')
@@ -199,10 +251,13 @@ def scan(archive, deadline, *, clock=time.monotonic, hash_files=True):
                                 need(count <= value.st_size, 'archive-file-grew')
                                 if not prefix: prefix = chunk[:4]
                                 h.update(chunk)
+                                if icon_raw is not None: icon_raw.extend(chunk)
                             need(file_identity(os.fstat(stream.fileno())) == receipt['identity'], 'archive-file-changed')
                         need(count == value.st_size, 'archive-file-changed')
                         need(prefix not in MACH_MAGICS or key in (APP + '/TouchColor', DWARF), 'unexpected-mach-o')
                         receipt.update(bytes=count, sha256=h.hexdigest())
+                        if icon_raw is not None:
+                            receipt['png'] = product_icon_png(bytes(icon_raw), deadline, clock=clock)
         for key, receipt in paths.items():
             current = {'path': key, 'type': 'snapshot-recheck'}
             timely(deadline, clock)
@@ -380,6 +435,8 @@ def execute(*, env=None, root=ROOT, clock=time.monotonic, runner=capture):
                              'reason': str(error)[:4096]}
         if hasattr(error, 'offending_entry'):
             report['failure']['offending_entry'] = error.offending_entry
+        if hasattr(error, 'icon_observation'):
+            report['failure']['icon_observation'] = error.icon_observation
     report['clock']['elapsed_seconds'] = clock() - began
     return report
 
