@@ -1,0 +1,390 @@
+{
+  "schema": 1,
+  "base": "74ccaa93ae3f0cb5d0a63f6957460e9e8e576add",
+  "base_tree": "c6bb5466a57dfd919b5dbd0edb3b58b7bf5a8683",
+  "functional_evidence": {
+    "run": 37385172706,
+    "job": 112018810966,
+    "hosted": 40,
+    "ui": 5,
+    "sha": "74ccaa93ae3f0cb5d0a63f6957460e9e8e576add",
+    "scope": "unchanged executable source; resources differ; no rerun/native/archive claim"
+  },
+  "unchanged_inputs": {
+    "Packages/ColorCore/Package.swift": {
+      "bytes": 872,
+      "sha256": "8bdc9b8668c4df5674562ff268256326270facc069de52be4d0fa1a8024e8392"
+    },
+    "Packages/ColorCore/Sources/ColorDomain/BoundedFileReader.swift": {
+      "bytes": 4304,
+      "sha256": "86e8ca2700e4e6f9834f0d70f9d96cbd46caccb338cdaea23e12c8e919f50e11"
+    },
+    "Packages/ColorCore/Sources/ColorDomain/CaptureEpoch.swift": {
+      "bytes": 908,
+      "sha256": "6881739e2f5613744c9fe94fc1dcbfb344870585d62eeed44273ab640661faa4"
+    },
+    "Packages/ColorCore/Sources/ColorDomain/ColorValue.swift": {
+      "bytes": 3352,
+      "sha256": "472afbc8f8d2bf142cce391a2cef2e7c434522ecc71e8641c870a83e24b3b93b"
+    },
+    "Packages/ColorCore/Sources/ColorDomain/PaletteReceiptRoutes.swift": {
+      "bytes": 2005,
+      "sha256": "890f0ca5b44d04fd0b50ffde8125fb4dea477fd1c685ccb51fe750656a8362ef"
+    },
+    "Packages/ColorCore/Sources/ColorDomain/PaletteTransfer.swift": {
+      "bytes": 2515,
+      "sha256": "4cf692b87c91c04d5314b1c752db3dce1d9689ee9ce16375a7eabc5864e41dfe"
+    },
+    "Packages/ColorCore/Sources/ColorPaletteLegacy/LegacyPalette.swift": {
+      "bytes": 3653,
+      "sha256": "d56e4453a18a8802f6ed772a79d93bb8740902c3d4d26543c4725c2587805910"
+    },
+    "Packages/ColorCore/Sources/ColorPaletteLegacy/PaletteInbox.swift": {
+      "bytes": 8342,
+      "sha256": "3bbf0c2a2d0282cb3012fe639456e9c5f7f925c434244662858440d40bff608f"
+    },
+    "Packages/ColorCore/Sources/ColorPaletteLegacy/PaletteSelection.swift": {
+      "bytes": 2127,
+      "sha256": "a3bb4d0d1766060d20e17703bf5457c31de76cc9b52f8e76e7891693881a5d92"
+    },
+    "Packages/ColorCore/Sources/ColorRaster/BoundedImageFile.swift": {
+      "bytes": 2057,
+      "sha256": "c0d7f50ea592ecb19b3bfa777673a2d7b0d51feeaa4d0d6466ba37c0cfd30e8f"
+    },
+    "Packages/ColorCore/Sources/ColorRaster/ColorRaster.swift": {
+      "bytes": 6574,
+      "sha256": "180865c6711f880bb9af49162e0dcb2d523f352f3bd755db048d5cbdd8748742"
+    },
+    "Packages/ColorCore/Sources/ColorRaster/PNGFraming.swift": {
+      "bytes": 3378,
+      "sha256": "a67b1345b9f1926b984bbe7fe832fce6ffc4a65db0d3d3580a84b72e95532f0a"
+    },
+    "Packages/ColorCore/Sources/ColorRaster/PreviewRaster.swift": {
+      "bytes": 3712,
+      "sha256": "1f481b8dbafcd56cd4e0817429cefcbefcf6f0ca0361e75c3e3d6dc2a94740ca"
+    },
+    "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift": {
+      "bytes": 6486,
+      "sha256": "1735aa2e5a84c49c62b5476b5b57e91c3d1a4f6d3e55d4bb464fa43f1f161470"
+    },
+    "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift": {
+      "bytes": 3825,
+      "sha256": "824e87a129024b1be4a953b4bff6e1d61c3a4b019d088b2f044ca29915a75dcc"
+    },
+    "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift": {
+      "bytes": 12254,
+      "sha256": "32f3a3b018f0058b743fb3ec70f75228def4dca3a744358a7d0471263758e56e"
+    },
+    "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift": {
+      "bytes": 17644,
+      "sha256": "68244e88357bae862ace0469323ee9a1e5d1b5c61dca6f29d68a4369b13fb9b2"
+    },
+    "TouchColorMac/ImageSession.swift": {
+      "bytes": 7427,
+      "sha256": "9d1b69b8a2dc83ce27d332b908d3a640af3ead2bc6b32bdfa2b01e46887c3971"
+    },
+    "TouchColorTV.xcodeproj/project.pbxproj": {
+      "bytes": 24138,
+      "sha256": "f1c570f4b22db8b750d3966999633a73aea08fe9875ba19dd0616801e86dc593"
+    },
+    "TouchColorTV.xcodeproj/xcshareddata/xcschemes/TouchColorTV.xcscheme": {
+      "bytes": 2345,
+      "sha256": "9b64f26ccf93f076852b422beda3874576457e62061e566194b20706291cd66d"
+    },
+    "TouchColorTV/PaletteLibrary.swift": {
+      "bytes": 2219,
+      "sha256": "13ec1d0e0e20643ee5040363fa18c3525913d3f9bfc956c00d80a6ae9e190c85"
+    },
+    "TouchColorTV/PrivacyInfo.xcprivacy": {
+      "bytes": 815,
+      "sha256": "fd4b1f41183acac5e22074181582d0fb51cb24957043aedf6117830ea5b00af5"
+    },
+    "TouchColorTV/PrivacyView.swift": {
+      "bytes": 1478,
+      "sha256": "b141f2a8ce4c2d1fc787d8288b29021afc6d7420587179d3fb558c95a1bad9ef"
+    },
+    "TouchColorTV/TVColorWindow.swift": {
+      "bytes": 10415,
+      "sha256": "025d76185af1d62c304e87aa3a9d3f652de7d0ca65b2904df7dc412981f62a0f"
+    },
+    "TouchColorTV/TVPaletteCode.swift": {
+      "bytes": 1167,
+      "sha256": "656c6bbefe06801c2979ce8f20b23477624596facf06ef68cd6a4b77bf396462"
+    },
+    "TouchColorTV/TVPhotos.swift": {
+      "bytes": 6909,
+      "sha256": "3d4950084d00439fcd17a19eb3ed53c4d26a683c04a8ec5088ce44e6e35e162b"
+    },
+    "TouchColorTV/TouchColorTVApp.swift": {
+      "bytes": 1073,
+      "sha256": "f658ae54896528cf8cf9d547d9b57302a5c55519ddf922a4555f2e3732d4da75"
+    },
+    "TouchColorTV/en.lproj/InfoPlist.strings": {
+      "bytes": 118,
+      "sha256": "24cc8701e050c223f3d8026332c0c2f8bd8485a296d921092b19230e59892cd5"
+    },
+    "TouchColorTV/en.lproj/Localizable.strings": {
+      "bytes": 58,
+      "sha256": "ed1f7e92ca634f552b46f6ec49d1821abc2d8fafebc200b55f0073a113e49436"
+    },
+    "TouchColorTV/zh-Hans.lproj/InfoPlist.strings": {
+      "bytes": 110,
+      "sha256": "23d41ade61e1cc876b6962368b749da2e5560fef2e8801b32dff26f776bfd5b3"
+    },
+    "TouchColorTV/zh-Hans.lproj/Localizable.strings": {
+      "bytes": 6990,
+      "sha256": "715b3264a7b70a147c65f22c63003445d4aa6e9ac5435f71b2522c8d1d5275d1"
+    },
+    "TouchColorTVTests/TVWorkspaceTests.swift": {
+      "bytes": 3830,
+      "sha256": "282ccf46f0e1042e4a6228d40b455d11b6f059c22f47b60e7a37660aa8121599"
+    },
+    "TouchColorTVUITests/TVWorkflowTests.swift": {
+      "bytes": 14793,
+      "sha256": "f1691df5fbc92289c839c31ee0716e0861bdc047270690d64772ab99afe10160"
+    },
+    "scripts/generate_tv_project.py": {
+      "bytes": 9206,
+      "sha256": "c3a4adb902fe7880e699e96c54a544a71f2e3377549b51f07196215a600d4d08"
+    }
+  },
+  "assets": {
+    "source": "ColorPicker/Images.xcassets/AppIcon.appiconset/Icon-1024.png",
+    "source_sha256": "b866d4ca66a2b3bc82e9375e613ca09fe3c1823c7177ec0d0ad17f465001cc18",
+    "source_dimensions": [
+      1024,
+      1024
+    ],
+    "vector_source_available": false,
+    "existing_1x_decoded_pixels_reproduced": true,
+    "existing_png_bytes_rewritten": false,
+    "method": "LANCZOS from original 1024px raster, centered square on original corner-color background; transparent front stays zero RGBA",
+    "small_2x": {
+      "canvas": [
+        800,
+        480
+      ],
+      "artwork_rectangle": [
+        160,
+        0,
+        480,
+        480
+      ],
+      "fraction_width": 0.6,
+      "fraction_height": 1,
+      "scale_from_original": 0.46875
+    },
+    "top_shelf_2x": {
+      "canvas": [
+        3840,
+        1440
+      ],
+      "artwork_rectangle": [
+        1200,
+        0,
+        1440,
+        1440
+      ],
+      "fraction_width": 0.375,
+      "fraction_height": 1,
+      "scale_from_original": 1.40625
+    },
+    "wide_top_shelf_2x": {
+      "canvas": [
+        4640,
+        1440
+      ],
+      "artwork_rectangle": [
+        1600,
+        0,
+        1440,
+        1440
+      ],
+      "fraction_width": 0.3103448275862069,
+      "fraction_height": 1,
+      "scale_from_original": 1.40625
+    },
+    "resampling_limit": "Top-shelf artwork is enlarged 1.40625x from a 1024px raster, not lossless or newly detailed. PNG encoding is lossless; that does not make resampling lossless.",
+    "assets": [
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Back.imagestacklayer/Content.imageset/Icon.png",
+        "width": 1280,
+        "height": 768,
+        "mode": "RGB",
+        "bytes": 131214,
+        "sha256": "2b13096c6e79b78bcafc4cf0e444dea0e9191c947be6b4fa4d9ac3db8ff51297"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Front.imagestacklayer/Content.imageset/Transparent.png",
+        "width": 1280,
+        "height": 768,
+        "mode": "RGBA",
+        "bytes": 3890,
+        "sha256": "752cad857dd154405a836bb55c86acb96e610b0fec69629dd60e14cdaf94f9e2"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Back.imagestacklayer/Content.imageset/Icon-2x.png",
+        "width": 800,
+        "height": 480,
+        "mode": "RGB",
+        "bytes": 61748,
+        "sha256": "b3034e4048e1df9996fe144fa2b0db20bb438795a39693d8934b95195a96132d"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Back.imagestacklayer/Content.imageset/Icon.png",
+        "width": 400,
+        "height": 240,
+        "mode": "RGB",
+        "bytes": 22126,
+        "sha256": "c3b7c76490df95ed880f2992ae030e86619cc56929f4718a8c20144d55fd6ae8"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Front.imagestacklayer/Content.imageset/Transparent-2x.png",
+        "width": 800,
+        "height": 480,
+        "mode": "RGBA",
+        "bytes": 1569,
+        "sha256": "5c74c6f00ffe3404beabde142cc4c8d017bea53e958ba079ef7123ff9f9f2ba6"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Front.imagestacklayer/Content.imageset/Transparent.png",
+        "width": 400,
+        "height": 240,
+        "mode": "RGBA",
+        "bytes": 452,
+        "sha256": "d805554bd7ab882d4189f9cdd6eede7f640ad57c72b03df403aaf01b5db7a87a"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelf.imageset/Icon-2x.png",
+        "width": 3840,
+        "height": 1440,
+        "mode": "RGB",
+        "bytes": 347715,
+        "sha256": "b8a836a0bf8799d138f8999360bfa3960d041e0c9d86428cf125a58f695184c0"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelf.imageset/Icon.png",
+        "width": 1920,
+        "height": 720,
+        "mode": "RGB",
+        "bytes": 121343,
+        "sha256": "5a37460ae6f83296be23cf4e75ac13f94537f78d9bf31828cb6ccab2382a6012"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelfWide.imageset/Icon-2x.png",
+        "width": 4640,
+        "height": 1440,
+        "mode": "RGB",
+        "bytes": 352888,
+        "sha256": "40e7a9aeda08b0692b2fced1c9b305b819786de915af5bc2c54c12aa1a2dbb7f"
+      },
+      {
+        "path": "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelfWide.imageset/Icon.png",
+        "width": 2320,
+        "height": 720,
+        "mode": "RGB",
+        "bytes": 124096,
+        "sha256": "ad9ed280b584e5b32760404c1d8f6edfa6bad26895e7eb1e5dc420f5075a7b4c"
+      }
+    ],
+    "total_png_bytes": 1167041
+  },
+  "asset_catalog_files": {
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Contents.json": {
+      "bytes": 610,
+      "sha256": "88a6a39da9844fc472df86e69e03d6bcef09d7251340a4e177c7de102b341bdd"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Back.imagestacklayer/Content.imageset/Contents.json": {
+      "bytes": 112,
+      "sha256": "f6d0108647a5f53e7db41da9bd3a7d1f1e26569e8dff53930388e6b5c081fa0f"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Back.imagestacklayer/Content.imageset/Icon.png": {
+      "bytes": 131214,
+      "sha256": "2b13096c6e79b78bcafc4cf0e444dea0e9191c947be6b4fa4d9ac3db8ff51297"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Back.imagestacklayer/Contents.json": {
+      "bytes": 40,
+      "sha256": "10e3b5dc202f1cd9fad1f688c8fc9fe9e9669bf3f8295e67d216b10fd99b6f49"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Contents.json": {
+      "bytes": 133,
+      "sha256": "640148724f203bfbefb1a9aff6702f6af8591c18c9376d4003e76cf006b04ecd"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Front.imagestacklayer/Content.imageset/Contents.json": {
+      "bytes": 108,
+      "sha256": "db2414d0bca035fb224b3acd571e70d628569567386e5917f2ef4e0ab517c8cc"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Front.imagestacklayer/Content.imageset/Transparent.png": {
+      "bytes": 3890,
+      "sha256": "752cad857dd154405a836bb55c86acb96e610b0fec69629dd60e14cdaf94f9e2"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Large.imagestack/Front.imagestacklayer/Contents.json": {
+      "bytes": 40,
+      "sha256": "10e3b5dc202f1cd9fad1f688c8fc9fe9e9669bf3f8295e67d216b10fd99b6f49"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Back.imagestacklayer/Content.imageset/Contents.json": {
+      "bytes": 249,
+      "sha256": "43b152c7e71dbf0af1137bb0c826de0dc22a459e6e382646774c7431f3830f89"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Back.imagestacklayer/Content.imageset/Icon-2x.png": {
+      "bytes": 61748,
+      "sha256": "b3034e4048e1df9996fe144fa2b0db20bb438795a39693d8934b95195a96132d"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Back.imagestacklayer/Content.imageset/Icon.png": {
+      "bytes": 22126,
+      "sha256": "c3b7c76490df95ed880f2992ae030e86619cc56929f4718a8c20144d55fd6ae8"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Back.imagestacklayer/Contents.json": {
+      "bytes": 40,
+      "sha256": "10e3b5dc202f1cd9fad1f688c8fc9fe9e9669bf3f8295e67d216b10fd99b6f49"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Contents.json": {
+      "bytes": 133,
+      "sha256": "640148724f203bfbefb1a9aff6702f6af8591c18c9376d4003e76cf006b04ecd"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Front.imagestacklayer/Content.imageset/Contents.json": {
+      "bytes": 263,
+      "sha256": "2c0d1ba8650f8ef2930838d2c67bf0136e9f51b3b471824dfef5769f22f5ac9a"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Front.imagestacklayer/Content.imageset/Transparent-2x.png": {
+      "bytes": 1569,
+      "sha256": "5c74c6f00ffe3404beabde142cc4c8d017bea53e958ba079ef7123ff9f9f2ba6"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Front.imagestacklayer/Content.imageset/Transparent.png": {
+      "bytes": 452,
+      "sha256": "d805554bd7ab882d4189f9cdd6eede7f640ad57c72b03df403aaf01b5db7a87a"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/Small.imagestack/Front.imagestacklayer/Contents.json": {
+      "bytes": 40,
+      "sha256": "10e3b5dc202f1cd9fad1f688c8fc9fe9e9669bf3f8295e67d216b10fd99b6f49"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelf.imageset/Contents.json": {
+      "bytes": 249,
+      "sha256": "43b152c7e71dbf0af1137bb0c826de0dc22a459e6e382646774c7431f3830f89"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelf.imageset/Icon-2x.png": {
+      "bytes": 347715,
+      "sha256": "b8a836a0bf8799d138f8999360bfa3960d041e0c9d86428cf125a58f695184c0"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelf.imageset/Icon.png": {
+      "bytes": 121343,
+      "sha256": "5a37460ae6f83296be23cf4e75ac13f94537f78d9bf31828cb6ccab2382a6012"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelfWide.imageset/Contents.json": {
+      "bytes": 249,
+      "sha256": "43b152c7e71dbf0af1137bb0c826de0dc22a459e6e382646774c7431f3830f89"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelfWide.imageset/Icon-2x.png": {
+      "bytes": 352888,
+      "sha256": "40e7a9aeda08b0692b2fced1c9b305b819786de915af5bc2c54c12aa1a2dbb7f"
+    },
+    "TouchColorTV/Assets.xcassets/AppIcon.brandassets/TopShelfWide.imageset/Icon.png": {
+      "bytes": 124096,
+      "sha256": "ad9ed280b584e5b32760404c1d8f6edfa6bad26895e7eb1e5dc420f5075a7b4c"
+    },
+    "TouchColorTV/Assets.xcassets/Contents.json": {
+      "bytes": 40,
+      "sha256": "10e3b5dc202f1cd9fad1f688c8fc9fe9e9669bf3f8295e67d216b10fd99b6f49"
+    }
+  }
+}
