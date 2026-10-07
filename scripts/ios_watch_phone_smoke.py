@@ -28,7 +28,7 @@ RAW_CAP = 16 * 1024 * 1024
 RETAIN_CAP = 512 * 1024
 SUMMARY_CAP = 256 * 1024
 REPORT_CAP = 256 * 1024
-PHASE_END = dict(prepare=180, device=300, test=840, proof=900,
+PHASE_END = dict(prepare=180, build=480, device=530, test=840, proof=900,
                  cleanup=990, source_after=1020, evidence=1040)
 FIXED_FILES = ('report.json', 'phases.jsonl', 'test.stdout.log',
                'test.stderr.log', 'test.errors.log', 'xcresult-summary.json')
@@ -127,7 +127,7 @@ def verify_raw(stdout, stderr, case):
     need(len(records) == 2 and records[0][0] in names and records[1][0] == records[0][0]
          and [row[1] for row in records] == ['started', 'passed'], 'selected-case-not-executed-once-and-passed')
     need(totals and all(value == (1, 0, 0, 0) for value in totals), 'test-total-not-exactly-one-pass')
-    need(terminals == ['** TEST SUCCEEDED **'], 'test-terminal-not-one-success')
+    need(terminals == ['** TEST EXECUTE SUCCEEDED **'], 'test-terminal-not-one-success')
     need(not re.search(r'(?im)(?:^|[ :])(?:fatal )?error:|XCTAssert\w* failed|\bXCTFail\b|^Testing failed:', text), 'raw-authoritative-error')
     return {'case': case, 'case_record': records[0][0], 'executions': 1, 'passed': 1,
             'total_records': len(totals), 'terminal': terminals[0]}
@@ -167,8 +167,21 @@ def scheme_scope(root, config):
     need(not xml.findall('.//PreActions') and not xml.findall('.//PostActions'), 'scheme-execution-actions-forbidden')
 
 
+def build_command(config, work):
+    # Generic destination builds test products without creating or booting a
+    # simulator. Build completion is never evidence of a case execution.
+    return ['xcodebuild', 'build-for-testing', '-project', config['project'], '-scheme', config['scheme'],
+            '-configuration', 'Debug', '-destination', 'generic/platform=iOS Simulator',
+            '-derivedDataPath', str(work / 'DerivedData'),
+            '-clonedSourcePackagesDirPath', str(work / 'SourcePackages'),
+            '-onlyUsePackageVersionsFromResolvedFile', '-only-testing:' + config['case'],
+            '-jobs', '2', 'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO',
+            'CODE_SIGN_IDENTITY=', 'DEVELOPMENT_TEAM=', 'PROVISIONING_PROFILE=',
+            'PROVISIONING_PROFILE_SPECIFIER=', 'OTHER_CODE_SIGN_FLAGS=']
+
+
 def test_command(config, work, device):
-    return ['xcodebuild', 'test', '-project', config['project'], '-scheme', config['scheme'],
+    return ['xcodebuild', 'test-without-building', '-project', config['project'], '-scheme', config['scheme'],
             '-configuration', 'Debug', '-destination', 'platform=iOS Simulator,id=' + device,
             '-destination-timeout', '20', '-derivedDataPath', str(work / 'DerivedData'),
             '-clonedSourcePackagesDirPath', str(work / 'SourcePackages'),
@@ -252,7 +265,19 @@ def execute(config, *, env=None, root=ROOT, runner=capture, clock=time.monotonic
         cleanup = 10 if native else 2
         grant = min(seconds, deadline - clock() - cleanup * 2)
         need(math.isfinite(grant) and grant > 0, 'command-cleanup-reserve-expired')
-        receipt = dict(command=argv, grant_seconds=grant, cleanup_reserve_seconds=2 * cleanup, complete=False)
+        receipt = dict(command=argv, phase=phase, grant_seconds=grant, cleanup_reserve_seconds=2 * cleanup, complete=False)
+        # Build diagnostics stay in the fixed report, separate from test logs.
+        # At most 48 KiB after worst-case JSON escaping of both 4 KiB excerpts.
+        diagnostic_budget = 4096 if phase == 'build' else 8192
+
+        def retain_diagnostics(stdout, stderr, complete):
+            receipt.update(stdout=bounded_text(stdout, diagnostic_budget).decode(),
+                           stderr=bounded_text(stderr, diagnostic_budget).decode())
+            if phase == 'build':
+                receipt.update(stdout_sha256=hashlib.sha256(stdout).hexdigest(),
+                               stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+                               hash_scope='complete original streams' if complete else 'captured prefixes only')
+
         report['commands'].append(receipt)
         event('command-start', command=argv)
         began = clock()
@@ -267,7 +292,7 @@ def execute(config, *, env=None, root=ROOT, runner=capture, clock=time.monotonic
                 tested_stdout, tested_stderr = stdout, stderr
                 report['test_log'] = retain_logs(output, stdout, stderr, False)
             else:
-                receipt.update(stdout=bounded_text(stdout, 8192).decode(), stderr=bounded_text(stderr, 8192).decode())
+                retain_diagnostics(stdout, stderr, False)
             raise
         else:
             receipt.update(returncode=result.returncode, owned_cleanup_confirmed=True)
@@ -276,7 +301,7 @@ def execute(config, *, env=None, root=ROOT, runner=capture, clock=time.monotonic
                 test_complete = True
                 report['test_log'] = retain_logs(output, result.stdout, result.stderr, True)
             else:
-                receipt.update(stdout=bounded_text(result.stdout, 8192).decode(), stderr=bounded_text(result.stderr, 8192).decode())
+                retain_diagnostics(result.stdout, result.stderr, True)
             need(clock() < began + grant and clock() < deadline, 'command-late-return')
             need(result.returncode == 0, 'command-nonzero:' + str(result.returncode))
             receipt['complete'] = True
@@ -295,6 +320,9 @@ def execute(config, *, env=None, root=ROOT, runner=capture, clock=time.monotonic
         need(env.get('DEVELOPER_DIR') == '/Applications/Xcode_27.app/Contents/Developer', 'developer-directory-mismatch')
         report['toolchain'] = run(['xcodebuild', '-version']).decode().strip()
         need(report['toolchain'].splitlines() == ['Xcode 27.0', 'Build version 27A266a'], 'xcode-build-mismatch')
+        enter('build')
+        run(build_command(config, work), seconds=300, cap=RAW_CAP, native=True)
+        report['build_for_testing_complete'] = True
         enter('device')
         native_started = True
         created = run(['xcrun', 'simctl', 'create', 'Phone smoke ' + env['GITHUB_RUN_ID'], DEVICE_TYPE, RUNTIME],
@@ -302,8 +330,6 @@ def execute(config, *, env=None, root=ROOT, runner=capture, clock=time.monotonic
         device = str(uuid.UUID(created)).upper()
         need(created.upper() == device, 'unexpected-create-response')
         report['device'] = dict(id=device, type=DEVICE_TYPE, runtime=RUNTIME, fresh=True, pairing_requested=False)
-        run(['xcrun', 'simctl', 'boot', device], seconds=30, native=True)
-        run(['xcrun', 'simctl', 'bootstatus', device, '-b'], seconds=120, native=True)
         enter('test')
         run(test_command(config, work, device), seconds=600, cap=RAW_CAP, native=True, test=True)
     except (Exception, KeyboardInterrupt) as error:
