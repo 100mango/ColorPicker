@@ -1,4 +1,4 @@
-"""One fixed XCTest/NSWorkspace diagnostic. No canonical acceptance or app changes."""
+"""One fixed XCTest/NSWorkspace diagnostic. No canonical acceptance changes."""
 import argparse
 import hashlib
 import json
@@ -44,7 +44,7 @@ SOURCES = (WORKFLOW, 'scripts/MacLaunchComparison.swift', 'scripts/mac_launch_co
     'scripts/job_budget.py', 'scripts/atomic_json.py', 'scripts/bounded_process.py',
     'scripts/palette_lifecycle_diagnostics.py', 'scripts/mac_passive_lifecycle.py',
     'scripts/retain_mac_evidence.py', 'TouchColorMacUITests/TouchColorMacUITests.swift',
-    'TouchColorMac/TouchColorMacApp.swift', 'TouchColorMac.xcodeproj/project.pbxproj')
+    'TouchColorMac/TouchColorMacApp.swift', 'TouchColorMac/ColorWindow.swift', 'TouchColorMac.xcodeproj/project.pbxproj')
 CONFOUNDERS = ['Fixed order: XCTest then NSWorkspace on one VM; not independently cold OS states.',
     'Original XCTest fixture/defaults teardown is unchanged; no saved-state deletion for NSWorkspace.',
     'XCTest instrumentation and inherited launch environment differ; requested arguments are the same.',

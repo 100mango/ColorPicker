@@ -1,0 +1,73 @@
+name: Fixed Chinese sandbox contact
+on:
+  push:
+    branches: [codex/mac-chinese-contact]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-mac-chinese-contact
+  cancel-in-progress: false
+jobs:
+  single-contact:
+    name: One Chinese sandbox contact
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_JOB_PLATFORM: mac-chinese-contact
+      TOUCHCOLOR_JOB_LANE: mac-chinese-contact
+      TOUCHCOLOR_JOB_MINUTES: '25'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '3000000'
+    steps:
+      - name: Start exact job clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              stream.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
+      - name: Check out exact source
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          ref: ${{ github.sha }}
+      - name: Initialize fixed job budget
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py initialize
+      - name: Build once, verify minimal sandbox and run Chinese contact
+        id: contact
+        timeout-minutes: 18
+        run: python3 scripts/mac_chinese_contact.py run
+      - name: Retain bounded one-case evidence
+        id: evidence
+        if: always()
+        timeout-minutes: 3
+        run: python3 scripts/mac_chinese_contact.py evidence
+      - name: Validate fixed one-case packet
+        id: validation
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/mac_chinese_contact.py validate
+      - name: Verify full upload reserve
+        id: upload_budget
+        if: ${{ always() && steps.validation.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py check-upload
+      - name: Retain observation without release acceptance
+        if: ${{ always() && steps.validation.outcome == 'success' && steps.upload_budget.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-mac-chinese-contact
+          path: build/evidence
+          retention-days: 1
+          compression-level: 9
+          if-no-files-found: error
+      - name: Preserve original contact outcome
+        if: always()
+        timeout-minutes: 1
+        run: python3 scripts/mac_chinese_contact.py contact-result

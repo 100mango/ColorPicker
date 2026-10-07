@@ -62,11 +62,8 @@ import ApplicationServices
         }
         app.launchArguments = ["--ui-test-reset"]
         // Each contact locale uses this one exact-product setup launch.
-        if name.contains("testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail") {
-            app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        } else if name.contains("testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail") {
-            app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
-        }
+        // Reset-only diagnostic: the selected English contact adds no locale overrides.
+        // Chinese contact localization is supplied by the fixed Xcode test plan.
         lifecycleToken = lifecycleCases.contains(where: { name == "-[TouchColorMacUITests \($0)]" }) ? UUID().uuidString : nil
         if let lifecycleToken { app.launchEnvironment["TOUCHCOLOR_MAC_LIFECYCLE"] = lifecycleToken }
         lifecycleStarted = Date().timeIntervalSince1970

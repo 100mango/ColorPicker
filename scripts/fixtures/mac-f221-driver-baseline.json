@@ -1,0 +1,17 @@
+{
+  "frozen": {
+    ".github/workflows/mac-launch-comparison.yml": "10aa38d657c83f53cb8edbacb71cb3e85732a2048c25b07b037f198888b114c5",
+    "TouchColorMac.xcodeproj/project.pbxproj": "7d12588eda1eb1578f131e459f1c6deba2841673ce894158787e6d94c1f1db34",
+    "TouchColorMac/ColorWindow.swift": "64a7266cbe0424bc82ae80f51599582d6d6017161b20578d0f3bd99c31e75679",
+    "TouchColorMac/TouchColorMacApp.swift": "3f7756b04cfa5ee3052df836395e998fd5bc1f369501cfb0e08e490f6f6a9810",
+    "TouchColorMacUITests/TouchColorMacUITests.swift": "0f1cc977d997281f49c2b77a94e968fc42002d0c2481076647cb6b4c3ce16448",
+    "scripts/MacLaunchComparison.swift": "9eab452bc752f202ba5696b4e1010f413aaa68db718032a020a7d3c8b8210dd2",
+    "scripts/mac_launch_comparison.py": "6194321c8df3d483c847cf4ac1e9504f43cc9f7ae538aa21ccecc29faa4add51",
+    "scripts/mac_passive_lifecycle.py": "ad06534c90365b521e012c2492dac14be9a8890b555ec6db2b510ce12c0f3186"
+  },
+  "instrumented_swift": [
+    "TouchColorMac/TouchColorMacApp.swift",
+    "TouchColorMac/ColorWindow.swift"
+  ],
+  "tree": "f2211e7f70aa5cbc531aecacfa95a1c54e974956"
+}

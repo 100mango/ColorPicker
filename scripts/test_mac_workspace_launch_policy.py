@@ -2,9 +2,11 @@
 from pathlib import Path
 import hashlib
 import unittest
+from test_mac_reset_source_helpers import restore_english_setup
 ROOT=Path(__file__).resolve().parents[1]
 HELPER='/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.\nprivate extension Scene {\n    func workspaceDefaultLaunchPolicy() -> some Scene {\n        var scene = SceneBuilder.buildLimitedAvailability(self)\n        if #available(macOS 15.0, *) {\n            scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))\n        }\n        return SceneBuilder.buildOptional(scene)\n    }\n}\n\n'
-BASE_HASH='5f94bbdcbc97a3ff45632c437acff34c8e3d183a07089d614b86c0cf099fd4c4'
+# Checkpoint-only successor; original projections are pinned in test_mac_scene_checkpoints.
+BASE_HASH='85f4909d283a6b1c7b6a84a72ed2bf9bb6c8ad92ff3be3b747371780338ea3b7'
 
 class WorkspaceLaunchPolicy(unittest.TestCase):
     def setUp(self):self.source=(ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text()
@@ -38,7 +40,7 @@ class WorkspaceLaunchPolicy(unittest.TestCase):
         self.assertIn("MACOSX_DEPLOYMENT_TARGET='13.0'",generator)
         self.assertNotIn("MACOSX_DEPLOYMENT_TARGET='15.0'",generator)
     def test_original_cold_locale_and_relaunch_controls_remain(self):
-        ui=(ROOT/'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
+        ui=restore_english_setup((ROOT/'TouchColorMacUITests/TouchColorMacUITests.swift').read_text())
         self.assertIn('app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]',ui)
         self.assertIn('app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]',ui)
         self.assertIn('func testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail()',ui)

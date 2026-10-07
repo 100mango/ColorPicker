@@ -1,0 +1,27 @@
+{
+  "configurations": [
+    {
+      "id": "5A4DE432-08D2-4B60-BD56-1A5C2A3A9C27",
+      "name": "Chinese",
+      "options": {
+        "language": "zh-Hans",
+        "region": "CN"
+      }
+    }
+  ],
+  "defaultOptions": {},
+  "testTargets": [
+    {
+      "parallelizable": false,
+      "selectedTests": [
+        "TouchColorMacUITests/testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail()"
+      ],
+      "target": {
+        "containerPath": "container:TouchColorMac.xcodeproj",
+        "identifier": "EDEF04536BDD07E17940AE61",
+        "name": "TouchColorMacUITests"
+      }
+    }
+  ],
+  "version": 1
+}
