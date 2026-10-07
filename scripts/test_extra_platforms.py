@@ -351,7 +351,7 @@ try:
         report['hosted_tests']='not rerun; historical evidence remains separately source-bound'
         if text_phase=='normal':
             normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult',
-                '-only-testing:'+FOCUSED_CASE, '-test-iterations','1']
+                '-only-testing:'+FOCUSED_CASE]
             report['watch_inputs_before_normal']=watch_checkpoint(report,device=device['udid'],runtime=runtime)
             if report.get('cleanup_unconfirmed'): raise RuntimeError('Watch checkpoint cleanup unconfirmed; normal UI not started')
             normal_code=run(normal_command,840,required=False)
