@@ -1,0 +1,65 @@
+name: Observe one Watch Edit-a-Copy case
+on:
+  push:
+    branches: [codex/watch-copy-observation]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-watch-copy-observation
+  cancel-in-progress: false
+jobs:
+  observe-copy:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TZ: UTC
+    steps:
+      - name: Start the immutable diagnostic clock
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as output:
+              output.write('WATCH_COPY_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
+      - name: Check out exact source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Portable observation regressions
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          cd scripts
+          python3 -m unittest -v test_watch_copy_observation test_watch_diagnostics test_watch_touch_drag test_watch_runtime_pair
+          python3 -O -m unittest -v test_watch_copy_observation test_watch_diagnostics test_watch_touch_drag test_watch_runtime_pair
+      - name: One unchanged 120-second Watch case with bounded observation
+        run: python3 scripts/watch_copy_observation.py
+      - name: Validate bounded local evidence and upload admission
+        if: always()
+        id: artifact
+        run: |
+          python3 - <<'PY'
+          import os,sys,time
+          sys.path.insert(0,'scripts')
+          import watch_copy_observation as w
+          w.local_validation()
+          start=float(os.environ['WATCH_COPY_STARTED_MONOTONIC'])
+          if time.monotonic() >= start+w.JOB_SECONDS-80:
+              raise SystemExit('No full 60-second upload plus 20-second overhead reserve')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write('admitted=true\n')
+          PY
+      - name: Retain diagnostic-only evidence
+        if: always() && steps.artifact.outputs.admitted == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        timeout-minutes: 1
+        with:
+          name: watch-copy-observation-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            build/watch-copy-observation/evidence
+            build/watch-copy-observation/artifact-manifest.json
