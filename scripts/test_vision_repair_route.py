@@ -36,7 +36,6 @@ def projected_workflow(canonical):
         and 'xcodebuild -list -project TouchColorMac.xcodeproj' not in line)
     toolchain=toolchain.replace('if test "$TOUCHCOLOR_JOB_PLATFORM" = vision; then python3 scripts/vision_offline_result.py prepare-reader; fi',
                                 'python3 scripts/vision_offline_result.py prepare-reader')
-    toolchain=toolchain.replace('          git diff --exit-code HEAD --\n', '          python3 scripts/vision_photos_scope.py\n          git diff --exit-code HEAD --\n')
     header='''jobs:
   native-platform:
     name: Vision Photos on one fresh standard VM
@@ -50,7 +49,6 @@ def projected_workflow(canonical):
       TOUCHCOLOR_WATCH_PROFILE: ''
       TOUCHCOLOR_TEXT_PHASE: normal
       TOUCHCOLOR_VISION_CASE: photos
-      TOUCHCOLOR_VISION_COMPLETION_SCOPE: photos-only
       TOUCHCOLOR_EVIDENCE_LIMIT: 950000
     steps:
 '''
@@ -122,6 +120,76 @@ class FixedVisionRepairRouteTests(unittest.TestCase):
         self.assertIn('persist-credentials: false',self.text)
         self.assertIn('ref: ${{ github.sha }}',self.text)
         self.assertIn('git diff --exit-code HEAD --',self.text)
+
+    def test_current_photos_runs_real_hosted_then_normal_with_canonical_roles(self):
+        from native_text_rows import row, vision_roles
+        binding=row('vision','normal','photos','','a'*40)
+        self.assertEqual(binding['schema'],2)
+        self.assertEqual(vision_roles(binding),['hosted','normal'])
+        self.assertNotIn('      TOUCHCOLOR_VISION_COMPLETION_SCOPE:',self.text)
+        self.assertNotIn('python3 scripts/vision_photos_scope.py',self.text)
+        self.assertNotIn('hosted_reuse',self.text)
+        self.assertIn('python3 scripts/test_extra_platforms.py vision',self.text)
+
+    def test_failed_photos_seed_never_falls_through_to_skipped_xctest(self):
+        import ast
+        from unittest.mock import Mock
+        source=ast.parse((ROOT/'scripts/test_extra_platforms.py').read_text())
+        gate=next(node for node in ast.walk(source) if isinstance(node,ast.If)
+            and isinstance(node.test,ast.Name) and node.test.id=='photo_seed_failed'
+            and any(isinstance(value,ast.Constant) and value.value=='Photos completion fixture seed did not succeed'
+                    for value in ast.walk(node)))
+        self.assertFalse(any(isinstance(value,ast.Constant) and isinstance(value.value,str) and value.value.startswith('-skip-testing:') for value in ast.walk(gate)))
+        for started,timeout,code,confirmed,expected_fence in [(True,True,124,True,True),(True,False,1,True,False),
+                (False,False,124,True,False),(True,False,124,True,True),(True,False,1,False,True)]:
+            with self.subTest(started=started,timeout=timeout,code=code,confirmed=confirmed):
+                report={'stages':[{'started':started,'timed_out':timeout,'exit':code,'process_group_gone':confirmed,'capture_reader_finished':True}]}
+                state={'photo_seed_failed':True,'report':report,'fail_record':Mock()}
+                with self.assertRaisesRegex(RuntimeError,'fixture seed'):
+                    exec(compile(ast.Module(body=[gate],type_ignores=[]),'actual Photos seed gate','exec'),state)
+                self.assertEqual(report.get('cleanup_unconfirmed',False),expected_fence)
+                self.assertEqual(report.get('simulator_operation_unconfirmed',False),expected_fence)
+                self.assertEqual(state['fail_record'].called,expected_fence)
+
+    def test_real_timed_out_host_process_still_fences_actual_driver_cleanup(self):
+        import ast
+        import subprocess
+        import sys
+        from unittest.mock import Mock, patch
+        import test_vision_runner_lease as lease
+        harness=lease.RunnerLeaseDriverTests(methodName='runTest');harness.setUp()
+        harness.state['out']=harness.state['out'].resolve()
+        self.addCleanup(harness.doCleanups)
+        # A real disposable local child exercises the production run/termination
+        # path. It is not a native simulator execution or a canned timeout result.
+        with patch('job_budget.enabled_budget',return_value=None):
+            code=harness.state['run']([sys.executable,'-c','import time; time.sleep(1)'],.02,required=False)
+        self.assertEqual(code,124)
+        stage=harness.state['report']['stages'][-1]
+        self.assertTrue(stage['timed_out']);self.assertTrue(stage['process_group_gone'])
+        self.assertTrue(stage['capture_reader_finished'])
+        source=ast.parse((ROOT/'scripts/test_extra_platforms.py').read_text())
+        gate=next(node for node in ast.walk(source) if isinstance(node,ast.If)
+            and isinstance(node.test,ast.Name) and node.test.id=='photo_seed_failed'
+            and any(isinstance(value,ast.Constant) and value.value=='Photos completion fixture seed did not succeed'
+                    for value in ast.walk(node)))
+        import os
+        import json
+        from job_budget import fail_record, UNCLEAN
+        harness.state.update(photo_seed_failed=True,fail_record=fail_record)
+        previous=Path.cwd()
+        try:
+            os.chdir(harness.state['out'])
+            with self.assertRaisesRegex(RuntimeError,'fixture seed'):
+                exec(compile(ast.Module(body=[gate],type_ignores=[]),'actual Photos seed gate','exec'),harness.state)
+            self.assertTrue(json.loads(UNCLEAN.read_text())['cleanup_unconfirmed'])
+        finally:os.chdir(previous)
+        with patch('job_budget.enabled_budget',return_value=None),patch.object(subprocess,'Popen') as start:
+            self.assertEqual(harness.state['run'](['xcrun','simctl','shutdown',lease.DEVICE],3,required=False),124)
+        start.assert_not_called()
+        # Execute the actual finally body: no resource/device query, shutdown or
+        # readback is allowed; host-only failure JSON must still be written.
+        harness.final_cleanup()
 
     def test_projection_detects_added_row_or_relaxed_gate(self):
         expected=projected_workflow(self.base)

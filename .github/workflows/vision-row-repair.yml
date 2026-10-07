@@ -20,7 +20,6 @@ jobs:
       TOUCHCOLOR_WATCH_PROFILE: ''
       TOUCHCOLOR_TEXT_PHASE: normal
       TOUCHCOLOR_VISION_CASE: photos
-      TOUCHCOLOR_VISION_COMPLETION_SCOPE: photos-only
       TOUCHCOLOR_EVIDENCE_LIMIT: 950000
     steps:
       - name: Start exact native job clock
@@ -71,7 +70,6 @@ jobs:
           uname -m | grep -Fx arm64
           python3 scripts/generate_vision_project.py
           python3 scripts/verify_native_localizations.py
-          python3 scripts/vision_photos_scope.py
           git diff --exit-code HEAD --
       - name: Native visionOS executable and real simulator workflows
         id: vision

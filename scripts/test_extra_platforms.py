@@ -347,9 +347,17 @@ try:
         # not repeat historical hosted tests; seed success remains a real gate.
         seed_photos()
         if photo_seed_failed:
-            if text_row.get('qualification_scope') == 'photos-only':
-                raise RuntimeError('Photos completion fixture seed did not succeed')
-            skip=['-skip-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPhotosImport']
+            # A failed Photos prerequisite never becomes an empty/skipped UI run.
+            # Host process cleanup does not prove a timed-out simulator operation
+            # has completed. Keep the existing no-device-command fence latched.
+            seed_stage=report['stages'][-1]
+            if seed_stage.get('started') is True and (seed_stage.get('timed_out') is True
+                    or seed_stage.get('exit')==124 or seed_stage.get('process_group_gone') is not True
+                    or seed_stage.get('capture_reader_finished') is not True):
+                report['simulator_operation_unconfirmed']=True
+                report['cleanup_unconfirmed']=True
+                fail_record('Vision Photos fixture seed completion is unconfirmed',phase='work',cleanup_unconfirmed=True)
+            raise RuntimeError('Photos completion fixture seed did not succeed')
         case=os.environ['TOUCHCOLOR_VISION_CASE']
         if case=='photos':
             inventory=json.loads(check_output(['xcrun','simctl','list','devices','available','-j'],timeout=15))['devices']
