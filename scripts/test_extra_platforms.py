@@ -21,7 +21,7 @@ kind=sys.argv[1]
 if kind != 'watch': raise ValueError('Focused candidate admits Watch only')
 if os.environ.get('TOUCHCOLOR_WATCH_PROFILE') != 'smallest' or os.environ.get('TOUCHCOLOR_TEXT_PHASE') != 'normal':
     raise ValueError('Focused candidate admits only the existing 40mm normal-text row')
-FOCUSED_CASE='TouchColorWatchUITests/WatchWorkflowTests/testTouchCopyEntryDirectCrownAndButtonsRemainResponsive'
+FOCUSED_CASE='TouchColorWatchUITests/WatchWorkflowTests/testTouchCopyEntryTouchAndCrownRemainResponsive'
 name={'vision':'TouchColorVision','watch':'TouchColorWatch','tv':'TouchColorTV'}[kind]; project=name+'.xcodeproj'
 platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
@@ -347,7 +347,7 @@ try:
         # install/hosted startup consumed much of a shared840s command, so later UI
         # cases never ran. Each phase remains bounded on the same fresh VM; the
         # source-bound Watch job budget and per-case120/240s allowances remain finite.
-        report['xctest_summary_scope']='single Create/copy entry direct-Crown and button regression; synthetic input only; no Save/delete/persistence or new hosted coverage'
+        report['xctest_summary_scope']='single Create/copy entry touch-focused Crown and button regression; synthetic input only; no Save/delete/persistence or new hosted coverage'
         report['hosted_tests']='not rerun; historical evidence remains separately source-bound'
         if text_phase=='normal':
             normal_command=test_common+test_arguments+['-resultBundlePath','build/watch-ui.xcresult',

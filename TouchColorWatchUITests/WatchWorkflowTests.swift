@@ -22,7 +22,7 @@ final class WatchWorkflowTests: XCTestCase {
         app.launchEnvironment["TOUCHCOLOR_TEST_DEFAULTS"] = "TouchColor.watch-ui.\(UUID())"
         if name.contains("PublicLargestTrait") { app.launchEnvironment["TOUCHCOLOR_TEST_TRAIT_PROOF"] = "1" }
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]
-        if name.contains("TouchCopyEntryDirectCrownAndButtonsRemainResponsive") {
+        if name.contains("TouchCopyEntryTouchAndCrownRemainResponsive") {
             // Foundation's argument domain supplies synthetic input to the
             // existing LegacyPalette colorArray key, including isolated suites.
             // This case does not claim to test Save or persisted palette writes.
@@ -217,52 +217,84 @@ final class WatchWorkflowTests: XCTestCase {
         }
     }
 
-    @MainActor func testTouchCopyEntryDirectCrownAndButtonsRemainResponsive() throws {
+    @MainActor func testTouchCopyEntryTouchAndCrownRemainResponsive() throws {
+        func revealComponentControls() {
+            let down = app.buttons["watch.component.down"], up = app.buttons["watch.component.up"]
+            // Real bounded touch scrolling within the current editor viewport.
+            // The 40mm component row begins below the visible content; Crown
+            // editing is tested after the same explicit +/- focus as the
+            // previously passing RGB test, not as an unverified entry promise.
+            for attempt in 0...6 {
+                XCTAssertEqual(app.scrollViews.count, 1)
+                XCTAssertEqual(app.navigationBars.count, 1)
+                let navigation = app.navigationBars["Create Color"]
+                XCTAssertTrue(navigation.exists)
+                let scroll = app.scrollViews.element(boundBy: 0)
+                let viewport = app.frame.intersection(scroll.frame)
+                let top = max(viewport.minY, navigation.frame.maxY)
+                let content = CGRect(x: viewport.minX, y: top, width: viewport.width, height: viewport.maxY - top)
+                XCTAssertGreaterThan(content.width, 44); XCTAssertGreaterThan(content.height, 64)
+                if down.exists && up.exists && down.isHittable && up.isHittable
+                    && content.contains(down.frame) && content.contains(up.frame) { return }
+                guard attempt < 6 else { XCTFail("RGB controls remained clipped after six touch drags"); return }
+                let above = down.exists && down.frame.midY < content.midY
+                let origin = scroll.coordinate(withNormalizedOffset: .zero)
+                let startY = content.midY + (above ? -16 : 16)
+                let endY = content.midY + (above ? 16 : -16)
+                let start = origin.withOffset(CGVector(dx: content.midX - scroll.frame.minX, dy: startY - scroll.frame.minY))
+                let end = origin.withOffset(CGVector(dx: content.midX - scroll.frame.minX, dy: endY - scroll.frame.minY))
+                start.press(forDuration: 0.01, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.15)
+            }
+        }
         let count = app.staticTexts["watch.count"]
         XCTAssertTrue(count.waitForExistence(timeout: 10))
         XCTAssertEqual(count.label, "2", "The actual palette must load both synthetic argument-domain inputs")
-        // Retain the prior-editor navigation history from the full regression,
-        // without spending this case's allowance on unrelated Save actions.
+        // Keep a real prior editor in the navigation history without claiming
+        // synthetic palette inputs prove Save, deletion or persisted writes.
         app.buttons["watch.editor"].tap()
         let createHex = app.staticTexts["watch.hex"]
         XCTAssertTrue(createHex.waitForExistence(timeout: 5)); XCTAssertEqual(createHex.label, "#ff0000")
+        revealComponentControls()
+        app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(createHex.label, "#fe0000")
         XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)
         let createChanged = createHex.label
-        XCTAssertNotEqual(createChanged, "#ff0000", "Create entry must keep immediate Crown editing")
+        XCTAssertNotEqual(createChanged, "#fe0000", "Create Crown editing must respond after explicit component focus")
         XCTAssertEqual(createChanged.count, 7); XCTAssertTrue(createChanged.hasPrefix("#") && createChanged.hasSuffix("0000"))
         let createRed = try XCTUnwrap(Int(createChanged.dropFirst().prefix(2), radix: 16))
-        XCTAssertTrue((0...254).contains(createRed))
+        XCTAssertTrue((0...253).contains(createRed))
         app.buttons["watch.component.up"].tap()
         XCTAssertEqual(createHex.label, String(format: "#%02x0000", createRed + 1))
         app.buttons["watch.component.down"].tap()
         XCTAssertEqual(createHex.label, createChanged)
-        print("WATCH_CREATE_ENTRY_RESPONSE directCrown=true buttons=true")
+        print("WATCH_CREATE_ENTRY_RESPONSE touchFocusedCrown=true buttons=true")
         app.buttons["BackButton"].tap()
         try reachSavedColorByTouch("watch.color.0")
         let hex = app.staticTexts["watch.hex"]
         XCTAssertEqual(hex.label, "#fe0000", "The fixture must be read through the real saved-color destination")
         let copy = app.buttons["watch.edit.copy"]
         XCTAssertTrue(copy.waitForExistence(timeout: 5)); XCTAssertTrue(copy.isHittable)
-        copy.tap()
+        copy.tap() // Ordinary XCTest quiescence must finish before any reveal or edit.
         XCTAssertTrue(hex.waitForExistence(timeout: 5)); XCTAssertEqual(hex.label, "#fe0000")
-        // The first input after copy navigation is the real Crown. No tap
-        // or +/- action may establish focus before this assertion.
+        revealComponentControls()
+        app.buttons["watch.component.down"].tap()
+        XCTAssertEqual(hex.label, "#fd0000")
         XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)
         let changed = hex.label
-        XCTAssertNotEqual(changed, "#fe0000", "Copy entry must keep immediate Crown editing")
+        XCTAssertNotEqual(changed, "#fd0000", "Copy Crown editing must respond after explicit component focus")
         XCTAssertEqual(changed.count, 7); XCTAssertTrue(changed.hasPrefix("#") && changed.hasSuffix("0000"))
         let red = try XCTUnwrap(Int(changed.dropFirst().prefix(2), radix: 16))
-        XCTAssertTrue((0...253).contains(red))
+        XCTAssertTrue((0...252).contains(red))
         app.buttons["watch.component.up"].tap()
         XCTAssertEqual(hex.label, String(format: "#%02x0000", red + 1))
         app.buttons["watch.component.down"].tap()
         XCTAssertEqual(hex.label, changed)
-        print("WATCH_COPY_ENTRY_RESPONSE entry=0 directCrown=true buttons=true")
+        print("WATCH_COPY_ENTRY_RESPONSE touchFocusedCrown=true buttons=true")
         app.buttons["BackButton"].tap()
         XCTAssertTrue(copy.waitForExistence(timeout: 5))
         XCTAssertEqual(hex.label, "#fe0000", "An unsaved copy must leave the original saved color unchanged")
         let image = XCTAttachment(screenshot: app.screenshot())
-        image.name = "Native Watch Create and copy direct Crown response"; image.lifetime = .keepAlways; add(image)
+        image.name = "Native Watch Create and copy touch-focused Crown response"; image.lifetime = .keepAlways; add(image)
     }
 
     func testRealDigitalCrownChangesRGBComponent() {

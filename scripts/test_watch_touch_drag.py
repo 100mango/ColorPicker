@@ -312,10 +312,10 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
         # The additive, separately scoped copy-entry case is validated below.
         # Remove only those two additions before checking the original frozen
         # methods; retain the original fingerprint and geometry protections.
-        new_case = source.index('    @MainActor func testTouchCopyEntryDirectCrownAndButtonsRemainResponsive()')
+        new_case = source.index('    @MainActor func testTouchCopyEntryTouchAndCrownRemainResponsive()')
         next_case = source.index('    func testRealDigitalCrownChangesRGBComponent()', new_case)
         source = source[:new_case] + source[next_case:]
-        fixture = source.index('        if name.contains("TouchCopyEntryDirectCrownAndButtonsRemainResponsive") {')
+        fixture = source.index('        if name.contains("TouchCopyEntryTouchAndCrownRemainResponsive") {')
         launch = source.index('        app.launch()', fixture)
         source = source[:fixture] + source[launch:]
         begin = source.index('    @MainActor private func reachSavedColorByTouch(')
@@ -345,26 +345,38 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
         self.assertIn('guard editorIsVisible else', editor)
         self.assertIn('.digitalCrownRotation(component, from: 0, through: 255, by: 1', editor)
 
-    def test_copy_entry_requires_real_fixture_readback_and_direct_crown_before_buttons(self):
+    def test_copy_entry_requires_real_reveal_then_buttons_then_crown(self):
         source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
-        fixture = source.split('if name.contains("TouchCopyEntryDirectCrownAndButtonsRemainResponsive") {', 1)[1].split('        app.launch()', 1)[0]
+        fixture = source.split('if name.contains("TouchCopyEntryTouchAndCrownRemainResponsive") {', 1)[1].split('        app.launch()', 1)[0]
         self.assertIn('app.launchArguments += ["-colorArray", "(\\"#fe0000\\", \\"#fe0000\\")"]', fixture)
-        case = source.split('func testTouchCopyEntryDirectCrownAndButtonsRemainResponsive()', 1)[1].split('    func testRealDigitalCrownChangesRGBComponent()', 1)[0]
+        case = source.split('func testTouchCopyEntryTouchAndCrownRemainResponsive()', 1)[1].split('    func testRealDigitalCrownChangesRGBComponent()', 1)[0]
         self.assertIn('XCTAssertEqual(count.label, "2"', case)
         self.assertIn('try reachSavedColorByTouch("watch.color.0")', case)
-        create_direct = case.split('app.buttons["watch.editor"].tap()', 1)[1].split('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)', 1)[0]
-        self.assertNotIn('.tap()', create_direct)
-        self.assertIn('XCTAssertEqual(createHex.label, "#ff0000")', create_direct)
-        self.assertIn('XCTAssertNotEqual(createChanged, "#ff0000"', case)
-        self.assertIn('XCTAssertTrue((0...254).contains(createRed))', case)
+        reveal = case.split('func revealComponentControls()', 1)[1].split('        let count =', 1)[0]
+        self.assertIn('for attempt in 0...6', reveal)
+        self.assertIn('guard attempt < 6 else', reveal)
+        for required in ('app.scrollViews.count, 1', 'app.navigationBars.count, 1',
+                         'app.navigationBars["Create Color"]', 'app.frame.intersection(scroll.frame)',
+                         'navigation.frame.maxY', 'down.isHittable && up.isHittable',
+                         'content.contains(down.frame) && content.contains(up.frame)',
+                         'content.midY + (above ? -16 : 16)', 'content.midY + (above ? 16 : -16)'):
+            self.assertIn(required, reveal)
+        self.assertEqual(reveal.count('start.press('), 1)
+        self.assertNotIn('.tap()', reveal)
+        self.assertNotIn('rotateDigitalCrown', reveal)
+        create = case.split('app.buttons["watch.editor"].tap()', 1)[1].split('app.buttons["BackButton"].tap()', 1)[0]
+        copy = case.split('copy.tap()', 1)[1].split('app.buttons["BackButton"].tap()', 1)[0]
+        for block, expected in ((create, '#fe0000'), (copy, '#fd0000')):
+            self.assertLess(block.index('revealComponentControls()'), block.index('app.buttons["watch.component.down"].tap()'))
+            self.assertLess(block.index('app.buttons["watch.component.down"].tap()'), block.index('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)'))
+            self.assertIn(expected, block)
+        self.assertIn('XCTAssertNotEqual(createChanged, "#fe0000"', create)
+        self.assertIn('XCTAssertTrue((0...253).contains(createRed))', create)
+        self.assertIn('XCTAssertNotEqual(changed, "#fd0000"', copy)
+        self.assertIn('XCTAssertTrue((0...252).contains(red))', copy)
         self.assertEqual(case.count('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)'), 2)
-        direct = case.split('copy.tap()', 1)[1].split('XCUIDevice.shared.rotateDigitalCrown(delta: -0.25)', 1)[0]
-        self.assertNotIn('.tap()', direct)
-        self.assertIn('XCTAssertEqual(hex.label, "#fe0000")', direct)
-        self.assertIn('XCTAssertNotEqual(changed, "#fe0000"', case)
-        self.assertIn('XCTAssertTrue((0...253).contains(red))', case)
-        self.assertIn('String(format: "#%02x0000", red + 1)', case)
-        self.assertIn('XCTAssertEqual(hex.label, changed)', case)
+        self.assertIn('String(format: "#%02x0000", red + 1)', copy)
+        self.assertIn('XCTAssertEqual(hex.label, changed)', copy)
         for forbidden in ('watch.save', 'watch.delete', 'XCTSkip', 'XCTExpectFailure', 'executionTimeAllowance', 'sleep(', 'waitForIdle'):
             self.assertNotIn(forbidden, case)
         self.assertIn('name.contains("Chinese") ? 240 : 120', source)
