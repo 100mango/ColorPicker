@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "repository": "100mango/ColorPicker",
+  "base": "ff1fae40be797ca3243c51b43ce52417ed1bfb6f",
+  "project": "TouchColor-iOS-Watch.xcodeproj",
+  "scheme": "TouchColor",
+  "case": "TouchColorUITests/TouchColorUITests/testProductionWatchInboxEmptyAndReturn",
+  "expected_changes": [
+    "A\t.github/workflows/ios-watch-phone-smoke.yml",
+    "A\tscripts/ios_watch_phone_smoke.py",
+    "A\tscripts/ios_watch_phone_smoke_config.json",
+    "A\tscripts/test_ios_watch_phone_smoke.py",
+    "M\tTouchColorUITests/TouchColorUITests.m"
+  ]
+}

@@ -90,7 +90,13 @@
     }];
     self.continueAfterFailure=NO;
     self.app=[XCUIApplication new];
-    self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    if ([self.name isEqualToString:@"-[TouchColorUITests testProductionWatchInboxEmptyAndReturn]"]) {
+        // This one case runs only on its fresh, unpaired iPhone simulator.
+        // Keep every existing case's launch arguments and behavior unchanged.
+        self.app.launchArguments=@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    } else {
+        self.app.launchArguments=@[@"--ui-test-reset",@"--ui-test-image",@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"];
+    }
     self.paletteLifecycleCase=@{
         @"-[TouchColorUITests testInvalidPalettePastePreservesHistory]":@"testInvalidPalettePastePreservesHistory",
         @"-[TouchColorUITests testPalettePasteReviewAcceptAndRelaunch]":@"testPalettePasteReviewAcceptAndRelaunch"
@@ -141,6 +147,39 @@
     XCTAssertTrue([(NSString *)english.value containsString:@"Celluloid, QRCatcher, and TouchColor"]);
     XCTAssertTrue([(NSString *)chinese.value containsString:@"100mango@gmail.com"]);
     XCTAssertTrue([(NSString *)english.value containsString:@"100mango@gmail.com"]);
+}
+- (void)testProductionWatchInboxEmptyAndReturn {
+    NSLog(@"PHONE_SMOKE_PHASE app=TouchColor phase=normal-launch");
+    XCTAssertEqualObjects(self.app.launchArguments, (@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"]));
+    XCUIElement *home=self.app.buttons[@"choosePhoto"];
+    XCUIElement *open=self.app.buttons[@"watch.inbox.open"];
+    XCTAssertTrue([home waitForExistenceWithTimeout:10]);
+    XCTAssertTrue(home.enabled && home.hittable);
+    XCTSkipUnless([open waitForExistenceWithTimeout:5],@"Watch entry smoke applies only to the iOS-Watch projection; its dedicated runner rejects every skip");
+    XCTAssertTrue(open.enabled && open.hittable);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
+    [open tap];
+    XCUIElement *inbox=self.app.tables[@"watch.inbox"];
+    XCTAssertTrue([inbox waitForExistenceWithTimeout:5]);
+    XCUIElement *status=inbox.cells[@"watch.inbox.status"];
+    XCTAssertTrue([status waitForExistenceWithTimeout:5]);
+    XCTAssertEqual(inbox.cells.count,1,@"Fresh storage must contain only the ordinary status row and no pending transfer");
+    NSString *statusText=status.staticTexts.firstMatch.label;
+    XCTAssertGreaterThan(statusText.length,0);
+    XCTAssertFalse([statusText containsString:@"The inbox could not be read"]);
+    // An unpaired/unsupported simulator can display a connection status.
+    // This does not claim WCSession activation, pairing, or transfer success.
+    NSLog(@"PHONE_SMOKE_PHASE app=TouchColor phase=empty-inbox status=%@",statusText);
+    XCUIElement *close=self.app.buttons[@"watch.inbox.close"];
+    XCTAssertTrue(close.enabled && close.hittable);
+    [close tap];
+    [self assertPresentationDisappears:inbox];
+    XCTAssertTrue([home waitForExistenceWithTimeout:5]);
+    XCTAssertTrue(home.enabled && home.hittable);
+    XCTAssertTrue(open.enabled && open.hittable);
+    XCTAssertEqual(self.app.tables[@"colorHistory"].cells.count,0);
+    XCTAssertEqual(self.app.state,XCUIApplicationStateRunningForeground);
+    NSLog(@"PHONE_SMOKE_PHASE app=TouchColor phase=home-returned");
 }
 - (void)testPrivacyPolicyEntryOpensAndCloses {
     for (NSUInteger attempt=0; attempt<2; attempt++) {
