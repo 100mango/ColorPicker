@@ -7,6 +7,7 @@ import re
 import unittest
 
 from test_mac_reset_source_helpers import restore_english_setup
+from test_mac_store_source_helpers import restore_store_app
 import mac_launch_comparison as comparison
 import mac_passive_lifecycle as passive
 from test_mac_passive_lifecycle import bound, envelope, event
@@ -29,6 +30,7 @@ METHOD = '''    // First evaluation only, through the existing token-gated insta
 
 def projection(text, debug):
     """Evaluate only the exact DEBUG directives present in these two sources."""
+    text = restore_store_app(text)
     active = [True]
     conditions = []
     output = []

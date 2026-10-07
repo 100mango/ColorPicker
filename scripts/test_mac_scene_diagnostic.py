@@ -12,6 +12,7 @@ from unittest.mock import patch
 import mac_scene_diagnostic as m
 import job_budget
 from test_mac_reset_source_helpers import restore_english_setup
+from test_mac_store_source_helpers import restore_store_app
 from test_mac_launch_comparison import Clock, PRODUCT, contact_export
 from test_mac_passive_lifecycle import event, envelope
 
@@ -145,6 +146,7 @@ class WorkflowContracts(unittest.TestCase):
         for name,digest in fixture['frozen'].items():
             raw=(CHECKOUT/name).read_bytes()
             if name=='TouchColorMacUITests/TouchColorMacUITests.swift':raw=restore_english_setup(raw.decode()).encode()
+            if name=='TouchColorMac/TouchColorMacApp.swift':raw=restore_store_app(raw.decode()).encode()
             self.assertEqual(hashlib.sha256(raw).hexdigest(),digest)
         self.assertEqual(fixture['tree'],'f2211e7f70aa5cbc531aecacfa95a1c54e974956')
         self.assertEqual(set(fixture['instrumented_swift']),{'TouchColorMac/TouchColorMacApp.swift','TouchColorMac/ColorWindow.swift'})

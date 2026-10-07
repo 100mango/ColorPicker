@@ -1,4 +1,6 @@
 """Exact test-only normalization of the sole allowed launch-input edit."""
+from test_mac_store_source_helpers import restore_store_ui
+
 ENGLISH_SETUP = '''        if name.contains("testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail") {
             app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         } else if name.contains("testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail") {'''
@@ -11,6 +13,7 @@ CHINESE_PLAN_SETUP = '        // Chinese contact localization is supplied by the
 
 
 def restore_chinese_setup(text):
+    text=restore_store_ui(text)
     if CHINESE_PLAN_SETUP not in text:return text
     if text.count(CHINESE_PLAN_SETUP)!=1 or CHINESE_SETUP in text:raise ValueError("ambiguous Chinese source change")
     return text.replace(CHINESE_PLAN_SETUP,CHINESE_SETUP,1)

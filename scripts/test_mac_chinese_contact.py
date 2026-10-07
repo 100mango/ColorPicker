@@ -16,6 +16,7 @@ import mac_chinese_contract as contract
 import mac_scene_reset_only as previous
 from test_mac_launch_comparison import Clock, PRODUCT as OLD_PRODUCT, contact_export
 from test_mac_reset_source_helpers import restore_chinese_setup
+from test_mac_store_source_helpers import restore_store_app
 CHECKOUT=Path(__file__).resolve().parents[1]
 PRODUCT={k:v.replace('/mac-tests/','/mac-sandbox/') if isinstance(v,str) else v for k,v in OLD_PRODUCT.items()}
 SOURCE=dict(repository='100mango/ColorPicker',ref=m.BRANCH,workflow=m.WORKFLOW,workflow_ref='100mango/ColorPicker/'+m.WORKFLOW+'@'+m.BRANCH,
@@ -91,7 +92,7 @@ class SourceContracts(unittest.TestCase):
  def test_app_resources_original_schemes_and_runtime_helpers_unchanged(self):
   f=json.loads((CHECKOUT/'scripts/fixtures/mac-chinese-source-baseline.json').read_bytes())
   for name,digest in f['unchanged'].items():
-   with self.subTest(path=name):self.assertEqual(hashlib.sha256((CHECKOUT/name).read_bytes()).hexdigest(),digest)
+   with self.subTest(path=name):self.assertEqual(hashlib.sha256(restore_store_app((CHECKOUT/name).read_text()).encode() if name=='TouchColorMac/TouchColorMacApp.swift' else (CHECKOUT/name).read_bytes()).hexdigest(),digest)
  def test_native_plan_is_single_build_single_test_no_probe_or_query(self):
   plan=m.plan();self.assertEqual(len(plan),15);self.assertEqual(sum('build-for-testing' in a for _,a,*_ in plan),1);self.assertEqual(sum('test-without-building' in a for _,a,*_ in plan),1)
   allargs=' '.join(' '.join(x[1]) for x in plan)

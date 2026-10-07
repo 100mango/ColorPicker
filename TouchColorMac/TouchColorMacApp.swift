@@ -10,6 +10,7 @@ import OSLog
     init() {
         #if DEBUG
         MacPassiveLifecycle.startIfEnabled()
+        MacStoreCapture.startIfEnabled()
         #endif
         var defaults = UserDefaults.standard
         #if DEBUG
@@ -126,6 +127,9 @@ final class MinimumSizeView: NSView {
         }
         #endif
         window?.contentMinSize = NSSize(width: 740, height: 520)
+        #if DEBUG
+        MacStoreCapture.shared?.configureExistingWindow(window)
+        #endif
         window?.contentView?.setAccessibilityLabel(NSLocalizedString("TouchColor workspace", comment: "Window accessibility"))
         window?.contentView?.setAccessibilityIdentifier("workspace.content")
     }
@@ -327,6 +331,32 @@ final class PaneAccessibilityView: NSView {
         record("final", final: true); stopped = true
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
         observers.removeAll()
+    }
+}
+#endif
+#if DEBUG
+/// Controlled Store fixture captures only; no-token and Release do not resize a window.
+@MainActor final class MacStoreCapture {
+    static var shared: MacStoreCapture?
+    private var applied = false
+    private init() {}
+    static func startIfEnabled() {
+        let info = ProcessInfo.processInfo
+        guard shared == nil,
+              let token = info.environment["TOUCHCOLOR_MAC_STORE_CAPTURE"], UUID(uuidString: token)?.uuidString == token,
+              let suite = info.environment["TOUCHCOLOR_TEST_DEFAULTS"], suite.hasPrefix("TouchColor.mac-ui."),
+              UUID(uuidString: String(suite.dropFirst("TouchColor.mac-ui.".count))) != nil,
+              info.arguments.contains("--ui-test-reset"), info.arguments.contains("--ui-test-store-capture"),
+              info.environment["TOUCHCOLOR_NATIVE_MODAL_PROBE"] == nil,
+              info.environment["TOUCHCOLOR_SANDBOX_PROBE_FILE"] == nil else { return }
+        shared = MacStoreCapture()
+    }
+    func configureExistingWindow(_ window: NSWindow?) {
+        guard !applied, let window else { return }
+        applied = true
+        var frame = window.frame
+        frame.size = NSSize(width: 1280, height: 800)
+        window.setFrame(frame, display: true)
     }
 }
 #endif

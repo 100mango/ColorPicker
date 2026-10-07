@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import unittest
 from test_mac_reset_source_helpers import restore_english_setup
+from test_mac_store_source_helpers import restore_store_ui
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTACT_LABEL = "Contact the developer about privacy"
@@ -272,7 +273,7 @@ class MacSelectablePrivacyTextContracts(unittest.TestCase):
     def setUpClass(cls):
         cls.privacy = privacy_platform_source(mac=True)
         cls.native = (ROOT / 'TouchColorMacTests/PrivacyTextTests.swift').read_text()
-        cls.ui = (ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
+        cls.ui = restore_store_ui((ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text())
 
     def test_only_two_approved_paragraphs_use_native_selectable_text_and_localized_keys(self):
         self.assertEqual(self.privacy.count('SelectablePrivacyText(text: NSLocalizedString(PrivacyPolicyCopy.'), 2)
@@ -484,7 +485,7 @@ class SheetBridgeRetirementAndDirectActionContracts(unittest.TestCase):
                 self.assertIn('"' + key + '" = "' + value + '";', resources)
 
     def test_existing_ui_flows_check_bilingual_roles_reachability_and_real_copy_delete(self):
-        ui = (ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
+        ui = restore_store_ui((ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_text())
         self.assertEqual(len(re.findall(r'func test\w+\(', ui)), 14)
         for required in ['copyLabel: "Copy color 2", deleteLabel: "Delete color 2"',
                          'copyLabel: "Copy color 4", deleteLabel: "Delete color 4"',

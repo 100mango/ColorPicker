@@ -3,13 +3,14 @@ from pathlib import Path
 import hashlib
 import unittest
 from test_mac_reset_source_helpers import restore_english_setup
+from test_mac_store_source_helpers import restore_store_app
 ROOT=Path(__file__).resolve().parents[1]
 HELPER='/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.\nprivate extension Scene {\n    func workspaceDefaultLaunchPolicy() -> some Scene {\n        var scene = SceneBuilder.buildLimitedAvailability(self)\n        if #available(macOS 15.0, *) {\n            scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))\n        }\n        return SceneBuilder.buildOptional(scene)\n    }\n}\n\n'
 # Checkpoint-only successor; original projections are pinned in test_mac_scene_checkpoints.
 BASE_HASH='85f4909d283a6b1c7b6a84a72ed2bf9bb6c8ad92ff3be3b747371780338ea3b7'
 
 class WorkspaceLaunchPolicy(unittest.TestCase):
-    def setUp(self):self.source=(ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text()
+    def setUp(self):self.source=restore_store_app((ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text())
     def test_existing_scene_content_identity_title_and_observation_bytes_preserved(self):
         restored=self.source.replace('        .workspaceDefaultLaunchPolicy()\n','',1).replace(HELPER,'',1)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),BASE_HASH)

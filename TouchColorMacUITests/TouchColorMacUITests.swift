@@ -64,6 +64,10 @@ import ApplicationServices
         // Each contact locale uses this one exact-product setup launch.
         // Reset-only diagnostic: the selected English contact adds no locale overrides.
         // Chinese contact localization is supplied by the fixed Xcode test plan.
+        if name == "-[TouchColorMacUITests testStoreNormalSamplingAndPaletteScreenshots]" {
+            app.launchArguments.append("--ui-test-store-capture")
+            app.launchEnvironment["TOUCHCOLOR_MAC_STORE_CAPTURE"] = UUID().uuidString
+        }
         lifecycleToken = lifecycleCases.contains(where: { name == "-[TouchColorMacUITests \($0)]" }) ? UUID().uuidString : nil
         if let lifecycleToken { app.launchEnvironment["TOUCHCOLOR_MAC_LIFECYCLE"] = lifecycleToken }
         lifecycleStarted = Date().timeIntervalSince1970
@@ -991,6 +995,87 @@ import ApplicationServices
         }
         print("NATIVE_SANDBOX_PROCESS_PROOF: \(text)")
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Native Mac actual sandbox process proof"; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testStoreNormalSamplingAndPaletteScreenshots() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-Store-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let imageURL = folder.appendingPathComponent("Color Study.png")
+        try makePhotosFixture(at: imageURL)
+        NSPasteboard.general.clearContents()
+        XCTAssertTrue(NSPasteboard.general.setData(try Data(contentsOf: imageURL), forType: .png))
+        app.typeKey("v", modifierFlags: [.command, .shift])
+        assertHex("#ff00ff")
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "0")
+        try retainStoreWindow(state: "sampling", paletteCount: 0)
+
+        let paletteURL = folder.appendingPathComponent("Studio Palette.json")
+        let colors = ["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#073b4c"]
+        try JSONSerialization.data(withJSONObject: colors).write(to: paletteURL)
+        NSPasteboard.general.clearContents()
+        XCTAssertTrue(NSPasteboard.general.writeObjects([paletteURL as NSURL]))
+        app.typeKey("v", modifierFlags: [.command, .shift])
+        let count = app.staticTexts["palette.count"]
+        let populated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@ OR label == %@", "5", "5"), object: count)
+        XCTAssertEqual(XCTWaiter.wait(for: [populated], timeout: 10), .completed)
+        assertHex("#ff00ff")
+        XCTAssertEqual(app.buttons.matching(identifier: "palette.copy.0").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "palette.copy.4").count, 1)
+        try retainStoreWindow(state: "palette", paletteCount: 5)
+    }
+
+    private func retainStoreWindow(state: String, paletteCount: Int) throws {
+        let token = try XCTUnwrap(app.launchEnvironment["TOUCHCOLOR_MAC_STORE_CAPTURE"])
+        XCTAssertEqual(app.windows.count, 1)
+        XCTAssertEqual(app.sheets.count, 0)
+        XCTAssertEqual(app.dialogs.count, 0)
+        let window = app.windows.firstMatch
+        let sized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            abs(window.frame.width - 1280) < 0.5 && abs(window.frame.height - 800) < 0.5
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [sized], timeout: 10), .completed, window.debugDescription)
+        XCTAssertTrue(app.images["image.canvas"].exists)
+        assertHex("#ff00ff")
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, String(paletteCount))
+        let frame = window.frame
+        let captured = Date().timeIntervalSince1970
+        let png = window.screenshot().pngRepresentation
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertEqual(CGImageSourceGetCount(source), 1)
+        let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? NSNumber).intValue
+        let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? NSNumber).intValue
+        XCTAssertEqual(width, 1280); XCTAssertEqual(height, 800)
+        XCTAssertLessThanOrEqual(png.count, 3 * 1024 * 1024)
+        assertHex("#ff00ff")
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, String(paletteCount))
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.mango.touchColor").filter { !$0.isTerminated }
+        XCTAssertEqual(running.count, 1)
+        let actual = try XCTUnwrap(running.first)
+        var products = Bundle(for: Self.self).bundleURL
+        for _ in 0..<4 { products.deleteLastPathComponent() }
+        let expected = products.appendingPathComponent("TouchColor.app")
+        XCTAssertEqual(actual.bundleURL?.resolvingSymlinksInPath(), expected.resolvingSymlinksInPath())
+        let executable = try XCTUnwrap(actual.executableURL)
+        let logic = expected.appendingPathComponent("Contents/MacOS/TouchColor.debug.dylib")
+        func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        let imageName = "Native Mac Store window " + state
+        let proof: [String: Any] = ["v": 1, "state": state, "token": token, "pid": actual.processIdentifier,
+            "test": name, "started": lifecycleStarted, "captured": captured, "sequential": true,
+            "args": app.launchArguments, "sandbox": expectsSandbox, "bundle": actual.bundleIdentifier ?? "",
+            "applicationPath": actual.bundleURL?.path ?? "", "expectedPath": expected.path,
+            "executable": executable.path, "executableSHA256": digest(try Data(contentsOf: executable)),
+            "logicSHA256": digest(try Data(contentsOf: logic)), "imageName": imageName,
+            "pngSHA256": digest(png), "pngBytes": png.count, "width": width, "height": height,
+            "windowFrame": [frame.minX, frame.minY, frame.width, frame.height],
+            "sampleHex": "#ff00ff", "paletteCount": paletteCount]
+        let data = try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys])
+        XCTAssertLessThanOrEqual(data.count, 4096)
+        let image = XCTAttachment(data: png, uniformTypeIdentifier: UTType.png.identifier)
+        image.name = imageName; image.lifetime = .keepAlways; add(image)
+        let record = XCTAttachment(string: String(decoding: data, as: UTF8.self))
+        record.name = "Native Mac Store proof " + state; record.lifetime = .keepAlways; add(record)
     }
 
 }

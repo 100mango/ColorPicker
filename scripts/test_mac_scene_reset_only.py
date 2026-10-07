@@ -16,6 +16,7 @@ import mac_scene_diagnostic as original
 from test_mac_launch_comparison import Clock, PRODUCT as OLD_PRODUCT, contact_export
 from test_mac_passive_lifecycle import event, envelope
 from test_mac_reset_source_helpers import restore_english_setup, restore_chinese_setup, RESET_SETUP, ENGLISH_SETUP
+from test_mac_store_source_helpers import restore_store_app
 
 CHECKOUT=Path(__file__).resolve().parents[1]
 REFERENCE=json.loads((CHECKOUT/'scripts/fixtures/mac-d238-reset-reference.json').read_bytes())
@@ -111,7 +112,7 @@ class SourceContracts(unittest.TestCase):
         self.assertEqual(m.REFERENCE_PRODUCT,REFERENCE['reference_product'])
         self.assertEqual(REFERENCE['reference_commit'],'d238410a5a45818e20116e835669f1740a81eec2')
         for name,digest in REFERENCE['app_product_source_files'].items():
-            with self.subTest(path=name):self.assertEqual(hashlib.sha256((CHECKOUT/name).read_bytes()).hexdigest(),digest)
+            with self.subTest(path=name):self.assertEqual(hashlib.sha256(restore_store_app((CHECKOUT/name).read_text()).encode() if name=='TouchColorMac/TouchColorMacApp.swift' else (CHECKOUT/name).read_bytes()).hexdigest(),digest)
 
     def test_only_ui_launch_tuple_changed_all_assertions_and_other_code_preserved(self):
         text=(CHECKOUT/'TouchColorMacUITests/TouchColorMacUITests.swift').read_text()
@@ -123,7 +124,7 @@ class SourceContracts(unittest.TestCase):
 
     def test_original_explicit_english_route_validators_and_capture_are_unchanged(self):
         for name,digest in REFERENCE['unchanged_explicit_contract_files'].items():
-            with self.subTest(path=name):self.assertEqual(hashlib.sha256((CHECKOUT/name).read_bytes()).hexdigest(),digest)
+            with self.subTest(path=name):self.assertEqual(hashlib.sha256(restore_store_app((CHECKOUT/name).read_text()).encode() if name=='TouchColorMac/TouchColorMacApp.swift' else (CHECKOUT/name).read_bytes()).hexdigest(),digest)
         self.assertEqual(original.passive.launch_args(m.CASE,1),['--ui-test-reset','-AppleLanguages','(en)','-AppleLocale','en_US'])
         self.assertEqual(contract.ARGS,['--ui-test-reset'])
 

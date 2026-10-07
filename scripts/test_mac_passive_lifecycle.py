@@ -324,7 +324,8 @@ class GuardIntegrationTests(unittest.TestCase):
 
 class SourceTests(unittest.TestCase):
     def test_debug_only_hooks_and_no_focus_activation_mutations(self):
-        source=(ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text();helper=source.split('@MainActor final class MacPassiveLifecycle',1)[1]
+        from test_mac_store_source_helpers import restore_store_app
+        source=restore_store_app((ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text());helper=source.split('@MainActor final class MacPassiveLifecycle',1)[1]
         self.assertTrue(helper.rstrip().endswith('#endif'));self.assertIn('#if DEBUG\nimport CoreFoundation\nimport OSLog\n#endif',source)
         for forbidden in ['NSApplication.shared','activate(','.unhide(','.orderFront(','.makeKeyAndOrderFront(','.close(','.openWindow(','.setFrame(','.restorationClass =','UserDefaults']:
             self.assertNotIn(forbidden,helper)
