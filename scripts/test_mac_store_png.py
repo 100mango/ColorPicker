@@ -28,11 +28,11 @@ def png(width=1280,height=800,*,rgba=True,color=(35,90,170),alpha=255,mode=0,pro
 
 class PNGTests(unittest.TestCase):
     def test_native_rgb_is_byte_identical(self):
-        with patch.object(p,'SIZE',(4,3)):
+        with patch.object(p,'SIZES',((4,3),)):
             raw=png(4,3,rgba=False);out,proof=p.store_copy(raw)
         self.assertEqual(out,raw);self.assertEqual(proof['transformation'],'none')
     def test_all_filters_preserve_rgb_and_color_profile(self):
-        with patch.object(p,'SIZE',(4,3)):
+        with patch.object(p,'SIZES',((4,3),)):
             for mode in range(5):
                 with self.subTest(mode=mode):
                     original=png(4,3,mode=mode);out,proof=p.store_copy(original)
@@ -40,30 +40,30 @@ class PNGTests(unittest.TestCase):
                     self.assertEqual(a,b);self.assertEqual(color,2);self.assertIn((b'sRGB',b'\0'),ca);self.assertIn((b'sRGB',b'\0'),cb)
                     self.assertEqual(proof['transformation'],'remove-fully-opaque-alpha-only');self.assertFalse(proof['resized']);self.assertFalse(proof['cropped'])
     def test_transparent_pixel_is_rejected_without_background_fill(self):
-        with patch.object(p,'SIZE',(4,3)),self.assertRaisesRegex(ValueError,'transparent-pixels'):p.store_copy(png(4,3,alpha=254))
+        with patch.object(p,'SIZES',((4,3),)),self.assertRaisesRegex(ValueError,'transparent-pixels'):p.store_copy(png(4,3,alpha=254))
     def test_unaccepted_dimensions_rejected(self):
         with self.assertRaisesRegex(ValueError,'dimensions'):p.store_copy(png(4,3))
     def test_crc_corruption_rejected(self):
         raw=bytearray(png(4,3));raw[20]^=1
-        with patch.object(p,'SIZE',(4,3)),self.assertRaisesRegex(ValueError,'crc'):p.store_copy(bytes(raw))
+        with patch.object(p,'SIZES',((4,3),)),self.assertRaisesRegex(ValueError,'crc'):p.store_copy(bytes(raw))
     def test_truncation_and_trailing_bytes_rejected(self):
         raw=png(4,3)
         for invalid in [raw[:-1],raw+b'x']:
-            with patch.object(p,'SIZE',(4,3)),self.assertRaises(ValueError):p.store_copy(invalid)
+            with patch.object(p,'SIZES',((4,3),)),self.assertRaises(ValueError):p.store_copy(invalid)
     def test_animation_and_transparency_chunks_rejected(self):
         raw=png(4,3)
         for kind in [b'acTL',b'tRNS']:
             changed=raw[:-12]+p.chunk(kind,b'')+raw[-12:]
-            with patch.object(p,'SIZE',(4,3)),self.assertRaises(ValueError):p.store_copy(changed)
+            with patch.object(p,'SIZES',((4,3),)),self.assertRaises(ValueError):p.store_copy(changed)
     def test_oversized_compressed_payload_cannot_expand_past_shape(self):
         raw=p.SIGNATURE+p.chunk(b'IHDR',struct.pack('>IIBBBBB',4,3,8,6,0,0,0))+p.chunk(b'IDAT',zlib.compress(b'\0'*100000))+p.chunk(b'IEND',b'')
-        with patch.object(p,'SIZE',(4,3)),self.assertRaisesRegex(ValueError,'inflate'):p.store_copy(raw)
+        with patch.object(p,'SIZES',((4,3),)),self.assertRaisesRegex(ValueError,'inflate'):p.store_copy(raw)
     def test_unknown_critical_chunk_rejected(self):
         raw=png(4,3);raw=raw[:-12]+p.chunk(b'ABCD',b'x')+raw[-12:]
-        with patch.object(p,'SIZE',(4,3)),self.assertRaisesRegex(ValueError,'critical'):p.store_copy(raw)
+        with patch.object(p,'SIZES',((4,3),)),self.assertRaisesRegex(ValueError,'critical'):p.store_copy(raw)
     def test_original_deadline_interrupts_decode(self):
         def expired():raise ValueError('original deadline')
-        with patch.object(p,'SIZE',(4,3)),self.assertRaisesRegex(ValueError,'original deadline'):p.store_copy(png(4,3),tick=expired)
+        with patch.object(p,'SIZES',((4,3),)),self.assertRaisesRegex(ValueError,'original deadline'):p.store_copy(png(4,3),tick=expired)
     def test_raw_byte_bound_is_enforced(self):
         with patch.object(p,'LIMIT',20),self.assertRaisesRegex(ValueError,'byte-limit'):p.store_copy(png(4,3))
 

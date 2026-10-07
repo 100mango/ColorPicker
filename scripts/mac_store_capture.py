@@ -17,24 +17,21 @@ from mac_launch_comparison import base_command, product_identity
 from mac_store_contract import CASE, MAX_PACKET, summary_admission, validate_capture
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = '68c8e09fef5187d549e5e032a5b083a04d0c1c79'
-BASE_TREE = '1635d893d34af37daa28afc6c31bcec94380e8fe'
-BRANCH = 'refs/heads/codex/mac-store-capture'
-WORKFLOW = '.github/workflows/mac-store-capture.yml'
+BASE = '79cd8942387841ec2fdec72815523191b78c756b'
+BASE_TREE = 'd6b680228441e8c6247e8aa25f95bbb9a91de6f7'
+BRANCH = 'refs/heads/codex/mac-store-display'
+WORKFLOW = '.github/workflows/mac-store-display.yml'
 RESULT = Path('build/mac-store-capture/capture.xcresult')
 EXPORT = Path('build/mac-store-capture/attachments')
 PREPARED = Path('build/mac-store-prepared')
 OUTPUT = Path('build/mac-store-proof')
 MAX_REPORT = 2 * 1024 * 1024
 PHASE_END = {'prepare':180,'build':640,'test':960,'proof':1140,'final_source_pack':1170,'evidence':1230,'finalization':1250}
-NEW_PATHS = (WORKFLOW,'MAC-STORE-CAPTURE.md','scripts/mac_store_capture.py','scripts/mac_store_contract.py',
-    'scripts/mac_store_png.py','scripts/test_mac_store_capture.py','scripts/test_mac_store_png.py',
-    'scripts/test_mac_store_source_helpers.py','scripts/fixtures/mac-store-source-baseline.json')
-MODIFIED_PATHS = ('TouchColorMac/TouchColorMacApp.swift','TouchColorMacUITests/TouchColorMacUITests.swift',
-    'scripts/test_mac_reset_source_helpers.py','scripts/test_mac_scene_checkpoints.py',
-    'scripts/test_mac_workspace_launch_policy.py','scripts/test_mac_chinese_contact.py',
-    'scripts/test_mac_scene_reset_only.py','scripts/test_mac_scene_diagnostic.py','scripts/test_mac_passive_lifecycle.py',
-    'scripts/test_mac_accessibility_semantics.py')
+NEW_PATHS = (WORKFLOW,'scripts/mac_store_display.py','scripts/test_mac_store_display.py')
+MODIFIED_PATHS = ('MAC-STORE-CAPTURE.md','TouchColorMac/TouchColorMacApp.swift','TouchColorMacUITests/TouchColorMacUITests.swift',
+    'scripts/mac_store_capture.py','scripts/mac_store_contract.py','scripts/mac_store_png.py',
+    'scripts/test_mac_store_capture.py','scripts/test_mac_store_png.py','scripts/test_mac_store_source_helpers.py',
+    'scripts/fixtures/mac-store-source-baseline.json')
 IMAGE_NAMES = ('native-sampling.png','native-palette.png','store-sampling.png','store-palette.png')
 
 class Rejected(ValueError):
@@ -227,6 +224,7 @@ def execute(*, env=None, root=ROOT, clock=time.monotonic, wall=time.time, runner
     report={'schema':1,'scope':'two-native-Mac-Store-window-captures','qualified':False,'store_qualified':False,
         'signing_qualified':False,'visual_acceptance':'pending-human-review','binary_handoff':False,
         'commands':receipts,'image_files':{},'upload_qualified':False,
+        'runner_cleanup':'not-observed',
         'clock':{'started_monotonic':began,'phase_end_seconds':PHASE_END,'report_ready_deadline':began+PHASE_END['final_source_pack']},
         'host_scope':'owned-client-and-process-group-observation; no independent-daemon lifetime claim'}
     def run(argv,**kwargs):return command(argv,deadline=deadline,receipts=receipts,clock=clock,wall=wall,runner=runner,**kwargs)
@@ -260,7 +258,7 @@ def execute(*, env=None, root=ROOT, clock=time.monotonic, wall=time.time, runner
         for name,data in images.items():
             timely(deadline,clock);(root/PREPARED/name).write_bytes(data)
             report['image_files'][name]={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
-        report['proof']=proof;timely(deadline,clock)
+        report['proof']=proof;report['runner_cleanup']=proof['display']['cleanupStatus'];timely(deadline,clock)
         phase='final_source_pack';deadline=min(began+PHASE_END[phase],clock()+30)
         report['clock']['report_ready_deadline']=deadline
         report['source_after']=source_identity(env,run,root)
@@ -278,7 +276,7 @@ def report_bytes(report):
     raw=(json.dumps(report,sort_keys=True,default=json_value,allow_nan=False,separators=(',',':'))+'\n').encode()
     if len(raw)>MAX_REPORT:
         keep=('schema','scope','source_before','source_after','clock','owned_output','toolchain','product','test_outcome','test_summary',
-              'store_qualified','signing_qualified','visual_acceptance','binary_handoff')
+              'store_qualified','signing_qualified','visual_acceptance','binary_handoff','runner_cleanup')
         compact={k:report[k] for k in keep if k in report}
         compact.update(qualified=False,image_files={},upload_qualified=False,
             failure={'type':'Rejected','reason':'report-byte-limit','original_failure':report.get('failure')})
@@ -338,6 +336,9 @@ def validate_packet(output, *, sha, tree, run_id, source_root=ROOT):
     summary_raw=commands[13]['stdout'].encode('utf-8')
     need(strict_json(summary_raw)==report['test_summary'],'retained-summary-mismatch')
     proof=report['proof'];virtual=Path('/retained-capture');files={virtual/'manifest.json':proof['manifestText'].encode('utf-8')}
+    for suffix in ('setup','restore'):
+        if proof['display'][suffix+'Attachment'] is not None:
+            files[virtual/proof['display'][suffix+'Attachment']['exportedFileName']]=proof['display'][suffix+'Text'].encode('utf-8')
     for state,row in proof['states'].items():
         need(state in ('sampling','palette'),'retained-state')
         files[virtual/row['receiptAttachment']['exportedFileName']]=row['receiptText'].encode('utf-8')
@@ -353,6 +354,7 @@ def validate_packet(output, *, sha, tree, run_id, source_root=ROOT):
         need(color==2 and hashlib.sha256(rgb).hexdigest()==row['conversion']['rgbSHA256'] and
             original['storePNG']=={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()},'retained-store-pixels-mismatch')
     need({k:v for k,v in reproduced.items() if k!='states'}=={k:v for k,v in proof.items() if k!='states'},'retained-proof-summary-mismatch')
+    need(report['runner_cleanup']==proof['display']['cleanupStatus'],'retained-cleanup-observation-mismatch')
     return report
 
 
@@ -384,8 +386,9 @@ def main():
     if 'owned_output' not in result:print(json.dumps(result,default=json_value));return 1
     need(stat.S_ISDIR((ROOT/'build').lstat().st_mode) and file_identity((ROOT/'build').lstat())[:2]==result['owned_output'],'output-ownership-changed')
     result=retain_report(result,ROOT/OUTPUT,Path(os.environ['GITHUB_OUTPUT']))
-    print(json.dumps({'capture_qualified':result['qualified'],'store_qualified':False,'visual_acceptance':'pending-human-review','failure':result.get('failure')}))
-    return 0 if result['qualified'] else 1
+    print(json.dumps({'capture_qualified':result['qualified'],'store_qualified':False,'visual_acceptance':'pending-human-review',
+        'runner_cleanup':result.get('runner_cleanup'),'failure':result.get('failure')}))
+    return 0 if result['qualified'] and result.get('runner_cleanup')=='restored' else 1
 
 
 if __name__=='__main__':raise SystemExit(main())

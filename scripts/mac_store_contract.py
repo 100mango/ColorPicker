@@ -8,6 +8,7 @@ import uuid
 from retain_mac_evidence import read_file, strict_json
 from mac_scene_reset_only import admit_summary
 from mac_store_png import store_copy, LIMIT as PNG_LIMIT
+import mac_store_display as display_contract
 
 CASE = 'testStoreNormalSamplingAndPaletteScreenshots'
 ARGS = ['--ui-test-reset', '--ui-test-store-capture']
@@ -53,7 +54,7 @@ def validate_capture(root, summary_raw, product, test, *, tick=lambda: None, rea
     need(group.get('testIdentifier') == 'TouchColorMacUITests/' + CASE + '()' and
         group.get('testIdentifierURL') == 'test://com.apple.xcode/TouchColorMac/TouchColorMacUITests/TouchColorMacUITests/' + CASE,
         'capture-foreign-exported-case')
-    items = group.get('attachments'); need(isinstance(items,list) and 4 <= len(items) <= 32, 'capture-attachment-count')
+    items = group.get('attachments'); need(isinstance(items,list) and 5 <= len(items) <= 32, 'capture-attachment-count')
     device = summary['devicesAndConfigurations'][0]['device']['deviceId']; selected = {}; used = set()
     for state in STATES:
         for kind, ext in [('window','png'), ('proof','txt')]:
@@ -68,10 +69,30 @@ def validate_capture(root, summary_raw, product, test, *, tick=lambda: None, rea
                 item.get('isAssociatedWithFailure') is False and number(item.get('timestamp')) and
                 summary['startTime'] <= item['timestamp'] <= summary['finishTime']+.001, 'capture-attachment-scope')
             selected[state,kind] = item
+    display_items={};display_raw={}
+    for suffix in ('setup','restore'):
+        prefix='Native Mac Store display '+suffix
+        matches=[x for x in items if isinstance(x,dict) and isinstance(x.get('suggestedHumanReadableName'),str) and
+            re.fullmatch(re.escape(prefix)+r'_[0-9]+_[0-9A-Fa-f-]{36}\.txt',x['suggestedHumanReadableName'])]
+        if suffix=='restore' and not matches:
+            display_items[suffix]=None;display_raw[suffix]=None;continue
+        need(len(matches)==1,'display-receipt-missing-or-duplicate')
+        item=matches[0];filename=item.get('exportedFileName','')
+        need(isinstance(filename,str) and re.fullmatch(r'[0-9A-Fa-f-]{36}\.txt',filename) and filename not in used,'display-receipt-path')
+        used.add(filename)
+        need(item.get('deviceId')==device and item.get('configurationName')=='Test Scheme Action' and
+            item.get('isAssociatedWithFailure') is False and number(item.get('timestamp')) and
+            summary['startTime']<=item['timestamp']<=summary['finishTime']+.001,'display-attachment-scope')
+        display_items[suffix]=item;display_raw[suffix]=read(root/filename,display_contract.LIMIT)
+    display=display_contract.validate(display_raw['setup'],display_raw['restore'],summary)
+    display.update(setupAttachment=display_items['setup'],restoreAttachment=display_items['restore'])
+    need(display['setup']['test']=='-[TouchColorMacUITests '+CASE+']' and
+        all(display[suffix]['finished']<=display_items[suffix]['timestamp']+.001 for suffix in ('setup','restore') if display_items[suffix] is not None),
+        'display-case-or-attachment-clock')
     proofs = {}; images = {}; format_failures = {}; previous = None
     fields = {'v','state','token','pid','test','started','captured','sequential','args','sandbox','bundle','applicationPath',
               'expectedPath','executable','executableSHA256','logicSHA256','imageName','pngSHA256','pngBytes','width','height',
-              'windowFrame','sampleHex','paletteCount'}
+              'windowFrame','sampleHex','paletteCount','backingScale','visibleFrameAX','displaySetupSHA256'}
     for state,count in STATES.items():
         tick(); image_item = selected[state,'window']; record_item = selected[state,'proof']
         record_raw = read(root/record_item['exportedFileName'],4096); row = strict_json(record_raw)
@@ -85,10 +106,19 @@ def validate_capture(root, summary_raw, product, test, *, tick=lambda: None, rea
         need(number(row['started']) and number(row['captured']) and
             summary['startTime'] <= row['started'] <= row['captured'] <= image_item['timestamp']+.001 and
             image_item['timestamp'] <= record_item['timestamp']+.001, 'capture-clock')
+        need(row['token']==display['setup']['token'] and row['displaySetupSHA256']==display['setupSHA256'] and
+            number(row['backingScale']) and row['backingScale']==display['scale'] and
+            display['setup']['finished']<=row['started'] and
+            (display['restore'] is None or display['restore']['started']>=record_item['timestamp']-.001),'capture-display-binding')
         frame = row['windowFrame']
         need(isinstance(frame,list) and len(frame)==4 and all(number(x) for x in frame) and
             abs(frame[2]-1280)<.5 and abs(frame[3]-800)<.5 and type(row['width']) is int and type(row['height']) is int and
-            (row['width'],row['height'])==(1280,800), 'capture-window-size')
+            (row['width'],row['height'])==(1280*display['scale'],800*display['scale']) and
+            abs(row['width']-frame[2]*display['scale'])<1 and abs(row['height']-frame[3]*display['scale'])<1, 'capture-window-size')
+        visible=display_contract.rect(row['visibleFrameAX']);screen=display['setup']['after']['frame']
+        need(visible[0]>=-.5 and visible[1]>=-.5 and visible[0]+visible[2]<=screen[2]+.5 and visible[1]+visible[3]<=screen[3]+.5 and
+            frame[0]>=visible[0]-.5 and frame[1]>=visible[1]-.5 and frame[0]+frame[2]<=visible[0]+visible[2]+.5 and
+            frame[1]+frame[3]<=visible[1]+visible[3]+.5,'capture-window-offscreen')
         need(row['imageName']=='Native Mac Store window '+state and row['sampleHex']=='#ff00ff' and
             type(row['paletteCount']) is int and row['paletteCount']==count, 'capture-visible-state')
         if previous is not None:
@@ -114,4 +144,4 @@ def validate_capture(root, summary_raw, product, test, *, tick=lambda: None, rea
     tick()
     return {'summarySHA256':digest(summary_raw),'manifestSHA256':digest(manifest_raw),
         'summary':summary,'manifest':groups,'manifestText':manifest_raw.decode('utf-8'),'states':proofs,'visualAcceptance':'pending-human-review',
-        'formatFailures':format_failures,'effectiveAppLocale':'unknown','signingQualified':False}, images
+        'display':display,'formatFailures':format_failures,'effectiveAppLocale':'unknown','signingQualified':False}, images

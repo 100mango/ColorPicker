@@ -67,6 +67,7 @@ import ApplicationServices
         if name == "-[TouchColorMacUITests testStoreNormalSamplingAndPaletteScreenshots]" {
             app.launchArguments.append("--ui-test-store-capture")
             app.launchEnvironment["TOUCHCOLOR_MAC_STORE_CAPTURE"] = UUID().uuidString
+            try prepareStoreDisplay()
         }
         lifecycleToken = lifecycleCases.contains(where: { name == "-[TouchColorMacUITests \($0)]" }) ? UUID().uuidString : nil
         if let lifecycleToken { app.launchEnvironment["TOUCHCOLOR_MAC_LIFECYCLE"] = lifecycleToken }
@@ -131,6 +132,7 @@ import ApplicationServices
         defer {
             if let monitor = failClosedInterruption { removeUIInterruptionMonitor(monitor) }
             failClosedInterruption = nil
+            restoreStoreDisplay()
         }
         if let app {
             if (testRun?.totalFailureCount ?? 0) > 0 && app.state != .notRunning {
@@ -997,6 +999,140 @@ import ApplicationServices
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Native Mac actual sandbox process proof"; attachment.lifetime = .keepAlways; add(attachment)
     }
 
+    // Store display setup lives only in the existing screenshot case.
+    private var storeDisplayOriginalMode: CGDisplayMode?
+    private var storeDisplayIdentifier: CGDirectDisplayID?
+    private var storeDisplayChanged = false
+    private var storeDisplayEvidence: Data?
+    private var storeDisplayScale: CGFloat = 1
+
+    private func storeModeRow(_ mode: CGDisplayMode) -> [String: Any] {
+        ["id": Int(mode.ioDisplayModeID), "width": mode.width, "height": mode.height,
+         "pixelWidth": mode.pixelWidth, "pixelHeight": mode.pixelHeight, "usable": mode.isUsableForDesktopGUI()]
+    }
+    private func storeScreen(_ display: CGDirectDisplayID) -> NSScreen? {
+        NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display
+        }
+    }
+    private func storeDisplaySnapshot(_ display: CGDirectDisplayID) -> [String: Any]? {
+        guard let screen = storeScreen(display), let mode = CGDisplayCopyDisplayMode(display) else { return nil }
+        func rect(_ value: CGRect) -> [CGFloat] { [value.minX, value.minY, value.width, value.height] }
+        return ["display": display, "mode": storeModeRow(mode), "frame": rect(screen.frame),
+                "visibleFrame": rect(screen.visibleFrame), "cgBounds": rect(CGDisplayBounds(display)),
+                "scale": screen.backingScaleFactor]
+    }
+    private func storeDisplayFits(_ display: CGDirectDisplayID) -> Bool {
+        guard let screen = storeScreen(display), let mode = CGDisplayCopyDisplayMode(display) else { return false }
+        let scale = screen.backingScaleFactor
+        return (scale == 1 || scale == 2) && screen.visibleFrame.width >= 1280 && screen.visibleFrame.height >= 800 &&
+            abs(screen.frame.width - CGFloat(mode.width)) < 0.5 && abs(screen.frame.height - CGFloat(mode.height)) < 0.5 &&
+            mode.pixelWidth == mode.width * Int(scale) && mode.pixelHeight == mode.height * Int(scale)
+    }
+    private func applyStoreDisplay(_ display: CGDirectDisplayID, mode: CGDisplayMode) -> CGError {
+        var transaction: CGDisplayConfigRef?
+        let began = CGBeginDisplayConfiguration(&transaction)
+        guard began == .success else { return began }
+        let configured = CGConfigureDisplayWithDisplayMode(transaction, display, mode, nil)
+        guard configured == .success else { _ = CGCancelDisplayConfiguration(transaction); return configured }
+        return CGCompleteDisplayConfiguration(transaction, .forAppOnly)
+    }
+    private func retainStoreDisplay(_ row: [String: Any], suffix: String) throws -> Data {
+        let data = try JSONSerialization.data(withJSONObject: row, options: [.sortedKeys])
+        guard data.count <= 16 * 1024 else { throw CocoaError(.fileWriteOutOfSpace) }
+        let record = XCTAttachment(string: String(decoding: data, as: UTF8.self))
+        record.name = "Native Mac Store display " + suffix; record.lifetime = .keepAlways; add(record)
+        return data
+    }
+    private func prepareStoreDisplay() throws {
+        let token = try XCTUnwrap(app.launchEnvironment["TOUCHCOLOR_MAC_STORE_CAPTURE"])
+        let display = CGMainDisplayID()
+        var row: [String: Any] = ["v": 1, "test": name, "token": token,
+            "runnerPID": ProcessInfo.processInfo.processIdentifier, "display": display,
+            "started": Date().timeIntervalSince1970, "scope": "forAppOnly",
+            "requestedWindowPoints": [1280, 800], "changed": false, "status": "observing"]
+        @MainActor func requireDisplay(_ condition: Bool, _ reason: String) throws {
+            if !condition {
+                row["status"] = "blocked"; row["reason"] = reason; row["finished"] = Date().timeIntervalSince1970
+                let data = try retainStoreDisplay(row, suffix: "setup")
+                storeDisplayEvidence = data
+                _ = try XCTUnwrap(Optional<Bool>.none, "STORE_DISPLAY_BLOCKED " + reason + " " + String(decoding: data, as: UTF8.self))
+            }
+        }
+        var displays = [CGDirectDisplayID](repeating: 0, count: 8)
+        var count: UInt32 = 0
+        let listed = displays.withUnsafeMutableBufferPointer { CGGetActiveDisplayList(UInt32($0.count), $0.baseAddress, &count) }
+        row["activeDisplays"] = Array(displays.prefix(Int(min(count, 8))))
+        try requireDisplay(listed == .success && count == 1 && displays[0] == display && NSScreen.screens.count == 1, "single-display-required")
+        let before = storeDisplaySnapshot(display)
+        row["before"] = before ?? [:]
+        let allModes = CGDisplayCopyAllDisplayModes(display, nil) as? [CGDisplayMode] ?? []
+        row["availableModeCount"] = allModes.count
+        row["availableModes"] = allModes.prefix(128).map(storeModeRow)
+        try requireDisplay(before != nil && !allModes.isEmpty && allModes.count <= 128, "mode-catalogue-unavailable-or-over-bound")
+        let original = try XCTUnwrap(CGDisplayCopyDisplayMode(display))
+        storeDisplayOriginalMode = original; storeDisplayIdentifier = display
+        var selected = original
+        if !storeDisplayFits(display) {
+            let screen = try XCTUnwrap(storeScreen(display))
+            let excludedWidth = screen.frame.width - screen.visibleFrame.width
+            let excludedHeight = screen.frame.height - screen.visibleFrame.height
+            let choices = allModes.filter { mode in
+                guard mode.width > 0 && mode.height > 0 && mode.width <= 8192 && mode.height <= 8192 else { return false }
+                let one = mode.pixelWidth == mode.width && mode.pixelHeight == mode.height
+                let two = mode.pixelWidth == mode.width * 2 && mode.pixelHeight == mode.height * 2
+                return mode.isUsableForDesktopGUI() && (one || two) &&
+                    CGFloat(mode.width) >= 1280 + excludedWidth && CGFloat(mode.height) >= 800 + excludedHeight
+            }.sorted { a, b in
+                let aScale = a.pixelWidth / a.width; let bScale = b.pixelWidth / b.width
+                if aScale != bScale { return aScale < bScale }
+                if a.width * a.height != b.width * b.height { return a.width * a.height < b.width * b.height }
+                return a.ioDisplayModeID < b.ioDisplayModeID
+            }
+            try requireDisplay(!choices.isEmpty, "no-supported-mode-fits-window")
+            selected = choices[0]; row["selected"] = storeModeRow(selected)
+            let result = applyStoreDisplay(display, mode: selected)
+            row["configurationResult"] = result.rawValue
+            storeDisplayChanged = result == .success
+            row["changed"] = storeDisplayChanged
+            try requireDisplay(result == .success, "supported-mode-change-rejected")
+        } else {
+            row["selected"] = storeModeRow(selected); row["configurationResult"] = 0
+        }
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            CGDisplayCopyDisplayMode(display)?.ioDisplayModeID == selected.ioDisplayModeID && self.storeDisplayFits(display)
+        }, object: nil)
+        let ready = XCTWaiter.wait(for: [settled], timeout: 10)
+        row["after"] = storeDisplaySnapshot(display) ?? [:]
+        try requireDisplay(ready == .completed, "mode-did-not-provide-visible-window-space")
+        storeDisplayScale = try XCTUnwrap(storeScreen(display)).backingScaleFactor
+        row["status"] = "ready"; row["finished"] = Date().timeIntervalSince1970
+        storeDisplayEvidence = try retainStoreDisplay(row, suffix: "setup")
+    }
+    private func restoreStoreDisplay() {
+        guard let display = storeDisplayIdentifier, let original = storeDisplayOriginalMode,
+              let evidence = storeDisplayEvidence else { return }
+        let started = Date().timeIntervalSince1970
+        let result = storeDisplayChanged ? applyStoreDisplay(display, mode: original) : CGError.success
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard CGDisplayCopyDisplayMode(display)?.ioDisplayModeID == original.ioDisplayModeID,
+                  let screen = self.storeScreen(display) else { return false }
+            return abs(screen.frame.width - CGFloat(original.width)) < 0.5 &&
+                abs(screen.frame.height - CGFloat(original.height)) < 0.5 &&
+                abs(screen.backingScaleFactor - CGFloat(original.pixelWidth) / CGFloat(original.width)) < 0.01
+        }, object: nil)
+        let returned = XCTWaiter.wait(for: [settled], timeout: 10) == .completed
+        let row: [String: Any] = ["v": 1, "test": name, "runnerPID": ProcessInfo.processInfo.processIdentifier,
+            "display": display, "scope": "forAppOnly", "started": started, "finished": Date().timeIntervalSince1970,
+            "setupSHA256": SHA256.hash(data: evidence).map { String(format: "%02x", $0) }.joined(),
+            "changed": storeDisplayChanged, "configurationResult": result.rawValue,
+            "original": storeModeRow(original), "after": storeDisplaySnapshot(display) ?? [:],
+            "restored": result == .success && returned]
+        do { _ = try retainStoreDisplay(row, suffix: "restore") }
+        catch { print("STORE_DISPLAY_RESTORE_UNCONFIRMED record-error: \(error)") }
+        if result != .success || !returned { print("STORE_DISPLAY_RESTORE_UNCONFIRMED") }
+    }
+
     func testStoreNormalSamplingAndPaletteScreenshots() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TouchColor-Store-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
@@ -1034,7 +1170,14 @@ import ApplicationServices
         let sized = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             abs(window.frame.width - 1280) < 0.5 && abs(window.frame.height - 800) < 0.5
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [sized], timeout: 10), .completed, window.debugDescription)
+        let displayEvidence = try XCTUnwrap(storeDisplayEvidence)
+        let displayContext = String(decoding: displayEvidence, as: UTF8.self)
+        XCTAssertEqual(XCTWaiter.wait(for: [sized], timeout: 10), .completed, displayContext + "\n" + window.debugDescription)
+        let screen = try XCTUnwrap(storeScreen(try XCTUnwrap(storeDisplayIdentifier)))
+        XCTAssertEqual(screen.backingScaleFactor, storeDisplayScale, displayContext)
+        let visible = screen.visibleFrame
+        let visibleAX = CGRect(x: visible.minX, y: screen.frame.maxY - visible.maxY, width: visible.width, height: visible.height)
+        XCTAssertTrue(visibleAX.insetBy(dx: -0.5, dy: -0.5).contains(window.frame), displayContext + "\n" + window.debugDescription)
         XCTAssertTrue(app.images["image.canvas"].exists)
         assertHex("#ff00ff")
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, String(paletteCount))
@@ -1046,7 +1189,8 @@ import ApplicationServices
         XCTAssertEqual(CGImageSourceGetCount(source), 1)
         let width = try XCTUnwrap(properties[kCGImagePropertyPixelWidth] as? NSNumber).intValue
         let height = try XCTUnwrap(properties[kCGImagePropertyPixelHeight] as? NSNumber).intValue
-        XCTAssertEqual(width, 1280); XCTAssertEqual(height, 800)
+        XCTAssertEqual(width, 1280 * Int(storeDisplayScale), displayContext)
+        XCTAssertEqual(height, 800 * Int(storeDisplayScale), displayContext)
         XCTAssertLessThanOrEqual(png.count, 3 * 1024 * 1024)
         assertHex("#ff00ff")
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, String(paletteCount))
@@ -1069,6 +1213,8 @@ import ApplicationServices
             "logicSHA256": digest(try Data(contentsOf: logic)), "imageName": imageName,
             "pngSHA256": digest(png), "pngBytes": png.count, "width": width, "height": height,
             "windowFrame": [frame.minX, frame.minY, frame.width, frame.height],
+            "backingScale": storeDisplayScale, "visibleFrameAX": [visibleAX.minX, visibleAX.minY, visibleAX.width, visibleAX.height],
+            "displaySetupSHA256": digest(displayEvidence),
             "sampleHex": "#ff00ff", "paletteCount": paletteCount]
         let data = try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys])
         XCTAssertLessThanOrEqual(data.count, 4096)

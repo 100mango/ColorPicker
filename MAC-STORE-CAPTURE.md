@@ -1,25 +1,50 @@
 # Two actual Mac Store screenshots
 
-This independent candidate starts from qualified Chinese-contact commit
-68c8e09fef5187d549e5e032a5b083a04d0c1c79, tree
-1635d893d34af37daa28afc6c31bcec94380e8fe. The original English default-launch
+This narrow successor starts from the first capture commit
+79cd8942387841ec2fdec72815523191b78c756b, tree
+d6b680228441e8c6247e8aa25f95bbb9a91de6f7. Run37565730932 built successfully
+and sampled #ff00ff, but observed a 1280 by 677 window instead of 1280 by 800.
+That original failure and its bounded evidence remain intact. AppKit's documented
+height-only screen constraint is the leading inference; the run did not record
+the actual display geometry. The original English default-launch
 contact, Chinese sandbox contact, functional results and investigated audit
 limitations remain recorded separately. This route does not rerun those cases.
 The actual unsigned universal archive at 7d27938/run37561813814 is separate.
 
-One fixed branch, codex/mac-store-capture, automatically runs one standard
+One fixed branch, codex/mac-store-display, automatically runs one standard
 xcode-27 Mac job, maximum 25 minutes and attempt 1 only. It builds once with
 the original Debug scheme and arm64 destination, then runs only
 testStoreNormalSamplingAndPaletteScreenshots without rebuilding. There is no
 matrix, alternate launcher, explicit locale tuple, account, signing update,
 privacy permission, accessibility audit, camera, Photos or distribution upload.
 
-The only application addition is a DEBUG gate requiring a UUID token, isolated
+The application addition remains a DEBUG gate requiring a UUID token, isolated
 test defaults and the two exact capture arguments. It sets the existing
-workspace window's frame to 1280 by 800 once. It creates no window, activates
+workspace window's frame to 1280 by 800 once. It centers that existing window
+inside the actual visible screen, aligning the origin to backing pixels. It creates no window, activates
 nothing, changes no scene/StateObject identity and changes no persistent display
 setting. Release projection matches the accepted app source. Test-only inverse
 helpers keep all prior source contracts pinned after removing these exact edits.
+
+Before that sole case launches the app, its existing UITestRunner records
+CGDisplay/NSScreen mode, frame, visibleFrame and backingScale. It retains a
+currently sufficient mode. Otherwise it selects one actually advertised,
+desktop-usable mode, preferring 1x then the smallest sufficient logical area.
+Selection accounts for the current menu bar/Dock exclusion from visibleFrame.
+The SDK transaction uses forAppOnly inside the runner that remains alive for
+the whole case; it does not write permanent preferences. A bounded readiness
+check must observe enough actual visible space before app launch. No suitable
+advertised mode, rejected configuration or insufficient resulting space yields
+one explicit STORE_DISPLAY_BLOCKED failure with bounded mode facts; no other
+mode is tried. The catalogue is limited to 128 modes/16 KiB per display receipt.
+There is no tool installation, helper runner or use of the user's computer.
+
+Teardown attempts to restore the saved original mode and records its result.
+An unsuccessful or missing explicit restore is an unconfirmed runner cleanup
+observation; it does not erase source-bound screenshots or make app functionality
+fail. The overall job can remain failed while capture_qualified stays true and
+all four image components remain available. forAppOnly also limits the change
+to the caller's lifetime; automatic reset after exit is not separately observed.
 
 The sole case uses actual Paste commands and the existing import code:
 
@@ -29,8 +54,10 @@ The sole case uses actual Paste commands and the existing import code:
    file, showing the ordinary palette controls.
 
 Both are XCUIElement window screenshots, with one app window and no sheet or
-dialog. Exact PNG dimensions must be 1280 by 800. A clipped/constrained window
-or different backing scale fails; no resizing, stretching, cropping, generated
+dialog. The AX window is 1280 by 800 points, entirely inside the actual visible
+screen. A 1x display must produce 1280 by 800 native pixels; a 2x display must
+produce 2560 by 1600 native pixels. Both are accepted Apple Mac sizes. A clipped
+window or disagreement between actual backing scale and native PNG fails; no resizing, stretching, cropping, generated
 UI or fallback window is used. Actual complete-window pixels and presentation
 remain subject to human visual review after capture.
 

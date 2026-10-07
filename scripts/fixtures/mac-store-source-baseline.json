@@ -46,7 +46,7 @@
     "TouchColorMac/PrivacyView.swift": "415e7c2da3ca9040afc29d5b003768001c1a1b1fe7a6e9ac60ee43e52783c968",
     "TouchColorMac/SandboxRuntimeProof.swift": "6ea99abd0cbd39c0cd6f603353e54ee304b494ea5534e6c2335b2aa530cdbae3",
     "TouchColorMac/TouchColorMac.entitlements": "0b5c7c606520600b83330cce4f76765f12af15f000b5fc8698cfc5e1a06d12b1",
-    "TouchColorMac/TouchColorMacApp.swift": "bfea68737395c05ad12e1f8a71110bb729e511fa20d2ec90142815a39668cb53",
+    "TouchColorMac/TouchColorMacApp.swift": "134baffe6d7b2c6a77a6a855d782ca48b3035dc137b2e010b3019de7d6aa4773",
     "TouchColorMac/en.lproj/InfoPlist.strings": "19b8485516a440c94daecd9922915c0e9dde1d68f51a5181fbcef215798c638c",
     "TouchColorMac/en.lproj/Localizable.strings": "e6b95e9c641b7f6ff84ca63bbb38980af935c0534def424f279ce72fa2b52c2c",
     "TouchColorMac/zh-Hans.lproj/InfoPlist.strings": "36a2ff00e6f99243e7166a06c9e263bc4f906f008a7bb896c6bb25bdef6072ba",
@@ -104,7 +104,7 @@
     "TouchColorMac/zh-Hans.lproj/InfoPlist.strings": "36a2ff00e6f99243e7166a06c9e263bc4f906f008a7bb896c6bb25bdef6072ba",
     "TouchColorMac/zh-Hans.lproj/Localizable.strings": "f1f0d70faf8290c012f853d7fa6ce975d748e16b3dbe389838d09e47676c2ca3"
   },
-  "parent": "68c8e09fef5187d549e5e032a5b083a04d0c1c79",
-  "parent_tree": "1635d893d34af37daa28afc6c31bcec94380e8fe",
+  "parent": "79cd8942387841ec2fdec72815523191b78c756b",
+  "parent_tree": "d6b680228441e8c6247e8aa25f95bbb9a91de6f7",
   "ui_sha256": "c7afdda817db6c0374bd309357f591138be78930d1e810b06a691ef4776507bb"
 }

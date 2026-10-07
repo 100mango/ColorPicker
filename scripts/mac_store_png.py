@@ -8,7 +8,7 @@ import struct
 import zlib
 
 LIMIT = 3 * 1024 * 1024
-SIZE = (1280, 800)
+SIZES = ((1280, 800), (2560, 1600))
 SIGNATURE = b'\x89PNG\r\n\x1a\n'
 
 
@@ -35,7 +35,7 @@ def decode(raw, *, tick=lambda: None):
         if kind == b'IHDR':
             need(not chunks and size == 13, 'png-header-order')
             w, h, depth, color, compression, filtering, interlace = struct.unpack('>IIBBBBB', data)
-            need((w, h) == SIZE and depth == 8 and color in (2, 6) and (compression, filtering, interlace) == (0, 0, 0), 'png-dimensions-or-format')
+            need((w, h) in SIZES and depth == 8 and color in (2, 6) and (compression, filtering, interlace) == (0, 0, 0), 'png-dimensions-or-format')
             dimensions = (w, h, color)
         elif kind == b'IDAT':
             need(dimensions is not None and not ended_data, 'png-data-order')
@@ -77,6 +77,7 @@ def decode(raw, *, tick=lambda: None):
 
 def store_copy(raw, *, tick=lambda: None):
     rgb, chunks, color = decode(raw, tick=tick)
+    w, h = struct.unpack('>II', chunks[0][1][:8])
     if color == 2: output = raw
     else:
         payloads = []
@@ -86,13 +87,13 @@ def store_copy(raw, *, tick=lambda: None):
                 need(len(data) == 4 and all(0 < x <= 8 for x in data), 'png-significant-bits')
                 data = data[:3]
             payloads.append(chunk(kind, data))
-        w, h = SIZE; rows = b''.join(b'\0' + rgb[y*w*3:(y+1)*w*3] for y in range(h)); tick()
+        rows = b''.join(b'\0' + rgb[y*w*3:(y+1)*w*3] for y in range(h)); tick()
         output = (SIGNATURE + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) +
                   b''.join(payloads) + chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b''))
         actual, _, output_color = decode(output, tick=tick)
         need(actual == rgb and output_color == 2, 'rgb-pixels-changed')
     tick()
-    return output, {'width': SIZE[0], 'height': SIZE[1], 'inputColorType': color, 'outputColorType': 2,
+    return output, {'width': w, 'height': h, 'inputColorType': color, 'outputColorType': 2,
         'opaquePixelsOnly': True, 'rgbBytes': len(rgb), 'rgbSHA256': hashlib.sha256(rgb).hexdigest(),
         'transformation': 'none' if color == 2 else 'remove-fully-opaque-alpha-only',
         'resized': False, 'cropped': False, 'composited': False}

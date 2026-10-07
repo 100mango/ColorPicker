@@ -356,6 +356,16 @@ final class PaneAccessibilityView: NSView {
         applied = true
         var frame = window.frame
         frame.size = NSSize(width: 1280, height: 800)
+        if let screen = window.screen ?? NSScreen.main {
+            let visible = screen.visibleFrame
+            let scale = screen.backingScaleFactor
+            if visible.width >= frame.width, visible.height >= frame.height, scale > 0 {
+                let x = ((visible.midX - frame.width / 2) * scale).rounded() / scale
+                let y = ((visible.midY - frame.height / 2) * scale).rounded() / scale
+                frame.origin = NSPoint(x: min(max(x, visible.minX), visible.maxX - frame.width),
+                                       y: min(max(y, visible.minY), visible.maxY - frame.height))
+            }
+        }
         window.setFrame(frame, display: true)
     }
 }

@@ -12,6 +12,7 @@ from unittest.mock import patch
 import mac_store_capture as m
 import mac_store_contract as contract
 from test_mac_store_png import png
+from test_mac_store_display import display_records
 from test_mac_store_source_helpers import restore_store_app,restore_store_ui,STORE_CLASS,STORE_SETUP,STORE_METHODS
 
 CHECKOUT=Path(__file__).resolve().parents[1]
@@ -35,7 +36,7 @@ def env():
 def encoded(value):return json.dumps(value,sort_keys=True,separators=(',',':')).encode()
 
 
-def exported(start,product,failed=False):
+def exported(start,product,failed=False,scale=1):
     counts={'passedTests':0 if failed else 1,'failedTests':1 if failed else 0,'skippedTests':0,'expectedFailures':0}
     identity='TouchColorMacUITests/'+m.CASE+'()'
     url='test://com.apple.xcode/TouchColorMac/TouchColorMacUITests/TouchColorMacUITests/'+m.CASE
@@ -44,18 +45,28 @@ def exported(start,product,failed=False):
             'testPlanConfiguration':{'configurationName':'Test Scheme Action'}}],
         'testFailures':[{'testIdentifierString':identity,'testIdentifierURL':url}] if failed else []}
     items=[];files={}
+    setup_raw,restore_raw=display_records(start,scale)
+    display_digest=contract.digest(setup_raw)
     for index,(state,count) in enumerate(contract.STATES.items()):
-        raw=png(color=(35+index,90,170));captured=start+.4+index*.6
+        raw=png(1280*scale,800*scale,color=(35+index,90,170));captured=start+.4+index*.6
         row={'v':1,'state':state,'token':TOKEN,'pid':456,'test':'-[TouchColorMacUITests '+m.CASE+']',
             'started':start+.2,'captured':captured,'sequential':True,'args':contract.ARGS,'sandbox':False,
             'bundle':'com.mango.touchColor',**product,'expectedPath':product['applicationPath'],
             'imageName':'Native Mac Store window '+state,'pngSHA256':contract.digest(raw),'pngBytes':len(raw),
-            'width':1280,'height':800,'windowFrame':[10.,20.,1280.,800.],'sampleHex':'#ff00ff','paletteCount':count}
+            'width':1280*scale,'height':800*scale,'windowFrame':[80.,35.,1280.,800.],
+            'backingScale':scale,'visibleFrameAX':[0,31,1440,809],'displaySetupSHA256':display_digest,
+            'sampleHex':'#ff00ff','paletteCount':count}
         for offset,(kind,ext,data) in enumerate([('window','png',raw),('proof','txt',encoded(row))]):
             uid='00000000-0000-4000-8000-'+str(index*2+offset+1).zfill(12);filename=uid+'.'+ext;files[filename]=data
             items.append({'configurationName':'Test Scheme Action','deviceId':'owned-Mac','deviceName':'My Mac',
                 'exportedFileName':filename,'isAssociatedWithFailure':False,
                 'suggestedHumanReadableName':'Native Mac Store '+kind+' '+state+'_0_'+uid+'.'+ext,'timestamp':captured+.01+offset*.01})
+    for index,(suffix,raw) in enumerate([('setup',setup_raw),('restore',restore_raw)]):
+        uid='00000000-0000-4000-8000-'+str(index+5).zfill(12);filename=uid+'.txt';files[filename]=raw
+        items.append({'configurationName':'Test Scheme Action','deviceId':'owned-Mac','deviceName':'My Mac',
+            'exportedFileName':filename,'isAssociatedWithFailure':False,
+            'suggestedHumanReadableName':'Native Mac Store display '+suffix+'_0_'+uid+'.txt',
+            'timestamp':start+(.19 if suffix=='setup' else 1.61)})
     files['manifest.json']=encoded([{'testIdentifier':identity,'testIdentifierURL':url,'attachments':items}])
     return summary,files
 
@@ -112,12 +123,19 @@ class SourceTests(unittest.TestCase):
     def test_concrete_cohort_and_packet_caps(self):
         self.assertEqual(m.PHASE_END['finalization']+60,1310);self.assertEqual(1500-1310,190)
         self.assertEqual(contract.MAX_PACKET,14*1024*1024);self.assertEqual(m.MAX_REPORT,2*1024*1024)
+    def test_display_change_is_in_runner_lifetime_before_original_launch(self):
+        self.assertIn('try prepareStoreDisplay()',STORE_SETUP);self.assertIn('CGCompleteDisplayConfiguration(transaction, .forAppOnly)',STORE_METHODS)
+        self.assertIn('allModes.prefix(128).map(storeModeRow)',STORE_METHODS);self.assertIn('no-supported-mode-fits-window',STORE_METHODS)
+        self.assertEqual(STORE_METHODS.count('applyStoreDisplay('),3)
+        for forbidden in ['.permanently','CGCaptureAllDisplays','CGDisplaySetDisplayMode','sudo','displayplacer','app.launch()']:
+            self.assertNotIn(forbidden,STORE_METHODS)
+        self.assertIn('visible.midX - frame.width / 2',STORE_CLASS)
 
 
 class Pipeline(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.old=Path.cwd();os.chdir(self.root)
-        self.clock=Clock();self.calls=[];self.failed=False;self.zero=False;self.late=False;self.mutate=None;self.late_summary=False;self.cleanup_unknown=False
+        self.clock=Clock();self.calls=[];self.failed=False;self.zero=False;self.late=False;self.mutate=None;self.late_summary=False;self.cleanup_unknown=False;self.scale=1
         app=self.root/'build/mac-tests/Build/Products/Debug/TouchColor.app'
         self.product={'applicationPath':str(app),'executable':str(app/'Contents/MacOS/TouchColor'),'executableSHA256':'c'*64,'logicSHA256':'d'*64}
         source=m.source_identity
@@ -140,7 +158,7 @@ class Pipeline(unittest.TestCase):
         elif argv==m.base_command()+['build-for-testing']:pass
         elif argv==m.test_command():
             if self.cleanup_unknown:raise m.CaptureStopped('unconfirmed owned capture',False)
-            self.summary,self.files=exported(self.clock(),self.product,self.failed)
+            self.summary,self.files=exported(self.clock(),self.product,self.failed,self.scale)
             if self.zero:self.summary.update(totalTestCount=0,passedTests=0,failedTests=0)
             if self.late_summary:self.summary['finishTime']+=300
             self.clock.advance(301 if self.late else 2);code=65 if self.failed else 0
@@ -161,6 +179,39 @@ class Pipeline(unittest.TestCase):
         value,marker=self.retained();self.assertEqual(len(value['commands']),21);self.assertEqual(set(value['image_files']),set(m.IMAGE_NAMES))
         self.assertFalse(value['store_qualified']);self.assertEqual(value['visual_acceptance'],'pending-human-review');self.assertEqual(marker.read_text(),'evidence_ready=true\n')
         self.assertEqual(self.calls.count(m.base_command()+['build-for-testing']),1);self.assertEqual(self.calls.count(m.test_command()),1)
+    def test_native_hidpi_pixels_match_ax_points_times_real_scale(self):
+        self.scale=2;value,_=self.retained()
+        for state in ('sampling','palette'):
+            row=value['proof']['states'][state];self.assertEqual(row['receipt']['backingScale'],2)
+            self.assertEqual([row['conversion']['width'],row['conversion']['height']],[2560,1600])
+    def test_failed_explicit_restore_preserves_qualified_capture_components(self):
+        def mutate(files):
+            name='00000000-0000-4000-8000-000000000006.txt';row=json.loads(files[name]);row['restored']=False;row['configurationResult']=1000;files[name]=encoded(row)
+        self.mutate=mutate;value,_=self.retained();self.assertTrue(value['qualified']);self.assertEqual(value['runner_cleanup'],'unconfirmed')
+        self.assertEqual(set(value['image_files']),set(m.IMAGE_NAMES));self.assertFalse(value['store_qualified'])
+    def test_asynchronous_restore_screen_keeps_images_and_offline_validation(self):
+        def mutate(files):
+            name='00000000-0000-4000-8000-000000000006.txt';row=json.loads(files[name]);row['restored']=False
+            row['after']['frame']=[0,0,1440,900];row['after']['cgBounds']=[0,0,1440,900]
+            row['after']['visibleFrame']=[0,60,1440,809];files[name]=encoded(row)
+        self.mutate=mutate;value,_=self.retained()
+        self.assertTrue(value['qualified']);self.assertEqual(value['runner_cleanup'],'unconfirmed')
+        self.assertEqual(set(value['image_files']),set(m.IMAGE_NAMES));self.assertEqual(len(value['commands']),21)
+        restore=value['proof']['display']['restore'];self.assertEqual(restore['configurationResult'],0)
+        self.assertEqual(restore['after']['mode']['width'],1024);self.assertEqual(restore['after']['frame'][2],1440)
+        self.assertFalse(value['store_qualified'])
+    def test_missing_restore_receipt_preserves_bound_capture_components(self):
+        def mutate(files):
+            groups=json.loads(files['manifest.json']);groups[0]['attachments']=[x for x in groups[0]['attachments'] if not x['suggestedHumanReadableName'].startswith('Native Mac Store display restore')];files['manifest.json']=encoded(groups)
+        self.mutate=mutate;value,_=self.retained();self.assertTrue(value['qualified']);self.assertEqual(value['runner_cleanup'],'unconfirmed')
+        self.assertEqual(set(value['image_files']),set(m.IMAGE_NAMES))
+    def test_wrong_scale_or_offscreen_window_is_rejected(self):
+        for key,value in [('backingScale',2),('windowFrame',[500,35,1280,800])]:
+            summary,files=exported(100,self.product)
+            name='00000000-0000-4000-8000-000000000002.txt';row=json.loads(files[name]);row[key]=value;files[name]=encoded(row)
+            def read(path,limit):return files[path.name]
+            with self.subTest(key=key),self.assertRaises(ValueError):contract.validate_capture(Path('/virtual'),encoded(summary),self.product,
+                {'returncode':0,'started_epoch':100,'finished_epoch':102},read=read)
     def test_original_failed_case_stays_failed_and_no_export(self):
         self.failed=True;value=self.execute();self.assertFalse(value['qualified']);self.assertEqual(value['test_outcome'],'failed');self.assertEqual(value['image_files'],{})
         self.assertEqual(len(self.calls),14);self.assertNotIn('export',self.calls[-1])
@@ -174,7 +225,7 @@ class Pipeline(unittest.TestCase):
         self.cleanup_unknown=True;value=self.execute();self.assertFalse(value['qualified']);self.assertFalse(value['commands'][-1]['owned_cleanup_confirmed']);self.assertEqual(len(self.calls),13)
     def test_wrong_pid_on_second_capture_rejects_packet(self):
         def mutate(files):
-            name=sorted(x for x in files if x.endswith('.txt'))[-1];r=json.loads(files[name]);r['pid']+=1;files[name]=encoded(r)
+            name='00000000-0000-4000-8000-000000000004.txt';r=json.loads(files[name]);r['pid']+=1;files[name]=encoded(r)
         self.mutate=mutate;value=self.execute();self.assertFalse(value['qualified']);self.assertIn('second-launch',value['failure']['reason'])
     def test_wrong_product_hash_rejects_packet(self):
         def mutate(files):
