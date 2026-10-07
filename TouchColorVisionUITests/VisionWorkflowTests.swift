@@ -145,11 +145,11 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
         let scroll = app.scrollViews["photosView_content_scroll_view"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 30), app.debugDescription)
-        try capture("Native Vision Photos grid before selection diagnostic")
-        // The exact system grid-image identifier is unique in the observed picker.
-        // Avoid a second nested remote-subtree query after checking its scroll view.
-        let image = app.images["PXGGridLayout-Info"].firstMatch
+        // Use the same owned system-grid selector, but never choose an ambiguous first match.
+        let images = app.images.matching(identifier: "PXGGridLayout-Info")
+        let image = images.firstMatch
         XCTAssertTrue(image.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertEqual(images.count, 1, "Expected exactly one seeded Photos grid image")
         image.tap()
         hex("#ff00ff")
     }
@@ -168,7 +168,7 @@ final class VisionWorkflowTests: XCTestCase {
         paste.tap(); hex("#ff00ff")
     }
     func testRealPhotosImport() throws {
-        executionTimeAllowance = 300 // Cold spatial launch, actual picker and two held pixel checkpoints.
+        executionTimeAllowance = 300 // Cold spatial launch, actual picker and final held pixel checkpoint.
         try photo(); try capture("Native Vision actual system Photos import")
     }
     func testRealPastePrecisionZoomPaletteAndRelaunch() throws {

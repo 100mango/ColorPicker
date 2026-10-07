@@ -168,6 +168,9 @@ def requirements(binding, runtime, manifests, inventory):
     phase = binding['phase']
     required = {platform + '-runtime.json', platform + '-summary.json',
                 platform + ('-ui-summary.json' if phase == 'normal' else '-largest-text-summary.json')}
+    if binding.get('qualification_scope') == 'photos-only':
+        require('vision-summary.json' not in inventory, 'Photos completion cannot contain a current hosted summary')
+        required.discard('vision-summary.json') # Historical hosted proof stays explicitly in runtime.json.
     # Raw diagnostic/result JSON is never quietly discarded just because it is
     # not the currently selected result. Fallback proof remains a failed gate.
     required.update(name for name in inventory if '/' not in name and name != 'job-budget.json')

@@ -758,6 +758,9 @@ def expected_roles(report):
     from vision_suites import CASES as ROWS
     binding = report_binding(report)
     roles = vision_roles(binding)
+    if binding.get('qualification_scope') == 'photos-only':
+        from vision_photos_scope import validate_reuse_report
+        validate_reuse_report(report)
     require(report.get('vision_offline_case') == binding['case'], 'Recorded Vision case differs from current row')
     require(report.get('vision_offline_expected') == roles, 'Expected offline summary scope changed')
     if 'ui_scope' in report:

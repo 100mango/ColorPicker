@@ -123,7 +123,7 @@ class RunnerLeaseSourceTests(unittest.TestCase):
         self.assertNotIn('captureLease', method)
         # Exact base-532 method bytes protect all functional assertions and case caps.
         expected = {
-            'testRealPhotosImport': '8325efdf7eb1b04a1bc649019168ac77c94b92a0b50338e15c4cafb11ac4fccd',
+            'testRealPhotosImport': 'b4b714579a787479eb65c70fbcc66d319d52d41e4eb594fb6bf6652f8665cd98',
             'testRealPastePrecisionZoomPaletteAndRelaunch': '227f3baccb8cceb5df2f8e31cae60fb8c53ab879156599619fb6e176de6485fe',
             'testNativeExportSaveAndReopenActualPNG': '832ebabe13bcf22c75a9cb0e5f42630f38f447fa2fd8e9fb2ac1ffab3fb188d9',
             'testNativePaletteExportReopensActualChangedSelectionAndDuplicates': '1e385b26cc0c83f604a860c88858b71e715536950e6621ab5d9c21b015fa1f4d',
@@ -139,6 +139,32 @@ class RunnerLeaseSourceTests(unittest.TestCase):
             if 'try capture(' in unchanged:
                 unchanged = unchanged.replace('() throws {','() {').replace('try capture(', 'capture(').replace('try photo()', 'photo()')
             self.assertEqual(hashlib.sha256(unchanged.encode()).hexdigest(), digest)
+
+    def test_photos_direct_input_keeps_exact_owned_queries_and_real_import(self):
+        # Only the redundant pre-selection diagnostic is removed. The query/tap
+        # path and final functional pixel checkpoint remain source-exact.
+        expected = """    private func photo() throws {
+        XCTAssertTrue(app.buttons["image.photos"].waitForExistence(timeout: 20), app.debugDescription)
+        app.buttons["image.photos"].tap()
+        let picker = app.navigationBars["Photos"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 30), app.debugDescription)
+        let scroll = app.scrollViews["photosView_content_scroll_view"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 30), app.debugDescription)
+        // Use the same owned system-grid selector, but never choose an ambiguous first match.
+        let images = app.images.matching(identifier: "PXGGridLayout-Info")
+        let image = images.firstMatch
+        XCTAssertTrue(image.waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertEqual(images.count, 1, "Expected exactly one seeded Photos grid image")
+        image.tap()
+        hex("#ff00ff")
+    }"""
+        self.assertEqual(swift_method(self.source, 'photo'), expected)
+        self.assertNotIn('Photos grid before selection diagnostic', self.source)
+        from native_text_evidence import VISION_PIXELS
+        self.assertEqual(VISION_PIXELS['photos'], ('Native Vision actual system Photos import',))
+        runner=(ROOT/'scripts/test_extra_platforms.py').read_text()
+        self.assertIn("fixture=out/'asymmetric.png'", runner)
+        self.assertIn("report['photos_seed']='failed' if photo_seed_failed else 'passed'", runner)
 
     def test_required_capture_throws_through_every_dependent_ui_caller(self):
         capture=swift_method(self.source,'capture')
@@ -157,7 +183,9 @@ class RunnerLeaseSourceTests(unittest.TestCase):
             body=swift_method(self.source,method)
             if 'try capture(' in body: self.assertIn('throws {',body.splitlines()[0])
         photo=swift_method(self.source,'photo')
-        self.assertLess(photo.index('try capture('),photo.index('let image ='))
+        self.assertNotIn('capture(', photo)
+        final=swift_method(self.source,'testRealPhotosImport')
+        self.assertIn('try photo(); try capture("Native Vision actual system Photos import")', final)
         self.assertIn('image.tap()',photo);self.assertIn('hex("#ff00ff")',photo)
         failure=swift_method(self.source,'checkpointFailure')
         self.assertIn('simulatorOperationUnconfirmed || operationUnconfirmed',failure)

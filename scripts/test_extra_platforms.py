@@ -325,23 +325,30 @@ try:
         '-maximum-concurrent-test-simulator-destinations','1','ARCHS=arm64']
     test_common=['xcodebuild','test-without-building']+test_common[1:]
     if kind=='vision':
-        # Preserve a complete hosted result even if an independent spatial UI process stalls.
-        hosted_command=test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests']
-        # Outer process allowance includes measured pre-case Xcode cold start;
-        # per-case180/360 limits above are unchanged.
-        hosted_code=run(hosted_command,600,required=False)
-        if hosted_code in (0,65):
-            try:
-                pending_vision_hosted=prepare_vision_hosted(hosted_command,Path.cwd(),report['sha'],device['udid'],runtime,report['stages'][-1],row_binding=text_row)
-                report['vision_hosted_result']=pending_vision_hosted
-            except Exception as binding_error:
-                report['vision_hosted_binding_error']=str(binding_error)
-                if hosted_code==0: raise
-        if hosted_code: raise RuntimeError('Stage failed with exit '+str(hosted_code)+': '+' '.join(hosted_command))
-        # A completed hosted launch establishes runtime readiness before the one
-        # bounded Photos import. bootstatus alone preceded a real addmedia timeout.
+        if text_row.get('qualification_scope') == 'photos-only':
+            from vision_photos_scope import verify_reuse
+            report['hosted_reuse']=verify_reuse()
+            print('VISION_HOSTED_REUSED_NOT_EXECUTED',json.dumps(report['hosted_reuse']),flush=True)
+        else:
+            # Preserve a complete hosted result even if an independent spatial UI process stalls.
+            hosted_command=test_common+test_arguments+['-resultBundlePath','build/vision-tests.xcresult','-only-testing:TouchColorVisionTests']
+            # Outer process allowance includes measured pre-case Xcode cold start;
+            # per-case180/360 limits above are unchanged.
+            hosted_code=run(hosted_command,600,required=False)
+            if hosted_code in (0,65):
+                try:
+                    pending_vision_hosted=prepare_vision_hosted(hosted_command,Path.cwd(),report['sha'],device['udid'],runtime,report['stages'][-1],row_binding=text_row)
+                    report['vision_hosted_result']=pending_vision_hosted
+                except Exception as binding_error:
+                    report['vision_hosted_binding_error']=str(binding_error)
+                    if hosted_code==0: raise
+            if hosted_code: raise RuntimeError('Stage failed with exit '+str(hosted_code)+': '+' '.join(hosted_command))
+        # Canonical rows retain hosted warm-up. The Photos-only completion does
+        # not repeat historical hosted tests; seed success remains a real gate.
         seed_photos()
         if photo_seed_failed:
+            if text_row.get('qualification_scope') == 'photos-only':
+                raise RuntimeError('Photos completion fixture seed did not succeed')
             skip=['-skip-testing:TouchColorVisionUITests/VisionWorkflowTests/testRealPhotosImport']
         case=os.environ['TOUCHCOLOR_VISION_CASE']
         if case=='photos':
