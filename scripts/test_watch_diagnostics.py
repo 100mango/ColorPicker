@@ -162,8 +162,8 @@ class WatchDiagnosticsTests(unittest.TestCase):
         for method in ('appeared', 'disappeared', 'writeback'):
             line = next(line for line in diagnostic.splitlines() if 'static func ' + method in line)
             self.assertNotIn('focused:', line)
-        # No behavioral change to Crown focus eligibility or lifecycle writes.
-        self.assertIn('.focusable(editorIsVisible).focused($crownFocused)', source)
+        # Crown eligibility is stable; hidden-editor lifecycle cleanup remains.
+        self.assertIn('.focusable(true).focused($crownFocused)', source)
         self.assertIn('editorIsVisible = false; crownFocused = false', source)
 
 

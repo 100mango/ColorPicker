@@ -329,18 +329,16 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
         validation = header[len(original) - len('#endif\n'):]
         self.assertNotRegex(validation, r'plan->\w+(?:\.\w+)?\s*=(?!=)')
 
-    def test_editor_uses_scoped_default_focus_without_lifecycle_focus_grabs(self):
+    def test_editor_keeps_static_crown_eligibility_and_hidden_guards(self):
         source = (ROOT / 'TouchColorWatch/WatchViews.swift').read_text()
         editor = source.split('struct WatchColorEditor: View {', 1)[1].split('@MainActor private enum WatchEditorDiagnostics', 1)[0]
-        self.assertIn('@Namespace private var crownFocusScope', editor)
-        self.assertEqual(editor.count('.focusScope(crownFocusScope)'), 1)
-        self.assertEqual(editor.count('.prefersDefaultFocus(in: crownFocusScope)'), 1)
-        self.assertIn('.focusable(editorIsVisible).focused($crownFocused)', editor)
+        self.assertIn('.focusable(true).focused($crownFocused)', editor)
+        for forbidden in ('@Namespace', '.focusScope(', '.prefersDefaultFocus(', 'resetFocus', '.focusable(editorIsVisible)'):
+            self.assertNotIn(forbidden, editor)
         appear = editor.split('.onAppear {', 1)[1].split('.onDisappear {', 1)[0]
-        self.assertIn('editorIsVisible = true', appear)
-        self.assertNotIn('crownFocused = true', appear)
+        self.assertIn('editorIsVisible = true; crownFocused = true', appear)
         self.assertIn('.onChange(of: channel) { _ in if editorIsVisible { crownFocused = true } }', editor)
-        self.assertEqual(editor.count('crownFocused = true'), 4)  # Preserve channel change, tap and +/-.
+        self.assertEqual(editor.count('crownFocused = true'), 5)
         self.assertIn('editorIsVisible = false; crownFocused = false', editor)
         self.assertIn('guard editorIsVisible else', editor)
         self.assertIn('.digitalCrownRotation(component, from: 0, through: 255, by: 1', editor)

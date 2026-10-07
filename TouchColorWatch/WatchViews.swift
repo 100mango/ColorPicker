@@ -64,7 +64,6 @@ struct WatchColorEditor: View {
     @State private var sendSelection: RGBColor?
     @State private var editorIsVisible = false
     @State private var editorID = UUID()
-    @Namespace private var crownFocusScope
     @FocusState private var crownFocused: Bool
     private var component: Binding<Double> {
         Binding(get: { channel == 0 ? palette.red : channel == 1 ? palette.green : palette.blue },
@@ -96,12 +95,9 @@ struct WatchColorEditor: View {
                     Button("−") { component.wrappedValue = max(0, component.wrappedValue - 1); crownFocused = true }.accessibilityIdentifier("watch.component.down")
                     Text("\(Int(component.wrappedValue.rounded()))").monospacedDigit()
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        // A retained navigation destination must also leave the focus
-                        // system, not merely reject its stale binding writes.
-                        .focusable(editorIsVisible).focused($crownFocused)
-                        // Let this destination's focus scope resolve its initial
-                        // Crown target instead of forcing focus during a push.
-                        .prefersDefaultFocus(in: crownFocusScope)
+                        // Keep Crown eligibility stable across navigation appearance.
+                        // Hidden writes are guarded and disappearance releases focus.
+                        .focusable(true).focused($crownFocused)
                         .digitalCrownRotation(component, from: 0, through: 255, by: 1, sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true)
                         .onTapGesture { crownFocused = true }
                         .accessibilityLabel("Component")
@@ -129,9 +125,8 @@ struct WatchColorEditor: View {
                 Text(transfer.status).font(.caption2).accessibilityIdentifier("watch.transfer.status")
             }.padding(.horizontal, 8)
         }
-        .focusScope(crownFocusScope)
         .onAppear {
-            editorIsVisible = true
+            editorIsVisible = true; crownFocused = true
             #if DEBUG
             WatchEditorDiagnostics.appeared(editorID)
             #endif
