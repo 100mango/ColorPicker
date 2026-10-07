@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "100mango/ColorPicker",
-  "base": "3e9a2a476726107aae9c11aad69d8ce196970bc8",
+  "base": "7fd778bc576884ea36ea00caa23f2c706e5043ae",
   "project": "TouchColor-iOS-Watch.xcodeproj",
   "scheme": "TouchColor",
   "case": "TouchColorUITests/TouchColorUITests/testProductionWatchInboxEmptyAndReturn",

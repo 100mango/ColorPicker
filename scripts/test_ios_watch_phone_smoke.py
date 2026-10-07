@@ -26,6 +26,15 @@ ENV = dict(GITHUB_EVENT_NAME='push', GITHUB_REPOSITORY=CONFIG['repository'], GIT
            GITHUB_WORKFLOW_REF=CONFIG['repository'] + '/' + smoke.WORKFLOW + '@' + smoke.BRANCH,
            GITHUB_RUN_ID='42', DEVELOPER_DIR='/Applications/Xcode_27.app/Contents/Developer')
 
+# Exact failure payloads from run 37669810704 / job 112958357115.
+OBSERVED_TEST_STDERR = b'xcodebuild: error: Must specify -test-iterations with more than 1 iteration.\n'
+OBSERVED_SHUTDOWN_STDERR = (b'An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\n'
+                            b'Unable to shutdown device in current state: Shutdown\n')
+OBSERVED_ZERO_TEST_SUMMARY = dict(devicesAndConfigurations=[], environmentDescription='T',
+    expectedFailures=0, failedTests=0, finishTime=1791399081.908, passedTests=0, result='unknown',
+    runtimeWarnings=[], skippedTests=0, startTime=1791399081.908, statistics=[], testFailures=[],
+    title='Test - T', topInsights=[], totalTestCount=0)
+
 
 def raw(case=CASE, state='passed'):
     target, cls, method = case.split('/')
@@ -43,6 +52,12 @@ def summary(device=DEVICE):
 
 
 class RawTests(unittest.TestCase):
+    def test_observed_invalid_iteration_failure_has_no_execution_proof(self):
+        with self.assertRaisesRegex(smoke.Rejected, 'selected-case-not-executed-once-and-passed'):
+            smoke.verify_raw(b'', OBSERVED_TEST_STDERR, CASE)
+        with self.assertRaisesRegex(smoke.Rejected, 'summary-not-passed'):
+            smoke.verify_summary(OBSERVED_ZERO_TEST_SUMMARY, DEVICE)
+
     def test_accepts_exact_case(self):
         self.assertEqual(smoke.verify_raw(raw(), b'', CASE)['passed'], 1)
 
@@ -137,10 +152,12 @@ class CommandTests(unittest.TestCase):
         self.assertEqual([arg for arg in command if arg.startswith('-only-testing:')], ['-only-testing:' + CASE])
         self.assertEqual(command.count('-destination'), 1)
         self.assertIn('platform=iOS Simulator,id=' + DEVICE, command)
-        self.assertNotIn('-retry-tests-on-failure', command)
+        for flag in ('-test-iterations', '-retry-tests-on-failure', '-run-tests-until-failure'):
+            self.assertNotIn(flag, command)
         self.assertNotIn('watchOS Simulator', ' '.join(command))
         self.assertIn('CODE_SIGNING_ALLOWED=NO', command)
-        self.assertEqual(command[command.index('-test-iterations') + 1], '1')
+        self.assertEqual(command.count('test-without-building'), 1)
+        self.assertNotIn('test', command)
 
     def test_source_fail_closed_on_event_attempt_branch(self):
         for key, value in [('GITHUB_EVENT_NAME', 'workflow_dispatch'), ('GITHUB_RUN_ATTEMPT', '2'), ('GITHUB_REF', 'refs/heads/main'), ('GITHUB_WORKFLOW_SHA', BASE)]:
@@ -169,12 +186,13 @@ class CommandTests(unittest.TestCase):
             self.assertIn('CODE_SIGNING_ALLOWED=NO', command)
             self.assertIn('CODE_SIGNING_REQUIRED=NO', command)
             self.assertEqual(command[command.index('-jobs') + 1], '2')
-            self.assertNotIn('-retry-tests-on-failure', command)
+            for flag in ('-test-iterations', '-retry-tests-on-failure', '-run-tests-until-failure'):
+                self.assertNotIn(flag, command)
             self.assertNotIn('watchOS Simulator', ' '.join(command))
 
     def test_real_config_fixes_failed_parent_three_modifications_and_original_case(self):
         config = json.loads(Path(smoke.__file__).with_name('ios_watch_phone_smoke_config.json').read_bytes())
-        self.assertEqual(config['base'], '3e9a2a476726107aae9c11aad69d8ce196970bc8')
+        self.assertEqual(config['base'], '7fd778bc576884ea36ea00caa23f2c706e5043ae')
         self.assertEqual(config['expected_changes'], [
             'M\tscripts/ios_watch_phone_smoke.py',
             'M\tscripts/ios_watch_phone_smoke_config.json',
@@ -183,6 +201,9 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(config['project'], 'TouchColor-iOS-Watch.xcodeproj')
         self.assertEqual(config['scheme'], 'TouchColor')
         self.assertEqual(config['case'], 'TouchColorUITests/TouchColorUITests/testProductionWatchInboxEmptyAndReturn')
+        command = smoke.test_command(config, Path('/tmp/owned'), DEVICE)
+        self.assertEqual([arg for arg in command if arg.startswith('-only-testing:')],
+                         ['-only-testing:TouchColorUITests/TouchColorUITests/testProductionWatchInboxEmptyAndReturn'])
         self.assertEqual(smoke.BRANCH, 'refs/heads/codex/ios-watch-phone-smoke')
         self.assertEqual(smoke.RUNTIME, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0')
         self.assertEqual(smoke.DEVICE_TYPE, 'com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation')
@@ -318,6 +339,12 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(commands[creates[0]][-2:], [smoke.DEVICE_TYPE, smoke.RUNTIME])
         self.assertEqual([c[2] for c in commands if c[:2] == ['xcrun', 'simctl']], ['create', 'shutdown', 'delete'])
         self.assertFalse(any(c[:2] == ['xcodebuild', 'test'] for c in commands))
+        self.assertEqual([c[:2] for c in commands if c[0] == 'xcodebuild'],
+                         [['xcodebuild', '-version'], ['xcodebuild', 'build-for-testing'],
+                          ['xcodebuild', 'test-without-building']])
+        for command in (commands[builds[0]], commands[tests[0]]):
+            for flag in ('-test-iterations', '-retry-tests-on-failure', '-run-tests-until-failure'):
+                self.assertNotIn(flag, command)
         self.assertEqual(result['device']['id'], DEVICE)
         self.assertFalse(result['device']['pairing_requested'])
         self.assertTrue(result['build_for_testing_complete'])
@@ -413,6 +440,44 @@ class ExecutionTests(unittest.TestCase):
         self.assertFalse(result['qualified'])
         self.assertEqual([(r['action'], r['confirmed']) for r in result['simulator_cleanup']], [('shutdown', False), ('delete', True)])
         self.assertIn('owned-simulator-cleanup-not-confirmed', json.dumps(result['failures']))
+
+    def test_observed_exit_64_zero_tests_retains_error_and_strict_cleanup_failure(self):
+        self.test_code = 64
+        self.test_output = b''
+        self.summary_data = copy.deepcopy(OBSERVED_ZERO_TEST_SUMMARY)
+        original_runner = self.runner
+        def observed_runner(command, **kwargs):
+            result = original_runner(command, **kwargs)
+            if command[:2] == ['xcodebuild', 'test-without-building']:
+                return subprocess.CompletedProcess(command, 64, b'', OBSERVED_TEST_STDERR)
+            if command[:3] == ['xcrun', 'simctl', 'shutdown']:
+                return subprocess.CompletedProcess(command, 149, b'', OBSERVED_SHUTDOWN_STDERR)
+            return result
+        with patch.object(self, 'runner', observed_runner):
+            result = self.execute()
+        self.assertFalse(result['qualified'])
+        self.assertTrue(result['build_for_testing_complete'])
+        self.assertNotIn('raw_proof', result)
+        self.assertNotIn('summary_proof', result)
+        self.assertEqual([(r['phase'], r['reason']) for r in result['failures']], [
+            ('test', 'command-nonzero:64'), ('proof', 'summary-not-passed'),
+            ('cleanup', 'command-nonzero:149'), ('cleanup', 'owned-simulator-cleanup-not-confirmed')])
+        self.assertEqual((self.output / 'test.stdout.log').read_bytes(), b'')
+        self.assertEqual((self.output / 'test.stderr.log').read_bytes(), OBSERVED_TEST_STDERR)
+        self.assertEqual((self.output / 'test.errors.log').read_bytes(), b'stderr: ' + OBSERVED_TEST_STDERR)
+        self.assertTrue(result['test_log']['capture_complete'])
+        self.assertEqual(result['test_log']['stderr_sha256'], hashlib.sha256(OBSERVED_TEST_STDERR).hexdigest())
+        self.assertEqual(json.loads((self.output / 'xcresult-summary.json').read_bytes()), OBSERVED_ZERO_TEST_SUMMARY)
+        tests = [r for r in result['commands'] if r['command'][:2] == ['xcodebuild', 'test-without-building']]
+        self.assertEqual(len(tests), 1)
+        self.assertEqual(tests[0]['returncode'], 64)
+        self.assertFalse(tests[0]['complete'])
+        cleanup = [r for r in result['commands'] if r['phase'] == 'cleanup']
+        self.assertEqual([r['returncode'] for r in cleanup], [149, 0])
+        self.assertEqual(cleanup[0]['stderr'].encode(), OBSERVED_SHUTDOWN_STDERR)
+        self.assertTrue(all(r['owned_cleanup_confirmed'] for r in cleanup))
+        self.assertEqual([(r['action'], r['confirmed']) for r in result['simulator_cleanup']],
+                         [('shutdown', False), ('delete', True)])
 
     def test_shutdown_timeout_is_not_tolerated_even_when_process_exit_confirmed(self):
         self.cleanup_failures['shutdown'] = CaptureStopped('duration-limit', True)

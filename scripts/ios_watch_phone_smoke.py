@@ -188,7 +188,7 @@ def test_command(config, work, device):
             '-onlyUsePackageVersionsFromResolvedFile', '-resultBundlePath', str(work / 'Phone.xcresult'),
             '-only-testing:' + config['case'], '-parallel-testing-enabled', 'NO',
             '-maximum-concurrent-test-simulator-destinations', '1', '-parallel-testing-worker-count', '1',
-            '-maximum-parallel-testing-workers', '1', '-test-iterations', '1',
+            '-maximum-parallel-testing-workers', '1',
             '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '120',
             '-maximum-test-execution-time-allowance', '150', '-collect-test-diagnostics', 'never',
             '-jobs', '2', 'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO',
