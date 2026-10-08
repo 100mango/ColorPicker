@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 import time
 import uuid
 
@@ -20,20 +21,43 @@ from watch_heartbeat_evidence import summarize
 
 CASE='TouchColorWatchUITests/WatchWorkflowTests/testTouchCopyEntryTouchAndCrownRemainResponsive'
 CASE_LOG='TouchColorWatchUITests.WatchWorkflowTests testTouchCopyEntryTouchAndCrownRemainResponsive'
-BASE='9c377452c9bba89fb4919e224491a2cd5d8c29a7'
+BASE='534e73be459284d9e2e71022bd32dee9a7c4b268'
 WATCH_TYPE='com.apple.CoreSimulator.SimDeviceType.Apple-Watch-SE-3-40mm'
 OUTPUT='watch-heartbeat-evidence.json'
 EVIDENCE_CAP=65536
+FALLBACK_MARKER='WATCH_HEARTBEAT_EVIDENCE '
 NATIVE_CAP=262144
 OSLOG_CAP=65536
 WORK_SECONDS=900
 TOTAL_SECONDS=1020
 NATIVE_SECONDS=300
-CHANGES=['M\t.github/workflows/watch-focused-case.yml','M\tTouchColorWatch/WatchViews.swift',
-         'M\tTouchColorWatchUITests/WatchWorkflowTests.swift','A\tscripts/test_watch_heartbeat_case.py',
-         'A\tscripts/test_watch_heartbeat_evidence.py','A\tscripts/watch_heartbeat_case.py',
-         'A\tscripts/watch_heartbeat_evidence.py']
-CHANGES.sort()
+CHANGES=['M\t.github/workflows/watch-focused-case.yml','M\tscripts/test_watch_heartbeat_case.py','M\tscripts/watch_heartbeat_case.py']
+
+def compiler_errors(output, tracked, root):
+    """At most eight small errors attributed to public tracked Swift sources."""
+    errors=[];matched=0
+    root=str(root.resolve())+'/'
+    allowed={x for x in tracked if x.endswith('.swift') and len(x.encode())<=512
+             and not x.startswith('/') and '..' not in Path(x).parts}
+    pattern=re.compile(r'^(.+\.swift):([0-9]{1,7}):([0-9]{1,7}): error: (.+)$')
+    for line in output.decode('utf8','replace').splitlines():
+        match=pattern.fullmatch(line)
+        if not match:continue
+        path=match[1]
+        relative=path[len(root):] if path.startswith(root) else path
+        if relative not in allowed:continue
+        message=match[4].replace(root,'')
+        # Never preserve another filesystem root, URL, env assignment, or
+        # credential-shaped diagnostic payload. Other build text is ignored.
+        if (re.search(r"(?:^|[\s\"'(])(?:/|~/|[A-Za-z]:[\\/])|[A-Za-z][A-Za-z0-9+.-]*://",message)
+            or re.search(r'(?i)(?:token|password|secret|authorization|api[_-]?key)\s*[:=]',message)
+            or re.search(r'\b[A-Z_][A-Z0-9_]{2,}\s*=',message)):
+            continue
+        matched+=1
+        if len(errors)==8:continue
+        text=message.encode('utf8')[:240].decode('utf8','ignore')
+        errors.append({'file':relative,'line':int(match[2]),'column':int(match[3]),'message':text})
+    return {'entries':errors,'omitted_matching_errors':max(0,matched-8),'message_bytes_per_entry':240,'entry_limit':8}
 
 class ObservationFailed(RuntimeError):pass
 
@@ -107,7 +131,7 @@ class Controller:
         need(type(self.started) in (float,int) and 0<=time.monotonic()-self.started<=1200,'invalid-original-clock')
         self.work_deadline=self.started+WORK_SECONDS;self.deadline=self.started+TOTAL_SECONDS
         self.cancelled=None;self.previous={};self.unknown=False;self.owned=[];self.pair=None;self.observer=None
-        self.native=b'';self.native_exit=None;self.devices_uncertain=False
+        self.native=b'';self.native_exit=None;self.devices_uncertain=False;self.swift_sources=set()
         self.report.update(schema=1,state='incomplete',case=CASE,diagnostics_mode='never',product_qualified=False,
             live_sampler_enabled=False,export_calls=0,stages=[],owned_devices=[],device_cleanup=[],
             limits={'native_seconds':300,'work_seconds_from_original_clock':900,'controller_seconds_from_original_clock':1020,
@@ -131,6 +155,8 @@ class Controller:
             value=capture(args,seconds=seconds,cap=cap,cleanup_grace=2,guard=guard)
             stage.update(started=True,exit=value.returncode,raw_exit=value.returncode,process_group_gone=True,
                          capture_finished=True,output_complete=True,stdout_bytes=len(value.stdout),stderr_bytes=len(value.stderr))
+            if label=='debug-build-for-testing' and value.returncode:
+                self.report['compiler_errors']={**compiler_errors(value.stdout+value.stderr,self.swift_sources,Path.cwd()),'source_output_complete':True}
             if not allow_nonzero:need(value.returncode==0,'command-returned-failure')
             return value.stdout+value.stderr,value.returncode
         except CaptureStopped as error:
@@ -143,6 +169,8 @@ class Controller:
             if error.cancelled_signal is not None:self.cancelled=error.cancelled_signal
             if not error.cleanup_confirmed:self.unknown=True
             if label=='native-case':self.native=error.stdout_prefix+error.stderr_capture;self.native_exit=124
+            if label=='debug-build-for-testing':
+                self.report['compiler_errors']={**compiler_errors(error.stdout_prefix+error.stderr_capture,self.swift_sources,Path.cwd()),'source_output_complete':False}
             raise ObservationFailed(stage['stop_reason']) from None
         except BaseException:
             # An error after confirmed capture may be semantic rather than an
@@ -165,6 +193,7 @@ class Controller:
         help_text=self.text('xcode-help',['xcodebuild','-help'],15,allow_nonzero=True)
         need('-collect-test-diagnostics' in help_text and 'never' in help_text,'never-mode-not-supported')
         self.report['never_help_verified']=True
+        self.swift_sources=set(self.text('public-swift-sources',['git','ls-files','-z','--','*.swift'],10).split('\0'))
         self.derived=Path(os.environ['RUNNER_TEMP'])/'watch-heartbeat-derived'
         need(not self.derived.exists(),'derived-directory-already-exists')
         build=['xcodebuild','-quiet','-project','TouchColorWatch.xcodeproj','-scheme','TouchColorWatch',
@@ -268,10 +297,13 @@ class Controller:
         passed=(self.native_exit==0 and self.report.get('case_state')=='passed' and self.report.get('native_terminal_success') is True)
         self.report['state']='case-passed-observation-retained' if clean and passed else 'failed-or-incomplete'
         self.report['product_qualified']=False
-        data=(json.dumps(self.report,indent=2)+'\n').encode()
-        need(len(data)<=EVIDENCE_CAP,'final-evidence-byte-limit')
+        data=(json.dumps(self.report,separators=(',',':'))+'\n').encode()
+        need(len(FALLBACK_MARKER.encode())+len(data)<=EVIDENCE_CAP,'final-evidence-byte-limit')
         need(list(self.out.iterdir())==[self.path] and self.path.stat().st_nlink==1,'unexpected-evidence-files')
         self.path.write_bytes(data)
+        # Same validated fields and bytes, after owned cleanup and file retention.
+        # No raw native/OSLog text and no extra process to obtain this fallback.
+        sys.stdout.write(FALLBACK_MARKER+data.decode('utf8'));sys.stdout.flush()
         return 0 if clean and passed else 1
     def execute(self):
         for s in (signal.SIGTERM,signal.SIGINT):self.previous[s]=signal.signal(s,self.interrupt)

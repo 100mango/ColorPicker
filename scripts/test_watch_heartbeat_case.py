@@ -29,6 +29,7 @@ with (root/'calls.jsonl').open('a') as f:f.write(json.dumps({'tool':tool,'args':
 phone='11111111-1111-4111-8111-111111111111';watch='22222222-2222-4222-8222-222222222222';pair='33333333-3333-4333-8333-333333333333'
 if tool=='git':
  if a==['rev-parse','HEAD']:print(os.environ['GITHUB_SHA'])
+ elif a==['ls-files','-z','--','*.swift']:print('TouchColorWatch/WatchViews.swift\0TouchColorWatchUITests/WatchWorkflowTests.swift\0',end='')
  elif a!=['status','--porcelain=v1','--untracked-files=all']:sys.exit(99)
  sys.exit(0)
 if tool=='xcodebuild':
@@ -36,6 +37,9 @@ if tool=='xcodebuild':
  if 'build-for-testing' in a:
   (root/'build-started').write_text(str(os.getpid()))
   if mode in ('slow-build','cancel-build'):time.sleep(30)
+  if mode=='compile-failure':
+   print(str(root/'TouchColorWatch/WatchViews.swift')+':201:22: error: call to main actor-isolated method in a synchronous context',file=sys.stderr)
+   print('UNRELATED_RAW_BUILD_TEXT',file=sys.stderr);sys.exit(65)
   Path(a[a.index('-derivedDataPath')+1]).mkdir()
   sys.exit(0)
  if 'test-without-building' not in a:sys.exit(98)
@@ -192,6 +196,22 @@ class ActualCLITests(unittest.TestCase):
             f=Fixture(d,'log-exits');r=f.run();v=f.read()
             self.assertEqual(r.returncode,1);self.assertNotEqual(v['state'],'case-passed-observation-retained')
             self.assertTrue(v['oslog_capture']['process_group_gone'])
+    def test_actual_cli_emits_same_compact_json_once_after_stop(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=Fixture(d);result=f.run();lines=result.stdout.splitlines()
+            self.assertEqual(len(lines),1);self.assertTrue(lines[0].startswith(case.FALLBACK_MARKER))
+            data=lines[0][len(case.FALLBACK_MARKER):]+'\n'
+            self.assertEqual(data.encode(),f.path.read_bytes());v=json.loads(data)
+            self.assertTrue(v['oslog_capture']['process_group_gone']);self.assertTrue(v['oslog_capture']['pipe_closed'])
+            self.assertTrue(all(s['process_group_gone'] for s in v['stages']))
+            self.assertLessEqual(len(result.stdout.encode()),65536)
+    def test_actual_compile_failure_retains_only_tracked_error_and_same_fallback(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=Fixture(d,'compile-failure');result=f.run();v=f.read()
+            self.assertEqual(result.returncode,1);errors=v['compiler_errors']['entries'];self.assertEqual(len(errors),1)
+            self.assertEqual(errors[0]['file'],'TouchColorWatch/WatchViews.swift');self.assertEqual(errors[0]['line'],201)
+            self.assertNotIn('UNRELATED_RAW_BUILD_TEXT',result.stdout);self.assertNotIn(str(f.root),result.stdout)
+            self.assertIsNone(v['native_case_exit']);self.assertFalse((f.root/'native-started').exists())
     def test_cli_rejects_stale_bootstrap_without_spawning(self):
         with tempfile.TemporaryDirectory() as d:
             f=Fixture(d);v=f.read();v['run_id']='old-run';f.path.write_text(json.dumps(v))
@@ -260,7 +280,8 @@ class BoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             f=Fixture(d)
             with patch.dict(os.environ,f.env),patch.object(case.Controller,'prepare',side_effect=case.ObservationFailed('cancelled')),patch.object(case.Controller,'cleanup',side_effect=OSError('not public')):
-                c=case.Controller();self.assertEqual(c.execute(),1)
+                c=case.Controller()
+                with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(c.execute(),1)
             v=f.read();self.assertTrue(v['cleanup_unconfirmed']);self.assertEqual(v['cleanup_error_type'],'OSError')
             self.assertNotIn('not public',f.path.read_text())
     def test_workflow_has_one_job_one_artifact_and_no_heavy_collector(self):
@@ -269,8 +290,8 @@ class BoundaryTests(unittest.TestCase):
         text=json.dumps(w);self.assertNotIn('on-failure',text);self.assertNotIn('watch_native_diagnostics',text);self.assertNotIn('xcresulttool',text)
         uploads=[s for s in job['steps'] if str(s.get('uses','')).startswith('actions/upload-artifact@')]
         self.assertEqual(len(uploads),1);self.assertTrue(uploads[0]['with']['path'].endswith('/watch-heartbeat-evidence.json'))
-    def test_source_admission_uses_exact_new_base_and_seven_paths(self):
-        self.assertEqual(case.BASE,'9c377452c9bba89fb4919e224491a2cd5d8c29a7');self.assertEqual(len(case.CHANGES),7)
+    def test_source_admission_uses_exact_new_base_and_three_paths(self):
+        self.assertEqual(case.BASE,'534e73be459284d9e2e71022bd32dee9a7c4b268');self.assertEqual(len(case.CHANGES),3)
         self.assertEqual(case.CHANGES,sorted(case.CHANGES))
     def test_real_evidence_validation_rejects_extra_oversized_and_promoted_files(self):
         w=yaml.safe_load((ROOT/'.github/workflows/watch-focused-case.yml').read_text())
@@ -297,6 +318,46 @@ class BoundaryTests(unittest.TestCase):
                 f=Fixture(d);f.path.write_text(json.dumps({'state':state,'product_qualified':False}))
                 with patch.dict(os.environ,{**f.env,'RUNTIME_OUTCOME':outcome,'EVIDENCE_OUTCOME':'success'}),self.assertRaises(SystemExit):
                     exec(compile(code,'final-step','exec'),{})
+    def test_compiler_error_filter_caps_and_rejects_foreign_paths_or_env(self):
+        root=Path('/repo');tracked={'TouchColorWatch/WatchViews.swift'}
+        good='/repo/TouchColorWatch/WatchViews.swift:12:3: error: '
+        output=(good+'x'*400+'\n')*10
+        output+='/elsewhere/Private.swift:1:1: error: PRIVATE_NOT_ALLOWED\n'
+        output+=good+'cannot read /Users/private/secret.txt\n'
+        output+=good+'TOKEN=PRIVATE_NOT_ALLOWED\n'
+        output+=good+'DEVELOPER_DIR=/Users/private\n'
+        output+=good+'see https://private.example/key\n'
+        r=case.compiler_errors(output.encode(),tracked,root)
+        self.assertEqual(len(r['entries']),8);self.assertEqual(r['omitted_matching_errors'],2)
+        self.assertTrue(all(len(x['message'].encode())<=240 for x in r['entries']))
+        self.assertNotIn('PRIVATE_NOT_ALLOWED',json.dumps(r));self.assertNotIn('/Users',json.dumps(r))
+    def test_partial_compile_output_keeps_bounded_errors_and_incomplete_flag(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=Fixture(d)
+            stopped=case.CaptureStopped('byte-limit',True)
+            stopped.stdout_prefix=(str(Path.cwd()/'TouchColorWatch/WatchViews.swift')+':5:2: error: expected expression\n').encode()
+            stopped.stderr_capture=b''
+            with patch.dict(os.environ,f.env):
+                c=case.Controller();c.swift_sources={'TouchColorWatch/WatchViews.swift'}
+                with patch.object(case,'capture',side_effect=stopped),self.assertRaises(case.ObservationFailed):
+                    c.run('debug-build-for-testing',['fake'],1,100)
+                self.assertFalse(c.report['compiler_errors']['source_output_complete'])
+                self.assertEqual(c.report['compiler_errors']['entries'][0]['message'],'expected expression')
+                self.assertTrue(c.report['stages'][0]['byte_limit_hit'])
+    def test_broken_stdout_occurs_after_safe_file_and_owned_cleanup(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=Fixture(d)
+            with patch.dict(os.environ,f.env),patch.object(case.Controller,'prepare',side_effect=case.ObservationFailed('command-returned-failure')):
+                c=case.Controller()
+                broken=type('Broken',(),{'write':lambda self,text:(_ for _ in ()).throw(BrokenPipeError()),'flush':lambda self:None})()
+                with patch.object(case.sys,'stdout',broken),self.assertRaises(BrokenPipeError):c.execute()
+            v=f.read();self.assertFalse(v['product_qualified']);self.assertEqual(v['state'],'failed-or-incomplete')
+            self.assertTrue(all(stage['process_group_gone'] for stage in v['stages']))
+    def test_workflow_retention_margin_keeps_original_overall_budget(self):
+        w=yaml.safe_load((ROOT/'.github/workflows/watch-focused-case.yml').read_text())
+        job=w['jobs']['watch'];self.assertEqual(job['timeout-minutes'],20)
+        self.assertEqual(next(x for x in job['steps'] if x.get('id')=='evidence')['timeout-minutes'],3)
+        self.assertEqual(case.NATIVE_SECONDS,300);self.assertEqual(case.TOTAL_SECONDS,1020)
     def test_workflow_inline_python_syntax_and_fixed_budget(self):
         w=yaml.safe_load((ROOT/'.github/workflows/watch-focused-case.yml').read_text())
         for step in w['jobs']['watch']['steps']:

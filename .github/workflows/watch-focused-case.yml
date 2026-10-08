@@ -76,7 +76,7 @@ jobs:
     - name: Validate one small evidence file
       id: evidence
       if: ${{ always() }}
-      timeout-minutes: 1
+      timeout-minutes: 3
       shell: bash
       run: |
         python3 - <<'PYTHON'
