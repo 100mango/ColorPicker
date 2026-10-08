@@ -344,7 +344,7 @@ try:
     test_common=[value for value in common if value!='-quiet']
     # Actual XCTest install and launch, not a launchctl dump, establishes app readiness.
     test_arguments=['-configuration','Debug','-destination','platform='+platform+' Simulator,id='+device['udid'],
-        '-derivedDataPath','build/'+kind+'-tests','-parallel-testing-enabled','NO','-collect-test-diagnostics','never',
+        '-derivedDataPath','build/'+kind+'-tests','-parallel-testing-enabled','NO','-collect-test-diagnostics','on-failure',
         '-test-timeouts-enabled','YES','-default-test-execution-time-allowance','180' if kind=='vision' else '120',
         '-maximum-test-execution-time-allowance','360' if kind=='vision' else '240' if kind=='watch' else '120',
         '-maximum-concurrent-test-simulator-destinations','1','ARCHS=arm64']

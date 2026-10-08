@@ -215,7 +215,8 @@ def preflight(budget, report):
         else: need('file' in text.lower(), 'single-file object export not advertised')
     report.update(phase='preflight-verified', help=help_records)
 
-def binding(runtime, before, after, sha):
+def binding(runtime, before, after, sha, *, diagnostic_mode='never'):
+    need(diagnostic_mode in {'never', 'on-failure'}, 'invalid diagnostic mode')
     need(before == after and before.get('sha') == sha and before.get('clean') is True, 'source readback mismatch')
     need(runtime.get('sha') == sha and runtime.get('result') == 'failed' and
          not runtime.get('cleanup_unconfirmed') and runtime.get('active_command') is None, 'native work/cleanup unresolved')
@@ -232,7 +233,7 @@ def binding(runtime, before, after, sha):
     watch = next(x for x in owned if x['role'] == 'watch')['udid']
     need(re.fullmatch(r'[0-9A-F-]{36}', watch) is not None and runtime.get('device', {}).get('udid') == watch, 'device binding mismatch')
     for flag, expected in (('-destination', 'platform=watchOS Simulator,id=' + watch),
-                           ('-configuration', 'Debug'), ('-collect-test-diagnostics', 'never'),
+                           ('-configuration', 'Debug'), ('-collect-test-diagnostics', diagnostic_mode),
                            ('-default-test-execution-time-allowance', '120'), ('-resultBundlePath', BUNDLE)):
         need(stage['command'].count(flag) == 1 and stage['command'][stage['command'].index(flag) + 1] == expected,
              'test command contract mismatch')

@@ -23,7 +23,7 @@ def stopped_with_prefix(reason, confirmed, cancelled, output, errors):
     return stopped
 
 
-def capture(command, *, seconds, cap, cleanup_grace=2):
+def capture(command, *, seconds, cap, cleanup_grace=2, guard=None):
     """TV-local adapter: bounded failure prefixes with unchanged owned cleanup.
 
     Derived from the existing capture implementation. The only retention change
@@ -55,6 +55,8 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
         # default SIGTERM action; restore the caller's handlers after cleanup.
         for signum in (signal.SIGTERM, signal.SIGINT):
             previous[signum] = signal.signal(signum, interrupted)
+        if guard is not None: guard()
+        check_cancelled()
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    start_new_session=True)
         check_cancelled()
@@ -64,6 +66,7 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
             selector.register(pipe, selectors.EVENT_READ)
         while selector.get_map() or process.poll() is None:
             check_cancelled()
+            if guard is not None: guard()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise RuntimeError('duration-limit')
@@ -84,6 +87,7 @@ def capture(command, *, seconds, cap, cleanup_grace=2):
                 if total > cap:
                     raise RuntimeError('byte-limit')
         check_cancelled()
+        if guard is not None: guard()
         if time.monotonic() > deadline:
             raise RuntimeError('late-exit')
         if group_exists(process.pid):

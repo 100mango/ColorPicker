@@ -37,6 +37,7 @@ jobs:
         clock={'started_monotonic':time.monotonic(),'started_epoch':time.time(),'qualified':False,'state':'bootstrap-only'}
         (out/'report.json').write_text(json.dumps(clock)+'\n')
         (out/'watch-stack-diagnostic.json').write_text(json.dumps({'phase':'disabled','evidence':'not collected','attempts':0,'calls':0,'seconds_spent':0})+'\n')
+        (out/'watch-native-diagnostic.json').write_text(json.dumps({'phase':'pending','calls':0,'metadata_bytes':0,'seconds_spent':0,'qualified':False})+'\n')
         for name in ('source-before.json','source-after.json','runtime.json','xcresult-summary.json'):
             (out/name).write_text('{"available":false}\n')
         for name in ('build.log','runtime.log','case-records.log'):(out/name).write_bytes(b'')
@@ -71,11 +72,11 @@ jobs:
         need(event.get('created') is False and event.get('deleted') is False and event.get('forced') is False,'existing branch non-forced update only')
         need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/watch-copy-singlecase','wrong workflow source')
         need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'167d725dfd064eda0183feef3e87b67660dfb54d'],'not one child of exact focus comparison parent')
+        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'46ffdeb7c20dc4a4e636b86f64d87a415b107495'],'not one child of exact native diagnostic parent')
         need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','167d725dfd064eda0183feef3e87b67660dfb54d','HEAD','--').splitlines()
-        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tTouchColorWatch/WatchViews.swift', 'M\tscripts/test_watch_touch_drag.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'167d725dfd064eda0183feef3e87b67660dfb54d','changes':observed,'clean':True}
+        observed=git('diff','--name-status','--no-renames','46ffdeb7c20dc4a4e636b86f64d87a415b107495','HEAD','--').splitlines()
+        need(sorted(observed)==['A\tscripts/test_watch_diagnostic_files.py', 'A\tscripts/test_watch_native_diagnostics.py', 'A\tscripts/watch_diagnostic_files.py', 'A\tscripts/watch_native_diagnostics.py', 'M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/ios_watch_archive_capture.py', 'M\tscripts/test_extra_platforms.py', 'M\tscripts/watch_xcresult_stack.py'],'changed-path scope mismatch')
+        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'46ffdeb7c20dc4a4e636b86f64d87a415b107495','changes':observed,'clean':True}
         (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
         PYTHON
         set -euo pipefail
@@ -89,6 +90,11 @@ jobs:
         grep -Fx 'Xcode 27.0' "$RUNNER_TEMP/watch-focused-xcode.log"
         grep -Fx 'Build version 27A266a' "$RUNNER_TEMP/watch-focused-xcode.log"
         uname -m | grep -Fx arm64
+    - name: Verify installed Apple failure-diagnostic help
+      id: diagnostic_preflight
+      timeout-minutes: 1
+      shell: bash
+      run: python3 scripts/watch_native_diagnostics.py --phase preflight
     - name: Initialize existing Watch lane budget
       timeout-minutes: 1
       run: python3 scripts/job_budget.py initialize
@@ -139,17 +145,12 @@ jobs:
         if git('status','--porcelain=v1','--untracked-files=all') or git('rev-parse','HEAD')!=before['sha'] or git('rev-parse','HEAD^{tree}')!=before['tree']:raise RuntimeError('source changed')
         (out/'source-after.json').write_text(json.dumps(before)+'\n')
         PYTHON
-    - name: Record optional live sampling disabled for product comparison
+    - name: Extract bounded native diagnostics after confirmed cleanup
       id: stack_diagnostic
-      if: ${{ always() }}
+      if: ${{ always() && steps.diagnostic_preflight.outcome == 'success' }}
       timeout-minutes: 1
       shell: bash
-      run: |
-        python3 - <<'PYTHON'
-        import os
-        if os.environ.get('TOUCHCOLOR_WATCH_LIVE_SAMPLE')!='0':raise RuntimeError('optional sampling must stay disabled')
-        print('WATCH_LIVE_SAMPLING_DISABLED attempts=0 calls=0; no stack collected')
-        PYTHON
+      run: python3 scripts/watch_native_diagnostics.py --phase collect
     - name: Retain bounded logs and strict single-case evidence
       id: evidence
       if: ${{ always() }}
@@ -217,6 +218,8 @@ jobs:
             sampling=json.loads(read(out/'watch-stack-diagnostic.json',32768))
             need(sampling=={'phase':'disabled','evidence':'not collected','attempts':0,'calls':0,'seconds_spent':0},'disabled sampling record mismatch')
             report['live_sampling']=sampling
+            native=json.loads(read(out/'watch-native-diagnostic.json',65536))
+            need(native.get('phase')=='not-applicable' and native.get('qualified') is False,'successful test must not be manufactured from diagnostic evidence')
             need(runtime.get('device',{}).get('udid')==device.get('deviceId') and runtime.get('device',{}).get('deviceTypeIdentifier')=='com.apple.CoreSimulator.SimDeviceType.Apple-Watch-SE-3-40mm','Touch result device mismatch')
             stages=runtime.get('stages',[]);need(stages and all(s.get('exit')==0 and s.get('process_group_gone') is True and s.get('capture_reader_finished') is True and s.get('timed_out') is False for s in stages),'Touch command or cleanup incomplete')
             owned=runtime.get('owned_watch_devices',[]);need(len(owned)==2 and {x['role'] for x in owned}=={'phone','watch'},'wrong owned pair')
@@ -227,7 +230,10 @@ jobs:
         except Exception as error:errors.append(str(error))
         report.update(qualified=not errors,errors=errors,state='passed' if not errors else 'failed-or-incomplete',elapsed_seconds=time.monotonic()-report['started_monotonic'])
         (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        size=sum(p.stat().st_size for p in out.iterdir() if p.is_file())
+        allowed={'report.json','source-before.json','source-after.json','runtime.json','xcresult-summary.json','build.log','runtime.log','case-records.log','watch-stack-diagnostic.json','watch-native-diagnostic.json','watch-app-main-thread.txt','watch-copy-failure.png'}
+        retained=list(out.iterdir())
+        if len(retained)>len(allowed) or any(p.name not in allowed or not p.is_file() or p.is_symlink() or p.stat().st_nlink!=1 for p in retained):raise RuntimeError('unapproved diagnostic artifact member')
+        size=sum(p.stat().st_size for p in retained)
         if size>1200000:raise RuntimeError('fixed artifact exceeds existing Watch evidence budget')
         print(json.dumps({'qualified':report['qualified'],'errors':errors,'artifact_bytes':size}))
         PYTHON
