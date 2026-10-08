@@ -69,7 +69,7 @@ def wait_native(process, deadline, timeout, live, signals, now=time.monotonic):
         except subprocess.TimeoutExpired:
             signals.check()
             if now() >= deadline: raise subprocess.TimeoutExpired(process.args, timeout)
-            live.service()
+            if live is not None: live.service()
 
 def observed_capture(report, runner):
     def run(command, **options):

@@ -309,6 +309,8 @@ import ColorPaletteLegacy
             XCTAssertEqual(palette.selected, next)
             XCTAssertEqual(palette.colors, [first, first])
         }
+        XCTAssertEqual(WatchPalette(defaults: defaults).colors, [first, first],
+                       "Selecting a copy must not write the working RGB values to saved storage")
     }
     func testOfflineRGBEditingKeepsOrderedDuplicatesAndRecoveryBackup() {
         let suite = "TouchColor.watch-unit.\(UUID())"

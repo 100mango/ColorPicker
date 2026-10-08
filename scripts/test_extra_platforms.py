@@ -28,6 +28,9 @@ platform={'vision':'visionOS','watch':'watchOS','tv':'tvOS'}[kind]
 runtime_suffix={'vision':'xrOS-27-0','watch':'watchOS-27-0','tv':'tvOS-27-0'}[kind]
 out=Path('build')/(kind+'-runtime');out.mkdir(parents=True,exist_ok=True)
 report={'captures':[],'platform':kind,'sha':check_output(['git','rev-parse','HEAD'],text=True,timeout=10).strip(),'stages':[]}
+live_sample_mode=os.environ.get('TOUCHCOLOR_WATCH_LIVE_SAMPLE','1')
+if live_sample_mode not in ('0','1'): raise ValueError('Invalid optional Watch live sampling mode')
+report['watch_live_sample_enabled']=live_sample_mode=='1'
 text_row=text_row_from_environment(kind,report['sha']) if kind in ('vision','watch') else None
 text_phase=text_row['phase'] if text_row else 'normal'
 if text_row is not None: report['native_text_row']=text_row
@@ -56,13 +59,14 @@ def run(command,timeout,required=True):
         if required: raise RuntimeError('Prior process exit is unconfirmed; no new work on this VM')
         return 124
     started=time.monotonic();wall_started=time.time();started_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
+    deadline=started+timeout
     report['active_command']={'command':command,'started_at':started_at,'started_monotonic':started,'timeout_seconds':timeout,'phase':'starting'}
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
     watch_cases=WatchCaseLifecycle() if kind=='watch' and '-resultBundlePath' in command and command[command.index('-resultBundlePath')+1]==WATCH_UI_BUNDLE else None
-    live=LiveSample(report,command,device) if watch_cases is not None else None
-    native_signals=NativeSignals() if live is not None else None
+    live=LiveSample(report,command,device) if watch_cases is not None and report.get('watch_live_sample_enabled',True) else None
+    native_signals=NativeSignals() if watch_cases is not None else None
     p=None;reader=None;reader_started=False
     reader_complete=threading.Event();reader_errors=[]
     cleanup_error=None;timed_out=False;raw_exit=None;interruption=None;code=124
@@ -108,7 +112,7 @@ def run(command,timeout,required=True):
     try:
         if native_signals is not None:
             native_signals.install()
-            live.cancel_check=native_signals.check
+            if live is not None: live.cancel_check=native_signals.check
             native_signals.check()
         p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
         report['active_command'].update(pid=p.pid,phase='running')
@@ -119,10 +123,19 @@ def run(command,timeout,required=True):
         if live is not None:
             live.output_active=lambda: reader.is_alive() and not reader_errors and not reader_complete.is_set()
             live.native_active=lambda: p.poll() is None
-        code=wait_native(p,started+timeout,timeout,live,native_signals) if live is not None else p.wait(timeout=timeout)
+        # Spawn, report writes and output may already have spent part of the
+        # original allowance. This does not preempt blocked OS/file operations;
+        # it prevents granting a fresh full wait after they return.
+        remaining=deadline-time.monotonic()
+        if remaining<=0: raise subprocess.TimeoutExpired(command,timeout)
+        code=wait_native(p,deadline,timeout,live,native_signals) if native_signals is not None else p.wait(timeout=remaining)
         raw_exit=code
+        if time.monotonic()>deadline: raise subprocess.TimeoutExpired(command,timeout)
     except subprocess.TimeoutExpired:
         timed_out=True;code=124
+        report['command_deadline_exceeded']=True
+        if kind=='watch' and command[:2]==['xcrun','simctl'] and len(command)==4 and command[2] in ('shutdown','unpair','delete'):
+            report['device_uncertain']={'action':command[2],'target':command[3],'reason':'owned device cleanup command exceeded its deadline'}
         report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
         # Owned cleanup is in finally even if this diagnostic write fails.
         try:
@@ -180,7 +193,7 @@ def run(command,timeout,required=True):
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
 def resources(label):
-    if report.get('cleanup_unconfirmed') or report.get('native_cancelled'): return
+    if report.get('cleanup_unconfirmed') or report.get('native_cancelled') or report.get('command_deadline_exceeded'): return
     sample=resource_snapshot(label)
     report.setdefault('resources',[]).append(sample)
     if sample.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
@@ -472,7 +485,7 @@ finally:
     vision_offline_records = tuple(value for value in (pending_vision_hosted,pending_vision_normal,pending_vision_result,vision_diagnostic)
                                    if value is not None)
     if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
-    if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed') and not report.get('native_cancelled'):
+    if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed') and not report.get('native_cancelled') and not report.get('command_deadline_exceeded'):
         try:
             lookback=log_lookback(EXPECTED_MINUTES['watch'])
             lifecycle=run_captured(['xcrun','simctl','spawn',device['udid'],'log','show','--last',lookback,'--style','compact',
@@ -484,7 +497,7 @@ finally:
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
-    if result_bundle.exists() and kind!='vision' and not report.get('cleanup_unconfirmed') and not report.get('native_cancelled'):
+    if not report.get('command_deadline_exceeded') and result_bundle.exists() and kind!='vision' and not report.get('cleanup_unconfirmed') and not report.get('native_cancelled'):
         try:
             summary_run=run_captured(['xcrun','xcresulttool','get','test-results','summary','--path',str(result_bundle)],text=True,timeout=30)
             if summary_run.returncode==0:
@@ -497,10 +510,13 @@ finally:
             report['summary_error']=str(error)
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     if owned_watch_devices and not report.get('cleanup_unconfirmed'):
-        for owned in reversed(owned_watch_devices): run(['xcrun','simctl','shutdown',owned['udid']],60,required=False)
-        if owned_watch_pair and not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','unpair',owned_watch_pair],60,required=False)
         for owned in reversed(owned_watch_devices):
-            if not report.get('cleanup_unconfirmed'): run(['xcrun','simctl','delete',owned['udid']],60,required=False)
+            if report.get('cleanup_unconfirmed') or report.get('device_uncertain'): break
+            run(['xcrun','simctl','shutdown',owned['udid']],60,required=False)
+        if owned_watch_pair and not report.get('cleanup_unconfirmed') and not report.get('device_uncertain'): run(['xcrun','simctl','unpair',owned_watch_pair],60,required=False)
+        for owned in reversed(owned_watch_devices):
+            if report.get('cleanup_unconfirmed') or report.get('device_uncertain'): break
+            run(['xcrun','simctl','delete',owned['udid']],60,required=False)
     elif device and kind!='watch' and not report.get('cleanup_unconfirmed'):
         run(['xcrun','simctl','shutdown',device['udid']],60,required=False)
         if vision_offline_records:
@@ -528,6 +544,9 @@ finally:
         report['cleanup_budget_status']='At least one mandatory command could not finish within the reserved lifecycle budget'
     if report.get('cleanup_unconfirmed'):
         report['simulator_cleanup']='No further commands; disposable VM teardown remains authoritative'
+        report['result']='failed'
+    if report.get('device_uncertain'):
+        report['simulator_cleanup']='Owned device cleanup timed out; remaining device commands were not started and device cleanup is unconfirmed'
         report['result']='failed'
     if report.get('failures'):
         report['result']='failed';report['error']=report['failures'][0]['error']

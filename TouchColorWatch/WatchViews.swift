@@ -300,6 +300,7 @@ struct WatchPrivacy: View {
 
 private struct WatchSavedColor: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var editingCopy = false
     let color: RGBColor
     let index: Int
     @ObservedObject var palette: WatchPalette
@@ -308,11 +309,17 @@ private struct WatchSavedColor: View {
         ScrollView {
             VStack {
                 WatchSwatch(color: color)
-                NavigationLink("Edit a Copy") {
-                    WatchColorEditor(palette: palette, transfer: transfer).onAppear { palette.select(color) }
+                Button("Edit a Copy") {
+                    // Prepare the shared working color in the user action,
+                    // before requesting navigation, rather than on appearance.
+                    palette.select(color)
+                    editingCopy = true
                 }.accessibilityIdentifier("watch.edit.copy")
                 Button("Delete", role: .destructive) { palette.remove(at: index); dismiss() }.accessibilityIdentifier("watch.delete.\(index)")
             }
+        }
+        .navigationDestination(isPresented: $editingCopy) {
+            WatchColorEditor(palette: palette, transfer: transfer)
         }
     }
 }

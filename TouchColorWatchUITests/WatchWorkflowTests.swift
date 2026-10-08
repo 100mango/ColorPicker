@@ -27,6 +27,8 @@ final class WatchWorkflowTests: XCTestCase {
             // existing LegacyPalette colorArray key, including isolated suites.
             // This case does not claim to test Save or persisted palette writes.
             app.launchArguments += ["-colorArray", "(\"#fe0000\", \"#fe0000\")"]
+        } else if name.contains("TouchCopyEntryReentryDoesNotPersist") {
+            app.launchArguments += ["-colorArray", "(\"#fe0000\", \"#fe0000\")"]
         }
         app.launch()
     }
@@ -295,6 +297,32 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertEqual(hex.label, "#fe0000", "An unsaved copy must leave the original saved color unchanged")
         let image = XCTAttachment(screenshot: app.screenshot())
         image.name = "Native Watch Create and copy touch-focused Crown response"; image.lifetime = .keepAlways; add(image)
+    }
+
+    @MainActor func testTouchCopyEntryReentryDoesNotPersist() throws {
+        let count = app.staticTexts["watch.count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 10)); XCTAssertEqual(count.label, "2")
+        try reachSavedColorByTouch("watch.color.0")
+        let hex = app.staticTexts["watch.hex"]
+        XCTAssertEqual(hex.label, "#fe0000")
+        for _ in 0..<2 {
+            let copy = app.buttons["watch.edit.copy"]
+            XCTAssertTrue(copy.waitForExistence(timeout: 5)); XCTAssertTrue(copy.isHittable)
+            copy.tap() // Keep ordinary XCTest quiescence on each real entry.
+            XCTAssertTrue(hex.waitForExistence(timeout: 5)); XCTAssertEqual(hex.label, "#fe0000")
+            // The existing RGB test also lets XCTest reveal this real control.
+            app.buttons["watch.component.down"].tap()
+            XCTAssertEqual(hex.label, "#fd0000")
+            app.buttons["BackButton"].tap()
+            XCTAssertTrue(copy.waitForExistence(timeout: 5))
+            XCTAssertEqual(hex.label, "#fe0000", "Returning must preserve the saved color")
+        }
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(count.waitForExistence(timeout: 5)); XCTAssertEqual(count.label, "2")
+        // The first launch only supplied argument-domain input. Relaunch the
+        // same suite without either the input or reset: Copy must not persist it.
+        app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
+        XCTAssertTrue(count.waitForExistence(timeout: 10)); XCTAssertEqual(count.label, "0")
     }
 
     func testRealDigitalCrownChangesRGBComponent() {
