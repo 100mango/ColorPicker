@@ -7,4 +7,5 @@ FOUNDATION_EXPORT BOOL TCPrivacyAllowsResponse(NSURLResponse *response);
 FOUNDATION_EXPORT BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated);
 
 @interface TCPrivacyViewController : UIViewController
+@property (nonatomic, copy) void (^dismissalHandler)(void);
 @end

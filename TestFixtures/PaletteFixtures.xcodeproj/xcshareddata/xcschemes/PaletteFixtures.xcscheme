@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Scheme LastUpgradeVersion="2700" version="1.3">
+  <BuildAction parallelizeBuildables="NO" buildImplicitDependencies="NO">
+    <BuildActionEntries>
+      <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="546F6FED1B8176152B4E59F8" BuildableName="PaletteFixtures.app" BlueprintName="PaletteFixtures" ReferencedContainer="container:PaletteFixtures.xcodeproj" />
+      </BuildActionEntry>
+    </BuildActionEntries>
+  </BuildAction>
+</Scheme>

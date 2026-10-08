@@ -286,4 +286,20 @@
     [controller webViewWebContentProcessDidTerminate:nil];
     XCTAssertFalse([[controller valueForKey:@"errorScroll"] isHidden]);
 }
+- (void)testTransparentPhotoAppearanceMatchesSampledWhiteMatteInLightAndDark {
+    UIGraphicsImageRendererFormat *format=[UIGraphicsImageRendererFormat defaultFormat];
+    format.scale=1;format.opaque=NO;format.preferredRange=UIGraphicsImageRendererFormatRangeStandard;
+    UIImage *transparent=[[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(3,2) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) { CGContextClearRect(context.CGContext,CGRectMake(0,0,3,2)); }];
+    for (NSNumber *style in @[@(UIUserInterfaceStyleLight),@(UIUserInterfaceStyleDark)]) {
+        ColorDetectView *view=[[ColorDetectView alloc] initWithFrame:CGRectMake(0,0,90,90) andUIImage:transparent];
+        view.overrideUserInterfaceStyle=style.integerValue;
+        TCGeometryDelegate *delegate=[TCGeometryDelegate new];view.delegate=delegate;
+        [view layoutIfNeeded];
+        UIImage *visible=[[[UIGraphicsImageRenderer alloc] initWithSize:view.bounds.size format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) { [view.layer renderInContext:context.CGContext]; }];
+        NSString *displayed=TCSampleImage(visible,CGPointMake(0.5,0.5));
+        XCTAssertEqualObjects(displayed,@"#ffffff");
+        XCTAssertTrue([view sampleVisibleCenter]);
+        XCTAssertEqualObjects(delegate.hex,displayed,@"Visible transparent pixels and numeric samples must use the same matte");
+    }
+}
 @end

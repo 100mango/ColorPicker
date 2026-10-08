@@ -1,0 +1,14 @@
+/* English source strings are the canonical fallbacks. */
+
+"TouchColor workspace" = "TouchColor workspace";
+
+"Saved color palette" = "Saved color palette";
+
+"Image color sampler" = "Image color sampler";
+
+"Color sampler" = "Color sampler";
+"Click to sample a pixel; arrow keys move one pixel." = "Click to sample a pixel; arrow keys move one pixel.";
+
+"Contact the developer about privacy" = "Contact the developer about privacy";
+
+"No camera" = "No camera";

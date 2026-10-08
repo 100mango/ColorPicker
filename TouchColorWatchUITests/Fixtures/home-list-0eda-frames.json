@@ -1,0 +1,126 @@
+{
+  "kind": "Retained home List AX frame subset; geometry evidence, not successful gestures",
+  "proposal_base_tree": "68878c41579a80d64c3ec57cce3ce4fe69c6d4f2",
+  "observed_source_commit_prefix": "0eda",
+  "cases": [
+    {
+      "watch_mm": 49,
+      "source_log": "watch-0eda-111542680557-text.log",
+      "source_sha256": "b9f8ce49d522143b58f7b60f5d14c74142178ba916f0750be4dfd6d7a09ecc6f",
+      "scope": "largest touch post-copy failure",
+      "viewport": [
+        0,
+        0,
+        211,
+        257
+      ],
+      "collection_view": [
+        0,
+        0,
+        211,
+        257
+      ],
+      "navigation": [
+        0,
+        0,
+        211,
+        66
+      ],
+      "rows": [
+        {
+          "identifier": "watch.editor",
+          "index": -1,
+          "frame": [
+            2,
+            66,
+            207,
+            59
+          ]
+        },
+        {
+          "identifier": "watch.photo",
+          "index": -1,
+          "frame": [
+            2,
+            130,
+            207,
+            59
+          ]
+        },
+        {
+          "identifier": "watch.count",
+          "index": -1,
+          "frame": [
+            2,
+            229.5,
+            207,
+            59
+          ]
+        }
+      ],
+      "screenshot": {
+        "artifact": 11319289581,
+        "artifact_sha256": "8c093148a3da67615ef77ec21fcb7f7aa55a72fa399d50ded6010569417e1e50",
+        "file": "EB1B8654-E7A2-4F8A-86CA-61213DEEB96A.png",
+        "sha256": "1728d8e10f19c201c9e756b408ac2d1be1b8cb98ebb7a3897a1c7e88562d4193",
+        "test": "WatchWorkflowTests/testTouchEditSavedCopyDeleteOneDuplicateAndRelaunchKeepsOrder()"
+      }
+    },
+    {
+      "watch_mm": 40,
+      "source_log": "watch-0eda-small-job.log",
+      "source_sha256": "59a3e09209d2a7fcc423a7775f74bd5c88dc0e885e9026644fcfa9e045feb55e",
+      "scope": "small Crown return List failure, not touch-copy outcome",
+      "viewport": [
+        0,
+        0,
+        162,
+        197
+      ],
+      "collection_view": [
+        0,
+        0,
+        162,
+        197
+      ],
+      "navigation": [
+        0,
+        0,
+        162,
+        47.5
+      ],
+      "rows": [
+        {
+          "identifier": "watch.editor",
+          "index": -1,
+          "frame": [
+            2,
+            47.5,
+            158,
+            44
+          ]
+        },
+        {
+          "identifier": "watch.photo",
+          "index": -1,
+          "frame": [
+            2,
+            95.5,
+            158,
+            47
+          ]
+        },
+        {
+          "identifier": "watch.count",
+          "index": -1,
+          "frame": [
+            2,
+            181,
+            158,
+            44
+          ]
+        }
+      ]
+    }
+  ]
+}

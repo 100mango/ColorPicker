@@ -31,3 +31,72 @@
 "Zoom" = "缩放";
 "Selected pixel" = "已选择的像素";
 "Use Sample Center, or tap and drag on the photo to pick a color. Pinch or use Zoom to magnify." = "使用中心取色，或轻点、长按拖动照片取色。可双指或使用缩放滑块放大。";
+
+"Color Canvas" = "色彩画布";
+"Choose a photo or use the camera. Save colors to build your palette." = "选择照片或使用相机，保存喜爱的颜色，创建自己的调色板。";
+"Color Sources" = "取色来源";
+"Zoom In" = "放大";
+"Zoom Out" = "缩小";
+"Actual Fit" = "适合画布";
+"Move Selected Pixel" = "移动取色点";
+
+"Opening Photo" = "正在打开照片";
+
+"Camera paused" = "相机已暂停";
+
+"This image could not be opened. Choose a readable image file." = "无法打开这张图片，请选择可读取的图片文件。";
+"This image exceeds the 100-megapixel or 128 MB safety limit. The original was not changed or reduced." = "图片超过了1亿像素或128 MB的安全限制。原图未被修改或缩小。";
+
+"Watch Inbox" = "手表收件箱";
+
+"The Watch transfer could not be added to the inbox. Existing colors and pending transfers were kept." = "无法将手表传输添加到收件箱，现有颜色和待处理传输均已保留。";
+
+"The inbox could not be read. Its saved data was kept." = "无法读取收件箱，已保存的数据仍被保留。";
+
+"No pending Watch colors. Send selected colors from TouchColor on your paired Apple Watch." = "没有待处理的手表颜色。请从已配对 Apple Watch 上的 TouchColor 发送所选颜色。";
+
+"%ld selected colors" = "已选择 %ld 个颜色";
+
+"Add these colors?" = "添加这些颜色？";
+
+"These selected colors will be appended in order. Existing colors and duplicates are kept." = "这些所选颜色将按顺序追加，现有颜色和重复项均会保留。";
+
+"Add Colors" = "添加颜色";
+
+"Decline Transfer" = "拒绝传输";
+
+"The saved Watch inbox could not be read. Its data was kept." = "无法读取已保存的手表收件箱，原数据仍被保留。";
+
+"The Watch inbox has reached its storage limit. Existing colors and transfers were kept." = "手表收件箱已达到存储上限，现有颜色和传输均已保留。";
+
+"This transfer conflicts with an earlier request. Nothing was changed." = "此传输与之前的请求冲突，未更改任何数据。";
+
+"This transfer is no longer pending." = "此传输已不在待处理列表中。";
+
+"Cancel" = "取消";
+
+"Could Not Complete" = "无法完成";
+
+"Choose a JSON palette no larger than 1 MB. Existing colors were kept." = "请选择不超过 1 MB 的 JSON 调色板，现有颜色已保留。";
+
+"Palette selection cancelled." = "已取消调色板选择。";
+
+"Choose a JSON file or paste a JSON palette, then review every color before adding it." = "选择 JSON 文件或粘贴 JSON 调色板，查看所有颜色后再添加。";
+
+"Import Palette" = "导入调色板";
+
+"Reading palette…" = "正在读取调色板…";
+
+"Adding this selection appends every color in order. Existing colors and duplicates are kept." = "添加后将按顺序追加所有所选颜色，现有颜色和重复项均会保留。";
+
+"Paste one JSON palette containing only #rrggbb colors." = "请粘贴一个仅含 #rrggbb 颜色的 JSON 调色板。";
+
+"Pasted palette" = "粘贴的调色板";
+
+"Choose JSON File" = "选择 JSON 文件";
+
+"Paste JSON" = "粘贴 JSON";
+
+"The palette must contain only #rrggbb colors. Nothing was imported." = "调色板只能包含 #rrggbb 格式的颜色，未导入任何数据。";
+
+"Watch transfer is unavailable on this device. You can import a palette using Files or Paste." = "此设备不支持 Apple Watch 传输。您可以通过文件或粘贴导入调色板。";

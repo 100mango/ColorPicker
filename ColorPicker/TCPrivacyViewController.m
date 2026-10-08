@@ -141,6 +141,6 @@ BOOL TCPrivacyAllowsContactURL(NSURL *URL, BOOL userActivated) {
     self.closing = YES;
     [self.webView stopLoading];
     UIViewController *presentation = self.navigationController ?: self;
-    [presentation dismissViewControllerAnimated:YES completion:nil];
+    [presentation dismissViewControllerAnimated:YES completion:self.dismissalHandler];
 }
 @end

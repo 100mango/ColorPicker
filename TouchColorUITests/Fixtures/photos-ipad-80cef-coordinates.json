@@ -1,0 +1,73 @@
+{
+  "source": {
+    "commit": "80cef6ad70b40a03ebcf9f39602006214f2d4a0a",
+    "cases": [
+      "testKeyboardImportSamplingZoomSaveAndRotation",
+      "testLiveCanvasPickerCancellationAndSceneLifecycle",
+      "testNativeCanvasPaletteSavePreviewPickerCancelAndRelaunch"
+    ],
+    "kind": "Exact reported geometry and first failed coordinate component from the public job log; no basis coordinates or actual y were retained."
+  },
+  "regression_bases": {
+    "provenance": "Synthetic opposite quarter-turn bases consistent with the observed x component; runtime measures basis00, basis10 and basis01 and validates basis11 instead of selecting either example.",
+    "construction": "For window width W and height H: [(H,0),(H,W),(0,0)] and [(0,W),(0,0),(H,W)]. These are test examples, not recorded runtime measurements."
+  },
+  "devices": [
+    {
+      "family": "iPadLarge",
+      "job": 111462362804,
+      "window_ax": [
+        0,
+        0,
+        1376,
+        1032
+      ],
+      "popover_ax": [
+        364,
+        372,
+        833,
+        640
+      ],
+      "chosen_point_ax": [
+        186,
+        516
+      ],
+      "actual_screen_x": 516,
+      "snapshot_nodes": 16,
+      "snapshot_chrome_matches": 0,
+      "stable_observation_elapsed_seconds": [
+        2.321,
+        2.223,
+        2.22
+      ]
+    },
+    {
+      "family": "iPadMini",
+      "job": 111462362779,
+      "window_ax": [
+        0,
+        0,
+        1133,
+        744
+      ],
+      "popover_ax": [
+        290,
+        84,
+        833,
+        640
+      ],
+      "chosen_point_ax": [
+        149,
+        372
+      ],
+      "actual_screen_x": 372,
+      "snapshot_nodes": 16,
+      "snapshot_chrome_matches": 0,
+      "stable_observation_elapsed_seconds": [
+        2.227,
+        2.127,
+        2.226
+      ]
+    }
+  ]
+}
