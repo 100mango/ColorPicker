@@ -27,6 +27,16 @@ QUIET_SECONDS = 5
 SAMPLE_SECONDS = 1
 SAMPLE_INTERVAL_MS = 5
 
+def qualify_container_help(raw):
+    text = clean_manual(raw)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    need(len(lines) >= 3 and lines[0] == "Print the path of the installed app's container" and
+         lines[1] == 'Usage: simctl get_app_container <device> <app bundle identifier> [<container>]' and
+         any(re.fullmatch(r'app\s+The \.app bundle', line) for line in lines[2:]), 'owned app container help contract unavailable')
+    need(not re.search(r'permission denied|operation not permitted|not authorized|invalid option|unknown option|\berror\b|\bfailed\b', text, re.I),
+         'container help reported an error')
+    return text
+
 class NativeCancelled(Exception):
     pass
 
@@ -81,6 +91,14 @@ def observed_capture(report, runner):
                    permission_denied=bool(re.search(rb'permission denied|operation not permitted|not authorized|task_for_pid.*fail', result.stdout + result.stderr, re.I)))
         if report.get('operation') in {'sample-manual', 'container-help', 'compile-host-identity'} and result.stderr:
             row['preflight_stderr_prefix'] = clean_manual(result.stderr[:4096])
+        if (report.get('operation') == 'container-help' and command == ['xcrun', 'simctl', 'help', 'get_app_container']
+                and result.returncode == 0 and result.stderr):
+            # Installed simctl emits its successful help on stderr. Admit only
+            # this exact read-only help operation and its verified usage shape.
+            need(not result.stdout, 'ambiguous container help output streams')
+            qualify_container_help(result.stderr)
+            row['container_help_stream'] = 'stderr'
+            return subprocess.CompletedProcess(command, 0, result.stderr, b'')
         if report.get('operation') == 'one-owned-app-sample' and result.returncode == 0:
             # sample may send progress to stderr. This single operation permits
             # bounded status only; the fresh output/header/identity/cleanup
@@ -163,7 +181,7 @@ def preflight():
         help_raw = budget.run(['xcrun', 'simctl', 'help', 'get_app_container'], cap=8192)
         help_text = clean_manual(help_raw)
         report['container_help'] = {'sha256': hashlib.sha256(help_raw).hexdigest(), 'text': help_text}
-        need(all(token in help_text for token in ('get_app_container', 'device', 'app', 'container')), 'owned app container operation unavailable')
+        qualify_container_help(help_raw)
         source = Path(__file__).with_name('watch_sample_identity.c')
         report['identity_source_sha256'] = hashlib.sha256(read(source, 32768)).hexdigest()
         report['operation'] = 'compile-host-identity'

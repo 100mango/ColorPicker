@@ -23,6 +23,9 @@ from test_watch_xcresult_stack import inputs, DEVICE, PHONE, SHA
 EPOCH = dt.datetime(2026, 10, 8, tzinfo=dt.timezone.utc).timestamp()
 START = "Test Case '-[" + d.CASE_LOG + "]' started.\n"
 CREATE = 'WATCH_CREATE_ENTRY_RESPONSE touchFocusedCrown=true buttons=true\n'
+CONTAINER_HELP = (b"Print the path of the installed app's container\n"
+                  b'Usage: simctl get_app_container <device> <app bundle identifier> [<container>]\n'
+                  b'app                 The .app bundle\n')
 def event(seconds, message): return '    t = %7.2fs %s\n' % (seconds, message)
 COPY = [event(49.7, 'Tap "watch.edit.copy" Button'), event(49.7, 'Wait for ' + d.APP + ' to idle'),
         event(49.7, 'Find the "watch.edit.copy" Button'),
@@ -85,6 +88,33 @@ class Fixture:
         return d.LiveSample(self.runtime, self.command, {'udid': DEVICE}, now=lambda: self.clock[0], wall=self.wall, runner=self.runner)
 
 class LiveTests(unittest.TestCase):
+    def test_exact_successful_container_help_accepts_stderr_without_broadening_other_operations(self):
+        command=['xcrun','simctl','help','get_app_container']
+        for stream in ('stdout','stderr'):
+            report={'operation':'container-help'}
+            result=subprocess.CompletedProcess(command,0,CONTAINER_HELP if stream=='stdout' else b'',CONTAINER_HELP if stream=='stderr' else b'')
+            budget=d.Budget(report,0,d.observed_capture(report,lambda *a,**k:result),now=lambda:1)
+            raw=budget.run(command,cap=8192)
+            self.assertEqual(raw,CONTAINER_HELP);d.qualify_container_help(raw)
+            if stream=='stderr':self.assertEqual(report['command_results'][0]['container_help_stream'],'stderr')
+        for operation,other in (('identity-before',command),('one-owned-app-sample',command),
+                                ('container-help',['xcrun','simctl','get_app_container','device','bundle','app'])):
+            report={'operation':operation}
+            result=subprocess.CompletedProcess(other,0,b'',CONTAINER_HELP)
+            budget=d.Budget(report,0,d.observed_capture(report,lambda *a,**k:result),now=lambda:1)
+            with self.assertRaises(ValueError):budget.run(other,cap=8192)
+
+    def test_container_help_nonzero_errors_ambiguous_streams_and_oversize_fail_closed(self):
+        command=['xcrun','simctl','help','get_app_container']
+        for code,stdout,stderr in ((1,b'',CONTAINER_HELP),(0,b'other',CONTAINER_HELP),
+             (0,b'',CONTAINER_HELP+b'Error: unknown option\n'),(0,b'',b'Operation not permitted'),
+             (0,b'',CONTAINER_HELP+b'x'*8192),(0,b'',b'Usage: a different operation')):
+            report={'operation':'container-help'}
+            result=subprocess.CompletedProcess(command,code,stdout,stderr)
+            budget=d.Budget(report,0,d.observed_capture(report,lambda *a,**k:result),now=lambda:1)
+            with self.assertRaises(ValueError):budget.run(command,cap=8192)
+            self.assertEqual(report['calls'],1)
+
     def test_sample_only_bounded_progress_stderr_exception_keeps_all_evidence_gates(self):
         for mode in ('progress','permission','usage','error-stdout','nonzero','oversize','missing-file'):
             def mutate(f,command,result):
@@ -120,7 +150,7 @@ class LiveTests(unittest.TestCase):
                     if command[:2]==['/usr/bin/man','1']:
                         return subprocess.CompletedProcess(command,0,b'unsupported actual manual' if mode=='unsupported-manual' else manual,b'')
                     if command[:3]==['xcrun','simctl','help']:
-                        return subprocess.CompletedProcess(command,0,b'get_app_container <device> <app> [container]',b'')
+                        return subprocess.CompletedProcess(command,0,b'',CONTAINER_HELP)
                     if mode=='unsupported-sdk':return subprocess.CompletedProcess(command,1,b'',b'installed SDK declaration unavailable')
                     Path(command[-1]).write_bytes(b'synthetic binary');return subprocess.CompletedProcess(command,0,b'',b'')
                 with patch.object(d,'capture',runner):
