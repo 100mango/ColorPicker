@@ -31,3 +31,15 @@
 "Zoom" = "缩放";
 "Selected pixel" = "已选择的像素";
 "Use Sample Center, or tap and drag on the photo to pick a color. Pinch or use Zoom to magnify." = "使用中心取色，或轻点、长按拖动照片取色。可双指或使用缩放滑块放大。";
+
+"Color Canvas" = "色彩画布";
+"Choose a photo or use the camera. Save colors to build your palette." = "选择照片或使用相机，保存喜爱的颜色，创建自己的调色板。";
+"Color Sources" = "取色来源";
+"Zoom In" = "放大";
+"Zoom Out" = "缩小";
+"Actual Fit" = "适合画布";
+"Move Selected Pixel" = "移动取色点";
+
+"Opening Photo" = "正在打开照片";
+
+"Camera paused" = "相机已暂停";
