@@ -60,7 +60,10 @@ class Fixture:
             def __init__(self, *args): self.trigger = types.SimpleNamespace(invalidate=lambda reason: None)
             def record(self, line): pass
             def finish(self): pass
-        def stop(process): self.stopped.append(process.pid); return True
+        def stop(process,checkpoint=None):
+            self.stopped.append(process.pid)
+            if checkpoint: checkpoint('exit confirmed')
+            return True
         def no_query(*args, **kwargs): raise AssertionError('No optional command after a deadline')
         def wait_native(process, deadline, timeout, live, signals):
             self.native_wait = (deadline, timeout)
@@ -94,11 +97,122 @@ class Fixture:
 
 
 class DeadlineTailTests(unittest.TestCase):
+    def test_timeout_publication_occurs_only_after_stop_and_reader_join(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,outcome='timeout')
+            f.report['watch_live_sample_enabled']=False
+            seen=[]
+            def publish(*args,**kwargs):
+                if args and args[0] in ('NATIVE_COMMAND_STARTED','NATIVE_COMMAND_DEADLINE_EXCEEDED'):
+                    self.assertEqual(f.stopped,[12345]);self.assertEqual(f.joins,[5]);seen.append(args[0])
+            f.env['print']=publish
+            with f.active():self.assertEqual(f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840),124)
+            self.assertEqual(seen,['NATIVE_COMMAND_STARTED','NATIVE_COMMAND_DEADLINE_EXCEEDED'])
+            stage=f.report['stages'][0]
+            phases=[p['phase'] for p in stage['phases']]
+            self.assertLess(phases.index('cleanup_returned'),phases.index('publication_begin'))
+            self.assertLess(phases.index('reader_join_returned'),phases.index('publication_begin'))
+            self.assertLessEqual(len(phases),16);self.assertFalse(stage['phase_overflow'])
+
+    def test_timeout_does_not_write_metadata_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,outcome='timeout')
+            original=Path.write_text
+            def write(path,*args,**kwargs):
+                if path.name=='runtime.json' and f.report.get('command_deadline_exceeded'):
+                    self.assertEqual(f.stopped,[12345]);self.assertEqual(f.joins,[5])
+                return original(path,*args,**kwargs)
+            with f.active(),patch.object(Path,'write_text',write):
+                self.assertEqual(f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840),124)
+
+    def test_starting_io_can_exhaust_allowance_without_spawning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,write_delay=61)
+            with f.active():self.assertEqual(f.run(['xcrun','simctl','shutdown','WATCH'],60),124)
+            self.assertEqual(f.commands,[]);self.assertEqual(f.stopped,[])
+            stage=f.report['stages'][0]
+            self.assertFalse(stage['started']);self.assertTrue(stage['timed_out'])
+            self.assertTrue(stage['process_group_gone']);self.assertTrue(stage['capture_reader_finished'])
+
+    def test_publication_failure_cannot_prevent_recorded_owned_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,outcome='timeout')
+            def publish(*args,**kwargs):
+                if args and args[0]=='NATIVE_COMMAND_STARTED':
+                    persisted=json.loads((f.out/'runtime.json').read_text())
+                    self.assertIsNone(persisted['active_command'])
+                    self.assertEqual(persisted['result'],'failed')
+                    self.assertTrue(persisted['stages'][0]['process_group_gone'])
+                    self.assertTrue(persisted['stages'][0]['capture_reader_finished'])
+                    self.assertTrue((f.out/'native-ui.log').is_file())
+                    raise OSError('synthetic logger failure')
+            f.env['print']=publish
+            with f.active(),self.assertRaises(OSError):
+                f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840)
+            self.assertEqual(f.stopped,[12345]);self.assertEqual(f.joins,[5])
+            stage=f.report['stages'][0]
+            self.assertTrue(stage['process_group_gone']);self.assertTrue(stage['capture_reader_finished'])
+            self.assertEqual(stage['publication_error'],'OSError');self.assertEqual(stage['exit'],124)
+
+    def test_phase_ledger_is_fixed_size_and_reports_overflow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,outcome='timeout')
+            def stop(process,checkpoint=None):
+                f.stopped.append(process.pid)
+                for _ in range(30):checkpoint('exit confirmed')
+                return True
+            f.env['stop_group']=stop
+            with f.active():self.assertEqual(f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840),124)
+            stage=f.report['stages'][0]
+            self.assertEqual(len(stage['phases']),16);self.assertTrue(stage['phase_overflow'])
+
+    def test_fixed_ui_reader_buffers_without_realtime_stdout(self):
+        import hashlib
+        text='synthetic UI output never forwarded live\n'
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,stdout_text=text,exit_code=65)
+            def publish(*args,**kwargs):
+                self.assertFalse(args and args[0]==text)
+            f.env['print']=publish
+            with f.active():self.assertEqual(f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840),65)
+            self.assertEqual((f.out/'native-ui.log').read_bytes(),text.encode())
+            capture=f.report['stages'][0]['native_output_capture']
+            self.assertTrue(capture['complete']);self.assertFalse(capture['truncated'])
+            self.assertEqual(capture['normalized_utf8_sha256'],hashlib.sha256(text.encode()).hexdigest())
+
+    def test_fixed_ui_output_cap_is_a_failure_without_unbounded_buffer(self):
+        text='x'*300000+'\n'
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,stdout_text=text,exit_code=0)
+            with f.active():self.assertEqual(f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840),124)
+            stage=f.report['stages'][0];capture=stage['native_output_capture']
+            self.assertEqual(stage['raw_exit'],0);self.assertEqual(stage['exit'],124)
+            self.assertTrue(capture['reader_finished']);self.assertFalse(capture['complete']);self.assertTrue(capture['truncated'])
+            self.assertEqual(capture['retained_bytes'],262144);self.assertEqual(capture['total_bytes'],300001)
+            self.assertEqual((f.out/'native-ui.log').stat().st_size,262144)
+            self.assertNotIn('cleanup_unconfirmed',f.report)
+
+    def test_unresolved_reader_never_prints_markers_or_copies_mutable_buffer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f=Fixture(directory,outcome='timeout')
+            class Unresolved:
+                def __init__(self,*args,**kwargs):pass
+                def start(self):pass
+                def is_alive(self):return True
+                def join(self,timeout):f.joins.append(timeout)
+            f.env['threading']=types.SimpleNamespace(Event=threading.Event,Thread=Unresolved)
+            output=[];f.env['print']=lambda *args,**kwargs:output.append(args[0])
+            with f.active():self.assertEqual(f.run(['xcodebuild','test-without-building','-resultBundlePath','build/watch-ui.xcresult'],840),124)
+            self.assertNotIn('NATIVE_COMMAND_STARTED',output);self.assertNotIn('NATIVE_COMMAND_DEADLINE_EXCEEDED',output)
+            self.assertFalse((f.out/'native-ui.log').exists())
+            stage=f.report['stages'][0]
+            self.assertFalse(stage['capture_reader_finished']);self.assertEqual(stage['console_markers_skipped'],'reader-unresolved')
+
     def test_spawn_and_report_work_are_subtracted_before_wait(self):
         with tempfile.TemporaryDirectory() as directory:
             f = Fixture(directory, spawn_delay=30, write_delay=10)
             with f.active(): self.assertEqual(f.run(['xcrun', 'simctl', 'shutdown', 'WATCH']), 0)
-            self.assertEqual(f.waits, [10])
+            self.assertEqual(f.waits, [20]) # Running-state publication is deferred until cleanup.
             self.assertEqual(f.stopped, [12345]); self.assertEqual(f.joins, [5])
             self.assertNotIn('device_uncertain', f.report)
 

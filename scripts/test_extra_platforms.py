@@ -37,6 +37,7 @@ if text_row is not None: report['native_text_row']=text_row
 watch_frames=ListFrameDiagnostics()
 if kind=='watch': report['watch_list_frames']=watch_frames.report
 def run(command,timeout,required=True):
+    import hashlib
     from job_budget import enabled_budget, fail_record, BudgetExhausted
     budget=enabled_budget()
     if budget is not None:
@@ -61,19 +62,37 @@ def run(command,timeout,required=True):
     started=time.monotonic();wall_started=time.time();started_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
     deadline=started+timeout
     report['active_command']={'command':command,'started_at':started_at,'started_monotonic':started,'timeout_seconds':timeout,'phase':'starting'}
-    (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-    print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
     watch_cases=WatchCaseLifecycle() if kind=='watch' and '-resultBundlePath' in command and command[command.index('-resultBundlePath')+1]==WATCH_UI_BUNDLE else None
     live=LiveSample(report,command,device) if watch_cases is not None and report.get('watch_live_sample_enabled',True) else None
     native_signals=NativeSignals() if watch_cases is not None else None
-    p=None;reader=None;reader_started=False
+    p=None;reader=None;reader_started=False;spawn_attempted=False;started_record=None;deadline_record=None
     reader_complete=threading.Event();reader_errors=[]
     cleanup_error=None;timed_out=False;raw_exit=None;interruption=None;code=124
     process_group_gone=False;capture_reader_finished=False
+    buffered_output=watch_cases is not None
+    native_output=bytearray();native_output_bytes=0;native_output_truncated=False
+    native_output_digest=hashlib.sha256();native_output_limit=262144
+    phases=[];phase_overflow=False
+    def phase(name):
+        nonlocal phase_overflow
+        # Fixed-size memory only. Never write files or stdout from a cleanup
+        # checkpoint: a stalled logger must not delay TERM/KILL/reaping.
+        if len(phases)<16: phases.append({'phase':name,'elapsed_seconds':round(time.monotonic()-started,6)})
+        else: phase_overflow=True
+    def cleanup_checkpoint(name):
+        names={'sending SIGTERM':'term_requested','sending SIGKILL':'kill_requested','exit confirmed':'group_exit_confirmed'}
+        phase(names.get(name,'group_exit_unconfirmed'))
     def read_output():
-        for line in p.stdout:
-            print(line,end='',flush=True)
+        nonlocal native_output_bytes,native_output_truncated
+        for line in iter(lambda:p.stdout.readline(8192),''):
+            if buffered_output:
+                data=line.encode('utf-8');native_output_bytes+=len(data);native_output_digest.update(data)
+                remaining=max(0,native_output_limit-len(native_output))
+                native_output.extend(data[:remaining])
+                if len(data)>remaining:native_output_truncated=True
+            else:
+                print(line,end='',flush=True)
             if kind=='watch': watch_frames.record(line)
             if watch_cases is not None: watch_cases.record(line)
             if live is not None: live.record(line)
@@ -114,10 +133,17 @@ def run(command,timeout,required=True):
             native_signals.install()
             if live is not None: live.cancel_check=native_signals.check
             native_signals.check()
-        p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
-        report['active_command'].update(pid=p.pid,phase='running')
+        # No command has been spawned yet. Account for these potentially slow
+        # publications before admitting a child, and honor queued cancellation.
         (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-        print('NATIVE_COMMAND_STARTED',json.dumps(report['active_command']),flush=True)
+        print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
+        if native_signals is not None: native_signals.check()
+        if time.monotonic()>=deadline: raise subprocess.TimeoutExpired(command,timeout)
+        phase('spawn_begin');spawn_attempted=True
+        p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        phase('spawn_returned')
+        report['active_command'].update(pid=p.pid,phase='running')
+        started_record=dict(report['active_command'])
         reader=threading.Thread(target=output,daemon=True)
         reader.start();reader_started=True
         if live is not None:
@@ -128,20 +154,21 @@ def run(command,timeout,required=True):
         # it prevents granting a fresh full wait after they return.
         remaining=deadline-time.monotonic()
         if remaining<=0: raise subprocess.TimeoutExpired(command,timeout)
+        phase('wait_begin')
         code=wait_native(p,deadline,timeout,live,native_signals) if native_signals is not None else p.wait(timeout=remaining)
+        phase('wait_returned')
         raw_exit=code
         if time.monotonic()>deadline: raise subprocess.TimeoutExpired(command,timeout)
     except subprocess.TimeoutExpired:
         timed_out=True;code=124
+        phase('deadline_observed')
         report['command_deadline_exceeded']=True
         if kind=='watch' and command[:2]==['xcrun','simctl'] and len(command)==4 and command[2] in ('shutdown','unpair','delete'):
             report['device_uncertain']={'action':command[2],'target':command[3],'reason':'owned device cleanup command exceeded its deadline'}
         report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
-        # Owned cleanup is in finally even if this diagnostic write fails.
-        try:
-            (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-            print('NATIVE_COMMAND_DEADLINE_EXCEEDED',json.dumps(report['active_command']),flush=True)
-        except BaseException as error: interruption=error
+        deadline_record=dict(report['active_command'])
+        # Do not publish this record until the owned group and reader cleanup
+        # attempts have finished. Synchronous diagnostics cannot preempt kill.
     except BaseException as error:
         interruption=error;code=124
         if isinstance(error,NativeCancelled) or getattr(error,'cancelled_signal',None) is not None: report['native_cancelled']=True
@@ -150,20 +177,24 @@ def run(command,timeout,required=True):
     finally:
         try:
             if p is not None:
-                try: process_group_gone=stop_group(p)
+                phase('cleanup_begin')
+                try: process_group_gone=stop_group(p,checkpoint=cleanup_checkpoint)
                 except BaseException as error:
                     process_group_gone=False
                     cleanup_error='Owned native cleanup failed: '+type(error).__name__
+                phase('cleanup_returned')
                 if reader_started:
+                    phase('reader_join_begin')
                     try: reader.join(timeout=5)
                     except BaseException as error: reader_errors.append(type(error).__name__)
                     capture_reader_finished=reader_complete.is_set() and not reader.is_alive()
+                    phase('reader_join_returned')
                 else:
                     try:
                         if p.stdout is not None: p.stdout.close()
                         capture_reader_finished=True
                     except BaseException as error: reader_errors.append(type(error).__name__)
-            elif isinstance(interruption,NativeCancelled):
+            elif not spawn_attempted or isinstance(interruption,NativeCancelled):
                 process_group_gone=True;capture_reader_finished=True
             if not process_group_gone or not capture_reader_finished:
                 report['cleanup_unconfirmed']=True
@@ -180,14 +211,48 @@ def run(command,timeout,required=True):
                 if native_signals.cancelled is not None:
                     report['native_cancelled']=True
                     interruption=interruption or NativeCancelled('native observation cancelled');code=124
+    phase('ownership_resolution_finished')
+    ownership_finished_at=datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ownership_elapsed=round(time.monotonic()-started,3)
+    ownership_wall_elapsed=round(time.time()-wall_started,3)
+    reaped_exit=p.poll() if p is not None and process_group_gone else None
+    if buffered_output and native_output_truncated:code=124
     if report.get('cleanup_unconfirmed'):
         code=124
         if budget is not None: fail_record('Native command or capture cleanup unconfirmed',phase=budget.phase,cleanup_unconfirmed=True)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'raw_exit':raw_exit,'started':p is not None,'timed_out':timed_out,'timeout_seconds':timeout,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
+    report['stages'].append({'command':command,'exit':code,'raw_exit':raw_exit,'reaped_exit':reaped_exit,'started':p is not None,'timed_out':timed_out,'timeout_seconds':timeout,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':ownership_finished_at,'elapsed_seconds':ownership_elapsed,'wall_elapsed_seconds':ownership_wall_elapsed,'controller_return_elapsed_seconds':round(time.monotonic()-started,3),'phases':phases,'phase_overflow':phase_overflow})
     if watch_cases is not None: report['stages'][-1]['watch_case_lifecycle']=watch_cases.report
+    if buffered_output:
+        capture_record={'byte_limit':native_output_limit,'complete':capture_reader_finished and not native_output_truncated,
+                        'truncated':native_output_truncated,'reader_finished':capture_reader_finished}
+        if capture_reader_finished:
+            capture_record.update(total_bytes=native_output_bytes,retained_bytes=len(native_output),
+                                  normalized_utf8_sha256=native_output_digest.hexdigest())
+        report['stages'][-1]['native_output_capture']=capture_record
+        if code:report['result']='failed';report['tests']='failed'
     report['active_command']=None
+    # Keep the independent bounded log and stopped-producer record before even
+    # small console markers. Never copy a buffer that a reader may still mutate.
+    if buffered_output and capture_reader_finished:(out/'native-ui.log').write_bytes(bytes(native_output))
+    (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+    # Every synchronous publication below is after the stop/join attempts.
+    phase('publication_begin')
+    try:
+        if capture_reader_finished:
+            if started_record is not None: print('NATIVE_COMMAND_STARTED',json.dumps(started_record),flush=True)
+            if deadline_record is not None: print('NATIVE_COMMAND_DEADLINE_EXCEEDED',json.dumps(deadline_record),flush=True)
+        else:
+            report['stages'][-1]['console_markers_skipped']='reader-unresolved'
+    except BaseException as error:
+        interruption=interruption or error;code=124
+        report['stages'][-1]['exit']=124
+        report['stages'][-1]['publication_error']=type(error).__name__
+    phase('publication_returned')
+    report['stages'][-1]['controller_return_elapsed_seconds']=round(time.monotonic()-started,3)
+    phase('metadata_persist_begin')
+    report['stages'][-1]['phase_overflow']=phase_overflow
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
     if interruption is not None: raise interruption
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))

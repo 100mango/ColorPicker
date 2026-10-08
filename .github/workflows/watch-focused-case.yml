@@ -72,11 +72,11 @@ jobs:
         need(event.get('created') is False and event.get('deleted') is False and event.get('forced') is False,'existing branch non-forced update only')
         need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/watch-copy-singlecase','wrong workflow source')
         need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'46ffdeb7c20dc4a4e636b86f64d87a415b107495'],'not one child of exact native diagnostic parent')
+        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'48a81876a3a2be5659b5efbb6c74b0b385227696'],'not one child of exact stopped-producer diagnostic parent')
         need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','46ffdeb7c20dc4a4e636b86f64d87a415b107495','HEAD','--').splitlines()
-        need(sorted(observed)==['A\tscripts/test_watch_diagnostic_files.py', 'A\tscripts/test_watch_native_diagnostics.py', 'A\tscripts/watch_diagnostic_files.py', 'A\tscripts/watch_native_diagnostics.py', 'M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/ios_watch_archive_capture.py', 'M\tscripts/test_extra_platforms.py', 'M\tscripts/watch_xcresult_stack.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'46ffdeb7c20dc4a4e636b86f64d87a415b107495','changes':observed,'clean':True}
+        observed=git('diff','--name-status','--no-renames','48a81876a3a2be5659b5efbb6c74b0b385227696','HEAD','--').splitlines()
+        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/test_extra_platforms.py', 'M\tscripts/test_watch_live_sample.py', 'M\tscripts/test_watch_native_diagnostics.py', 'M\tscripts/test_watch_timeout_tail.py', 'M\tscripts/watch_native_diagnostics.py', 'M\tscripts/watch_xcresult_stack.py'],'changed-path scope mismatch')
+        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'48a81876a3a2be5659b5efbb6c74b0b385227696','changes':observed,'clean':True}
         (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
         PYTHON
         set -euo pipefail
@@ -150,6 +150,8 @@ jobs:
       if: ${{ always() && steps.diagnostic_preflight.outcome == 'success' }}
       timeout-minutes: 1
       shell: bash
+      env:
+        SOURCE_AFTER_OUTCOME: ${{ steps.source_after.outcome }}
       run: python3 scripts/watch_native_diagnostics.py --phase collect
     - name: Retain bounded logs and strict single-case evidence
       id: evidence
@@ -194,12 +196,24 @@ jobs:
                     (out/(kind+'.log')).write_bytes(excerpt)
                     report[kind+'_log']={'bytes_observed':info.st_size,'retained':'incomplete-prefix-and-tail','retained_sha256':hashlib.sha256(excerpt).hexdigest(),'complete_log_sha256':None}
                 except Exception as excerpt_error:errors.append('failure excerpt unavailable: '+str(excerpt_error))
+        native_raw=None
+        native_log=Path('build/watch-runtime/native-ui.log')
+        if native_log.exists():
+            try:
+                native_raw=read(native_log,262144);(out/'native-ui.log').write_bytes(native_raw)
+                report['native_ui_log']={'bytes':len(native_raw),'sha256':hashlib.sha256(native_raw).hexdigest(),'retained':'bounded-native-output'}
+            except Exception:errors.append('native UI capture unavailable or oversized')
         try:
             data=read(Path('build/watch-runtime/runtime.json'),262144);(out/'runtime.json').write_bytes(data);runtime=json.loads(data)
             source=json.loads(read(out/'source-before.json',32768));after=json.loads(read(out/'source-after.json',32768))
             need(source==after and source.get('sha')==os.environ['GITHUB_SHA'] and source.get('clean') is True,'source readback unavailable')
             need(os.environ['RUNTIME_OUTCOME']=='success' and os.environ['SUMMARY_OUTCOME']=='success' and os.environ['SOURCE_AFTER_OUTCOME']=='success' and os.environ['DIAGNOSTIC_OUTCOME']=='success','required step failed')
-            text=raw.decode('utf8','replace')
+            native_stages=[s for s in runtime.get('stages',[]) if '-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testTouchCopyEntryTouchAndCrownRemainResponsive' in s.get('command',[])]
+            need(len(native_stages)==1 and native_raw is not None,'one independent native UI capture required')
+            capture=native_stages[0].get('native_output_capture',{})
+            need(capture.get('complete') is True and capture.get('reader_finished') is True and capture.get('truncated') is False,'native UI capture is incomplete')
+            need(capture.get('byte_limit')==262144 and capture.get('total_bytes')==len(native_raw) and capture.get('retained_bytes')==len(native_raw) and capture.get('normalized_utf8_sha256')==hashlib.sha256(native_raw).hexdigest(),'native UI capture identity mismatch')
+            text=native_raw.decode('utf8','strict')
             records=re.findall(r"^Test Case '-\[([^]]+)\]' (started\.|(?:passed|failed|skipped) \([^\n]+ seconds\)\.)$",text,re.M)
             expected='TouchColorWatchUITests.WatchWorkflowTests testTouchCopyEntryTouchAndCrownRemainResponsive'
             need(len(records)==2 and records[0]==(expected,'started.') and records[1][0]==expected and records[1][1].startswith('passed ('),'not exactly one started/passed selected case')
@@ -230,7 +244,7 @@ jobs:
         except Exception as error:errors.append(str(error))
         report.update(qualified=not errors,errors=errors,state='passed' if not errors else 'failed-or-incomplete',elapsed_seconds=time.monotonic()-report['started_monotonic'])
         (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        allowed={'report.json','source-before.json','source-after.json','runtime.json','xcresult-summary.json','build.log','runtime.log','case-records.log','watch-stack-diagnostic.json','watch-native-diagnostic.json','watch-app-main-thread.txt','watch-copy-failure.png'}
+        allowed={'report.json','source-before.json','source-after.json','runtime.json','xcresult-summary.json','build.log','runtime.log','native-ui.log','case-records.log','watch-stack-diagnostic.json','watch-native-diagnostic.json','watch-app-main-thread.txt','watch-copy-failure.png'}
         retained=list(out.iterdir())
         if len(retained)>len(allowed) or any(p.name not in allowed or not p.is_file() or p.is_symlink() or p.stat().st_nlink!=1 for p in retained):raise RuntimeError('unapproved diagnostic artifact member')
         size=sum(p.stat().st_size for p in retained)

@@ -249,6 +249,49 @@ def binding(runtime, before, after, sha, *, diagnostic_mode='never'):
     return {'sha': sha, 'case': TEST, 'pid': groups[0]['pid'], 'device': watch,
             'start': timestamp(stage['started_at']), 'end': timestamp(stage['finished_at'])}
 
+def offline_binding(runtime, before, after, sha, *, diagnostic_mode='on-failure', source_step_outcome='unknown'):
+    """Admit a bounded read of a stopped producer's result, never product pass.
+
+Simulator deletion and natural exit65 are not prerequisites for reading an
+existing file. Unknown owned processes/readers and wrong provenance still are.
+An unavailable independently observed App PID never qualifies a stack.
+"""
+    need(diagnostic_mode == 'on-failure', 'offline diagnostic mode mismatch')
+    need(before == after and before.get('sha') == sha and before.get('clean') is True, 'offline source file binding missing')
+    need(runtime.get('sha') == sha and runtime.get('result') == 'failed' and runtime.get('active_command') is None
+         and not runtime.get('cleanup_unconfirmed'), 'offline producer unresolved')
+    stages = runtime.get('stages', [])
+    selected = [s for s in stages if '-only-testing:' + SUITE + '/' + TEST in s.get('command', [])]
+    need(len(selected) == 1, 'offline selected command not unique')
+    stage = selected[0]
+    need(stage['command'][:2] == ['xcodebuild', 'test-without-building'] and stage.get('started') is True
+         and stage.get('process_group_gone') is True and stage.get('capture_reader_finished') is True,
+         'offline native process or reader unresolved')
+    need(all(s.get('process_group_gone') is True and s.get('capture_reader_finished') is True
+             for s in stages if s.get('started') is True), 'offline another owned command unresolved')
+    need(sum(str(c).startswith('-only-testing:') for c in stage['command']) == 1, 'offline multiple selected cases')
+    owned = runtime.get('owned_watch_devices', [])
+    need(len(owned) == 2 and {x.get('role') for x in owned} == {'phone', 'watch'}, 'offline owned pair missing')
+    watch = next(x for x in owned if x['role'] == 'watch')['udid']
+    need(re.fullmatch(r'[0-9A-F-]{36}', watch) is not None and runtime.get('device', {}).get('udid') == watch, 'offline device mismatch')
+    for flag, expected in (('-destination', 'platform=watchOS Simulator,id=' + watch),
+                           ('-configuration', 'Debug'), ('-collect-test-diagnostics', diagnostic_mode),
+                           ('-default-test-execution-time-allowance', '120'), ('-resultBundlePath', BUNDLE)):
+        need(stage['command'].count(flag) == 1 and stage['command'][stage['command'].index(flag) + 1] == expected,
+             'offline test command mismatch')
+    device_cleanup = all(sum(s.get('command') == ['xcrun', 'simctl', action, device['udid']]
+                            and s.get('exit') == 0 and s.get('timed_out') is False for s in stages) == 1
+                         for device in owned for action in ('shutdown', 'delete'))
+    lifecycle = runtime.get('watch_editor_lifecycle') or {}
+    groups = [p for p in lifecycle.get('processes', []) if p.get('case') == CASE] if lifecycle.get('exit') == 0 else []
+    pid = groups[0]['pid'] if len(groups) == 1 and type(groups[0].get('pid')) is int and 1 < groups[0]['pid'] < 4194304 else None
+    return {'sha': sha, 'case': TEST, 'pid': pid, 'device': watch,
+            'start': timestamp(stage['started_at']), 'end': timestamp(stage['finished_at']),
+            'native_exit': stage.get('exit'), 'native_timed_out': stage.get('timed_out'),
+            'device_cleanup_confirmed': device_cleanup, 'device_uncertain': bool(runtime.get('device_uncertain')),
+            'source_files_exact': True, 'source_step_success': source_step_outcome == 'success',
+            'product_qualified': False, 'pid_binding': 'runtime-lifecycle' if pid is not None else 'unavailable'}
+
 def object_json(budget, object_id=None, *, role):
     need(role in {'invocation', 'test-plan', 'selected-failure-summary'} and
          ((object_id is None) == (role == 'invocation')), 'invalid metadata object role')

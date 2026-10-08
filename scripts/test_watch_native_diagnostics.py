@@ -84,7 +84,7 @@ class NativeDiagnosticsTests(unittest.TestCase):
             n.preflight(budget, report)
         return report, reader
 
-    def exercise(self, reader=None):
+    def exercise(self, reader=None, bound=None):
         reader = reader or Reader()
         report, reader = self.preflight(reader)
         budget = n.Budget(report, 0, reader, now=lambda: 1)
@@ -93,7 +93,7 @@ class NativeDiagnosticsTests(unittest.TestCase):
             root = Path(directory); (root / old.BUNDLE).mkdir(parents=True); out = root / 'out'; out.mkdir()
             try:
                 os.chdir(root)
-                n.collect(budget, report, owner(), out, root)
+                n.collect(budget, report, owner() if bound is None else bound, out, root)
                 files = {p.name: p.read_bytes() for p in out.iterdir()}
                 leftovers = list(root.glob('watch-stack-*'))
             finally:
@@ -166,6 +166,53 @@ class NativeDiagnosticsTests(unittest.TestCase):
         self.assertEqual(old.binding(runtime, source, source, source['sha'], diagnostic_mode='on-failure')['pid'], 321)
         with self.assertRaises(ValueError): old.binding(runtime, source, source, source['sha'])
         with self.assertRaises(ValueError): old.binding(runtime, source, source, source['sha'], diagnostic_mode='anything')
+
+    def offline_fixture(self):
+        runtime,source=inputs()
+        command=runtime['stages'][0]['command'];command[command.index('-collect-test-diagnostics')+1]='on-failure'
+        runtime['stages'][0].update(exit=124,raw_exit=None,timed_out=True)
+        cleanup=copy.deepcopy(runtime['stages'][1]);cleanup.update(exit=124,raw_exit=None,timed_out=True)
+        runtime['stages']=[runtime['stages'][0],cleanup]
+        runtime['device_uncertain']={'action':'shutdown','target':DEVICE}
+        runtime['watch_editor_lifecycle']=None
+        return runtime,source
+
+    def test_offline_timeout_and_device_failure_admit_metadata_without_claiming_success(self):
+        runtime,source=self.offline_fixture()
+        bound=old.offline_binding(runtime,source,source,source['sha'],source_step_outcome='failure')
+        self.assertEqual(bound['native_exit'],124);self.assertTrue(bound['native_timed_out'])
+        self.assertFalse(bound['device_cleanup_confirmed']);self.assertTrue(bound['device_uncertain'])
+        self.assertTrue(bound['source_files_exact']);self.assertFalse(bound['source_step_success'])
+        self.assertFalse(bound['product_qualified']);self.assertIsNone(bound['pid'])
+
+    def test_offline_still_rejects_any_unresolved_process_reader_or_wrong_source(self):
+        for change in ('process','reader','active','cleanup-child','source'):
+            runtime,source=self.offline_fixture();after=copy.deepcopy(source)
+            if change=='process':runtime['stages'][0]['process_group_gone']=False
+            elif change=='reader':runtime['stages'][0]['capture_reader_finished']=False
+            elif change=='active':runtime['active_command']={'phase':'running'}
+            elif change=='cleanup-child':runtime['stages'][1]['process_group_gone']=False
+            else:after['tree']='c'*40
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                old.offline_binding(runtime,source,after,source['sha'],source_step_outcome='failure')
+
+    def test_offline_without_independent_pid_can_keep_only_case_png_and_metadata(self):
+        runtime,source=self.offline_fixture()
+        bound=old.offline_binding(runtime,source,source,source['sha'],source_step_outcome='failure')
+        report,files,leftovers,reader=self.exercise(bound=bound)
+        self.assertEqual(set(files),{n.SCREEN});self.assertEqual(leftovers,[])
+        self.assertEqual(report['app_stack']['reason'],'independent-app-pid-unavailable')
+        self.assertFalse(any('--export-diagnostics' in command for command,_ in reader.calls))
+        self.assertFalse(report['offline_read']['source_step_success'])
+
+    def test_offline_existing_verified_pid_does_not_require_device_deletion(self):
+        runtime,source=self.offline_fixture()
+        runtime['watch_editor_lifecycle']={'exit':0,'processes':[{'case':old.CASE,'pid':321}]}
+        bound=old.offline_binding(runtime,source,source,source['sha'],source_step_outcome='failure')
+        report,files,leftovers,reader=self.exercise(bound=bound)
+        self.assertEqual(set(files),{n.SCREEN,n.STACK});self.assertFalse(report['offline_read']['device_cleanup_confirmed'])
+        self.assertFalse(report['qualified'])
+        self.assertFalse(any(command[:2]==['xcrun','simctl'] for command,_ in reader.calls))
 
     def test_action_diagnostics_and_case_screen_produce_only_two_sanitized_files(self):
         report, files, leftovers, reader = self.exercise()

@@ -229,6 +229,7 @@ class LiveTests(unittest.TestCase):
                     args=['synthetic-native'];pid=12345
                     def __init__(self):self.stdout=io.StringIO('line\n' if mode=='reader-error' else '')
                     def wait(self,timeout):return 65
+                    def poll(self):return 65
                 process=Process()
                 def spawn(*args,**kwargs):
                     if mode=='spawn-unknown':raise OSError('synthetic unknown spawn')
@@ -256,7 +257,7 @@ class LiveTests(unittest.TestCase):
                      'subprocess':types.SimpleNamespace(Popen=spawn,PIPE=subprocess.PIPE,STDOUT=subprocess.STDOUT,TimeoutExpired=subprocess.TimeoutExpired),
                      'datetime':dt,'time':d.time,'json':json,'threading':types.SimpleNamespace(Event=threading.Event,Thread=thread),
                      're':__import__('re'),'WATCH_UI_BUNDLE':'build/watch-ui.xcresult','WatchCaseLifecycle':lambda:types.SimpleNamespace(record=lambda line:None,report={}),
-                     'watch_frames':types.SimpleNamespace(record=lambda line:None),'stop_group':lambda p:(stopped.append(p.pid) or mode!='cleanup-unknown'),'print':output}
+                     'watch_frames':types.SimpleNamespace(record=lambda line:None),'stop_group':lambda p,**kwargs:(stopped.append(p.pid) or mode!='cleanup-unknown'),'print':output}
                 exec(code,env)
                 with patch.dict(sys.modules,job_budget=budget),patch.object(Path,'write_text',write):
                     if mode in ('reader-error','cleanup-unknown'):

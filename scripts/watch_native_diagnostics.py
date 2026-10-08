@@ -39,6 +39,11 @@ SAFE_REASONS = {'installed-help-missing-required-flag', 'installed-help-unrecogn
     'summary-case-identity-mismatch', 'too-many-png-attachments', 'screenshot-outside-command',
     'too-many-post-copy-pngs', 'ambiguous-latest-native-png', 'too-many-stack-file-candidates',
     'multiple-owned-app-stacks', 'raw-cleanup-unconfirmed'}
+SAFE_REASONS.update({'offline diagnostic mode mismatch', 'offline source file binding missing',
+    'offline producer unresolved', 'offline selected command not unique',
+    'offline native process or reader unresolved', 'offline another owned command unresolved',
+    'offline multiple selected cases', 'offline owned pair missing', 'offline device mismatch',
+    'offline test command mismatch'})
 
 def need(value, reason):
     if not value:
@@ -216,6 +221,8 @@ def collect(budget, report, bound, out, temp_root):
     need(report.get('phase') == 'preflight-verified', 'installed-help-not-verified')
     need(Path(old.BUNDLE).is_dir() and not Path(old.BUNDLE).is_symlink(), 'result-bundle-unavailable')
     report.update(phase='collecting', binding={k: bound[k] for k in ('sha', 'case', 'pid', 'device', 'start', 'end')})
+    report['offline_read'] = {key: bound.get(key) for key in ('native_exit', 'native_timed_out', 'device_cleanup_confirmed',
+        'device_uncertain', 'source_files_exact', 'source_step_success', 'product_qualified', 'pid_binding')}
     report['operation'] = 'read-owned-action-and-fixed-case'
     summary, diagnostic_ref = selected_case(budget, bound)
     device_filter = report['help']['diagnostics'].get('device_filter_supported') is True
@@ -242,6 +249,11 @@ def collect(budget, report, bound, out, temp_root):
                 scope='Latest native PNG retained after Copy in this failed case; not a color-accuracy proof.')
     if not diagnostic_ref:
         report.update(phase='complete', evidence='action-diagnostics-reference-missing')
+        return
+    if type(bound.get('pid')) is not int:
+        report['app_stack'] = {'state': 'not-extracted', 'reason': 'independent-app-pid-unavailable'}
+        report['action_diagnostics']['export_skipped'] = 'no-independent-app-pid'
+        report.update(phase='complete', evidence='case-metadata-only-no-independent-app-pid', qualified=False)
         return
     with private_export_directory(report, temp_root) as folder:
         # Prefer a device filter only when installed help advertises it. If
@@ -338,8 +350,9 @@ def phase_main(phase):
             if runtime.get('result') == 'passed':
                 report.update(phase='not-applicable', evidence='selected-case-did-not-fail', qualified=False)
             else:
-                bound = old.binding(runtime, json.loads(old.read(out / 'source-before.json', 32768)),
-                    json.loads(old.read(out / 'source-after.json', 32768)), os.environ['GITHUB_SHA'], diagnostic_mode='on-failure')
+                bound = old.offline_binding(runtime, json.loads(old.read(out / 'source-before.json', 32768)),
+                    json.loads(old.read(out / 'source-after.json', 32768)), os.environ['GITHUB_SHA'], diagnostic_mode='on-failure',
+                    source_step_outcome=os.environ.get('SOURCE_AFTER_OUTCOME', 'unknown'))
                 collect(budget, report, bound, out, Path(os.environ['RUNNER_TEMP']))
     except BaseException as error:
         # No raw exception text, diagnostic paths or environment values enter
