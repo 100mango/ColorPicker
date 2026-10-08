@@ -126,7 +126,7 @@ struct WatchColorEditor: View {
             }.padding(.horizontal, 8)
         }
         .onAppear {
-            editorIsVisible = true; crownFocused = true
+            editorIsVisible = true
             #if DEBUG
             WatchEditorDiagnostics.appeared(editorID)
             #endif

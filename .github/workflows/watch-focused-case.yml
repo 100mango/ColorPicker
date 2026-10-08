@@ -71,11 +71,11 @@ jobs:
         need(event.get('created') is False and event.get('deleted') is False and event.get('forced') is False,'existing branch non-forced update only')
         need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/watch-copy-singlecase','wrong workflow source')
         need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'7ef17b95bc611ddf530dca881e012f8557aeea39'],'not one child of exact combined parent')
+        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'167d725dfd064eda0183feef3e87b67660dfb54d'],'not one child of exact focus comparison parent')
         need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','7ef17b95bc611ddf530dca881e012f8557aeea39','HEAD','--').splitlines()
-        need(sorted(observed)==['A\tscripts/test_watch_timeout_tail.py', 'M\t.github/workflows/watch-focused-case.yml', 'M\tTouchColorWatch/WatchViews.swift', 'M\tTouchColorWatchTests/WatchWorkspaceTests.swift', 'M\tTouchColorWatchUITests/WatchWorkflowTests.swift', 'M\tscripts/test_extra_platforms.py', 'M\tscripts/watch_live_sample.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'7ef17b95bc611ddf530dca881e012f8557aeea39','changes':observed,'clean':True}
+        observed=git('diff','--name-status','--no-renames','167d725dfd064eda0183feef3e87b67660dfb54d','HEAD','--').splitlines()
+        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tTouchColorWatch/WatchViews.swift', 'M\tscripts/test_watch_touch_drag.py'],'changed-path scope mismatch')
+        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'167d725dfd064eda0183feef3e87b67660dfb54d','changes':observed,'clean':True}
         (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
         PYTHON
         set -euo pipefail

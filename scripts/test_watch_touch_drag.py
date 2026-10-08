@@ -336,9 +336,10 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
         for forbidden in ('@Namespace', '.focusScope(', '.prefersDefaultFocus(', 'resetFocus', '.focusable(editorIsVisible)'):
             self.assertNotIn(forbidden, editor)
         appear = editor.split('.onAppear {', 1)[1].split('.onDisappear {', 1)[0]
-        self.assertIn('editorIsVisible = true; crownFocused = true', appear)
+        self.assertIn('editorIsVisible = true', appear)
+        self.assertNotIn('crownFocused =', appear)
         self.assertIn('.onChange(of: channel) { _ in if editorIsVisible { crownFocused = true } }', editor)
-        self.assertEqual(editor.count('crownFocused = true'), 5)
+        self.assertEqual(editor.count('crownFocused = true'), 4)
         self.assertIn('editorIsVisible = false; crownFocused = false', editor)
         self.assertIn('guard editorIsVisible else', editor)
         self.assertIn('.digitalCrownRotation(component, from: 0, through: 255, by: 1', editor)
