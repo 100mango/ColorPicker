@@ -23,6 +23,11 @@
 @property (weak,nonatomic) id<ColorDetectViewDelegate> delegate;
 
 @property (strong,readonly,nonatomic) UIImageView *imageView;
+@property (nonatomic, readonly) BOOL hasSelectedPoint;
+@property (nonatomic, readonly) CGPoint selectedNormalizedPoint;
+/// Both gestures and Sample Center use this path, keeping marker/readout on one image pixel.
+- (BOOL)sampleAtImagePoint:(CGPoint)point;
+- (BOOL)sampleVisibleCenter;
 - (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage*)image;
 
 

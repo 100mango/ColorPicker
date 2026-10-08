@@ -1,0 +1,33 @@
+"Choose Photo" = "选择照片";
+"Take Photo" = "拍摄照片";
+"Live Color" = "实时取色";
+"Saved Colors" = "已保存的颜色";
+"Your saved colors appear here.\nChoose a photo or use the camera to begin." = "保存的颜色会显示在这里。\n选择照片或使用相机，开始取色。";
+"OK" = "好";
+"A camera is not available on this device. You can still choose a photo." = "此设备没有可用的相机，仍可从照片取色。";
+"Camera access is off. You can enable it for TouchColor in Settings, or choose a photo instead." = "相机权限未开启。可在系统设置中允许 TouchColor 使用相机，或选择照片取色。";
+"This image could not be opened. Please choose another photo." = "无法打开这张图片，请选择另一张照片。";
+"Photo Color" = "照片取色";
+"Photo for sampling" = "用于取色的照片";
+"Use Sample Center, or tap and drag on the photo to pick a color. Pinch to zoom." = "使用中心取色，或在照片上轻点、长按拖动取色。双指缩放。";
+"Tap a pixel or sample the center" = "轻点照片或使用中心取色";
+"Sample Center" = "中心取色";
+"Save Color" = "保存颜色";
+"Saved" = "已保存";
+"Color saved" = "颜色已保存";
+"Waiting for camera" = "正在等待相机";
+"Live color sample point at the center of the camera" = "相机画面中心的实时取色点";
+"A camera is not available on this device. Choose a photo from the main screen instead." = "此设备没有可用的相机。请返回首页选择照片。";
+"Camera access is off. Enable it for TouchColor in Settings, or choose a photo instead." = "相机权限未开启。请在系统设置中允许 TouchColor 使用相机，或选择照片。";
+"The camera could not start. Go back and try again, or choose a photo." = "相机无法启动。请返回重试，或选择照片。";
+"Camera interrupted. Waiting to resume." = "相机已中断，正在等待恢复。";
+
+"Privacy Policy" = "隐私政策";
+
+"Close" = "关闭";
+"Retry" = "重试";
+"The privacy policy could not load. Check your connection and try again." = "无法载入隐私政策。请检查网络连接后重试。";
+
+"Zoom" = "缩放";
+"Selected pixel" = "已选择的像素";
+"Use Sample Center, or tap and drag on the photo to pick a color. Pinch or use Zoom to magnify." = "使用中心取色，或轻点、长按拖动照片取色。可双指或使用缩放滑块放大。";

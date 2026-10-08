@@ -24,3 +24,7 @@
    - 使用Auto Layout与Size Classes进行布局与设配
    - 新架构,优化代码,引用iOS8新特性。例:Self Sizing Cell 与 UIVisualEffectView
    
+
+### iOS modernization (draft)
+
+See [MODERNIZATION.md](MODERNIZATION.md) for feature/persistence compatibility, the stable iOS 27 validation workflow and remaining release gates. Open `TouchColor.xcodeproj` directly; the modern target uses only Apple system frameworks and does not require CocoaPods. Historical 2.0 design files are retained for reference, not used as the launch interface.

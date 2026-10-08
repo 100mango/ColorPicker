@@ -49,3 +49,8 @@ Pods/GPUImage/framework/Source/GPUImage.h
 Pods/GPUImage/framework/Source/GPUImageAmatorkaFilter.m
 
 ColorPicker.xcodeproj/xcuserdata/Mango.xcuserdatad/xcschemes/xcschememanagement.plist
+
+# Local validation outputs
+__pycache__/
+*.pyc
+*.xcresult/
