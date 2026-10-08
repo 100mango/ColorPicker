@@ -67,11 +67,11 @@ jobs:
         need(os.environ['GITHUB_EVENT_NAME']=='push' and os.environ['GITHUB_RUN_ATTEMPT']=='1','push/first attempt only')
         need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/codex/watch-copy-singlecase','wrong workflow source')
         need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'476c13eb8c2080dd32f6a6ee29f7dd9fd36ab3a0'],'not one child of exact combined parent')
+        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'db0d71eab7ac18f22322ae16f9fcf08bd24a6439'],'not one child of exact combined parent')
         need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','476c13eb8c2080dd32f6a6ee29f7dd9fd36ab3a0','HEAD','--').splitlines()
+        observed=git('diff','--name-status','--no-renames','db0d71eab7ac18f22322ae16f9fcf08bd24a6439','HEAD','--').splitlines()
         need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/test_watch_xcresult_stack.py', 'M\tscripts/watch_xcresult_stack.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'476c13eb8c2080dd32f6a6ee29f7dd9fd36ab3a0','changes':observed,'clean':True}
+        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'db0d71eab7ac18f22322ae16f9fcf08bd24a6439','changes':observed,'clean':True}
         (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
         PYTHON
         set -euo pipefail

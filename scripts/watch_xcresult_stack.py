@@ -26,6 +26,10 @@ TOTAL_SECONDS = 50
 MAX_CALLS = 8
 MAX_META = 262144
 MAX_SELECTED_SUMMARY = 1048576
+# A JSON tree with N value/container nodes needs at least 2*N-1 bytes.
+# Each depth edge needs at least two bytes. Keys are not visited as nodes.
+MAX_SUMMARY_NODES = (MAX_SELECTED_SUMMARY + 1) // 2
+MAX_SUMMARY_DEPTH = (MAX_SELECTED_SUMMARY - 1) // 2
 MAX_TEXT = 262144
 MAX_REPORT = 65536
 ID = re.compile(r'[A-Za-z0-9_~+/=\-]{1,512}\Z')
@@ -102,6 +106,45 @@ def walk(root):
             yield node, context
             pending.extend((child, context, depth + 1) for key, child in node.items() if key != '_type')
         elif isinstance(node, list): pending.extend((child, context, depth + 1) for child in node)
+
+def walk_selected_summary(root, budget, stage):
+    need(stage in {'object-inventory', 'attachment-discovery'}, 'invalid summary traversal stage')
+    traversals = budget.report.setdefault('selected_summary_traversals', [])
+    need(len(traversals) < 2, 'too many selected summary traversals')
+    stats = {'stage': stage, 'raw_byte_cap': MAX_SELECTED_SUMMARY,
+             'node_limit': MAX_SUMMARY_NODES, 'depth_limit': MAX_SUMMARY_DEPTH,
+             'nodes_visited': 0, 'max_depth': 0, 'terminal_reason': 'running'}
+    traversals.append(stats)
+    def stop(reason):
+        stats['terminal_reason'] = reason
+        raise ValueError('selected summary traversal: ' + reason)
+    def clock_check():
+        if not 0 <= budget.elapsed() <= TOTAL_SECONDS: stop('diagnostic-wall-clock')
+        if not 0 <= budget.now() - budget.job_started <= 2400: stop('original-evidence-clock')
+    # Lazy iterators bound the traversal frontier by depth rather than width.
+    # Neither summary consumer needs ancestor context; do not copy it per node.
+    # Visit every field used by the original walk, without schema-based pruning.
+    frames = [(iter((root,)), 0)]
+    try:
+        clock_check()
+        while frames:
+            iterator, depth = frames[-1]
+            try: node = next(iterator)
+            except StopIteration:
+                frames.pop(); continue
+            stats['nodes_visited'] += 1
+            stats['max_depth'] = max(stats['max_depth'], depth)
+            if stats['nodes_visited'] > MAX_SUMMARY_NODES: stop('node-limit')
+            if depth > MAX_SUMMARY_DEPTH: stop('depth-limit')
+            if stats['nodes_visited'] % 256 == 0: clock_check()
+            if isinstance(node, dict):
+                yield node, ()
+                frames.append((iter(child for key, child in node.items() if key != '_type'), depth + 1))
+            elif isinstance(node, list): frames.append((iter(node), depth + 1))
+        clock_check()
+        stats['terminal_reason'] = 'complete'
+    finally:
+        if stats['terminal_reason'] == 'running': stats['terminal_reason'] = 'consumer-stopped'
 
 def reference(node, key):
     item = node.get(key, {})
@@ -220,21 +263,34 @@ def object_json(budget, object_id=None, *, role):
     # Keep the complete-read size/digest even when JSON or graph validation
     # later rejects the object; this is distinct from an interrupted read.
     record.update(state='read-complete', bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
-    data = json.loads(raw)
+    try: data = json.loads(raw)
+    except RecursionError:
+        record['parse_result'] = 'parser-depth-limit'
+        raise ValueError('metadata JSON parser depth limit') from None
+    except json.JSONDecodeError:
+        record['parse_result'] = 'invalid-json'
+        raise ValueError('invalid metadata JSON') from None
+    record['parse_result'] = 'decoded'
     types, identifiers = set(), []
-    for node, _ in walk(data):
-        if kind(node): types.add(label(kind(node), 60))
-        if kind(node) in {'ActionTestMetadata', 'ActionTestSummary', 'ActionTestableSummary'} and len(identifiers) < 2:
-            name = value(node, 'identifier') or value(node, 'targetName')
-            if name: identifiers.append(label(name, 120))
+    nodes = walk_selected_summary(data, budget, 'object-inventory') if role == 'selected-failure-summary' else walk(data)
+    try:
+        for node, _ in nodes:
+            if kind(node): types.add(label(kind(node), 60))
+            if kind(node) in {'ActionTestMetadata', 'ActionTestSummary', 'ActionTestableSummary'} and len(identifiers) < 2:
+                name = value(node, 'identifier') or value(node, 'targetName')
+                if name: identifiers.append(label(name, 120))
+    finally: nodes.close()
     record.update(state='inspected', type=label(kind(data), 60), types=sorted(types)[:6], identifiers=identifiers)
     return data
 
-def attachment_candidates(summary, bound):
-    candidates, inventory = [], []
-    for node, context in walk(summary):
+def attachment_candidates(summary, bound, nodes=None, inventory=None):
+    candidates = []
+    inventory = {} if inventory is None else inventory
+    need(not inventory, 'attachment inventory already attempted')
+    inventory.update(total=0, nonqualifying=0, qualifying=0, candidates=[], complete=False)
+    for node, context in walk(summary) if nodes is None else nodes:
         if kind(node) != 'ActionTestAttachment': continue
-        need(len(inventory) < 16, 'too many selected-case attachments')
+        inventory['total'] += 1
         name, filename, uti = (value(node, key) for key in ('name', 'filename', 'uniformTypeIdentifier'))
         # Generic text stays excluded. An explicitly named app-hang text from
         # this exact failed case may be inspected under the same hard cap even
@@ -251,13 +307,22 @@ def attachment_candidates(summary, bound):
         owner = bound['pid'] in declared or device_path
         text_type = uti in TEXT_TYPES and re.search(r'spindump|stack|hang|sample', hints, re.I) is not None
         app_hang = not foreign and re.search(r'\b(?:app|application)[ _-]*hang\b', hints, re.I) is not None
-        row = {'name': label(name, 120), 'filename': label(filename, 120),
-               'type': label(uti, 80), 'app_metadata': app, 'owner_metadata': owner, 'explicit_app_hang': app_hang}
-        inventory.append(row)
-        if not (((app and owner) or app_hang) and not foreign and text_type): continue
+        if not (((app and owner) or app_hang) and not foreign and text_type):
+            inventory['nonqualifying'] += 1
+            continue
+        inventory['qualifying'] += 1
         moment = timestamp(value(node, 'timestamp'))
         need(bound['start'] <= moment <= bound['end'], 'attachment timestamp is outside current command')
-        candidates.append((reference(node, 'payloadRef'), moment))
+        payload_id = reference(node, 'payloadRef')
+        # Scan the entire selected case, including later matching candidates.
+        # Retain only a bounded qualifying inventory; unrelated names are never
+        # recorded, and overflow still prevents every payload export.
+        if len(candidates) < 16:
+            candidates.append((payload_id, moment))
+            inventory['candidates'].append({'name': label(name, 120), 'filename': label(filename, 120),
+                'type': label(uti, 80), 'app_metadata': app, 'owner_metadata': owner, 'explicit_app_hang': app_hang})
+    inventory['complete'] = True
+    need(inventory['qualifying'] <= 16, 'too many qualifying app stack candidates')
     return candidates, inventory
 
 def main_thread_text(raw, bound, attachment_time):
@@ -317,7 +382,10 @@ def collect(budget, report, bound, temp_root):
     summary = cases[0] if kind(cases[0]) == 'ActionTestSummary' else object_json(budget, reference(cases[0], 'summaryRef'), role='selected-failure-summary')
     need(kind(summary) == 'ActionTestSummary', 'unexpected referenced summary object')
     need(value(summary, 'identifier') in {None, TEST, TEST + '()', SUITE + '/' + TEST, SUITE + '/' + TEST + '()', METHOD, METHOD + '()'}, 'referenced summary is another case')
-    candidates, report['attachments'] = attachment_candidates(summary, bound)
+    nodes = walk_selected_summary(summary, budget, 'attachment-discovery')
+    report['attachments'] = {}
+    try: candidates, _ = attachment_candidates(summary, bound, nodes=nodes, inventory=report['attachments'])
+    finally: nodes.close()
     if not candidates:
         report.update(phase='complete', evidence='no app/PID/device-bound text stack in metadata'); return
     need(len(candidates) == 1, 'multiple app stack candidates; no arbitrary selection')

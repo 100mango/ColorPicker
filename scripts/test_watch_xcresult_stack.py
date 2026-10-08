@@ -83,6 +83,184 @@ class Reader:
         return subprocess.CompletedProcess(command, 0, data, b'')
 
 class StackTests(unittest.TestCase):
+    def test_streaming_inventory_filters_thousands_of_unrelated_names_before_retention(self):
+        unrelated = [attachment(name=val('DO_NOT_RETAIN_UNRELATED'), filename=val('PRIVATE_SCREENSHOT.png'),
+                                uniformTypeIdentifier=val('public.png')) for _ in range(2000)]
+        for tail in ([], [attachment()]):
+            values = objects(unrelated + tail)
+            self.assertLess(len(json.dumps(values['summary-1']).encode()), d.MAX_SELECTED_SUMMARY)
+            report, calls = self.exercise(values)
+            inventory = report['attachments']
+            self.assertEqual(inventory['total'], 2000 + len(tail))
+            self.assertEqual(inventory['nonqualifying'], 2000)
+            self.assertEqual(inventory['qualifying'], len(tail))
+            self.assertEqual(len(inventory['candidates']), len(tail))
+            self.assertIs(inventory['complete'], True)
+            self.assertEqual(sum('--bounded-export' in command for command, options in calls), len(tail))
+            self.assertNotIn('DO_NOT_RETAIN_UNRELATED', json.dumps(report))
+            self.assertNotIn('PRIVATE_SCREENSHOT', json.dumps(report))
+            self.assertLess(len(json.dumps(report).encode()), d.MAX_REPORT)
+
+    def test_streaming_inventory_detects_separated_ambiguity_and_qualifying_overflow(self):
+        unrelated = [attachment(name=val('IRRELEVANT'), uniformTypeIdentifier=val('public.png')) for _ in range(2000)]
+        cases = [(objects([attachment()] + unrelated + [attachment(payloadRef=ref('payload-2'))]),
+                  'multiple app stack candidates', 2002, 2, 2),
+                 (objects([attachment(payloadRef=ref('payload-' + str(i))) for i in range(17)] + unrelated[:20]),
+                  'too many qualifying app stack candidates', 37, 17, 16)]
+        for values, reason, total, qualifying, retained in cases:
+            with self.subTest(reason=reason):
+                report, calls = self.exercise(values, failure=reason)
+                inventory = report['attachments']
+                self.assertEqual((inventory['total'], inventory['qualifying'], len(inventory['candidates'])),
+                                 (total, qualifying, retained))
+                self.assertIs(inventory['complete'], True)
+                self.assertEqual(report['selected_summary_traversals'][-1]['terminal_reason'], 'complete')
+                self.assertFalse(any('--bounded-export' in command for command, options in calls))
+
+    def test_streaming_eligible_timestamp_and_reference_failures_remain_fatal(self):
+        bad = [(attachment(timestamp=val('2026-10-07T21:00:00+00:00')), 'timestamp is outside'),
+               (attachment(payloadRef=ref('bad id')), 'invalid object reference'),
+               (attachment(timestamp=val('not-a-time')), 'Invalid isoformat')]
+        for node, reason in bad:
+            with self.subTest(reason=reason):
+                report, calls = self.exercise(objects([attachment(), node, attachment()]), failure=reason)
+                inventory = report['attachments']
+                self.assertEqual(inventory['total'], 2)
+                self.assertEqual(inventory['qualifying'], 2)
+                self.assertIs(inventory['complete'], False)
+                self.assertEqual(report['selected_summary_traversals'][-1]['terminal_reason'], 'consumer-stopped')
+                self.assertFalse(any('--bounded-export' in command for command, options in calls))
+
+    def test_streaming_late_deadline_after_candidate_keeps_partial_counts_and_never_exports(self):
+        clock = [0.0]; original_timestamp = d.timestamp
+        def timestamp(value):
+            result = original_timestamp(value)
+            if value == STAMP: clock[0] = 51
+            return result
+        unrelated = [attachment(name=val('IRRELEVANT'), uniformTypeIdentifier=val('public.png')) for _ in range(2000)]
+        with patch.object(d, 'timestamp', timestamp):
+            report, calls = self.exercise(objects([attachment()] + unrelated), failure='diagnostic-wall-clock', now=lambda: clock[0])
+        inventory = report['attachments']
+        self.assertEqual(inventory['qualifying'], 1)
+        self.assertLess(inventory['total'], 2001)
+        self.assertIs(inventory['complete'], False)
+        self.assertEqual(report['selected_summary_traversals'][-1]['terminal_reason'], 'diagnostic-wall-clock')
+        self.assertFalse(any('--bounded-export' in command for command, options in calls))
+
+    def test_summary_envelope_maximum_width_and_one_over_nodes(self):
+        self.assertEqual((d.MAX_SUMMARY_NODES, d.MAX_SUMMARY_DEPTH), (524288, 524287))
+        raw = b'[' + b'0,' * 524286 + b'0]'
+        self.assertEqual(len(raw), 1048575)
+        report = {}; budget = d.Budget(report, 0, Reader(), now=lambda: 1)
+        self.assertEqual(list(d.walk_selected_summary(json.loads(raw), budget, 'object-inventory')), [])
+        stats = report['selected_summary_traversals'][0]
+        self.assertEqual(stats['nodes_visited'], 524288)
+        self.assertEqual(stats['max_depth'], 1)
+        self.assertEqual(stats['terminal_reason'], 'complete')
+        self.assertEqual(stats['raw_byte_cap'], 1048576)
+        with self.assertRaisesRegex(ValueError, 'node-limit'):
+            list(d.walk_selected_summary([0] * 524288, budget, 'attachment-discovery'))
+        self.assertEqual(report['selected_summary_traversals'][1]['nodes_visited'], 524289)
+        self.assertEqual(report['selected_summary_traversals'][1]['terminal_reason'], 'node-limit')
+
+    def test_recursive_summary_unknown_fields_keep_tail_attachment_and_no_context(self):
+        data = objects()
+        nested = {'unknownFutureField': {'nested': [attachment()]}}
+        for _ in range(100):
+            nested = obj('ActionTestActivitySummary', title=val('PRIVATE_ANCESTOR_VALUE'), subactivities=array(nested))
+        data['summary-1'] = obj('ActionTestSummary', activitySummaries=array(nested))
+        report, calls = self.exercise(data)
+        self.assertEqual(report['evidence'], 'owned app main-thread stack')
+        self.assertEqual(sum('--bounded-export' in command for command, options in calls), 1)
+        graphs = report['selected_summary_traversals']
+        self.assertEqual([row['stage'] for row in graphs], ['object-inventory', 'attachment-discovery'])
+        self.assertTrue(all(row['max_depth'] > 32 and row['terminal_reason'] == 'complete' for row in graphs))
+        self.assertEqual(graphs[0]['nodes_visited'], graphs[1]['nodes_visited'])
+        self.assertNotIn('PRIVATE_ANCESTOR_VALUE', json.dumps(report))
+        budget = d.Budget({}, 0, Reader(), now=lambda: 1)
+        self.assertTrue(all(context == () for node, context in d.walk_selected_summary(data['summary-1'], budget, 'object-inventory')))
+
+    def test_summary_node_and_depth_rejections_have_fixed_separate_telemetry(self):
+        for name, limit, expected in (('MAX_SUMMARY_NODES', 2, 'node-limit'), ('MAX_SUMMARY_DEPTH', 1, 'depth-limit')):
+            report = {}; budget = d.Budget(report, 0, Reader(), now=lambda: 1)
+            with patch.object(d, name, limit), self.assertRaisesRegex(ValueError, expected):
+                list(d.walk_selected_summary({'outer': {'inner': 'PRIVATE_VALUE'}}, budget, 'object-inventory'))
+            stats = report['selected_summary_traversals'][0]
+            self.assertEqual(stats['terminal_reason'], expected)
+            self.assertEqual(stats['nodes_visited'], 3)
+            self.assertEqual(stats['max_depth'], 2)
+            self.assertNotIn('PRIVATE_VALUE', json.dumps(report))
+
+    def test_summary_passes_share_deadline_and_leave_export_reserve_enforced(self):
+        clock = [0.0]; report = {}; budget = d.Budget(report, 0, Reader(), now=lambda: clock[0])
+        list(d.walk_selected_summary({'first': 0}, budget, 'object-inventory'))
+        clock[0] = 51
+        with self.assertRaisesRegex(ValueError, 'diagnostic-wall-clock'):
+            list(d.walk_selected_summary({'second': 0}, budget, 'attachment-discovery'))
+        self.assertEqual(report['selected_summary_traversals'][1]['nodes_visited'], 0)
+        with self.assertRaisesRegex(ValueError, 'wall-clock budget'):
+            budget.run(['must-not-export'])
+        report = {}; budget = d.Budget(report, 0, Reader(), now=lambda: 2401)
+        with self.assertRaisesRegex(ValueError, 'original-evidence-clock'):
+            list(d.walk_selected_summary({}, budget, 'object-inventory'))
+        self.assertEqual(report['selected_summary_traversals'][0]['terminal_reason'], 'original-evidence-clock')
+
+    def test_summary_periodic_deadline_stops_wide_graph_with_small_report(self):
+        clock = [0.0]; report = {}; budget = d.Budget(report, 0, Reader(), now=lambda: clock[0])
+        nodes = d.walk_selected_summary({'items': [0] * 2000}, budget, 'object-inventory')
+        next(nodes); clock[0] = 51
+        with self.assertRaisesRegex(ValueError, 'diagnostic-wall-clock'): list(nodes)
+        stats = report['selected_summary_traversals'][0]
+        self.assertEqual(stats['nodes_visited'], 256)
+        self.assertEqual(stats['terminal_reason'], 'diagnostic-wall-clock')
+        self.assertLess(len(json.dumps(report).encode()), 1024)
+
+    def test_summary_consumer_stop_and_extra_traversal_have_fixed_telemetry(self):
+        report = {}; budget = d.Budget(report, 0, Reader(), now=lambda: 1)
+        nodes = d.walk_selected_summary({'items': [0]}, budget, 'object-inventory')
+        next(nodes); nodes.close()
+        self.assertEqual(report['selected_summary_traversals'][0]['terminal_reason'], 'consumer-stopped')
+        for stage in ('other', 'object-inventory'):
+            with self.subTest(stage=stage), self.assertRaisesRegex(ValueError, 'invalid summary traversal stage|too many'):
+                if stage == 'object-inventory': report['selected_summary_traversals'].append({})
+                list(d.walk_selected_summary({}, budget, stage))
+
+    def test_summary_consumer_signal_closes_iterator_and_restores_handler(self):
+        previous = signal.getsignal(signal.SIGTERM)
+        report = {}; reader = Reader(); budget = d.Budget(report, 0, reader, now=lambda: 1)
+        def interrupted(node): os.kill(os.getpid(), signal.SIGTERM)
+        with d.cancellation_guard(), patch.object(d, 'kind', interrupted):
+            with self.assertRaises(d.DiagnosticCancelled):
+                d.object_json(budget, 'summary-1', role='selected-failure-summary')
+        self.assertEqual(signal.getsignal(signal.SIGTERM), previous)
+        self.assertEqual(report['selected_summary_traversals'][0]['terminal_reason'], 'consumer-stopped')
+        self.assertEqual(report['objects'][0]['state'], 'read-complete')
+        self.assertFalse(any('--bounded-export' in command for command, options in reader.calls))
+
+    def test_decoder_depth_exception_is_distinct_without_changing_recursion_limit(self):
+        report = {}; reader = Reader(); budget = d.Budget(report, 0, reader, now=lambda: 1)
+        original = sys.getrecursionlimit()
+        with patch.object(d.json, 'loads', side_effect=RecursionError('private parser detail')):
+            with self.assertRaisesRegex(ValueError, '^metadata JSON parser depth limit$'):
+                d.object_json(budget, 'summary-1', role='selected-failure-summary')
+        self.assertEqual(sys.getrecursionlimit(), original)
+        record = report['objects'][0]
+        self.assertEqual(record['state'], 'read-complete')
+        self.assertEqual(record['parse_result'], 'parser-depth-limit')
+        self.assertIn('bytes', record); self.assertIn('sha256', record)
+        self.assertNotIn('selected_summary_traversals', report)
+        self.assertNotIn('private parser detail', json.dumps(report))
+
+    def test_root_and_test_plan_still_use_original_graph_limits(self):
+        for role, key in (('invocation', None), ('test-plan', 'tests-1')):
+            value = 0
+            for _ in range(34): value = {'child': value}
+            reader = Reader({key: value}); report = {}; budget = d.Budget(report, 0, reader, now=lambda: 1)
+            with self.subTest(role=role), self.assertRaisesRegex(ValueError, 'metadata graph exceeds node/depth cap'):
+                d.object_json(budget, key, role=role)
+            self.assertEqual(reader.calls[0][1]['cap'], 262144)
+            self.assertNotIn('selected_summary_traversals', report)
+
     def test_large_selected_summary_keeps_one_bounded_owned_stack_export(self):
         data = objects()
         summary = data['summary-1']
@@ -127,11 +305,13 @@ class StackTests(unittest.TestCase):
             report = {}
             def reader(command, **options): return subprocess.CompletedProcess(command, 0, raw, b'')
             budget = d.Budget(report, 0, reader, now=lambda: 1)
-            with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+            with (self.subTest(size=len(raw)), patch.object(d, 'MAX_SUMMARY_NODES', 8192),
+                  patch.object(d, 'MAX_SUMMARY_DEPTH', 32), self.assertRaises(ValueError)):
                 d.object_json(budget, 'summary-1', role='selected-failure-summary')
             record = report['objects'][0]
             self.assertEqual(record, {'role': 'selected-failure-summary', 'cap': 1048576,
-                'state': 'read-complete', 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
+                'state': 'read-complete', 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                'parse_result': 'invalid-json' if raw == inputs[0] else 'decoded'})
             self.assertNotIn('DO_NOT_RETAIN', json.dumps(report))
 
     def test_invalid_metadata_roles_stop_before_any_command(self):
@@ -265,7 +445,7 @@ class StackTests(unittest.TestCase):
                attachment(uniformTypeIdentifier=val('public.png'))]
         for row in bad:
             candidates, inventory = d.attachment_candidates(objects([row])['summary-1'], owner())
-            self.assertEqual(candidates, []); self.assertEqual(len(inventory), 1)
+            self.assertEqual(candidates, []); self.assertEqual(inventory, {'total': 1, 'nonqualifying': 1, 'qualifying': 0, 'candidates': [], 'complete': True})
 
     def test_metadata_time_graph_and_attachment_count_fail_closed(self):
         with self.assertRaises(ValueError): d.attachment_candidates(objects([attachment(timestamp=val(START.replace('22:00', '21:00')))])['summary-1'], owner())
@@ -362,14 +542,16 @@ class StackTests(unittest.TestCase):
     def test_capture_cancellation_and_repeated_sigterm_during_cleanup_keep_failure(self):
         self.cancellation_in_cleanup(True)
 
-    def exercise(self, values):
+    def exercise(self, values, failure=None, now=None):
         with tempfile.TemporaryDirectory() as directory:
             old = Path.cwd()
             try:
                 os.chdir(directory); Path(d.BUNDLE).mkdir(parents=True)
                 reader = Reader(values); report = {'phase': 'preflight-verified', 'calls': 2}
-                budget = d.Budget(report, 0, reader, now=lambda: 1)
-                d.collect(budget, report, owner(), Path(directory))
+                budget = d.Budget(report, 0, reader, now=now or (lambda: 1))
+                if failure:
+                    with self.assertRaisesRegex(ValueError, failure): d.collect(budget, report, owner(), Path(directory))
+                else: d.collect(budget, report, owner(), Path(directory))
                 return report, reader.calls
             finally: os.chdir(old)
 
@@ -389,7 +571,7 @@ class StackTests(unittest.TestCase):
     def test_explicit_app_hang_without_metadata_pid_gets_one_bounded_header_check(self):
         node = attachment(name=val('App Hang'), filename=val('app-hang.txt'))
         candidates, inventory = d.attachment_candidates(objects([node])['summary-1'], owner())
-        self.assertEqual(len(candidates), 1); self.assertFalse(inventory[0]['owner_metadata'])
+        self.assertEqual(len(candidates), 1); self.assertFalse(inventory['candidates'][0]['owner_metadata'])
         report, calls = self.exercise(objects([node]))
         self.assertEqual(report['evidence'], 'owned app main-thread stack')
         self.assertEqual(sum('--bounded-export' in c for c,o in calls), 1)
