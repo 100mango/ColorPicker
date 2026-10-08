@@ -23,6 +23,10 @@ final class WatchWorkflowTests: XCTestCase {
         if name.contains("PublicLargestTrait") { app.launchEnvironment["TOUCHCOLOR_TEST_TRAIT_PROOF"] = "1" }
         app.launchArguments = ["--ui-test-reset", "-AppleLanguages", name.contains("Chinese") ? "(zh-Hans)" : "(en)"]
         if name.contains("TouchCopyEntryTouchAndCrownRemainResponsive") {
+            let probeNonce = UUID().uuidString
+            app.launchEnvironment["TOUCHCOLOR_TEST_MAINACTOR_PROBE"] = "1"
+            app.launchEnvironment["TOUCHCOLOR_TEST_MAINACTOR_NONCE"] = probeNonce
+            print("WATCH_MAIN_ACTOR_SCOPE nonce=\(probeNonce)")
             // Foundation's argument domain supplies synthetic input to the
             // existing LegacyPalette colorArray key, including isolated suites.
             // This case does not claim to test Save or persisted palette writes.

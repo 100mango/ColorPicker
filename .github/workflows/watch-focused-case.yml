@@ -1,8 +1,7 @@
-name: One existing 40mm Watch case
+name: One finite Watch heartbeat observation
 'on':
   push:
-    branches:
-    - watch-copy-singlecase
+    branches: [watch-copy-singlecase]
 permissions:
   contents: read
 concurrency:
@@ -10,44 +9,27 @@ concurrency:
   cancel-in-progress: false
 jobs:
   watch:
-    name: TouchColor one 40mm case
-    if: ${{ github.repository == '100mango/ColorPicker' && github.ref == 'refs/heads/watch-copy-singlecase'
-      && github.event_name == 'push' && github.event.created == false && github.event.deleted == false && github.event.forced == false && github.run_attempt == '1' }}
+    name: TouchColor one 40mm heartbeat case
+    if: ${{ github.repository == '100mango/ColorPicker' && github.ref == 'refs/heads/watch-copy-singlecase' && github.event_name == 'push' && github.event.created == false && github.event.deleted == false && github.event.forced == false && github.run_attempt == '1' }}
     runs-on: xcode-27
-    timeout-minutes: 45
+    timeout-minutes: 20
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
       PYTHONDONTWRITEBYTECODE: '1'
-      TOUCHCOLOR_JOB_PLATFORM: watch
-      TOUCHCOLOR_JOB_MINUTES: '45'
-      TOUCHCOLOR_JOB_LANE: watch-smallest
-      TOUCHCOLOR_WATCH_PROFILE: smallest
-      TOUCHCOLOR_TEXT_PHASE: normal
-      TOUCHCOLOR_WATCH_LIVE_SAMPLE: '0'
-      TOUCHCOLOR_EVIDENCE_LIMIT: '1200000'
     steps:
-    - name: Start fixed evidence and original job clock
+    - name: Start original clock and one compact evidence file
       timeout-minutes: 1
       shell: bash
       run: |
         python3 - <<'PYTHON'
         import json,os,time
         from pathlib import Path
-        out=Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence';out.mkdir(exist_ok=False)
-        clock={'started_monotonic':time.monotonic(),'started_epoch':time.time(),'qualified':False,'state':'bootstrap-only'}
-        (out/'report.json').write_text(json.dumps(clock)+'\n')
-        (out/'watch-stack-diagnostic.json').write_text(json.dumps({'phase':'disabled','evidence':'not collected','attempts':0,'calls':0,'seconds_spent':0})+'\n')
-        (out/'watch-native-diagnostic.json').write_text(json.dumps({'phase':'pending','calls':0,'metadata_bytes':0,'seconds_spent':0,'qualified':False})+'\n')
-        for name in ('source-before.json','source-after.json','runtime.json','xcresult-summary.json'):
-            (out/name).write_text('{"available":false}\n')
-        for name in ('build.log','runtime.log','case-records.log'):(out/name).write_bytes(b'')
-        with open(os.environ['GITHUB_ENV'],'a') as stream:
-            stream.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(clock['started_epoch'])+'\n')
-            stream.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(clock['started_monotonic'])+'\n')
+        out=Path(os.environ['RUNNER_TEMP'])/'watch-heartbeat-evidence';out.mkdir(exist_ok=False)
+        (out/'watch-heartbeat-evidence.json').write_text(json.dumps({'schema':1,'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'requested_sha':os.environ['GITHUB_SHA'],'state':'bootstrap-only','product_qualified':False,'started_monotonic':time.monotonic(),'started_epoch':time.time()})+'\n')
         PYTHON
     - name: Check out exact reviewed-parent child
-      timeout-minutes: 1
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      timeout-minutes: 1
       with:
         persist-credentials: false
         fetch-depth: 2
@@ -59,221 +41,77 @@ jobs:
       run: |
         set -euo pipefail
         python3 - <<'PYTHON'
-        import json,os,re,subprocess
+        import json,os,re,subprocess,sys
         from pathlib import Path
+        sys.path.insert(0,'scripts')
+        from watch_heartbeat_case import BASE,CHANGES
         def need(value,reason):
             if not value:raise RuntimeError(reason)
         def git(*args):return subprocess.check_output(['git',*args],text=True,timeout=10).strip()
         sha=os.environ['GITHUB_SHA'];need(re.fullmatch('[0-9a-f]{40}',sha),'invalid sha')
         need(os.environ['GITHUB_REPOSITORY']=='100mango/ColorPicker' and os.environ['GITHUB_REF']=='refs/heads/watch-copy-singlecase','wrong repository/ref')
         need(os.environ['GITHUB_EVENT_NAME']=='push' and os.environ['GITHUB_RUN_ATTEMPT']=='1','push/first attempt only')
-        need(os.environ.get('TOUCHCOLOR_WATCH_LIVE_SAMPLE')=='0','product comparison requires optional sampling disabled')
         event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
         need(event.get('created') is False and event.get('deleted') is False and event.get('forced') is False,'existing branch non-forced update only')
         need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/watch-copy-singlecase','wrong workflow source')
-        need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'48a81876a3a2be5659b5efbb6c74b0b385227696'],'not one child of exact stopped-producer diagnostic parent')
-        need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','48a81876a3a2be5659b5efbb6c74b0b385227696','HEAD','--').splitlines()
-        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/test_extra_platforms.py', 'M\tscripts/test_watch_live_sample.py', 'M\tscripts/test_watch_native_diagnostics.py', 'M\tscripts/test_watch_timeout_tail.py', 'M\tscripts/watch_native_diagnostics.py', 'M\tscripts/watch_xcresult_stack.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'48a81876a3a2be5659b5efbb6c74b0b385227696','changes':observed,'clean':True}
-        (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
+        need(git('rev-parse','HEAD')==sha and git('rev-list','--parents','-n','1','HEAD').split()==[sha,BASE],'not exact parent child')
+        need(not git('status','--porcelain=v1','--untracked-files=all'),'dirty source')
+        changes=git('diff','--name-status','--no-renames',BASE,'HEAD','--').splitlines()
+        need(sorted(changes)==CHANGES,'changed-path scope mismatch')
+        path=Path(os.environ['RUNNER_TEMP'])/'watch-heartbeat-evidence/watch-heartbeat-evidence.json'
+        report=json.loads(path.read_bytes());report['source_admission']={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':BASE,'changes':changes,'clean':True}
+        path.write_text(json.dumps(report)+'\n')
         PYTHON
-        set -euo pipefail
         host_build="$(sw_vers -buildVersion)"
-        printf '%s\n' "$host_build" | tee "$RUNNER_TEMP/watch-focused-host-build.log"
-        case "$host_build" in
-          26A428|26A434) ;;
-          *) printf 'Unreviewed standard runner host build: %s\n' "$host_build" >&2; exit 1 ;;
-        esac
-        xcodebuild -version | tee "$RUNNER_TEMP/watch-focused-xcode.log"
-        grep -Fx 'Xcode 27.0' "$RUNNER_TEMP/watch-focused-xcode.log"
-        grep -Fx 'Build version 27A266a' "$RUNNER_TEMP/watch-focused-xcode.log"
+        case "$host_build" in 26A428|26A434) ;; *) exit 1 ;; esac
+        xcodebuild -version > "$RUNNER_TEMP/watch-heartbeat-xcode-version.txt"
+        grep -Fx 'Xcode 27.0' "$RUNNER_TEMP/watch-heartbeat-xcode-version.txt"
+        grep -Fx 'Build version 27A266a' "$RUNNER_TEMP/watch-heartbeat-xcode-version.txt"
         uname -m | grep -Fx arm64
-    - name: Verify installed Apple failure-diagnostic help
-      id: diagnostic_preflight
-      timeout-minutes: 1
-      shell: bash
-      run: python3 scripts/watch_native_diagnostics.py --phase preflight
-    - name: Initialize existing Watch lane budget
-      timeout-minutes: 1
-      run: python3 scripts/job_budget.py initialize
-    - name: Run only touch-and-Crown copy entry on 40mm
+    - name: Observe only the original case with finite App logging
       id: runtime
-      timeout-minutes: 42
+      timeout-minutes: 17
       shell: bash
-      run: |
-        set -euo pipefail
-        python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Single 40mm copy case' --seconds 2520 --phase work <<'TC_BUDGET_BODY' 2>&1 | tee "$RUNNER_TEMP/watch-focused-runtime.log"
-        python3 scripts/test_extra_platforms.py watch
-        TC_BUDGET_BODY
-    - name: Read one actual result only after runner success
-      id: summary
-      if: ${{ steps.runtime.outcome == 'success' }}
-      timeout-minutes: 1
-      shell: bash
-      run: |
-        python3 - <<'PYTHON'
-        import os,sys
-        from pathlib import Path
-        sys.path.insert(0,'scripts')
-        from ios_watch_archive_capture import capture
-        bundle='build/watch-ui.xcresult'
-        import json,time
-        clock=json.loads((Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/report.json').read_bytes())['started_monotonic']
-        if type(clock) not in (int,float) or not 0 <= time.monotonic()-clock <= 2350:raise RuntimeError('Result export and owned cleanup do not fit original evidence clock')
-        runtime_path=Path('build/watch-runtime/runtime.json')
-        if runtime_path.is_symlink() or runtime_path.stat().st_size>262144:raise RuntimeError('invalid runtime proof input')
-        runtime=json.loads(runtime_path.read_bytes())
-        if runtime.get('result')!='passed' or runtime.get('cleanup_unconfirmed') or runtime.get('active_command') is not None:raise RuntimeError('No result tool after unresolved Touch runtime')
-        value=capture(['xcrun','xcresulttool','get','test-results','summary','--path',bundle],seconds=30,cap=131072,cleanup_grace=10)
-        if value.returncode or value.stderr:raise RuntimeError('summary export failed')
-        (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/xcresult-summary.json').write_bytes(value.stdout)
-        PYTHON
-    - name: Read back exact source after all work
-      id: source_after
-      if: ${{ always() }}
-      timeout-minutes: 1
-      shell: bash
-      run: |
-        python3 - <<'PYTHON'
-        import json,os,subprocess
-        from pathlib import Path
-        def git(*args):return subprocess.check_output(['git',*args],text=True,timeout=10).strip()
-        out=Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence'
-        before=json.loads((out/'source-before.json').read_bytes())
-        if git('status','--porcelain=v1','--untracked-files=all') or git('rev-parse','HEAD')!=before['sha'] or git('rev-parse','HEAD^{tree}')!=before['tree']:raise RuntimeError('source changed')
-        (out/'source-after.json').write_text(json.dumps(before)+'\n')
-        PYTHON
-    - name: Extract bounded native diagnostics after confirmed cleanup
-      id: stack_diagnostic
-      if: ${{ always() && steps.diagnostic_preflight.outcome == 'success' }}
-      timeout-minutes: 1
-      shell: bash
-      env:
-        SOURCE_AFTER_OUTCOME: ${{ steps.source_after.outcome }}
-      run: python3 scripts/watch_native_diagnostics.py --phase collect
-    - name: Retain bounded logs and strict single-case evidence
+      run: python3 scripts/watch_heartbeat_case.py
+    - name: Validate one small evidence file
       id: evidence
       if: ${{ always() }}
       timeout-minutes: 1
       shell: bash
-      env:
-        RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
-        SUMMARY_OUTCOME: ${{ steps.summary.outcome }}
-        SOURCE_AFTER_OUTCOME: ${{ steps.source_after.outcome }}
-        DIAGNOSTIC_OUTCOME: ${{ steps.stack_diagnostic.outcome }}
       run: |
         python3 - <<'PYTHON'
-        import json,os,re,time,hashlib,stat
+        import json,os,stat
         from pathlib import Path
-        out=Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence'
-        report=json.loads((out/'report.json').read_bytes());errors=[];raw=b''
-        def need(value,reason):
-            if not value:raise RuntimeError(reason)
-        def read(path,cap):
-            s=path.lstat();need(stat.S_ISREG(s.st_mode) and not path.is_symlink() and s.st_size<=cap,'missing/nonregular/oversize '+str(path))
-            data=path.read_bytes();need(len(data)<=cap,'changed file size');return data
-        for kind in ('build','runtime'):
-            source=Path(os.environ['RUNNER_TEMP'])/('watch-focused-'+kind+'.log')
-            if not source.exists():
-                report[kind+'_log']='not produced';continue
-            try:
-                data=read(source,16*1024*1024)
-                report[kind+'_log']={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'retained':'complete' if len(data)<=262144 else 'prefix-and-tail'}
-                (out/(kind+'.log')).write_bytes(data if len(data)<=262144 else data[:65536]+b'\n[bounded excerpt; full digest in report]\n'+data[-196608:])
-                if kind=='runtime':raw=data
-            except Exception as error:
-                errors.append(str(error))
-                # A bounded collector failure can emit its full cap plus traceback.
-                # Preserve only labeled excerpts without parsing partial output as proof.
-                try:
-                    info=source.lstat()
-                    if not stat.S_ISREG(info.st_mode) or source.is_symlink():continue
-                    with source.open('rb') as stream:
-                        head=stream.read(65536);stream.seek(max(len(head),info.st_size-196608));tail=stream.read(196608)
-                    excerpt=head+b'\n[incomplete source log; bounded failure excerpts only]\n'+tail
-                    (out/(kind+'.log')).write_bytes(excerpt)
-                    report[kind+'_log']={'bytes_observed':info.st_size,'retained':'incomplete-prefix-and-tail','retained_sha256':hashlib.sha256(excerpt).hexdigest(),'complete_log_sha256':None}
-                except Exception as excerpt_error:errors.append('failure excerpt unavailable: '+str(excerpt_error))
-        native_raw=None
-        native_log=Path('build/watch-runtime/native-ui.log')
-        if native_log.exists():
-            try:
-                native_raw=read(native_log,262144);(out/'native-ui.log').write_bytes(native_raw)
-                report['native_ui_log']={'bytes':len(native_raw),'sha256':hashlib.sha256(native_raw).hexdigest(),'retained':'bounded-native-output'}
-            except Exception:errors.append('native UI capture unavailable or oversized')
-        try:
-            data=read(Path('build/watch-runtime/runtime.json'),262144);(out/'runtime.json').write_bytes(data);runtime=json.loads(data)
-            source=json.loads(read(out/'source-before.json',32768));after=json.loads(read(out/'source-after.json',32768))
-            need(source==after and source.get('sha')==os.environ['GITHUB_SHA'] and source.get('clean') is True,'source readback unavailable')
-            need(os.environ['RUNTIME_OUTCOME']=='success' and os.environ['SUMMARY_OUTCOME']=='success' and os.environ['SOURCE_AFTER_OUTCOME']=='success' and os.environ['DIAGNOSTIC_OUTCOME']=='success','required step failed')
-            native_stages=[s for s in runtime.get('stages',[]) if '-only-testing:TouchColorWatchUITests/WatchWorkflowTests/testTouchCopyEntryTouchAndCrownRemainResponsive' in s.get('command',[])]
-            need(len(native_stages)==1 and native_raw is not None,'one independent native UI capture required')
-            capture=native_stages[0].get('native_output_capture',{})
-            need(capture.get('complete') is True and capture.get('reader_finished') is True and capture.get('truncated') is False,'native UI capture is incomplete')
-            need(capture.get('byte_limit')==262144 and capture.get('total_bytes')==len(native_raw) and capture.get('retained_bytes')==len(native_raw) and capture.get('normalized_utf8_sha256')==hashlib.sha256(native_raw).hexdigest(),'native UI capture identity mismatch')
-            text=native_raw.decode('utf8','strict')
-            records=re.findall(r"^Test Case '-\[([^]]+)\]' (started\.|(?:passed|failed|skipped) \([^\n]+ seconds\)\.)$",text,re.M)
-            expected='TouchColorWatchUITests.WatchWorkflowTests testTouchCopyEntryTouchAndCrownRemainResponsive'
-            need(len(records)==2 and records[0]==(expected,'started.') and records[1][0]==expected and records[1][1].startswith('passed ('),'not exactly one started/passed selected case')
-            need(text.count('** TEST EXECUTE SUCCEEDED **')==1 and '** TEST EXECUTE FAILED **' not in text and 'exceeded execution time allowance' not in text,'missing/contradictory raw terminal')
-            (out/'case-records.log').write_text('\n'.join(' '.join(row) for row in records)+'\n')
-            summary=json.loads(read(out/'xcresult-summary.json',131072))
-            for key,value in {'totalTestCount':1,'passedTests':1,'failedTests':0,'skippedTests':0,'expectedFailures':0}.items():
-                need(type(summary.get(key)) is int and summary[key]==value,'wrong result count '+key)
-            need(summary.get('result')=='Passed' and summary.get('testFailures')==[],'summary not clean pass')
-            configs=summary.get('devicesAndConfigurations');need(isinstance(configs,list) and len(configs)==1,'not one destination')
-            for key,value in {'passedTests':1,'failedTests':0,'skippedTests':0,'expectedFailures':0}.items():need(type(configs[0].get(key)) is int and configs[0][key]==value,'destination count mismatch')
-            device=configs[0].get('device',{})
-            need(device.get('platform')=='watchOS Simulator' and device.get('modelName')=='Apple Watch SE 3' and device.get('osVersion')=='27.0','wrong device/runtime')
-            need(runtime.get('sha')==source['sha'] and runtime.get('result')=='passed' and not runtime.get('cleanup_unconfirmed') and not runtime.get('device_uncertain') and not runtime.get('command_deadline_exceeded') and runtime.get('active_command') is None,'Touch runtime unresolved')
-            need(runtime.get('watch_live_sample_enabled') is False and 'watch_live_sample' not in runtime,'optional sampling was not disabled')
-            sampling=json.loads(read(out/'watch-stack-diagnostic.json',32768))
-            need(sampling=={'phase':'disabled','evidence':'not collected','attempts':0,'calls':0,'seconds_spent':0},'disabled sampling record mismatch')
-            report['live_sampling']=sampling
-            native=json.loads(read(out/'watch-native-diagnostic.json',65536))
-            need(native.get('phase')=='not-applicable' and native.get('qualified') is False,'successful test must not be manufactured from diagnostic evidence')
-            need(runtime.get('device',{}).get('udid')==device.get('deviceId') and runtime.get('device',{}).get('deviceTypeIdentifier')=='com.apple.CoreSimulator.SimDeviceType.Apple-Watch-SE-3-40mm','Touch result device mismatch')
-            stages=runtime.get('stages',[]);need(stages and all(s.get('exit')==0 and s.get('process_group_gone') is True and s.get('capture_reader_finished') is True and s.get('timed_out') is False for s in stages),'Touch command or cleanup incomplete')
-            owned=runtime.get('owned_watch_devices',[]);need(len(owned)==2 and {x['role'] for x in owned}=={'phone','watch'},'wrong owned pair')
-            for item in owned:
-                for action in ('shutdown','delete'):
-                    need(sum(s.get('command')==['xcrun','simctl',action,item['udid']] for s in stages)==1,'missing exact owned cleanup')
-            report.update(case=expected,device=device,source=source,one_case_proof=True)
-        except Exception as error:errors.append(str(error))
-        report.update(qualified=not errors,errors=errors,state='passed' if not errors else 'failed-or-incomplete',elapsed_seconds=time.monotonic()-report['started_monotonic'])
-        (out/'report.json').write_text(json.dumps(report,indent=2)+'\n')
-        allowed={'report.json','source-before.json','source-after.json','runtime.json','xcresult-summary.json','build.log','runtime.log','native-ui.log','case-records.log','watch-stack-diagnostic.json','watch-native-diagnostic.json','watch-app-main-thread.txt','watch-copy-failure.png'}
-        retained=list(out.iterdir())
-        if len(retained)>len(allowed) or any(p.name not in allowed or not p.is_file() or p.is_symlink() or p.stat().st_nlink!=1 for p in retained):raise RuntimeError('unapproved diagnostic artifact member')
-        size=sum(p.stat().st_size for p in retained)
-        if size>1200000:raise RuntimeError('fixed artifact exceeds existing Watch evidence budget')
-        print(json.dumps({'qualified':report['qualified'],'errors':errors,'artifact_bytes':size}))
+        out=Path(os.environ['RUNNER_TEMP'])/'watch-heartbeat-evidence'
+        files=list(out.iterdir())
+        if len(files)!=1 or files[0].name!='watch-heartbeat-evidence.json':raise RuntimeError('unexpected evidence members')
+        p=files[0];s=p.lstat()
+        if p.is_symlink() or not stat.S_ISREG(s.st_mode) or s.st_nlink!=1 or s.st_size>65536:raise RuntimeError('unbounded evidence')
+        data=p.read_bytes()
+        if len(data)>65536:raise RuntimeError('changed evidence size')
+        report=json.loads(data)
+        if report.get('run_id')!=os.environ['GITHUB_RUN_ID'] or report.get('run_attempt')!=os.environ['GITHUB_RUN_ATTEMPT'] or report.get('requested_sha')!=os.environ['GITHUB_SHA']:raise RuntimeError('wrong evidence invocation')
+        if report.get('product_qualified') is not False:raise RuntimeError('observation cannot qualify product release')
         PYTHON
-    - name: Always upload the fixed bounded evidence files
-      id: upload
+    - name: Keep only compact diagnostic evidence
       if: ${{ always() && steps.evidence.outcome == 'success' }}
-      timeout-minutes: 2
+      timeout-minutes: 1
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
-        name: touchcolor-watch-focused-${{ github.run_id }}-${{ github.run_attempt }}
-        path: ${{ runner.temp }}/watch-focused-evidence/
-        retention-days: 1
+        name: touchcolor-watch-heartbeat-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/watch-heartbeat-evidence/watch-heartbeat-evidence.json
         if-no-files-found: error
-        compression-level: 9
-    - name: Preserve failures and require original-clock final result
+        retention-days: 7
+    - name: Preserve real case and observation failures
       if: ${{ always() }}
       timeout-minutes: 1
-      shell: bash
       env:
-        UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+        EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
       run: |
         python3 - <<'PYTHON'
-        import json,os,time
+        import os,json
         from pathlib import Path
-        report=json.loads((Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/report.json').read_bytes())
-        if report.get('qualified') is not True or os.environ['UPLOAD_OUTCOME']!='success':raise RuntimeError('single-case proof and artifact upload both required')
-        if not 0<=time.monotonic()-report['started_monotonic']<2660:raise RuntimeError('original 45-minute clock reserve exhausted')
-        print('WATCH_FOCUSED verified one case, same source/device, cleanup and bounded evidence upload')
+        r=json.loads((Path(os.environ['RUNNER_TEMP'])/'watch-heartbeat-evidence/watch-heartbeat-evidence.json').read_bytes())
+        if os.environ['RUNTIME_OUTCOME']!='success' or os.environ['EVIDENCE_OUTCOME']!='success' or r.get('state')!='case-passed-observation-retained':raise SystemExit(1)
         PYTHON

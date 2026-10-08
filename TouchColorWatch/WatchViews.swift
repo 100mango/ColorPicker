@@ -30,6 +30,11 @@ struct WatchHome: View {
                 NavigationLink("Transfer Status") { WatchTransferView(transfer: transfer) }.accessibilityIdentifier("watch.transfer.open")
                 NavigationLink("Privacy") { WatchPrivacy() }.accessibilityIdentifier("watch.privacy")
             }.navigationTitle("TouchColor")
+            .onAppear {
+                #if DEBUG
+                WatchEditorDiagnostics.probeBaseline()
+                #endif
+            }
         }
     }
 }
@@ -156,6 +161,63 @@ struct WatchColorEditor: View {
 /// Bounded local lifecycle diagnostics for the actual nested-navigation/Crown
 /// regression. No values, photos or palette contents are logged.
 @MainActor private enum WatchEditorDiagnostics {
+    // Diagnostic only: two finite tasks, no observed state or UI writes.
+    private static let probeCase = "__WatchWorkflowTests_testTouchCopyEntryTouchAndCrownRemainResponsive_"
+    private static let probeNonce: String? = {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOUCHCOLOR_TEST_MAINACTOR_PROBE"] == "1",
+              let value = environment["TOUCHCOLOR_TEST_MAINACTOR_NONCE"], value.utf8.count == 36
+        else { return nil }
+        return UUID(uuidString: value)?.uuidString
+    }()
+    private static var probeBirth: Double?
+    private static var baselineStarted = false
+    private static var copyStarted: Double?
+    private static var copyExited = false
+    private static var probeCount = 0
+    private static func probeEmit(_ event: String, sequence: Int, started: Double) {
+        guard testCase == probeCase, let nonce = probeNonce, let birth = probeBirth,
+              probeCount < 14 else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= started, now - started <= 14, now >= birth, now - birth <= 134 else { return }
+        probeCount += 1
+        let elapsed = Int((now - started) * 1000)
+        logger.notice("WATCH_MAIN_ACTOR event=\(event, privacy: .public) case=\(probeCase, privacy: .public) nonce=\(nonce, privacy: .public) seq=\(sequence) elapsed_ms=\(elapsed)")
+    }
+    private static func probePulses(_ event: String, count: Int, started: Double, window: Double) {
+        Task { @MainActor in
+            for sequence in 1...count {
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+                catch { return }
+                // Late scheduling must not restart the window or produce a burst.
+                guard !Task.isCancelled,
+                      ProcessInfo.processInfo.systemUptime - started <= window else { return }
+                probeEmit(event, sequence: sequence, started: started)
+            }
+        }
+    }
+    static func probeBaseline() {
+        guard testCase == probeCase, probeNonce != nil, !baselineStarted else { return }
+        baselineStarted = true
+        let started = ProcessInfo.processInfo.systemUptime
+        probeBirth = started
+        probeEmit("baseline", sequence: 0, started: started)
+        probePulses("baseline", count: 5, started: started, window: 12)
+    }
+    static func probeCopyEnter() {
+        guard testCase == probeCase, probeNonce != nil, let birth = probeBirth,
+              ProcessInfo.processInfo.systemUptime - birth <= 120, copyStarted == nil else { return }
+        let started = ProcessInfo.processInfo.systemUptime
+        copyStarted = started
+        probeEmit("copy_enter", sequence: 0, started: started)
+        probePulses("copy_beat", count: 6, started: started, window: 14)
+    }
+    static func probeCopyExit() {
+        guard let started = copyStarted, !copyExited else { return }
+        copyExited = true
+        probeEmit("copy_exit", sequence: 0, started: started)
+    }
+
     private static var visibleEditors = Set<UUID>()
     // Repeated focus changes must not consume the appearance/disappearance
     // allowance. Inactive callbacks have their own allowance as well.
@@ -312,8 +374,14 @@ private struct WatchSavedColor: View {
                 Button("Edit a Copy") {
                     // Prepare the shared working color in the user action,
                     // before requesting navigation, rather than on appearance.
+                    #if DEBUG
+                    WatchEditorDiagnostics.probeCopyEnter()
+                    #endif
                     palette.select(color)
                     editingCopy = true
+                    #if DEBUG
+                    WatchEditorDiagnostics.probeCopyExit()
+                    #endif
                 }.accessibilityIdentifier("watch.edit.copy")
                 Button("Delete", role: .destructive) { palette.remove(at: index); dismiss() }.accessibilityIdentifier("watch.delete.\(index)")
             }
