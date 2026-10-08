@@ -4,6 +4,7 @@ import datetime,json,os,signal,subprocess,sys,struct,zlib,threading,re,plistlib,
 from pathlib import Path
 from capture_simulator_checkpoint import capture as capture_checkpoint, fail_cached_capture, prime_container
 from watch_profiles import select_profile
+from watch_live_sample import LiveSample, NativeSignals, NativeCancelled, wait_native
 from watch_runtime_pair import phone_template, device_inventory, verify_pair, verify_new_device, activate_owned_pair
 from bounded_process import run_captured, check_output, stop_group
 from vision_suites import CASES as VISION_CASES, needs_photo_seed
@@ -60,17 +61,18 @@ def run(command,timeout,required=True):
     print(datetime.datetime.now(datetime.timezone.utc).isoformat(), 'RUN', ' '.join(command),flush=True)
     diagnostics=[]
     watch_cases=WatchCaseLifecycle() if kind=='watch' and '-resultBundlePath' in command and command[command.index('-resultBundlePath')+1]==WATCH_UI_BUNDLE else None
-    p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
-    report['active_command'].update(pid=p.pid,phase='running')
-    (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-    print('NATIVE_COMMAND_STARTED',json.dumps(report['active_command']),flush=True)
-    reader_complete=threading.Event()
-    reader_errors=[]
+    live=LiveSample(report,command,device) if watch_cases is not None else None
+    native_signals=NativeSignals() if live is not None else None
+    p=None;reader=None;reader_started=False
+    reader_complete=threading.Event();reader_errors=[]
+    cleanup_error=None;timed_out=False;raw_exit=None;interruption=None;code=124
+    process_group_gone=False;capture_reader_finished=False
     def read_output():
         for line in p.stdout:
             print(line,end='',flush=True)
             if kind=='watch': watch_frames.record(line)
             if watch_cases is not None: watch_cases.record(line)
+            if live is not None: live.record(line)
             ready=re.search(r'TOUCHCOLOR_VISION_RUNNER_READY ([0-9A-F-]{36})',line)
             if ready and kind=='vision' and device:
                 try:
@@ -101,45 +103,84 @@ def run(command,timeout,required=True):
             reader_complete.set()
         except Exception as error:
             reader_errors.append(type(error).__name__)
-    reader=threading.Thread(target=output,daemon=True);reader.start()
-    cleanup_error=None;timed_out=False;raw_exit=None
+        finally:
+            if live is not None: live.trigger.invalidate('native-reader-stopped')
     try:
-        code=p.wait(timeout=timeout);raw_exit=code
-    except subprocess.TimeoutExpired:
-        timed_out=True
-        # A stuck test process must not turn our command deadline into an
-        # unbounded wait while reaping after SIGKILL. The VM job owns final cleanup.
-        report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        if native_signals is not None:
+            native_signals.install()
+            live.cancel_check=native_signals.check
+            native_signals.check()
+        p=subprocess.Popen(command,start_new_session=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        report['active_command'].update(pid=p.pid,phase='running')
         (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
-        print('NATIVE_COMMAND_DEADLINE_EXCEEDED',json.dumps(report['active_command']),flush=True)
-        if not stop_group(p):
-            cleanup_error='Owned process-group exit was not confirmed after bounded TERM/KILL waits'
-            report['cleanup_unconfirmed']=True
-        code=124
-    process_group_gone=stop_group(p)
-    if not process_group_gone:
-        report['cleanup_unconfirmed']=True
-        cleanup_error='Owned descendants remain after command leader exit'
-        code=124
-    reader.join(timeout=5)
-    capture_reader_finished=reader_complete.is_set() and not reader.is_alive()
-    if not capture_reader_finished:
-        report['cleanup_unconfirmed']=True
-        cleanup_error='Owned output/capture lifecycle did not finish cleanly'
-        code=124
+        print('NATIVE_COMMAND_STARTED',json.dumps(report['active_command']),flush=True)
+        reader=threading.Thread(target=output,daemon=True)
+        reader.start();reader_started=True
+        if live is not None:
+            live.output_active=lambda: reader.is_alive() and not reader_errors and not reader_complete.is_set()
+            live.native_active=lambda: p.poll() is None
+        code=wait_native(p,started+timeout,timeout,live,native_signals) if live is not None else p.wait(timeout=timeout)
+        raw_exit=code
+    except subprocess.TimeoutExpired:
+        timed_out=True;code=124
+        report['active_command'].update(phase='deadline exceeded',elapsed_seconds=round(time.monotonic()-started,3),wall_elapsed_seconds=round(time.time()-wall_started,3),observed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+        # Owned cleanup is in finally even if this diagnostic write fails.
+        try:
+            (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+            print('NATIVE_COMMAND_DEADLINE_EXCEEDED',json.dumps(report['active_command']),flush=True)
+        except BaseException as error: interruption=error
+    except BaseException as error:
+        interruption=error;code=124
+        if isinstance(error,NativeCancelled) or getattr(error,'cancelled_signal',None) is not None: report['native_cancelled']=True
+        if p is None and not isinstance(error,NativeCancelled): report['cleanup_unconfirmed']=True
+        cleanup_error='Native command setup/observation failed: '+type(error).__name__
+    finally:
+        try:
+            if p is not None:
+                try: process_group_gone=stop_group(p)
+                except BaseException as error:
+                    process_group_gone=False
+                    cleanup_error='Owned native cleanup failed: '+type(error).__name__
+                if reader_started:
+                    try: reader.join(timeout=5)
+                    except BaseException as error: reader_errors.append(type(error).__name__)
+                    capture_reader_finished=reader_complete.is_set() and not reader.is_alive()
+                else:
+                    try:
+                        if p.stdout is not None: p.stdout.close()
+                        capture_reader_finished=True
+                    except BaseException as error: reader_errors.append(type(error).__name__)
+            elif isinstance(interruption,NativeCancelled):
+                process_group_gone=True;capture_reader_finished=True
+            if not process_group_gone or not capture_reader_finished:
+                report['cleanup_unconfirmed']=True
+                cleanup_error=cleanup_error or 'Owned native process/output cleanup unconfirmed'
+                code=124
+            if live is not None:
+                try: live.finish()
+                except BaseException as error:
+                    report['watch_live_sample_finalization_error']=type(error).__name__
+                    interruption=interruption or error;code=124
+        finally:
+            if native_signals is not None:
+                native_signals.restore()
+                if native_signals.cancelled is not None:
+                    report['native_cancelled']=True
+                    interruption=interruption or NativeCancelled('native observation cancelled');code=124
     if report.get('cleanup_unconfirmed'):
         code=124
         if budget is not None: fail_record('Native command or capture cleanup unconfirmed',phase=budget.phase,cleanup_unconfirmed=True)
     # actool can emit asset errors while xcodebuild incorrectly exits zero. Preserve and fail them.
     if code==0 and diagnostics: code=65
-    report['stages'].append({'command':command,'exit':code,'raw_exit':raw_exit,'started':True,'timed_out':timed_out,'timeout_seconds':timeout,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
+    report['stages'].append({'command':command,'exit':code,'raw_exit':raw_exit,'started':p is not None,'timed_out':timed_out,'timeout_seconds':timeout,'compiler_errors':diagnostics,'cleanup_error':cleanup_error,'process_group_gone':process_group_gone,'capture_reader_finished':capture_reader_finished,'reader_errors':reader_errors,'started_at':started_at,'finished_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'elapsed_seconds':round(time.monotonic()-started,3),'wall_elapsed_seconds':round(time.time()-wall_started,3)})
     if watch_cases is not None: report['stages'][-1]['watch_case_lifecycle']=watch_cases.report
     report['active_command']=None
     (out/'runtime.json').write_text(json.dumps(report,indent=2)+'\n')
+    if interruption is not None: raise interruption
     if required and code:raise RuntimeError('Stage failed with exit '+str(code)+': '+' '.join(command))
     return code
 def resources(label):
-    if report.get('cleanup_unconfirmed'): return
+    if report.get('cleanup_unconfirmed') or report.get('native_cancelled'): return
     sample=resource_snapshot(label)
     report.setdefault('resources',[]).append(sample)
     if sample.get('cleanup_unconfirmed'): report['cleanup_unconfirmed']=True
@@ -431,7 +472,7 @@ finally:
     vision_offline_records = tuple(value for value in (pending_vision_hosted,pending_vision_normal,pending_vision_result,vision_diagnostic)
                                    if value is not None)
     if os.environ.get('TOUCHCOLOR_BUDGET_PHASE')=='work': os.environ['TOUCHCOLOR_BUDGET_PHASE']='cleanup'
-    if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed'):
+    if kind=='watch' and device and any(value['udid']==device['udid'] for value in owned_watch_devices) and not report.get('cleanup_unconfirmed') and not report.get('native_cancelled'):
         try:
             lookback=log_lookback(EXPECTED_MINUTES['watch'])
             lifecycle=run_captured(['xcrun','simctl','spawn',device['udid'],'log','show','--last',lookback,'--style','compact',
@@ -443,7 +484,7 @@ finally:
             if isinstance(error,subprocess.TimeoutExpired) and not getattr(error,'cleanup_confirmed',False): report['cleanup_unconfirmed']=True
     if not report.get('cleanup_unconfirmed'): resources('after platform attempt')
     result_bundle=Path('build')/(kind+'-tests.xcresult')
-    if result_bundle.exists() and kind!='vision' and not report.get('cleanup_unconfirmed'):
+    if result_bundle.exists() and kind!='vision' and not report.get('cleanup_unconfirmed') and not report.get('native_cancelled'):
         try:
             summary_run=run_captured(['xcrun','xcresulttool','get','test-results','summary','--path',str(result_bundle)],text=True,timeout=30)
             if summary_run.returncode==0:

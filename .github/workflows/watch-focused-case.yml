@@ -2,7 +2,7 @@ name: One existing 40mm Watch case
 'on':
   push:
     branches:
-    - codex/watch-copy-singlecase
+    - watch-copy-singlecase
 permissions:
   contents: read
 concurrency:
@@ -11,8 +11,8 @@ concurrency:
 jobs:
   watch:
     name: TouchColor one 40mm case
-    if: ${{ github.repository == '100mango/ColorPicker' && github.ref == 'refs/heads/codex/watch-copy-singlecase'
-      && github.event_name == 'push' && github.run_attempt == '1' }}
+    if: ${{ github.repository == '100mango/ColorPicker' && github.ref == 'refs/heads/watch-copy-singlecase'
+      && github.event_name == 'push' && github.event.created == false && github.event.deleted == false && github.event.forced == false && github.run_attempt == '1' }}
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -63,15 +63,17 @@ jobs:
             if not value:raise RuntimeError(reason)
         def git(*args):return subprocess.check_output(['git',*args],text=True,timeout=10).strip()
         sha=os.environ['GITHUB_SHA'];need(re.fullmatch('[0-9a-f]{40}',sha),'invalid sha')
-        need(os.environ['GITHUB_REPOSITORY']=='100mango/ColorPicker' and os.environ['GITHUB_REF']=='refs/heads/codex/watch-copy-singlecase','wrong repository/ref')
+        need(os.environ['GITHUB_REPOSITORY']=='100mango/ColorPicker' and os.environ['GITHUB_REF']=='refs/heads/watch-copy-singlecase','wrong repository/ref')
         need(os.environ['GITHUB_EVENT_NAME']=='push' and os.environ['GITHUB_RUN_ATTEMPT']=='1','push/first attempt only')
-        need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/codex/watch-copy-singlecase','wrong workflow source')
+        event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+        need(event.get('created') is False and event.get('deleted') is False and event.get('forced') is False,'existing branch non-forced update only')
+        need(os.environ['GITHUB_WORKFLOW_SHA']==sha and os.environ['GITHUB_WORKFLOW_REF']=='100mango/ColorPicker/.github/workflows/watch-focused-case.yml@refs/heads/watch-copy-singlecase','wrong workflow source')
         need(git('rev-parse','HEAD')==sha,'wrong checkout')
-        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'db0d71eab7ac18f22322ae16f9fcf08bd24a6439'],'not one child of exact combined parent')
+        need(git('rev-list','--parents','-n','1','HEAD').split()==[sha,'fb3eee7079674e28a4018f0dca25afbdf417bf35'],'not one child of exact combined parent')
         need(git('status','--porcelain=v1','--untracked-files=all')=='','dirty source')
-        observed=git('diff','--name-status','--no-renames','db0d71eab7ac18f22322ae16f9fcf08bd24a6439','HEAD','--').splitlines()
-        need(sorted(observed)==['M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/test_watch_xcresult_stack.py', 'M\tscripts/watch_xcresult_stack.py'],'changed-path scope mismatch')
-        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'db0d71eab7ac18f22322ae16f9fcf08bd24a6439','changes':observed,'clean':True}
+        observed=git('diff','--name-status','--no-renames','fb3eee7079674e28a4018f0dca25afbdf417bf35','HEAD','--').splitlines()
+        need(sorted(observed)==['A\tscripts/test_watch_live_sample.py', 'A\tscripts/test_watch_sample_identity.py', 'A\tscripts/watch_live_sample.py', 'A\tscripts/watch_sample_identity.c', 'M\t.github/workflows/watch-focused-case.yml', 'M\tscripts/test_extra_platforms.py'],'changed-path scope mismatch')
+        record={'sha':sha,'tree':git('rev-parse','HEAD^{tree}'),'parent':'fb3eee7079674e28a4018f0dca25afbdf417bf35','changes':observed,'clean':True}
         (Path(os.environ['RUNNER_TEMP'])/'watch-focused-evidence/source-before.json').write_text(json.dumps(record)+'\n')
         PYTHON
         set -euo pipefail
@@ -85,7 +87,7 @@ jobs:
         grep -Fx 'Xcode 27.0' "$RUNNER_TEMP/watch-focused-xcode.log"
         grep -Fx 'Build version 27A266a' "$RUNNER_TEMP/watch-focused-xcode.log"
         uname -m | grep -Fx arm64
-        python3 scripts/watch_xcresult_stack.py --phase preflight
+        python3 scripts/watch_live_sample.py --phase preflight
     - name: Initialize existing Watch lane budget
       timeout-minutes: 1
       run: python3 scripts/job_budget.py initialize
@@ -136,12 +138,12 @@ jobs:
         if git('status','--porcelain=v1','--untracked-files=all') or git('rev-parse','HEAD')!=before['sha'] or git('rev-parse','HEAD^{tree}')!=before['tree']:raise RuntimeError('source changed')
         (out/'source-after.json').write_text(json.dumps(before)+'\n')
         PYTHON
-    - name: Read only a case-bound app stack after confirmed cleanup
+    - name: Finalize one bounded live sample after source and process cleanup
       id: stack_diagnostic
-      if: ${{ failure() && steps.runtime.outcome == 'failure' && steps.source_after.outcome == 'success' }}
+      if: ${{ always() }}
       timeout-minutes: 1
       shell: bash
-      run: python3 scripts/watch_xcresult_stack.py --phase collect
+      run: python3 scripts/watch_live_sample.py --phase finalize
     - name: Retain bounded logs and strict single-case evidence
       id: evidence
       if: ${{ always() }}
@@ -151,6 +153,7 @@ jobs:
         RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
         SUMMARY_OUTCOME: ${{ steps.summary.outcome }}
         SOURCE_AFTER_OUTCOME: ${{ steps.source_after.outcome }}
+        DIAGNOSTIC_OUTCOME: ${{ steps.stack_diagnostic.outcome }}
       run: |
         python3 - <<'PYTHON'
         import json,os,re,time,hashlib,stat
@@ -188,7 +191,7 @@ jobs:
             data=read(Path('build/watch-runtime/runtime.json'),262144);(out/'runtime.json').write_bytes(data);runtime=json.loads(data)
             source=json.loads(read(out/'source-before.json',32768));after=json.loads(read(out/'source-after.json',32768))
             need(source==after and source.get('sha')==os.environ['GITHUB_SHA'] and source.get('clean') is True,'source readback unavailable')
-            need(os.environ['RUNTIME_OUTCOME']=='success' and os.environ['SUMMARY_OUTCOME']=='success' and os.environ['SOURCE_AFTER_OUTCOME']=='success','required step failed')
+            need(os.environ['RUNTIME_OUTCOME']=='success' and os.environ['SUMMARY_OUTCOME']=='success' and os.environ['SOURCE_AFTER_OUTCOME']=='success' and os.environ['DIAGNOSTIC_OUTCOME']=='success','required step failed')
             text=raw.decode('utf8','replace')
             records=re.findall(r"^Test Case '-\[([^]]+)\]' (started\.|(?:passed|failed|skipped) \([^\n]+ seconds\)\.)$",text,re.M)
             expected='TouchColorWatchUITests.WatchWorkflowTests testTouchCopyEntryTouchAndCrownRemainResponsive'
