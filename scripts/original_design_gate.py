@@ -55,6 +55,7 @@ CONTROLLER_TIMEOUT_SECONDS = 23 * 60
 EVIDENCE_BUDGET_BYTES = 12 * 1024 * 1024  # Two jobs together retain at most the original 24 MiB.
 HOST_DIAGNOSTIC_PHASE_SECONDS = 20  # Charged to the unchanged controller deadline.
 HOST_DIAGNOSTIC_LOG_BYTES = 256 * 1024
+LANE_BRANCHES = {'full': 'touchcolor-original-design', 'seeded-only': 'touchcolor-seeded-evidence'}
 
 
 def require(condition, message):
@@ -142,8 +143,12 @@ def qualify_cases(log, expected_names):
 
 
 class Gate:
-    def __init__(self, expected_sha, device_label):
+    def __init__(self, expected_sha, device_label, lane='full'):
         require(device_label in DEVICE_NAMES, 'Exactly one reviewed device must be selected')
+        require(lane in LANE_BRANCHES, 'Unknown qualification lane')
+        require(lane == 'full' or device_label == 'ipad-mini', 'Seeded-only evidence is scoped to iPad mini')
+        self.lane = lane
+        self.seed_timeout_seconds = 120 if lane == 'seeded-only' else 60
         self.expected_sha = expected_sha
         self.device_label = device_label
         self.deadline = time.monotonic() + CONTROLLER_TIMEOUT_SECONDS
@@ -285,7 +290,7 @@ class Gate:
         self.seed_host_diagnostics(label, device, fixture, 'before', now - 30, now)
         began = time.time()
         try:
-            self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
+            self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], self.seed_timeout_seconds, simulator=True)
         except BaseException:
             finished = time.time()
             try:
@@ -434,6 +439,18 @@ class Gate:
         if phase: self.ui_screenshots.extend(kept)
 
     def qualify_ui_completion(self, label):
+        if self.lane == 'seeded-only':
+            require(self.ui_phase_results['ui-independent'] ==
+                    {'status': 'not_run', 'expected_tests': sorted(UI_PHASE_TESTS['ui-independent'])},
+                    'Seeded-only evidence must not credit independent UI tests')
+            seeded = self.ui_phase_results['ui-seeded']
+            require(seeded['status'] == 'passed' and seeded['expected_tests'] == sorted(UI_PHASE_TESTS['ui-seeded']),
+                    'The exact three seeded UI tests must pass')
+            names = [item['name'] for item in self.ui_screenshots]
+            require(sorted(names) == sorted(UI_PHASE_IMAGES['ui-seeded']),
+                    'Seeded-only evidence requires exactly its two distinct named images')
+            write_json(EVIDENCE / (label + '-screenshots.json'), self.ui_screenshots)
+            return
         require(all(row['status'] == 'passed' for row in self.ui_phase_results.values()), 'Both UI phases must pass')
         tests = [name for row in self.ui_phase_results.values() for name in row['expected_tests']]
         require(len(tests) == len(set(tests)) == 6, 'UI testcase inventory must total six without duplicates')
@@ -446,8 +463,12 @@ class Gate:
 
     def main(self):
         require(sys.platform == 'darwin', 'This gate requires the xcode-27 cloud runner')
-        require(os.environ.get('GITHUB_EVENT_NAME') == 'push' and os.environ.get('GITHUB_REF') == 'refs/heads/touchcolor-original-design',
-                'Only the root-controlled original-design branch push may activate this gate')
+        require(os.environ.get('GITHUB_EVENT_NAME') == 'push' and os.environ.get('GITHUB_REF') == 'refs/heads/' + LANE_BRANCHES[self.lane],
+                'Only the root-controlled branch push for the selected lane may activate this gate')
+        if self.lane == 'seeded-only':
+            require(os.environ.get('GITHUB_WORKFLOW_REF') ==
+                    '100mango/ColorPicker/.github/workflows/original-design-seeded.yml@refs/heads/touchcolor-seeded-evidence',
+                    'The seeded-only lane requires its exact workflow and branch')
         require(os.environ.get('GITHUB_REPOSITORY') == '100mango/ColorPicker', 'Wrong repository')
         require(re.fullmatch(r'[0-9a-f]{40}', self.expected_sha) is not None, 'Supply a full expected source SHA')
         require(os.environ.get('GITHUB_SHA') == self.expected_sha and os.environ.get('GITHUB_WORKFLOW_SHA') == self.expected_sha,
@@ -496,12 +517,15 @@ class Gate:
         write_json(EVIDENCE / 'devices.json', self.devices)
         self.command(label + '-boot', ['xcrun', 'simctl', 'boot', device], 45, simulator=True)
         self.await_owned_boot(label, device, owned_name)
-        # The existing hosted test-without-building owns installation of the
-        # exact build products on this UUID within its unchanged suite budget.
-        self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
+        # Each selected test-without-building operation installs its exact build
+        # products on the fresh UUID. Seeded-only starts with real UI bootstrap;
+        # it cannot depend on an earlier hosted run or another simulator.
+        if self.lane == 'full':
+            self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
         self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})
         independent = UI_PHASE_TESTS['ui-independent']
-        self.run_tests(label, device, 'ui-independent', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(independent)], independent)
+        if self.lane == 'full':
+            self.run_tests(label, device, 'ui-independent', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(independent)], independent)
         self.seed_fixture(label, device, fixture)
         seeded = ui - independent
         self.run_tests(label, device, 'ui-seeded', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(seeded)], seeded)
@@ -558,6 +582,7 @@ def main():
     parser.add_argument('--expected-sha')
     parser.add_argument('--device', choices=tuple(DEVICE_NAMES), required=True)
     parser.add_argument('--admit-evidence', action='store_true')
+    parser.add_argument('--lane', choices=tuple(LANE_BRANCHES), default='full')
     args = parser.parse_args()
     if args.admit_evidence:
         admit_evidence(); return 0
@@ -565,7 +590,7 @@ def main():
     def interrupted(signum, frame):
         raise KeyboardInterrupt('Native gate interrupted by signal ' + str(signum))
     signal.signal(signal.SIGTERM, interrupted); signal.signal(signal.SIGINT, interrupted)
-    gate = Gate(args.expected_sha, args.device); passed = False; error = None
+    gate = Gate(args.expected_sha, args.device, args.lane); passed = False; error = None
     try:
         gate.main(); passed = True
     except BaseException as failure:
@@ -574,7 +599,16 @@ def main():
         gate.cleanup()
         total = sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file())
         passed = passed and not gate.owned and not gate.uncertain_simulator and total <= EVIDENCE_BUDGET_BYTES - 128 * 1024
-        write_json(EVIDENCE / 'acceptance.json', {'functional_passed': passed, 'scope': 'selected device only; both matrix jobs must pass',
+        write_json(EVIDENCE / 'acceptance.json', {'functional_passed': passed and args.lane == 'full',
+                   'scope': 'selected device only; both matrix jobs must pass' if args.lane == 'full' else
+                            'partial-scoped: fresh iPad bootstrap and three seeded UI cases only; private qualification must review any composition',
+                   'lane': args.lane, 'scoped_passed': passed,
+                   'scope_status': ('full-passed' if passed else 'full-failed') if args.lane == 'full' else
+                                   ('partial-scoped-passed' if passed else 'partial-scoped-failed'),
+                   'omitted_phases': [] if args.lane == 'full' else ['hosted', 'ui-independent'],
+                   'selected_inventory': {'hosted': 29, 'ui': 6, 'bootstrap': 1} if args.lane == 'full' else
+                                         {'hosted': 0, 'ui': 3, 'bootstrap': 1},
+                   'seed_timeout_seconds': 60 if args.lane == 'full' else 120,
                    'device_label': args.device, 'device_name': DEVICE_NAMES[args.device], 'required_devices': list(DEVICE_NAMES),
                    'reviewed_inventory': {'hosted': 29, 'ui': 6},
                    'bootstrap_inventory': 1,
@@ -582,7 +616,9 @@ def main():
                    'photos_preparation': 'real PHPicker bootstrap before addmedia; no cold Photos-service claim',
                    'error': error, 'source_sha': args.expected_sha,
                    'pending_owned_devices': gate.owned, 'simulator_uncertain': gate.uncertain_simulator, 'evidence_bytes': total,
-                   'visual_comparison': 'not automatically accepted; inspect six named screenshots per device against original design',
+                   'visual_comparison': ('not automatically accepted; inspect six named screenshots per device against original design'
+                                         if args.lane == 'full' else
+                                         'not automatically accepted; inspect bootstrap and two seeded images; four independent UI images are absent from this run'),
                    'release_claim': False})
     if error: print(error, file=sys.stderr)
     return 0 if passed else 1

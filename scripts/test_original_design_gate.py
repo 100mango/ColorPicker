@@ -679,7 +679,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                 if path.is_file() and path.suffix in ('.yml', '.yaml')}
 
     def assert_fixed_workflow_headers(self, sources):
-        # A strict contract for these six checked-in headers, not a YAML parser.
+        # A strict contract for these seven checked-in headers, not a YAML parser.
         # The native runner needs only Python's standard library for this gate.
         expected = {
             'apple-platforms.yml': ('platform-integration', True, 'touchcolor-platforms-${{ github.ref }}'),
@@ -688,6 +688,7 @@ class OriginalDesignGateTests(unittest.TestCase):
             'ios-completion.yml': ('ios-original-completion', True, 'touchcolor-ios-refs/heads/ios-original-release'),
             'ios-original-archive.yml': ('ios-original-archive', True, 'touchcolor-ios-original-archive'),
             'original-design-gate.yml': ('touchcolor-original-design', False, 'touchcolor-original-design-${{ github.ref }}'),
+            'original-design-seeded.yml': ('touchcolor-seeded-evidence', False, 'touchcolor-seeded-evidence-${{ github.ref }}'),
         }
         self.assertEqual(set(sources), set(expected))
         matched = []
@@ -790,6 +791,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         from unittest.mock import patch
         controller = object.__new__(gate.Gate)
         controller.expected_sha = 'a' * 40
+        controller.lane = 'full'
         environment = {'GITHUB_REPOSITORY': '100mango/ColorPicker',
                        'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/touchcolor-original-design',
                        'GITHUB_SHA': 'a' * 40, 'GITHUB_WORKFLOW_SHA': 'a' * 40}
@@ -1085,7 +1087,8 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertIn('ui.remove(BOOTSTRAP_TEST)', runner)
         self.assertNotIn("if label == 'ipad-mini':", runner)
         self.assertIn("['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(seeded)]", runner)
-        self.assertIn("['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60", runner)
+        self.assertIn("['xcrun', 'simctl', 'addmedia', device, str(fixture)], self.seed_timeout_seconds", runner)
+        self.assertIn("self.seed_timeout_seconds = 120 if lane == 'seeded-only' else 60", runner)
         self.assertIn("'bootstrap_inventory': 1", runner)
         self.assertIn('no cold Photos-service claim', runner)
 
@@ -1398,6 +1401,217 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertLess(source.index('self.export_screenshots(label if'), source.index('trace_code, trace = self.command'))
         self.assertEqual(gate.BOOTSTATUS_TIMEOUT_SECONDS, 300)
         self.assertEqual(gate.CONTROLLER_TIMEOUT_SECONDS, 23 * 60)
+
+    def test_seeded_lane_is_explicit_ipad_only_and_full_remains_default(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp, patch.object(gate,'WORK',Path(tmp)),patch.object(gate,'EVIDENCE',Path(tmp)/'evidence'):
+            for label in gate.DEVICE_NAMES:
+                worker=gate.Gate('a'*40,label)
+                self.assertEqual(worker.lane,'full');self.assertEqual(worker.seed_timeout_seconds,60)
+            worker=gate.Gate('a'*40,'ipad-mini','seeded-only')
+            self.assertEqual(worker.seed_timeout_seconds,120)
+            self.assertEqual(worker.ui_budgets,{'execution':600,'summary':30,'attachments':60,'picker-trace':30})
+            self.assertEqual(worker.ui_phase_results['ui-independent']['status'],'not_run')
+            for label,lane in [('se3','seeded-only'),('ipad-mini','foreign'),('ipad-mini','FULL')]:
+                with self.subTest(label=label,lane=lane),self.assertRaises(RuntimeError):gate.Gate('a'*40,label,lane)
+
+    def test_seeded_lane_runtime_binds_exact_branch_workflow_and_revision(self):
+        from unittest.mock import patch
+        worker=object.__new__(gate.Gate);worker.expected_sha='a'*40;worker.lane='seeded-only'
+        environment={'GITHUB_REPOSITORY':'100mango/ColorPicker','GITHUB_EVENT_NAME':'push',
+                     'GITHUB_REF':'refs/heads/touchcolor-seeded-evidence','GITHUB_SHA':'a'*40,'GITHUB_WORKFLOW_SHA':'a'*40,
+                     'GITHUB_WORKFLOW_REF':'100mango/ColorPicker/.github/workflows/original-design-seeded.yml@refs/heads/touchcolor-seeded-evidence'}
+        mutations=[{k:v} for k,values in {
+            'GITHUB_REPOSITORY':['other/ColorPicker'],'GITHUB_EVENT_NAME':['workflow_dispatch','pull_request','workflow_run'],
+            'GITHUB_REF':['refs/heads/touchcolor-original-design','refs/heads/codex/touchcolor-seeded-evidence','refs/heads/main'],
+            'GITHUB_SHA':['b'*40],'GITHUB_WORKFLOW_SHA':['b'*40],
+            'GITHUB_WORKFLOW_REF':['','100mango/ColorPicker/.github/workflows/original-design-gate.yml@refs/heads/touchcolor-seeded-evidence',
+                                   '100mango/ColorPicker/.github/workflows/original-design-seeded.yml@refs/heads/main']}.items() for v in values]
+        for changed in mutations:
+            with self.subTest(changed=changed),patch.dict(gate.os.environ,{**environment,**changed},clear=True),patch.object(gate.sys,'platform','darwin'),patch.object(worker,'text') as text,patch.object(worker,'command') as command:
+                with self.assertRaises(RuntimeError):worker.main()
+                text.assert_not_called();command.assert_not_called()
+        class ReachedSource(Exception):pass
+        with patch.dict(gate.os.environ,environment,clear=True),patch.object(gate.sys,'platform','darwin'),patch.object(worker,'text',side_effect=ReachedSource) as text:
+            with self.assertRaises(ReachedSource):worker.main()
+            text.assert_called_once_with('source-sha',['git','rev-parse','HEAD'])
+
+    def test_seeded_workflow_has_one_explicit_scoped_job_and_unchanged_ceiling(self):
+        workflow=(gate.ROOT/'.github/workflows/original-design-seeded.yml').read_text()
+        for exact in ['branches: [touchcolor-seeded-evidence]','device: [ipad-mini]','runs-on: xcode-27','timeout-minutes: 25',
+                      '--expected-sha "$EXPECTED_SHA" --device "$DEVICE_LABEL" --lane seeded-only',
+                      '--admit-evidence --device "$DEVICE_LABEL" --lane seeded-only','retention-days: 1',
+                      'path: build/original-design/published','persist-credentials: false']:
+            self.assertIn(exact,workflow)
+        self.assertEqual(workflow.count('runs-on:'),1)
+        self.assertNotIn('workflow_dispatch:',workflow);self.assertNotIn('continue-on-error',workflow)
+        self.assertNotIn('codex/',workflow);self.assertNotIn('rerun',workflow)
+        self.assertEqual(gate.CONTROLLER_TIMEOUT_SECONDS,1380)
+        self.assertEqual(gate.EVIDENCE_BUDGET_BYTES,12*1024*1024)
+
+    def test_seeded_lane_fresh_device_dispatches_only_bootstrap_seed_and_three_cases(self):
+        from unittest.mock import patch
+        owned='01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve();order=[]
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                worker=gate.Gate('a'*40,'ipad-mini','seeded-only')
+                with patch.object(worker,'text',return_value=owned) as create,patch.object(worker,'command',side_effect=lambda name,*a,**kw:order.append(name)),patch.object(worker,'await_owned_boot',side_effect=lambda *a:order.append('ready')),patch.object(worker,'run_tests',side_effect=lambda label,device,suite,*a:order.append(suite)) as tests,patch.object(worker,'seed_fixture',side_effect=lambda *a:order.append('seed')) as seed,patch.object(worker,'qualify_ui_completion') as completion:
+                    worker.run_device([{'name':gate.DEVICE_NAMES['ipad-mini'],'identifier':'type'}],{'identifier':'runtime'},root/'app',root/'fixture',{'hosted'},set().union(*gate.UI_PHASE_TESTS.values()))
+                self.assertEqual(order,['ipad-mini-boot','ready','bootstrap','seed','ui-seeded','ipad-mini-shutdown','ipad-mini-delete'])
+                self.assertEqual(create.call_count,1);self.assertIn('create',create.call_args.args[1])
+                self.assertEqual(create.call_args.args[1][-2:],['type','runtime'])
+                self.assertEqual([c.args[2] for c in tests.call_args_list],['bootstrap','ui-seeded'])
+                self.assertEqual(tests.call_args_list[0].args[4],{gate.BOOTSTRAP_TEST})
+                self.assertEqual(tests.call_args_list[1].args[4],gate.UI_PHASE_TESTS['ui-seeded'])
+                self.assertEqual(tests.call_args_list[1].args[3],['TouchColorUITests/'+gate.UI_CLASS+'/'+n for n in sorted(gate.UI_PHASE_TESTS['ui-seeded'])])
+                self.assertEqual(worker.owned,[]);seed.assert_called_once();completion.assert_called_once()
+                self.assertEqual(worker.ui_phase_results['ui-independent']['status'],'not_run')
+
+    def test_seeded_lane_first_bootstrap_uses_original_xcode_install_and_test_route(self):
+        from unittest.mock import patch
+        class ReachedXcode(Exception):pass
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                worker=gate.Gate('a'*40,'ipad-mini','seeded-only')
+                with patch.object(worker,'command',side_effect=ReachedXcode) as run:
+                    with self.assertRaises(ReachedXcode):worker.run_tests('ipad-mini','fresh-UUID','bootstrap',['TouchColorUITests/'+gate.UI_CLASS+'/'+gate.BOOTSTRAP_TEST],{gate.BOOTSTRAP_TEST})
+                argv=run.call_args.args[1]
+                self.assertEqual(run.call_args.args[2],600)
+                self.assertEqual(argv[-1],'test-without-building')
+                for flag,value in [('-scheme','TouchColor'),('-destination','platform=iOS Simulator,id=fresh-UUID'),('-derivedDataPath',str(root/'derived')),('-default-test-execution-time-allowance','120'),('-maximum-test-execution-time-allowance','180')]:self.assertEqual(argv[argv.index(flag)+1],value)
+                self.assertEqual([s for s in argv if s.startswith('-only-testing:')],['-only-testing:TouchColorUITests/'+gate.UI_CLASS+'/'+gate.BOOTSTRAP_TEST])
+                self.assertEqual(worker.commands,[])
+                project=(gate.ROOT/'TouchColor.xcodeproj/project.pbxproj').read_text()
+                self.assertIn(gate.UI_CLASS+'.m',project)
+                # Command reachability only. A real fresh-device installation is not claimed by this mock.
+
+    def test_seeded_lane_keeps_original_deadline_reserve_without_new_admission_floor(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'),patch.object(gate.time,'monotonic',return_value=100):
+                worker=gate.Gate('a'*40,'ipad-mini','seeded-only');worker.deadline=125
+                with patch.object(gate.subprocess,'Popen') as popen:
+                    with self.assertRaisesRegex(RuntimeError,'Whole-job operation budget exhausted'):worker.command('seed',['xcrun','simctl','addmedia','owned','fixture'],120,simulator=True)
+                    popen.assert_not_called()
+                self.assertEqual(worker.commands,[])
+                self.assertNotIn('require_seeded_lane_budget',Path(gate.__file__).read_text())
+
+    def test_seeded_lane_addmedia_has_one_120_cap_and_full_still_60(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                for lane,cap in [('full',60),('seeded-only',120)]:
+                    worker=gate.Gate('a'*40,'ipad-mini',lane)
+                    with patch.object(worker,'seed_host_diagnostics') as diagnostics,patch.object(worker,'command',return_value=(0,root/'log')) as command:
+                        worker.seed_fixture('ipad-mini','owned',root/'fixture.png')
+                    command.assert_called_once_with('ipad-mini-seed',['xcrun','simctl','addmedia','owned',str(root/'fixture.png')],cap,simulator=True)
+                    self.assertEqual([c.args[3] for c in diagnostics.call_args_list],['before','after'])
+
+    def test_seeded_lane_addmedia_timeout_is_uncertain_no_retry_ui_or_cleanup(self):
+        from unittest.mock import patch
+        owned='01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                worker=gate.Gate('a'*40,'ipad-mini','seeded-only');original=gate.subprocess.TimeoutExpired('exact-addmedia',120)
+                def command(name,*args,**kwargs):
+                    if name.endswith('-seed'):
+                        worker.uncertain_simulator=True
+                        raise original
+                    return 0,root/'log'
+                with patch.object(worker,'text',return_value=owned),patch.object(worker,'await_owned_boot'),patch.object(worker,'run_tests') as tests,patch.object(worker,'seed_host_diagnostics') as diagnostics,patch.object(worker,'command',side_effect=command) as commands:
+                    with self.assertRaises(gate.subprocess.TimeoutExpired) as result:worker.run_device([{'name':gate.DEVICE_NAMES['ipad-mini'],'identifier':'type'}],{'identifier':'runtime'},root/'app',root/'fixture',{'hosted'},set().union(*gate.UI_PHASE_TESTS.values()))
+                    worker.cleanup()
+                self.assertIs(result.exception,original)
+                self.assertEqual([c.args[0] for c in commands.call_args_list],['ipad-mini-boot','ipad-mini-seed'])
+                self.assertEqual([c.args[2] for c in tests.call_args_list],['bootstrap'])
+                self.assertEqual([c.args[3] for c in diagnostics.call_args_list],['before','after'])
+                self.assertEqual(worker.owned,[owned]);self.assertTrue(worker.uncertain_simulator)
+                self.assertEqual(worker.ui_phase_results['ui-seeded']['status'],'not_run')
+
+    def test_seeded_lane_actual_command_timeout_uses_min_deadline_and_marks_uncertain(self):
+        from unittest.mock import patch
+        import bounded_process
+        for remaining,cap in [(1000,120),(80,55)]:
+            with self.subTest(remaining=remaining),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp).resolve()
+                with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'),patch.object(gate.time,'monotonic',return_value=100):
+                    worker=gate.Gate('a'*40,'ipad-mini','seeded-only');worker.deadline=100+remaining
+                    with patch.object(gate.subprocess,'Popen') as popen,patch.object(bounded_process,'stop_group',return_value=True) as stop:
+                        popen.return_value.wait.side_effect=gate.subprocess.TimeoutExpired('simctl',cap)
+                        with self.assertRaises(gate.subprocess.TimeoutExpired):worker.command('ipad-mini-seed',['xcrun','simctl','addmedia','owned','fixture.png'],120,simulator=True)
+                        popen.return_value.wait.assert_called_once_with(timeout=cap);stop.assert_called_once()
+                        with self.assertRaisesRegex(RuntimeError,'uncertain simulator'):worker.command('later-simulator',['xcrun','simctl','list'],30,simulator=True)
+                        self.assertEqual(popen.call_count,1)
+                    self.assertTrue(worker.uncertain_simulator);self.assertEqual(worker.commands[0]['timeout_seconds'],cap)
+                    self.assertTrue(worker.commands[0]['host_group_exit_confirmed'])
+
+    def test_seeded_lane_bootstrap_failure_never_dispatches_addmedia_or_seeded_ui(self):
+        from unittest.mock import patch
+        owned='01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                worker=gate.Gate('a'*40,'ipad-mini','seeded-only')
+                with patch.object(worker,'text',return_value=owned),patch.object(worker,'await_owned_boot'),patch.object(worker,'run_tests',side_effect=RuntimeError('failed bootstrap')) as calls,patch.object(worker,'command') as commands,patch.object(worker,'seed_fixture') as seed:
+                    with self.assertRaisesRegex(RuntimeError,'failed bootstrap'):worker.run_device([{'name':gate.DEVICE_NAMES['ipad-mini'],'identifier':'type'}],{'identifier':'runtime'},root/'app',root/'fixture',{'hosted'},set().union(*gate.UI_PHASE_TESTS.values()))
+                self.assertEqual([c.args[2] for c in calls.call_args_list],['bootstrap']);seed.assert_not_called()
+                self.assertEqual([c.args[0] for c in commands.call_args_list],['ipad-mini-boot'])
+                worker.ui_budgets['execution']=0
+                with patch.object(worker,'command') as command:
+                    with self.assertRaises(RuntimeError):worker.run_tests('ipad-mini',owned,'ui-seeded',['TouchColorUITests/'+gate.UI_CLASS+'/'+n for n in sorted(gate.UI_PHASE_TESTS['ui-seeded'])],gate.UI_PHASE_TESTS['ui-seeded'])
+                    command.assert_not_called()
+                self.assertEqual(worker.ui_phase_results['ui-seeded']['status'],'failed')
+
+    def test_seeded_lane_real_export_consumer_accepts_only_two_source_images_and_unrun_independent(self):
+        from unittest.mock import patch
+        import re
+        source,_=self.native_dismissal_source();bodies=self.original_ui_case_bodies(source)
+        names=[n for case in gate.UI_PHASE_TESTS['ui-seeded'] for n in re.findall(r'\[self capture:@"([^"\n]+)"\]',bodies[case])]
+        self.assertEqual(sorted(names),sorted(gate.UI_PHASE_IMAGES['ui-seeded']))
+        rows=self.export_source_image_names(names,phase='ui-seeded')
+        with tempfile.TemporaryDirectory() as tmp,patch.object(gate,'WORK',Path(tmp)),patch.object(gate,'EVIDENCE',Path(tmp)/'evidence'):
+            worker=gate.Gate('a'*40,'ipad-mini','seeded-only');worker.ui_phase_results['ui-seeded']['status']='passed';worker.ui_screenshots=rows
+            worker.qualify_ui_completion('ipad-mini')
+            baseline=copy.deepcopy(worker.ui_phase_results)
+            for mutate in ['independent-pass','independent-count','seeded-not-run','wrong-seeded-inventory','missing-image','duplicate-image','foreign-image']:
+                worker.ui_phase_results=copy.deepcopy(baseline);worker.ui_screenshots=copy.deepcopy(rows)
+                if mutate=='independent-pass':worker.ui_phase_results['ui-independent']['status']='passed'
+                if mutate=='independent-count':worker.ui_phase_results['ui-independent']['observed_counts']={'passedTests':3}
+                if mutate=='seeded-not-run':worker.ui_phase_results['ui-seeded']['status']='not_run'
+                if mutate=='wrong-seeded-inventory':worker.ui_phase_results['ui-seeded']['expected_tests']=['foreign']
+                if mutate=='missing-image':worker.ui_screenshots=rows[:1]
+                if mutate=='duplicate-image':worker.ui_screenshots=rows+[rows[0]]
+                if mutate=='foreign-image':worker.ui_screenshots=rows+[{'name':'01-original-home'}]
+                with self.subTest(mutate=mutate),self.assertRaises(RuntimeError):worker.qualify_ui_completion('ipad-mini')
+        for invalid in [names[:1],names+names[:1]]:
+            with self.assertRaises(RuntimeError):self.export_source_image_names(invalid,phase='ui-seeded')
+
+    def test_seeded_lane_acceptance_never_claims_full_success_or_prior_cases(self):
+        from unittest.mock import patch
+        import sys
+        for lane,succeed in [('seeded-only',True),('seeded-only',False),('full',True)]:
+            with self.subTest(lane=lane,succeed=succeed),tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp).resolve()
+                with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                    worker=gate.Gate('a'*40,'ipad-mini',lane)
+                    with patch.object(gate,'Gate',return_value=worker),patch.object(worker,'main',side_effect=None if succeed else RuntimeError('seed timeout')),patch.object(worker,'cleanup'),patch.object(gate.signal,'signal'),patch.object(sys,'argv',['gate','--expected-sha','a'*40,'--device','ipad-mini','--lane',lane]):
+                        self.assertEqual(gate.main(),0 if succeed else 1)
+                    receipt=json.loads((root/'evidence/acceptance.json').read_text())
+                    self.assertEqual(receipt['functional_passed'],succeed and lane=='full')
+                    self.assertEqual(receipt['scoped_passed'],succeed);self.assertFalse(receipt['release_claim'])
+                    self.assertEqual(receipt['lane'],lane)
+                    if lane=='seeded-only':
+                        self.assertEqual(receipt['selected_inventory'],{'hosted':0,'ui':3,'bootstrap':1})
+                        self.assertEqual(receipt['scope_status'],'partial-scoped-passed' if succeed else 'partial-scoped-failed')
+                        self.assertEqual(receipt['omitted_phases'],['hosted','ui-independent'])
+                        self.assertEqual(receipt['ui_phases']['ui-independent']['status'],'not_run')
+                        self.assertEqual(receipt['seed_timeout_seconds'],120)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

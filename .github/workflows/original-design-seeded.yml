@@ -1,0 +1,44 @@
+name: TouchColor scoped seeded iPad evidence
+on:
+  push:
+    branches: [touchcolor-seeded-evidence]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-seeded-evidence-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  seeded-evidence:
+    runs-on: xcode-27
+    name: scoped-seeded-evidence (${{ matrix.device }})
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        device: [ipad-mini]
+    timeout-minutes: 25
+    env:
+      DEVICE_LABEL: ${{ matrix.device }}
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Owned ${{ matrix.device }} scoped seeded evidence
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: python3 scripts/original_design_gate.py --expected-sha "$EXPECTED_SHA" --device "$DEVICE_LABEL" --lane seeded-only
+      - name: Admit a physically bounded evidence package
+        id: admit
+        if: always()
+        run: python3 scripts/original_design_gate.py --admit-evidence --device "$DEVICE_LABEL" --lane seeded-only
+      - name: Retain admitted evidence, never full xcresults
+        if: always() && steps.admit.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-seeded-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.device }}
+          path: build/original-design/published
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 6
