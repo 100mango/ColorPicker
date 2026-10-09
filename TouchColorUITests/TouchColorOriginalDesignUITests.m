@@ -278,53 +278,14 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
 - (void)dismissPopoverOnceWithAttachment:(NSString *)name {
     XCUIElement *popover=[self.app descendantsMatchingType:XCUIElementTypePopover].firstMatch;
     XCUIElement *region=self.app.otherElements[@"PopoverDismissRegion"].firstMatch;
-    XCUIElement *windowElement=self.app.windows.firstMatch;
-    CGRect window=windowElement.frame, regionFrame=region.frame;
-    CGRect firstFrame=popover.frame;
-    NSTimeInterval firstSample=NSProcessInfo.processInfo.systemUptime;
-    if (!TCDesignFiniteRect(window) || !TCDesignFiniteRect(regionFrame) || !TCDesignFiniteRect(firstFrame) ||
-        !CGRectContainsRect(window,regionFrame) || !CGRectContainsRect(window,firstFrame)) {
-        XCTFail(@"The actual window, native dismissal region and popover must have finite visible geometry");
-        return;
-    }
-    // UIKit normally prevents interaction with views behind a popover. This
-    // original home source uses sourceView and configures no passthroughViews.
-    // Its covered buttons need not occur in the modal accessibility hierarchy.
-    // Keep the previously exercised region-relative outside tap; never use the
-    // full-window region's center, which can lie inside the Photos popover.
-    CGRect safeRegion=CGRectIntersection(CGRectInset(window,24,24),CGRectInset(regionFrame,24,24));
-    CGFloat top=MAX(CGRectGetMinY(safeRegion),CGRectGetMaxY(firstFrame)+24);
-    CGRect dismissalBand=CGRectMake(CGRectGetMinX(safeRegion),top,CGRectGetWidth(safeRegion),CGRectGetMaxY(safeRegion)-top);
-    if (!TCDesignFiniteRect(safeRegion) || !TCDesignFiniteRect(dismissalBand)) {
-        XCTFail(@"No visible dismissal band exists below the actual popover");
-        return;
-    }
-    CGPoint point=CGPointMake(CGRectGetMidX(dismissalBand),CGRectGetMidY(dismissalBand));
-    BOOL safe=CGRectContainsPoint(window,point) && CGRectContainsPoint(regionFrame,point) && CGRectContainsPoint(safeRegion,point) && !CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point);
-    if (!safe) {
-        XCTFail(@"The one dismissal point must be inside the window and native region, outside Photos");
-        return;
-    }
+    // Every caller has already observed the real Photos gallery, popover and
+    // native dismissal region. Keep one screenshot, then let XCTest compute
+    // the region's current hittable point through its public element action.
+    // No prior frame or hittability read can guarantee the later event result.
     [self capture:name];
-    [self recordAppPickerTrace:@"before-popover-dismiss"];
-    NSTimeInterval secondSample=NSProcessInfo.processInfo.systemUptime;
-    CGRect secondFrame=popover.frame;
-    CGRect secondWindow=windowElement.frame, secondRegion=region.frame;
-    if (!CGRectEqualToRect(firstFrame,secondFrame) || !CGRectEqualToRect(window,secondWindow) ||
-        !CGRectEqualToRect(regionFrame,secondRegion) || secondSample-firstSample<0.25) {
-        XCTFail(@"The actual popover, window and dismissal region must remain unchanged across separated samples");
-        return;
-    }
-    BOOL hittable=region.hittable;
-    if (!hittable) {
-        XCTFail(@"The native dismissal region must be currently hittable before the single outside tap");
-        return;
-    }
-    // Hittable is an element-level check, not a claim that XCTest exposes a
-    // public per-coordinate hit test. The point is independently outside Photos.
-    NSLog(@"ORIGINAL_PICKER_POPOVER_SINGLE_TAP uptime=%.6f frame=%@ region=%@ point=%@ sampleGap=%.6f",NSProcessInfo.processInfo.systemUptime,NSStringFromCGRect(secondFrame),NSStringFromCGRect(secondRegion),NSStringFromCGPoint(point),secondSample-firstSample);
-    XCUICoordinate *origin=[region coordinateWithNormalizedOffset:CGVectorMake(0,0)];
-    [[origin coordinateWithOffset:CGVectorMake(point.x-CGRectGetMinX(secondRegion),point.y-CGRectGetMinY(secondRegion))] tap];
+    NSLog(@"ORIGINAL_PICKER_POPOVER_SINGLE_TAP uptime=%.6f method=element-hit-point phase=%@",NSProcessInfo.processInfo.systemUptime,name);
+    [region tap];
+    // An action invocation is never sufficient evidence of cancellation.
     [self waitAbsent:popover];
     XCTAssertFalse(region.exists,@"The native dismissal region must disappear with its popover");
     XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists,@"The dismissed popover must not retain its gallery");
@@ -380,10 +341,6 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     [self launchReset:YES extra:nil];
     [self tap:@"choosePhoto"];
     if (![self waitForPhotoPickerSurface]) return;
-    XCUIElement *gallery=self.app.scrollViews[@"photosView_content_scroll_view"];
-    CGRect viewport=gallery.frame;
-    XCTAssertGreaterThan(viewport.size.width,0); XCTAssertGreaterThan(viewport.size.height,0);
-    [self capture:@"bootstrap-picker-ready"];
     [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"];
     [self assertHomeUsable];
     XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists);

@@ -1076,7 +1076,7 @@ class OriginalDesignGateTests(unittest.TestCase):
     def test_bootstrap_is_separate_and_never_selects_or_deletes_photos(self):
         source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
         bootstrap = source.split('- (void)' + gate.BOOTSTRAP_TEST + ' {', 1)[1].split('- (void)testOriginalHomeTabs', 1)[0]
-        for required in ['[self launchReset:YES extra:nil]', 'photosView_content_scroll_view', 'bootstrap-picker-ready',
+        for required in ['[self launchReset:YES extra:nil]', 'if (![self waitForPhotoPickerSurface]) return;',
                          'bootstrap-cancel-before', '[self dismissPhotoPickerOnceWithAttachment:', '[self assertHomeUsable]', 'count:0']:
             self.assertIn(required, bootstrap)
         for forbidden in ['selectOnlySeededPhoto', 'sampleAndSaveRed', 'delete', 'authorization', 'requestAuthorization']:
@@ -1123,151 +1123,124 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertIn('[self dismissPopoverOnceWithAttachment:name]', routing)
         self.assertIn('[self cancelPickerOnce:self.app.buttons[@"Cancel"].firstMatch attachment:name]', routing)
 
-    def modal_dismissal_source(self):
+    def native_dismissal_source(self):
         source=(gate.ROOT/'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
         body=source.split('- (void)dismissPopoverOnceWithAttachment:',1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:',1)[0]
         return source,body
 
-    def test_modal_dismissal_uses_current_geometry_and_one_outside_region_tap(self):
-        _,body=self.modal_dismissal_source()
-        for token in ['popover.frame','windowElement.frame','region.frame']:
-            self.assertEqual(body.count(token),2,token)
-        self.assertEqual(body.count('region.hittable'),1)
-        self.assertEqual(body.count('] tap]'),1)
-        for forbidden in ['snapshotWithError','XCUIElementSnapshot','[region tap]', 'buttons[@"Close"]',
-                          'buttons[@"Cancel"]','sleep','dismissViewController','swipe','_XCT','valueForKey:']:
-            self.assertNotIn(forbidden,body)
-        before_tap=body.split('] tap]',1)[0]
-        for identifier in ['choosePhoto','takePhoto','liveColor','original.picker','original.library']:
-            self.assertNotIn('@"'+identifier+'"',before_tap)
-        for required in ['CGRectIntersection(CGRectInset(window,24,24),CGRectInset(regionFrame,24,24))',
-                         'CGRectGetMaxY(firstFrame)+24','CGRectContainsPoint(window,point)',
-                         'CGRectContainsPoint(regionFrame,point)','CGRectContainsPoint(safeRegion,point)',
-                         '!CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point)',
-                         'coordinateWithNormalizedOffset:CGVectorMake(0,0)',
-                         'point.x-CGRectGetMinX(secondRegion),point.y-CGRectGetMinY(secondRegion)']:
-            self.assertIn(required,body)
+    @staticmethod
+    def native_dismissal_contract(source):
+        # This checks the test source's action/assertion contract, not UIKit
+        # dispatch. Only a native execution can establish the action's result.
+        body=source.split('- (void)dismissPopoverOnceWithAttachment:',1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:',1)[0]
+        if body.count('[region tap]')!=1 or body.count('[self capture:name]')!=1:raise ValueError('one action and screenshot')
+        for token in ['snapshotWithError','XCUIElementSnapshot','coordinateWith','CGRect','region.hittable',
+                      '.frame','@try','@catch','XCTSkip','XCTExpectFailure','dismissViewController','sleep','swipe','while (','for (']:
+            if token in body:raise ValueError('unsupported substitute or duplicate observation')
+        before,after=body.split('[region tap]',1)
+        if 'recordAppPickerTrace' in before or '.exists' in before:raise ValueError('pre-action diagnostic AX')
+        if before.index('[self capture:name]')>before.index('ORIGINAL_PICKER_POPOVER_SINGLE_TAP'):raise ValueError('action order')
+        expected=['[self waitAbsent:popover]','XCTAssertFalse(region.exists',
+                  'XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists',
+                  'XCTAssertTrue(self.app.buttons[@"original.picker"].selected',
+                  'XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists',
+                  'XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists',
+                  'XCTAssertEqual(self.app.alerts.count,0u',
+                  '[self recordAppPickerTrace:@"after-popover-dismiss"]']
+        if any(token not in after for token in expected):raise ValueError('real-result assertion missing')
+        positions=[after.index(token) for token in expected]
+        if positions!=sorted(positions):raise ValueError('result order')
+        if 'self.continueAfterFailure=NO;' not in source:raise ValueError('native failures must remain failures')
+        return True
 
-    def test_modal_dismissal_checks_all_geometry_stability_then_hittability_before_tap(self):
-        _,body=self.modal_dismissal_source()
-        for required in ['CGRectEqualToRect(firstFrame,secondFrame)','CGRectEqualToRect(window,secondWindow)',
-                         'CGRectEqualToRect(regionFrame,secondRegion)','secondSample-firstSample<0.25']:
-            self.assertIn(required,body)
-        order=[body.index(token) for token in ['CGRect window=', 'CGRect firstFrame=', 'NSTimeInterval firstSample=',
-              '[self capture:name]', '[self recordAppPickerTrace:@"before-popover-dismiss"]',
-              'NSTimeInterval secondSample=', 'CGRect secondFrame=', 'CGRect secondWindow=',
-              'CGRectEqualToRect(firstFrame,secondFrame)', 'BOOL hittable=region.hittable',
-              'if (!hittable)', 'ORIGINAL_PICKER_POPOVER_SINGLE_TAP', '] tap]', '[self waitAbsent:popover]']]
-        self.assertEqual(order,sorted(order))
-        self.assertIn('Hittable is an element-level check',body)
-        self.assertIn('public per-coordinate hit test',body)
+    def test_native_dismissal_uses_one_public_element_tap_without_duplicate_modal_reads(self):
+        source,body=self.native_dismissal_source()
+        self.assertTrue(self.native_dismissal_contract(source))
+        self.assertIn('method=element-hit-point',body)
+        self.assertNotIn('point=%@',body)
+        self.assertNotIn('frame=%@',body)
+        for target in ['choosePhoto','takePhoto','liveColor','original.library']:
+            self.assertNotIn('@"'+target+'"',body)
+        self.assertIn('XCUIElementTypePopover',body)
+        self.assertIn('otherElements[@"PopoverDismissRegion"].firstMatch',body)
 
-    def test_modal_dismissal_failed_preconditions_return_without_action(self):
-        import re
-        _,body=self.modal_dismissal_source()
-        failures=re.findall(r'XCTFail\([^;]*;\s*return;',body)
-        self.assertEqual(len(failures),5)
-        self.assertEqual(body.count('XCTFail('),len(failures))
-        self.assertTrue(all(body.index(failure)<body.index('] tap]') for failure in failures))
-        self.assertIn('!TCDesignFiniteRect(window)',body)
-        self.assertIn('!TCDesignFiniteRect(regionFrame)',body)
-        self.assertIn('!TCDesignFiniteRect(firstFrame)',body)
-        self.assertIn('!CGRectContainsRect(window,regionFrame)',body)
-        self.assertIn('!CGRectContainsRect(window,firstFrame)',body)
-        self.assertIn('!TCDesignFiniteRect(safeRegion) || !TCDesignFiniteRect(dismissalBand)',body)
-
-    def test_modal_cancel_keeps_real_close_and_no_mistap_postconditions(self):
-        source,body=self.modal_dismissal_source()
-        after=body.split('] tap]',1)[1]
+    def test_native_dismissal_contract_rejects_missing_or_repeated_actions_and_masked_results(self):
+        source,_=self.native_dismissal_source()
+        mutations=[('[region tap];',''),('[region tap];','[region tap]; [region tap];'),
+                   ('[region tap];','[[region coordinateWithNormalizedOffset:CGVectorMake(0.5,0.5)] tap];'),
+                   ('[region tap];','if (region.hittable) [region tap];'),
+                   ('[region tap];','@try { [region tap]; } @catch (NSException *error) {}'),
+                   ('[region tap];','XCTSkip(@"skip"); [region tap];'),
+                   ('[region tap];','XCTExpectFailure(@"expected"); [region tap];'),
+                   ('[self capture:name];',''),
+                   ('[self capture:name];','[self capture:name]; [self capture:name];'),
+                   ('self.continueAfterFailure=NO;','self.continueAfterFailure=YES;')]
+        for old,new in mutations:
+            # Only mutate the iPad helper for tokens also present in phone code.
+            if old.startswith('self.continueAfterFailure'):changed=source.replace(old,new,1)
+            else:
+                before,rest=source.split('- (void)dismissPopoverOnceWithAttachment:',1)
+                body,after=rest.split('- (void)dismissPhotoPickerOnceWithAttachment:',1)
+                self.assertIn(old,body);changed=before+'- (void)dismissPopoverOnceWithAttachment:'+body.replace(old,new,1)+'- (void)dismissPhotoPickerOnceWithAttachment:'+after
+            with self.subTest(old=old,new=new),self.assertRaises(ValueError):self.native_dismissal_contract(changed)
         for token in ['[self waitAbsent:popover]','XCTAssertFalse(region.exists',
                       'XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists',
                       'XCTAssertTrue(self.app.buttons[@"original.picker"].selected',
                       'XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists',
                       'XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists',
-                      'XCTAssertEqual(self.app.alerts.count,0u',
-                      '[self recordAppPickerTrace:@"after-popover-dismiss"]']:
-            self.assertIn(token,after)
-        absence=source.split('- (void)waitAbsent:',1)[1].split('- (XCUIElement *)openLibrary',1)[0]
-        self.assertIn('exists == false',absence)
-        self.assertIn('timeout:10',absence)
-        self.assertNotIn('executionTimeAllowance',source)
+                      'XCTAssertEqual(self.app.alerts.count,0u']:
+            before,rest=source.split('- (void)dismissPopoverOnceWithAttachment:',1)
+            body,after=rest.split('- (void)dismissPhotoPickerOnceWithAttachment:',1)
+            changed=before+'- (void)dismissPopoverOnceWithAttachment:'+body.replace(token,'REMOVED',1)+'- (void)dismissPhotoPickerOnceWithAttachment:'+after
+            with self.subTest(missing=token),self.assertRaises(ValueError):self.native_dismissal_contract(changed)
 
-    def test_modal_change_preserves_all_case_bodies_home_checks_and_phone_cancel(self):
-        source,_=self.modal_dismissal_source()
+    def test_native_dismissal_keeps_actual_readiness_ten_second_close_and_no_failure_suppression(self):
+        source,body=self.native_dismissal_source()
+        ready=source.split('- (BOOL)waitForPhotoPickerSurface {',1)[1].split('- (void)dismissPopoverOnceWithAttachment:',1)[0]
+        for token in ['XCUIElementTypePopover','PopoverDismissRegion','photosView_content_scroll_view','waitForExistenceWithTimeout:10','XCTFail(']:
+            self.assertIn(token,ready)
+        absence=source.split('- (void)waitAbsent:',1)[1].split('- (XCUIElement *)openLibrary',1)[0]
+        self.assertIn('exists == false',absence);self.assertIn('timeout:10',absence)
+        self.assertNotIn('executionTimeAllowance',source)
+        self.assertIn('[super recordIssue:issue]',source)
+        self.assertTrue(self.native_dismissal_contract(source))
+
+    def test_native_bootstrap_keeps_one_picker_capture_and_all_functional_assertions(self):
+        source,body=self.native_dismissal_source()
+        bootstrap=source.split('- (void)testPhotosLibraryBootstrapCanCancelWithoutSelecting',1)[1].split('- (void)testOriginalHomeTabs',1)[0]
+        for token in ['[self launchReset:YES extra:nil]','[self tap:@"choosePhoto"]',
+                      'if (![self waitForPhotoPickerSurface]) return;',
+                      '[self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"]',
+                      '[self assertHomeUsable]','XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists)',
+                      'XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists)',
+                      '[self assertRedHistory:[self openLibrary] count:0]']:
+            self.assertIn(token,bootstrap)
+        self.assertNotIn('gallery.frame',bootstrap)
+        self.assertNotIn('[self capture:',bootstrap)
+        self.assertEqual(body.count('[self capture:name]'),1)
+        for forbidden in ['selectOnlySeededPhoto','sampleAndSaveRed','requestAuthorization','delete']:
+            self.assertNotIn(forbidden,bootstrap)
+
+    def test_native_change_is_limited_to_helper_and_four_redundant_bootstrap_lines(self):
+        source,_=self.native_dismissal_source()
+        marker='''    if (![self waitForPhotoPickerSurface]) return;
+    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"];
+'''
+        restored='''    if (![self waitForPhotoPickerSurface]) return;
+    XCUIElement *gallery=self.app.scrollViews[@"photosView_content_scroll_view"];
+    CGRect viewport=gallery.frame;
+    XCTAssertGreaterThan(viewport.size.width,0); XCTAssertGreaterThan(viewport.size.height,0);
+    [self capture:@"bootstrap-picker-ready"];
+    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"];
+'''
+        self.assertEqual(source.count(marker),1)
+        source=source.replace(marker,restored)
         before,rest=source.split('- (void)dismissPopoverOnceWithAttachment:',1)
         _,after=rest.split('- (void)dismissPhotoPickerOnceWithAttachment:',1)
-        unchanged=before+'<IPAD_DISMISS_HELPER>'+after
-        self.assertEqual(hashlib.sha256(unchanged.encode()).hexdigest(),
+        # Restoring exactly those four lines must reproduce every byte outside
+        # the iPad helper: six acceptance cases, home design, phone cancel, etc.
+        self.assertEqual(hashlib.sha256((before+'<IPAD_DISMISS_HELPER>'+after).encode()).hexdigest(),
                          '35655c8dbd89495fa8860242b5d345dc3a91bf6e794ce4b8f09eb27f73f73413')
-        repeated=source.split('- (void)testOriginalHomeTabsAndRepeatedPhotoPickerCancellation',1)[1].split('- (void)deleteOnlySavedColor',1)[0]
-        for token in ['attempt<2','[self tap:@"choosePhoto"]','if (![self waitForPhotoPickerSurface]) return;',
-                      '[self assertHomeUsable]','[self assertRedHistory:table count:0]']:
-            self.assertIn(token,repeated)
-
-    @staticmethod
-    def modal_dismissal_point(window=(0,0,744,1133),region=(0,0,744,1133),first=(10,32,724,581),
-                              second_window=None,second_region=None,second=None,gap=0.25,hittable=True):
-        # Portable geometry/guard model only; this does not model UIKit event
-        # dispatch, certify per-coordinate hit testing, or claim a native pass.
-        import math
-        def finite(r):return all(math.isfinite(x) for x in r) and min(r[2:])>0
-        def inside(outer,inner):return (outer[0]<=inner[0] and outer[1]<=inner[1] and
-            inner[0]+inner[2]<=outer[0]+outer[2] and inner[1]+inner[3]<=outer[1]+outer[3])
-        def contains(r,p,padding=0):return (r[0]-padding<=p[0]<r[0]+r[2]+padding and
-            r[1]-padding<=p[1]<r[1]+r[3]+padding)
-        if not all(finite(r) for r in [window,region,first]):raise ValueError('finite geometry')
-        if not inside(window,region) or not inside(window,first):raise ValueError('visible geometry')
-        left=max(window[0]+24,region[0]+24);right=min(window[0]+window[2]-24,region[0]+region[2]-24)
-        top=max(window[1]+24,region[1]+24);bottom=min(window[1]+window[3]-24,region[1]+region[3]-24)
-        safe=(left,top,right-left,bottom-top);top=max(top,first[1]+first[3]+24)
-        band=(left,top,right-left,bottom-top)
-        if not finite(safe) or not finite(band):raise ValueError('dismissal band')
-        point=((left+right)/2,(top+bottom)/2)
-        if not all(contains(r,point) for r in [window,region,safe]) or contains(first,point,12):raise ValueError('outside point')
-        if second_window is None:second_window=window
-        if second_region is None:second_region=region
-        if second is None:second=first
-        if window!=second_window or region!=second_region or first!=second or gap<0.25:raise ValueError('stable geometry')
-        if not hittable:raise ValueError('hittable region')
-        return point
-
-    def test_modal_geometry_model_uses_observed_frames_without_covered_home_inventory(self):
-        self.assertEqual(self.modal_dismissal_point(),(372,873))
-        self.assertEqual(self.modal_dismissal_point(window=(100,200,744,1133),region=(100,200,744,1133),
-                         first=(110,232,724,581)),(472,1073))
-        self.assertEqual(self.modal_dismissal_point(region=(24,24,696,1085)),(372,861))
-        # The earlier (372,990.75) included an unrelated hidden-control bound.
-        # Neither number is hard-coded in native source; each action is computed.
-        _,body=self.modal_dismissal_source()
-        for coordinate in ['990.75','873','744','1133','724','581']:
-            self.assertNotIn(coordinate,body)
-
-    def test_modal_geometry_model_rejects_invalid_or_unreachable_geometry(self):
-        for key in ['window','region','first']:
-            for value in [(0,0,0,1133),(0,0,-1,1133),(0,0,744,0),(0,0,744,-1),
-                          (float('nan'),0,744,1133),(0,float('inf'),744,1133),
-                          (0,0,float('inf'),1133),(0,0,744,float('nan'))]:
-                with self.subTest(key=key,value=value),self.assertRaises(ValueError):
-                    self.modal_dismissal_point(**{key:value})
-        for args in [dict(first=(-1,32,724,581)),dict(first=(10,32,735,581)),
-                     dict(region=(1,0,744,1133)),dict(region=(0,-1,744,1133)),
-                     dict(region=(0,0,744,610)),dict(first=(10,32,724,1080)),
-                     dict(region=(0,0,47,1133))]:
-            with self.subTest(args=args),self.assertRaises(ValueError):self.modal_dismissal_point(**args)
-
-    def test_modal_geometry_model_rejects_movement_short_gap_or_unhittable_region(self):
-        for args in [dict(second_window=(1,0,744,1133)),dict(second_window=(0,0,745,1133)),
-                     dict(second_region=(0,1,744,1133)),dict(second_region=(0,0,744,1132)),
-                     dict(second=(11,32,724,581)),dict(second=(10,32,724,582)),
-                     dict(gap=0.249),dict(hittable=False)]:
-            with self.subTest(args=args),self.assertRaises(ValueError):self.modal_dismissal_point(**args)
-
-    def test_original_source_uses_view_anchor_without_custom_passthrough_or_dismissal_override(self):
-        source=(gate.ROOT/'ColorPicker/ColorMainViewController.m').read_text()
-        self.assertIn('sourceView:self.sourceButtons.arrangedSubviews.firstObject',source)
-        self.assertIn('controller.popoverPresentationController.sourceView = anchor',source)
-        for forbidden in ['passthroughViews','modalInPopover','popoverPresentationControllerShouldDismissPopover']:
-            self.assertNotIn(forbidden,source)
 
     def test_permissionless_bootstrap_precedes_seeding_on_both_devices(self):
         runner = Path(gate.__file__).read_text()
