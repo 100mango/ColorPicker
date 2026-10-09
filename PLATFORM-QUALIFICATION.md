@@ -1,5 +1,49 @@
 # Corrected TouchColor unsigned platform qualification
 
+## Current local proposal: TV missing-screenshot diagnostic
+
+The sections below preserve the original closed-overlay design history. The current
+proposal is a separately reviewed control-only child of actual control
+`e5d10fb1949f6483c807ef91d8f7f2850fae9738`, bound to product
+`7c671f04e4d69884741a411851ae26083361c7f7` / tree
+`f477c19b8181c4e3eb2142beaef4dea742cca0cd`. Root alone may publish or activate it.
+The active proposal selects only `tv-secondary-missing-screens`; its separate
+closed template has READY=false and a literal false job. Neither local template
+has run. The original19-row inventory is unchanged; this explicit diagnostic
+alias reuses the TV25-minute/2,000,000-byte row without changing any reserve.
+
+The source-derived full TV inventory is45 tests (40 hosted,5 UI), not9. Run
+37941182061 passed all45 with zero failures/skips/expected failures, but CI failed:
+the old9-count oracle was wrong and four required images were removed by generic
+retention. All8 original images alone total2,490,411 bytes. That historical run
+stays failed; its four retained original images and four audits remain separate
+immutable evidence.
+
+The diagnostic selects exactly these existing UI methods and no hosted tests:
+- TouchColorTVUITests/TVWorkflowTests/testRemoteColorEditorAndMenuReturn
+- TouchColorTVUITests/TVWorkflowTests/testChineseRemoteColorEditor
+
+It retains the new raw Privacy-empty, About-populated, About-zh-normal and
+Privacy-zh-normal images plus all four strict About audit receipts. Duplicate
+states and primary screenshots are explicitly optional only in this diagnostic;
+all omissions retain their original hash/size/name/method in the runtime receipt.
+No image transformation or ceiling increase is allowed. If mandatory proof does
+not fit, it fails without deleting mandatory files. Full qualification continues
+to require all45 tests and all8 images; the diagnostic cannot satisfy that gate.
+
+The workflow derives two ignored build scripts from exact frozen source hashes.
+The native driver changes only its TV test selection/report statement; the budget
+wrapper changes only its exact allowed cleanup-driver body. Exact derived byte
+checks run before execution. Release/build-for-testing, cleanup, Photos seed,
+1320-second outer declaration,660-second test cap,120-second per-test cap and all
+original job-clock reserves remain. The host/runtime gate requires either full45
+with no selector or diagnostic2 with the exact two selectors, matching runtime,
+source, actual host pair and summary/device counts. Separate post-upload gates
+require runtime completeness and all four raw images/four audits. A composed
+review joins per-run/product/source/hash provenance; it is not one green full run.
+
+---
+
 This is a local-only, deliberately closed workflow overlay. It has not been pushed,
 registered, dispatched, or run on Apple hardware. A disabled/skipped workflow is
 not a successful qualification. The starting snapshot is the corrected Run 6

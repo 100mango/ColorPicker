@@ -78,6 +78,10 @@ def rows():
 
 def select(lane):
     require(lane not in ('ios', 'paired'), 'Legacy iOS/paired row is deferred, never a corrected-source qualification')
+    if lane == 'tv-secondary-missing-screens':
+        original = [row for row in rows() if row.get('lane', row['platform']) == 'tv']
+        require(len(original) == 1, 'Missing original TV budget row')
+        return {**original[0], 'lane': lane}
     selected = [row for row in rows() if row.get('lane', row['platform']) == lane]
     require(len(selected) == 1, 'Select exactly one explicit existing native row')
     return selected[0]
