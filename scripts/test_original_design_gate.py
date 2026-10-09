@@ -95,6 +95,65 @@ class OriginalDesignGateTests(unittest.TestCase):
             (root / 'other.log').write_text('foreign')
             (source / 'linked.log').symlink_to(root / 'other.log')
             with self.assertRaises(RuntimeError): gate.admit_evidence(source, root / 'published')
+    def test_bootstatus_budget_is_single_bounded_preparation(self):
+        self.assertEqual(gate.BOOTSTATUS_TIMEOUT_SECONDS, 300)
+        source = Path(gate.__file__).read_text()
+        self.assertEqual(source.count("self.await_owned_boot(label, device, owned_name)"), 1)
+        self.assertIn("if self.uncertain_simulator:\n            return", source)
+
+    def test_owned_boot_accepts_known_cell_output_and_records_identity(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); raw = root / 'ready.log'
+            raw.write_text('Monitoring boot status for Owned (U).\nDevice already booted, nothing to do.\n\n')
+            with patch.object(gate, 'WORK', root / 'work'), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40)
+                worker.commands = [{'name': 'se3-ready', 'exit_code': 0}]
+                with patch.object(worker, 'command', return_value=(0, raw)) as command:
+                    worker.await_owned_boot('se3', 'U', 'Owned')
+                    command.assert_called_once_with('se3-ready', ['xcrun', 'simctl', 'bootstatus', 'U', '-b'], 300, simulator=True)
+                proof = json.loads((root / 'evidence/se3-ready.json').read_text())
+                self.assertEqual(proof['device'], 'U')
+                self.assertEqual(proof['bootstatus']['completion_kind'], 'already_booted_no_work')
+                self.assertFalse(worker.uncertain_simulator)
+
+    def test_owned_boot_rejects_empty_partial_or_foreign_and_blocks_cleanup(self):
+        from unittest.mock import patch
+        variants = ['', 'Monitoring boot status for Other (V).\nDevice already booted, nothing to do.\n\n',
+                    'Monitoring boot status for Owned (U).\n[2026-10-09 01:53:00 +0000] Status=1, isTerminal=NO, Elapsed=00:12.\n\tPreparing\n\n']
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); raw = root / 'ready.log'
+            for text in variants:
+                raw.write_text(text)
+                with patch.object(gate, 'WORK', root / 'work'), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                    worker = gate.Gate('a' * 40); worker.owned = ['U']
+                    with patch.object(worker, 'command', return_value=(0, raw)) as command:
+                        with self.assertRaises(ValueError): worker.await_owned_boot('se3', 'U', 'Owned')
+                        worker.cleanup()
+                        self.assertEqual(command.call_count, 1, 'Unknown readiness must block every later simulator action')
+                    self.assertTrue(worker.uncertain_simulator)
+
+    def test_command_emits_bounded_begin_and_end_timing(self):
+        import contextlib, io, sys, types
+        from unittest.mock import patch
+        class Process:
+            pid = 123456
+            def __init__(self, argv, **kwargs): kwargs['stdout'].write(b'fixture output')
+            def wait(self, timeout): return 0
+        bounded = types.SimpleNamespace(group_exists=lambda pid: False, stop_group=lambda process, grace: True)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); output = io.StringIO()
+            with patch.object(gate, 'WORK', root / 'work'), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.subprocess, 'Popen', Process), patch.dict(sys.modules, {'bounded_process': bounded}), contextlib.redirect_stdout(output):
+                worker = gate.Gate('a' * 40)
+                code, _ = worker.command('fixture-stage', ['fixture-only'], 300)
+            self.assertEqual(code, 0)
+            lines = output.getvalue().splitlines()
+            self.assertEqual(len(lines), 2)
+            self.assertTrue(lines[0].startswith('ORIGINAL_DESIGN_COMMAND_BEGIN '))
+            self.assertTrue(lines[1].startswith('ORIGINAL_DESIGN_COMMAND_END '))
+            self.assertEqual(worker.commands[0]['timeout_seconds'], 300)
+            self.assertGreaterEqual(worker.commands[0]['elapsed_seconds'], 0)
+
     def test_import_lifecycle_adapter_preserves_every_other_original_byte(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / 'ColorPickerTests/TCPhotoImportLifecycleTests.m').read_text()

@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / 'build/original-design'
 EVIDENCE = WORK / 'evidence'
 RUNTIME_VERSION = '27.0'
+BOOTSTATUS_TIMEOUT_SECONDS = 300  # One bounded preparation; no automatic retry or escalating timeout.
 BUNDLE_ID = 'com.mango.touchColor'
 UI_CLASS = 'TouchColorOriginalDesignUITests'
 HOSTED_SOURCES = {
@@ -103,8 +104,10 @@ class Gate:
         require(remaining >= 1, 'Whole-job operation budget exhausted')
         timeout = min(seconds, remaining)
         path = WORK / 'logs' / (name + '.log'); path.parent.mkdir(parents=True, exist_ok=True)
-        record = {'name': name, 'argv': argv, 'started': time.time(), 'simulator': simulator}
+        record = {'name': name, 'argv': argv, 'started': time.time(), 'simulator': simulator,
+                  'started_monotonic': time.monotonic(), 'timeout_seconds': timeout}
         self.commands.append(record)
+        print('ORIGINAL_DESIGN_COMMAND_BEGIN ' + json.dumps({k: record[k] for k in ('name', 'started', 'timeout_seconds', 'simulator')}), flush=True)
         process = None
         try:
             with path.open('wb') as output:
@@ -130,10 +133,27 @@ class Gate:
                 retained = tail[-available:] if available else b''
                 record.update(log_bytes=total, log_sha256=digest.hexdigest(), log_tail_truncated=total > len(retained), log_retained_bytes=len(retained))
                 (EVIDENCE / (name + '.log')).write_bytes(retained)
+            record['elapsed_seconds'] = max(0, time.monotonic() - record['started_monotonic'])
             write_json(EVIDENCE / 'commands.json', self.commands)
+            print('ORIGINAL_DESIGN_COMMAND_END ' + json.dumps({k: record.get(k) for k in ('name', 'finished', 'elapsed_seconds', 'exit_code', 'error', 'host_group_exit_confirmed')}), flush=True)
         require(allow_failure or code == 0, name + ' failed; see its bounded log')
         require(path.stat().st_size <= 8 * 1024 * 1024 or name == 'build', 'Command output exceeded the explicit parsing limit')
         return code, path
+
+    def await_owned_boot(self, label, device, owned_name):
+        # Reuse the exact c664 public-output parser. A timely zero exit alone is
+        # not readiness, and readiness is not an app/test completion claim.
+        from uikit_managed_tests import completed_bootstatus
+        _, path = self.command(label + '-ready', ['xcrun', 'simctl', 'bootstatus', device, '-b'],
+                               BOOTSTATUS_TIMEOUT_SECONDS, simulator=True)
+        try:
+            proof = completed_bootstatus(path.read_text(), {'name': owned_name, 'device': device})
+        except Exception:
+            self.uncertain_simulator = True
+            raise
+        write_json(EVIDENCE / (label + '-ready.json'), {'device': device, 'owned_name': owned_name,
+                   'budget_seconds': BOOTSTATUS_TIMEOUT_SECONDS, 'command': self.commands[-1], 'bootstatus': proof,
+                   'claim': 'owned bootstatus observation only; hosted/UI tests remain required'})
 
     def text(self, name, argv, seconds=30, **kwargs):
         _, path = self.command(name, argv, seconds, **kwargs)
@@ -232,7 +252,7 @@ class Gate:
             self.devices.append({'name': name, 'owned_name': owned_name, 'udid': device, 'runtime': runtime[0]})
             write_json(EVIDENCE / 'devices.json', self.devices)
             self.command(label + '-boot', ['xcrun', 'simctl', 'boot', device], 45, simulator=True)
-            self.command(label + '-ready', ['xcrun', 'simctl', 'bootstatus', device, '-b'], 180, simulator=True)
+            self.await_owned_boot(label, device, owned_name)
             self.command(label + '-install', ['xcrun', 'simctl', 'install', device, str(app)], 90, simulator=True)
             self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
             self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
