@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   archive:
+    if: ${{ github.repository == '100mango/ColorPicker' && github.ref == 'refs/heads/ios-original-archive' }}
     name: Observe one unsigned TouchColor archive
     runs-on: xcode-27
     timeout-minutes: 20
@@ -20,17 +21,28 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-          fetch-depth: 0
+          fetch-depth: 2
           ref: ${{ github.sha }}
+          path: control
+      - name: Check out exact final original-design product
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: 922eb296e3b2417a414b72ad4eb2dddeb534328f
+          path: product
       - name: Archive once and retain bounded proof
         id: proof
         timeout-minutes: 16
-        run: python3 scripts/original_ios_archive.py
+        run: |
+          python3 -S control/scripts/test_final_original_ios_archive.py
+          python3 -O -S control/scripts/test_final_original_ios_archive.py
+          python3 -S control/scripts/final_original_ios_archive.py
       - name: Admit the full upload and finalization reserve
         id: admit-upload
         if: ${{ always() && steps.proof.outputs.evidence_ready == 'true' }}
         timeout-minutes: 1
-        run: python3 scripts/original_ios_archive.py admit-upload
+        run: python3 -S control/scripts/final_original_ios_archive.py admit-upload
       - name: Retain proof and bounded logs only
         id: upload
         if: ${{ always() && steps.admit-upload.outcome == 'success' && steps.admit-upload.outputs.upload_admitted == 'true' }}
@@ -38,7 +50,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: original-ios-unsigned-archive-proof-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/archive-proof/report.json
+          path: product/build/archive-proof/report.json
           if-no-files-found: error
           retention-days: 1
           compression-level: 9
@@ -47,4 +59,4 @@ jobs:
         timeout-minutes: 1
         env:
           TC_ARCHIVE_UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
-        run: python3 scripts/original_ios_archive.py finish-upload
+        run: python3 -S control/scripts/final_original_ios_archive.py finish-upload

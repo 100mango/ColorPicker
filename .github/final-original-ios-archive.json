@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "enabled": true,
+  "source": {
+    "commit": "922eb296e3b2417a414b72ad4eb2dddeb534328f",
+    "tree": "4974b9ac597a75ef30dcf92be143da1441801db2",
+    "version": "2.0.1",
+    "build": "20002"
+  },
+  "native_gate": {
+    "status": "pending",
+    "source_commit": "922eb296e3b2417a414b72ad4eb2dddeb534328f",
+    "run_id": null,
+    "artifacts": {}
+  },
+  "execution_scope": "unsigned-package-diagnostic"
+}
