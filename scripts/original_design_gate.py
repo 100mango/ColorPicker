@@ -277,7 +277,8 @@ class Gate:
         write_json(EVIDENCE / 'devices.json', self.devices)
         self.command(label + '-boot', ['xcrun', 'simctl', 'boot', device], 45, simulator=True)
         self.await_owned_boot(label, device, owned_name)
-        self.command(label + '-install', ['xcrun', 'simctl', 'install', device, str(app)], 90, simulator=True)
+        # The existing hosted test-without-building owns installation of the
+        # exact build products on this UUID within its unchanged suite budget.
         self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
         if label == 'ipad-mini':
             self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})

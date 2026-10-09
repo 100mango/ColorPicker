@@ -260,7 +260,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                     self.assertEqual(args[0], label + '-create')
                     self.assertEqual(args[1][-2:], ['type.' + label, 'owned-runtime'])
                     ready.assert_called_once_with(label, owned, worker.devices[0]['owned_name'])
-                    self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-install', '-seed', '-shutdown', '-delete']])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-seed', '-shutdown', '-delete']])
                     self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui'] if label == 'ipad-mini' else ['hosted', 'ui'])
                     self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, {'ui'}] if label == 'ipad-mini' else [{'hosted'}, {'ui'}])
                     self.assertEqual(worker.devices[0]['name'], name)
@@ -277,8 +277,61 @@ class OriginalDesignGateTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'test failed'):
                         worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'owned-runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
                     create.assert_called_once()
-                    self.assertEqual([call.args[0] for call in command.call_args_list], ['se3-boot', 'se3-install'])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], ['se3-boot'])
                 self.assertEqual(worker.owned, [owned])
+
+    def test_hosted_managed_install_preserves_exact_build_device_and_budget(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); log = root / 'hosted.log'
+            log.write_text("Test Case '-[Suite testA]' passed (0.1 seconds).\n")
+            summary = self.summary(); summary['totalTestCount'] = 1; summary['passedTests'] = 1
+            summary['devicesAndConfigurations'][0]['passedTests'] = 1
+            summary['devicesAndConfigurations'][0]['device']['deviceId'] = owned
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(worker, 'command', return_value=(0, log)) as command, patch.object(worker, 'text', return_value=json.dumps(summary)), patch.object(gate.time, 'time', side_effect=[100, 130]):
+                    worker.run_tests('se3', owned, 'hosted', ['TouchColorTests/Suite/testA'], {'testA'})
+                command.assert_called_once()
+                name, argv, ceiling = command.call_args.args
+                self.assertEqual(name, 'se3-hosted'); self.assertEqual(ceiling, 600)
+                self.assertEqual(command.call_args.kwargs, {'simulator': True, 'allow_failure': True})
+                for flag, value in [('-project', 'TouchColor.xcodeproj'), ('-scheme', 'TouchColor'),
+                                    ('-configuration', 'Debug'), ('-destination', 'platform=iOS Simulator,id=' + owned),
+                                    ('-derivedDataPath', str(root / 'derived')), ('-resultBundlePath', str(root / 'se3-hosted.xcresult')),
+                                    ('-parallel-testing-enabled', 'NO'), ('-default-test-execution-time-allowance', '120'),
+                                    ('-maximum-test-execution-time-allowance', '180')]:
+                    self.assertEqual(argv[argv.index(flag) + 1], value)
+                self.assertIn('test-without-building', argv)
+                self.assertIn('-only-testing:TouchColorTests/Suite/testA', argv)
+                self.assertIn('CODE_SIGNING_ALLOWED=NO', argv)
+                self.assertNotIn('simctl', argv)
+        source = Path(gate.__file__).read_text()
+        self.assertNotIn("['xcrun', 'simctl', 'install'", source)
+        self.assertIn("os.environ.get('GITHUB_SHA') == self.expected_sha", source)
+        self.assertIn("self.text('source-sha', ['git', 'rev-parse', 'HEAD']) == self.expected_sha", source)
+        self.assertIn("app = WORK / 'derived/Build/Products/Debug-iphonesimulator/TouchColor.app'", source)
+        self.assertIn("require(app.is_dir(), 'Exact built app is missing')", source)
+
+    def test_hosted_install_uncertainty_blocks_bootstrap_seed_ui_and_cleanup(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'ipad-mini')
+                def tests(*unused):
+                    worker.uncertain_simulator = True
+                    raise RuntimeError('managed install or hosted execution uncertain')
+                with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests', side_effect=tests) as runs:
+                    with self.assertRaisesRegex(RuntimeError, 'hosted execution uncertain'):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                    worker.cleanup()
+                    self.assertEqual([call.args[2] for call in runs.call_args_list], ['hosted'])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot'])
+                self.assertEqual(worker.owned, [owned])
+                self.assertTrue(worker.uncertain_simulator)
 
     def test_controller_deadline_prevents_launch_after_23_minutes(self):
         from unittest.mock import patch
@@ -449,7 +502,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'bootstrap failure'):
                         worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
                     self.assertEqual([call.args[2] for call in runs.call_args_list], ['hosted', 'bootstrap'])
-                    self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot', 'ipad-mini-install'])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot'])
                 self.assertEqual(worker.owned, [owned])
 
     def test_trace_capture_is_owned_read_only_bounded_and_missing_is_not_no_callback(self):
