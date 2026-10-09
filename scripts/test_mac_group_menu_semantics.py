@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import unittest
+from secondary_privacy_navigation_contract import before_secondary_privacy
 from test_mac_accessibility_semantics import privacy_platform_source
 ROOT=Path(__file__).resolve().parents[1]
 # The ineffective outer-sheet marker and mapping probes are retired. Camera/privacy inverse baselines
@@ -112,6 +113,7 @@ class GroupMenuSemantics(unittest.TestCase):
     def test_all_other_product_and_test_bytes_match_admitted_bridge_baseline(self):
         for path,(expected,edits) in CHANGES.items():
             source=privacy_platform_source(mac=True) if path == "TouchColorMac/PrivacyView.swift" else (ROOT/path).read_text()
+            source = before_secondary_privacy(path, source)
             for old,new in edits:
                 self.assertEqual(source.count(new),1,path)
                 source=source.replace(new,old,1)

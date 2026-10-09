@@ -1,0 +1,18 @@
+{
+  "TouchColorMac/TouchColorMacApp.swift": "82a2949ed75d770d6c39bff7f091383cd6094f10749087fa6ace5909f0ae0c36",
+  "TouchColorMacUITests/TouchColorMacUITests.swift": "0f1cc977d997281f49c2b77a94e968fc42002d0c2481076647cb6b4c3ce16448",
+  "TouchColorVisionUITests/VisionWorkflowTests.swift": "bad4a3090500e33425c462e9b73cd55a6ea9409b6e8842938270d7d6198b6e41",
+  "TouchColorWatchUITests/WatchWorkflowTests.swift": "1606e95a3f4a841604ffb80e15ce2dc332c740a399882e50137d9fe38a9392e2",
+  "TouchColorMac/ColorWindow.swift": "957a5a7206f3003fb4e440b5513111ec6d8d40b9942a50e603dc6399be82d612",
+  "TouchColorVision/VisionColorWindow.swift": "53a5c8c94af6c5f400702c0f0602194dfaf8f938b5aba3f424c756a37427c9ee",
+  "TouchColorTV/TVColorWindow.swift": "025d76185af1d62c304e87aa3a9d3f652de7d0ca65b2904df7dc412981f62a0f",
+  "TouchColorWatch/WatchViews.swift": "abcccd17f2e62c15f4b73f700ee287ae05c68d97ab38179e98c9edfa3739a52a",
+  "TouchColorTVUITests/TVWorkflowTests.swift": "f1691df5fbc92289c839c31ee0716e0861bdc047270690d64772ab99afe10160",
+  "TouchColorMac/PrivacyView.swift": "415e7c2da3ca9040afc29d5b003768001c1a1b1fe7a6e9ac60ee43e52783c968",
+  "TouchColorTV/PrivacyView.swift": "b141f2a8ce4c2d1fc787d8288b29021afc6d7420587179d3fb558c95a1bad9ef",
+  "TouchColorMac/PaletteSidebar.swift": "1394bd8599aafc0c0ad12aa6d2b3c9023d033454f1dc77979335dbfcf746f568",
+  "TouchColorMac/ImageCanvas.swift": "47033790cc0725f2bf3b39e048bf56d8569b42444569bfbf7cd0508ae031656e",
+  "TouchColorVision/VisionCanvas.swift": "0fc57f55029a165c31092fc077387eb36ff5e368577a4f8c49146847754da970",
+  "scripts/generate_project.py": "40d0607c8231f4109c3e9d6d09934d7200d6b57fecdc2e649ef02eeff4f43146",
+  "TouchColor.xcodeproj/project.pbxproj": "e86c5054639035741aa2f96547b183e725b7fcc30da4b96ae87a8e28503d339e"
+}

@@ -6,10 +6,10 @@ struct ColorWindow: View {
     @ObservedObject var library: PaletteLibrary
     @StateObject private var session: ImageSession
     @State private var photo: PhotosPickerItem?
-    @State private var showingPrivacy = false
+    @State private var showingAbout = false
     @State private var showingCamera = false
     @State private var targeted = false
-    private var ownsModalPresentation: Bool { showingPrivacy || showingCamera || session.errorMessage != nil }
+    private var ownsModalPresentation: Bool { showingAbout || showingCamera || session.errorMessage != nil }
 
     @MainActor init(library: PaletteLibrary, session: ImageSession? = nil) {
         self.library = library
@@ -81,15 +81,14 @@ struct ColorWindow: View {
                 .disabled(session.raster == nil || session.exporting).accessibilityIdentifier("image.export")
             Button { showingCamera = true } label: { Label("Camera", systemImage: "camera") }
                 .accessibilityIdentifier("camera.open")
-            Button { showingPrivacy = true } label: { Label("Privacy", systemImage: "hand.raised") }
-                .accessibilityIdentifier("privacy.open")
         }
         .focusedSceneValue(\.colorSession, session)
         .focusedSceneValue(\.colorLibrary, library)
+        .focusedSceneValue(\.showAbout, ownsModalPresentation ? nil : { showingAbout = true })
         .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil }, set: { if !$0, session.errorMessage != nil { session.errorMessage = nil } })) {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: { Text(session.errorMessage ?? "") }
-        .sheet(isPresented: $showingPrivacy) { PrivacyView() }
+        .sheet(isPresented: $showingAbout) { MacAboutView() }
         .sheet(isPresented: $showingCamera) {
             CameraSheet(library: library) { data in
                 session.load(data: data, name: NSLocalizedString("Camera video frame", comment: "Source name"), token: session.beginImport())
@@ -108,6 +107,24 @@ struct ColorWindow: View {
             guard !Task.isCancelled, session.isCurrent(token) else { try? FileManager.default.removeItem(at: file.url); return }
             session.loadOwnedFile(file.url, name: NSLocalizedString("Selected photo", comment: "Imported photo name"), token: token)
         } catch { if !Task.isCancelled { session.report(error, token: token) } }
+    }
+}
+
+/// Secondary app information; the approved policy keeps its own native sheet.
+struct MacAboutView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingPrivacy = false
+    var showsClose = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("About TouchColor").font(.title2)
+            Button("Privacy") { showingPrivacy = true }.accessibilityIdentifier("privacy.open")
+            if showsClose {
+                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction).accessibilityIdentifier("about.close")
+            }
+        }.padding(24).frame(width: 320)
+            .accessibilityHidden(showingPrivacy)
+            .sheet(isPresented: $showingPrivacy) { PrivacyView() }
     }
 }
 

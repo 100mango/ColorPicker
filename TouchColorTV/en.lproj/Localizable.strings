@@ -1,1 +1,5 @@
 /* English source strings are the canonical fallbacks. */
+
+/* Secondary app information. */
+"About" = "About";
+"About TouchColor" = "About TouchColor";

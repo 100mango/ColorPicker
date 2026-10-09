@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import unittest
+from secondary_privacy_navigation_contract import before_secondary_privacy
 ROOT=Path(__file__).resolve().parents[1]
 HELPER='/// Explicit primary-workspace launch intent; keep normal restoration and multiple windows.\nprivate extension Scene {\n    func workspaceDefaultLaunchPolicy() -> some Scene {\n        var scene = SceneBuilder.buildLimitedAvailability(self)\n        if #available(macOS 15.0, *) {\n            scene = SceneBuilder.buildLimitedAvailability(self.defaultLaunchBehavior(.presented))\n        }\n        return SceneBuilder.buildOptional(scene)\n    }\n}\n\n'
 BASE_HASH='5f94bbdcbc97a3ff45632c437acff34c8e3d183a07089d614b86c0cf099fd4c4'
@@ -9,11 +10,12 @@ BASE_HASH='5f94bbdcbc97a3ff45632c437acff34c8e3d183a07089d614b86c0cf099fd4c4'
 class WorkspaceLaunchPolicy(unittest.TestCase):
     def setUp(self):self.source=(ROOT/'TouchColorMac/TouchColorMacApp.swift').read_text()
     def test_existing_scene_content_identity_title_and_observation_bytes_preserved(self):
-        restored=self.source.replace('        .workspaceDefaultLaunchPolicy()\n','',1).replace(HELPER,'',1)
+        historical=before_secondary_privacy('TouchColorMac/TouchColorMacApp.swift',self.source)
+        restored=historical.replace('        .workspaceDefaultLaunchPolicy()\n','',1).replace(HELPER,'',1)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),BASE_HASH)
         self.assertEqual(self.source.count('WindowGroup("TouchColor")'),1)
-        self.assertEqual(self.source.count('Settings { PrivacyView() }'),1)
-        self.assertLess(self.source.index('.workspaceDefaultLaunchPolicy()'),self.source.index('Settings { PrivacyView() }'))
+        self.assertEqual(self.source.count('Settings { MacAboutView(showsClose: false) }'),1)
+        self.assertLess(self.source.index('.workspaceDefaultLaunchPolicy()'),self.source.index('Settings { MacAboutView(showsClose: false) }'))
     def test_private_availability_guard_retains_older_system_behavior(self):
         self.assertIn('private extension Scene',HELPER)
         self.assertIn('func workspaceDefaultLaunchPolicy() -> some Scene',HELPER)

@@ -28,6 +28,8 @@ def load_tests(loader, tests, pattern):
     tests.addTests(loader.loadTestsFromTestCase(WatchDiagnosticsTests))
     from test_watch_touch_drag import WatchTouchDragTests
     tests.addTests(loader.loadTestsFromTestCase(WatchTouchDragTests))
+    from test_secondary_privacy_navigation import SecondaryPrivacyNavigationTests
+    tests.addTests(loader.loadTestsFromTestCase(SecondaryPrivacyNavigationTests))
     return tests
 
 

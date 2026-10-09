@@ -54,7 +54,7 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["watch.color.1"].label.contains("#fe0000"), app.debugDescription)
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch persisted ordered palette"; shot.lifetime = .keepAlways; add(shot)
     }
-    func testChineseColorEditorSave() {
+    private func performChineseColorEditorSave() {
         let editor = app.buttons["watch.editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 10)); XCTAssertEqual(editor.label, "创建颜色")
         editor.tap(); app.buttons["watch.component.down"].tap()
@@ -63,6 +63,12 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertEqual(app.buttons["watch.save"].label, "保存颜色")
         app.buttons["watch.save"].tap()
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Watch Chinese color editor"; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor func testChineseColorEditorSave() throws {
+        performChineseColorEditorSave()
+        app.buttons["BackButton"].tap()
+        try assertSecondaryWatchPrivacyFromHome(context: "zh", chinese: true)
+        assertSecondaryWatchSavedCount("1")
     }
     @MainActor func testPublicLargestTraitChineseColorEditorSave() throws {
         // Invoked only by the host after this exact owned device returned the
@@ -79,7 +85,7 @@ final class WatchWorkflowTests: XCTestCase {
         let baseline = try metric(false), baselineFrame = app.staticTexts["watch.hex"].frame, viewport = app.frame
         app.terminate(); app.launchEnvironment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] = "1"; app.launch()
         XCTAssertEqual(app.frame, viewport)
-        testChineseColorEditorSave()
+        performChineseColorEditorSave()
         // Saving scrolls the editor. Return to its measured numerical readout.
         for _ in 0..<5 where !app.staticTexts["watch.hex"].isHittable { app.swipeDown() }
         let largest = try metric(true), hex = app.staticTexts["watch.hex"]
@@ -107,6 +113,9 @@ final class WatchWorkflowTests: XCTestCase {
         for _ in 0..<5 where !app.buttons["watch.transfer.open"].isHittable { app.swipeUp() }
         app.buttons["watch.transfer.open"].tap()
         XCTAssertFalse(app.staticTexts["watch.transfer.count"].exists)
+        app.buttons["BackButton"].tap()
+        try assertSecondaryWatchPrivacyFromHome(context: "zh-public-largest", chinese: true)
+        assertSecondaryWatchSavedCount("1")
         print("WATCH_PUBLIC_TRAIT_PROOF: accessibility5; baselineMetric=\(baseline); largestMetric=\(largest); viewport=\(viewport); systemPropagation=unverified")
     }
     func testRealPhotoPickerSimulatorUnavailableAndCloseKeepsPalette() {
@@ -121,6 +130,55 @@ final class WatchWorkflowTests: XCTestCase {
         let close = app.buttons["Close"].firstMatch
         XCTAssertTrue(close.exists); close.tap()
         XCTAssertTrue(app.buttons["watch.photos.choose"].waitForExistence(timeout: 5))
+    }
+    private func captureSecondaryWatch(_ title: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Native Watch secondary " + title; shot.lifetime = .keepAlways; add(shot)
+    }
+    @MainActor private func recordSecondaryWatchAboutAudit(_ context: String) throws {
+        let failures = testRun?.totalFailureCount ?? 0
+        captureSecondaryWatch("About " + context)
+        try audit("secondary About " + context)
+        if (testRun?.totalFailureCount ?? 0) == failures {
+            let record: [String: Any] = ["schema": 1, "state": "secondary About " + context,
+                "imageName": "Native Watch secondary About " + context, "testName": name, "outcome": "passed"]
+            let data = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+            XCTAssertLessThanOrEqual(data.count, 8192)
+            let receipt = XCTAttachment(string: try XCTUnwrap(String(data: data, encoding: .utf8)))
+            receipt.name = "Native Watch secondary audit " + context; receipt.lifetime = .keepAlways; add(receipt)
+        }
+    }
+    @MainActor private func assertSecondaryWatchPrivacyFromHome(context: String, chinese: Bool) throws {
+        XCTAssertTrue(app.navigationBars["TouchColor"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["watch.privacy"].exists)
+        let about = app.buttons["watch.about"]
+        for _ in 0..<12 where !(about.exists && about.isHittable) { app.swipeUp() }
+        XCTAssertTrue(about.isHittable, app.debugDescription)
+        XCTAssertEqual(about.label, chinese ? "关于" : "About")
+        about.tap()
+        let privacy = app.buttons["watch.privacy"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5))
+        XCTAssertTrue(privacy.isHittable)
+        XCTAssertEqual(privacy.label, chinese ? "隐私" : "Privacy")
+        XCTAssertTrue(app.frame.contains(privacy.frame))
+        XCTAssertTrue(app.frame.contains(app.buttons["BackButton"].frame))
+        try recordSecondaryWatchAboutAudit(context)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars[chinese ? "隐私" : "Privacy"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["BackButton"].isHittable)
+        captureSecondaryWatch("Privacy " + context)
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.buttons["watch.privacy"].waitForExistence(timeout: 5))
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["TouchColor"].waitForExistence(timeout: 5))
+        XCTAssertTrue(about.isHittable)
+        XCTAssertFalse(app.buttons["watch.privacy"].exists)
+    }
+    private func assertSecondaryWatchSavedCount(_ expected: String) {
+        let count = app.staticTexts["watch.count"]
+        for _ in 0..<12 where !(count.exists && count.isHittable) { app.swipeDown() }
+        XCTAssertTrue(count.isHittable, app.debugDescription)
+        XCTAssertEqual(count.label, expected)
     }
     @MainActor private func audit(_ state: String) throws {
         if #available(watchOS 27.0, *) {
@@ -176,6 +234,9 @@ final class WatchWorkflowTests: XCTestCase {
         for _ in 0..<3 where !app.buttons["watch.save"].isHittable { app.swipeUp() }
         app.buttons["watch.save"].tap()
         try audit("editor actions and transfer status")
+        app.buttons["BackButton"].tap()
+        try assertSecondaryWatchPrivacyFromHome(context: "audit", chinese: false)
+        assertSecondaryWatchSavedCount("1")
     }
 
     func testExplicitOfflineTransferRequestSurvivesRelaunchUntilUserCancels() {
@@ -248,7 +309,7 @@ final class WatchWorkflowTests: XCTestCase {
             visited += 1
             guard visited <= 512 else { XCTFail("Home List diagnostic exceeded its snapshot bound"); return }
             let identifier = element.identifier
-            if ["watch.editor", "watch.photo", "watch.count", "watch.transfer.open", "watch.privacy"].contains(identifier)
+            if ["watch.editor", "watch.photo", "watch.count", "watch.transfer.open", "watch.about"].contains(identifier)
                 || identifier.hasPrefix("watch.color.") {
                 rows.append(["id": identifier, "frame": rectangle(element.frame)])
             }
@@ -267,7 +328,8 @@ final class WatchWorkflowTests: XCTestCase {
         XCTAssertTrue(app.buttons["watch.editor"].waitForExistence(timeout: 15))
         XCTAssertFalse(app.buttons["BackButton"].exists, app.debugDescription)
         XCTAssertEqual(app.staticTexts["watch.count"].label, "0")
-        let target = app.buttons["watch.privacy"]
+        XCTAssertFalse(app.buttons["watch.privacy"].exists)
+        let target = app.buttons["watch.about"]
         XCTAssertFalse(target.exists && target.isHittable, "The cold-home control must require actual scrolling")
         for attempt in 0..<12 {
             if target.exists && target.isHittable { break }
@@ -277,8 +339,24 @@ final class WatchWorkflowTests: XCTestCase {
         }
         XCTAssertTrue(target.isHittable, app.debugDescription)
         target.tap()
-        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["BackButton"].exists)
+        XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
+        try recordSecondaryWatchAboutAudit("cold")
+        for iteration in 0..<2 {
+            let privacy = app.buttons["watch.privacy"]
+            XCTAssertTrue(privacy.waitForExistence(timeout: 5))
+            XCTAssertTrue(privacy.isHittable)
+            privacy.tap()
+            XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["BackButton"].exists)
+            if iteration == 0 { captureSecondaryWatch("Privacy cold") }
+            app.buttons["BackButton"].tap()
+            XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 5))
+        }
+        app.buttons["BackButton"].tap()
+        XCTAssertTrue(app.navigationBars["TouchColor"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["watch.privacy"].exists)
+        XCTAssertTrue(app.buttons["watch.about"].isHittable)
+        XCTAssertFalse(app.buttons["BackButton"].exists)
     }
 
     /// A fresh bounded snapshot scopes each gesture to the actual home List.
@@ -319,7 +397,7 @@ final class WatchWorkflowTests: XCTestCase {
                     let id = element.identifier
                     var index: Int32?
                     if ["watch.editor", "watch.photo", "watch.count"].contains(id) { index = -1 }
-                    else if ["watch.transfer.open", "watch.privacy"].contains(id) { index = Int32.max }
+                    else if ["watch.transfer.open", "watch.about"].contains(id) { index = Int32.max }
                     else if id.hasPrefix("watch.color.") {
                         guard let parsed = Int32(id.dropFirst("watch.color.".count)), parsed >= 0,
                               id == "watch.color.\(parsed)" else { XCTFail("Invalid observed color identity"); return }

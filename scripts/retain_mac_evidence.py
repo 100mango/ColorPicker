@@ -321,6 +321,16 @@ def retain(root, source, *, limit=LIMIT):
         if admit(item, 'Requested original PNG could not fit after mandatory raw evidence'):
             result['requested'][state] = {'status': 'retained', 'file': item['relative'], **item['correlation']}
         else: result['requested'][state] = {'status': 'omitted', 'reason': item['omission']}
+    # New normal-lane About pixels follow, and cannot displace, the original five.
+    # Their independent sidecar gate detects any absent/omitted capture.
+    from secondary_about_evidence import selected_paths
+    secondary = selected_paths(root)
+    for item in items:
+        if item['relative'] not in secondary or item['path'].suffix != '.png': continue
+        try: png_dimensions(item['raw'])
+        except ValueError:
+            item['omission'] = 'Invalid secondary About PNG bytes'; continue
+        admit(item, 'Secondary About PNG exceeds remaining unchanged evidence budget')
     # Passive lifecycle cannot displace mandatory findings or the five requested original PNGs.
     projection_error = None
     if lifecycle is not None:

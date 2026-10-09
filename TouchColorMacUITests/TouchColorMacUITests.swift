@@ -210,6 +210,7 @@ import ApplicationServices
         assertSelectedColorSwatch(label: "Selected color", hex: "#ff00ff", rgb: "R 255   G 0   B 255")
         _ = assertPaletteActionButtons(index: 0, copyLabel: "Copy color 1", deleteLabel: "Delete color 1")
         let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "Native Mac sampled source and ordered palette"; shot.lifetime = .keepAlways; add(shot)
+        openAboutFromAppMenu()
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
         let privacyContent = app.groups.matching(identifier: "privacy.content")
@@ -219,9 +220,27 @@ import ApplicationServices
         XCTAssertTrue(privacyContent.element.links["privacy.contact"].exists)
         assertSelectablePrivacyParagraphs()
         app.buttons["privacy.close"].click()
+        closeAboutAndRestoreWorkspace()
+        assertHex("#ff00ff")
         app.terminate(); app.launchArguments = []; app.launch()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "2")
+    }
+    private func openAboutFromAppMenu() {
+        XCTAssertFalse(app.buttons["privacy.open"].exists, "Privacy is secondary app information")
+        app.menuBars.menuBarItems["TouchColor"].click()
+        let about = app.menuItems["about.open"]
+        XCTAssertTrue(about.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(about.isEnabled, app.debugDescription)
+        about.click()
+        XCTAssertTrue(app.buttons["about.close"].waitForExistence(timeout: 5), app.debugDescription)
+    }
+    private func closeAboutAndRestoreWorkspace() {
+        XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["privacy.close"].exists)
+        app.buttons["about.close"].click()
+        XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
     }
     private func assertSelectablePrivacyParagraphs() {
         let paragraphs = [("privacy.policy.zh-Hans", "Privacy policy in Simplified Chinese", "Celluloid、QRCatcher 和 TouchColor 在设备本地处理照片、相机画面、二维码或颜色数据，开发者不收集或上传这些数据。用户主动分享、打开链接，以及系统 iCloud 同步等行为由相应服务处理。如有隐私问题，请联系 100mango@gmail.com。本地数据可通过相应应用或系统删除，权限可在系统设置中撤回。"),
@@ -533,15 +552,90 @@ import ApplicationServices
         app.buttons["image.paste"].click(); assertHex("#ff00ff")
     }
 
-    func testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail() {
-        assertPrivacyContact(label: "Contact the developer about privacy")
+    func testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail() throws {
+        try assertPrivacyContact(label: "Contact the developer about privacy")
     }
 
-    func testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail() {
-        assertPrivacyContact(label: "联系开发者咨询隐私问题")
+    func testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail() throws {
+        try assertPrivacyContact(label: "联系开发者咨询隐私问题")
     }
 
-    private func assertPrivacyContact(label: String) {
+    private func captureSecondaryMac(_ title: String) {
+        // The unsigned normal lane owns the six new required checkpoints. Keep
+        // existing sandbox evidence and its original image ceiling unchanged.
+        guard !expectsSandbox else { return }
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Native Mac secondary " + title; shot.lifetime = .keepAlways; add(shot)
+    }
+    private func assertAboutMenuDisabledWhileModalOwnsPresentation(expectedAboutVisible: Bool = false, expectedPrivacyVisible: Bool = false) {
+        app.menuBars.menuBarItems["TouchColor"].click()
+        let about = app.menuItems["about.open"]
+        XCTAssertTrue(about.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertFalse(about.isEnabled, "About must not queue another modal")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(app.buttons["about.close"].exists, expectedAboutVisible)
+        XCTAssertEqual(app.buttons["privacy.close"].exists, expectedPrivacyVisible)
+    }
+    private func assertSecondaryMacSettingsAndEscape(locale: String, contactLabel: String) throws {
+        openAboutFromAppMenu()
+        assertAboutMenuDisabledWhileModalOwnsPresentation(expectedAboutVisible: true)
+        app.buttons["privacy.open"].click()
+        XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+        assertAboutMenuDisabledWhileModalOwnsPresentation(expectedPrivacyVisible: true)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.buttons["privacy.close"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["about.close"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.buttons["about.close"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["image.open.empty"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "0")
+
+        app.typeKey(",", modifierFlags: [.command])
+        let settings = app.windows.containing(.button, identifier: "privacy.open")
+        XCTAssertTrue(settings.element.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertEqual(settings.count, 1)
+        let title = locale == "en" ? "About TouchColor" : "关于 TouchColor"
+        XCTAssertTrue(settings.element.staticTexts[title].exists)
+        XCTAssertTrue(settings.element.buttons["privacy.open"].isHittable)
+        XCTAssertFalse(settings.element.buttons["about.close"].exists)
+        captureSecondaryMac("About " + locale + " settings")
+        try audit("secondary About " + locale + " settings")
+        settings.element.buttons["privacy.open"].click()
+        XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.links["privacy.contact"].label, contactLabel)
+        XCTAssertTrue(app.links["privacy.contact"].isHittable)
+        captureSecondaryMac("Privacy " + locale + " settings")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(app.buttons["privacy.close"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(settings.element.buttons["privacy.open"].isHittable)
+        app.typeKey("w", modifierFlags: [.command])
+        XCTAssertTrue(app.buttons["image.open.empty"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
+        XCTAssertEqual(app.staticTexts["palette.count"].value as? String ?? app.staticTexts["palette.count"].label, "0")
+
+        if locale == "en" {
+            // End this isolated case with no workspace; Settings must still
+            // provide the policy without a scene-focused About action.
+            let workspace = app.windows.containing(.button, identifier: "image.open.empty").element
+            XCTAssertTrue(workspace.exists)
+            app.typeKey("w", modifierFlags: [.command])
+            XCTAssertTrue(workspace.waitForNonExistence(timeout: 5))
+            assertAboutMenuDisabledWhileModalOwnsPresentation()
+            app.typeKey(",", modifierFlags: [.command])
+            XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 5))
+            app.buttons["privacy.open"].click()
+            XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.links["privacy.contact"].label, contactLabel)
+            app.buttons["privacy.close"].click()
+            XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 5))
+            app.typeKey("w", modifierFlags: [.command])
+        }
+    }
+    private func assertPrivacyContact(label: String) throws {
+        openAboutFromAppMenu()
+        let locale = name.contains("SimplifiedChinese") ? "zh-Hans" : "en"
+        captureSecondaryMac("About " + locale + " app-menu")
+        try audit("secondary About " + locale + " app-menu")
         XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 10), app.debugDescription)
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5), app.debugDescription)
@@ -554,7 +648,9 @@ import ApplicationServices
         XCTAssertTrue(contact.isHittable, app.debugDescription)
         // Inspect semantics only. Activating mailto is outside this test.
         app.buttons["privacy.close"].click()
+        closeAboutAndRestoreWorkspace()
         XCTAssertTrue(app.buttons["image.open.empty"].waitForExistence(timeout: 5), app.debugDescription)
+        try assertSecondaryMacSettingsAndEscape(locale: locale, contactLabel: label)
     }
 
     @MainActor private func audit(_ state: String) throws {
@@ -933,14 +1029,19 @@ import ApplicationServices
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
         XCTAssertFalse(app.buttons["sample.save"].exists)
         let cameraAuditError = retainAuditFailure("camera availability")
+        assertAboutMenuDisabledWhileModalOwnsPresentation()
+        XCTAssertTrue(app.buttons["camera.close"].exists)
         app.buttons["camera.close"].click()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sample.save"].exists)
+        XCTAssertFalse(app.buttons["about.close"].exists, "Camera dismissal must not reveal a queued About sheet")
+        openAboutFromAppMenu()
         app.buttons["privacy.open"].click()
         XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
         let privacyAuditError = retainAuditFailure("offline privacy")
         app.buttons["privacy.close"].click()
+        closeAboutAndRestoreWorkspace()
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["image.open.empty"].exists)
         try finishRetainedAudits([cameraAuditError, privacyAuditError], route: "camera and offline privacy return")
@@ -965,6 +1066,7 @@ import ApplicationServices
         XCTAssertFalse(app.staticTexts["palette.count"].exists)
         XCTAssertFalse(app.buttons["sample.save"].exists)
         let corruptAuditError = retainAuditFailure("corrupt import error")
+        assertAboutMenuDisabledWhileModalOwnsPresentation()
         XCTAssertTrue(title.exists, alert.debugDescription)
         XCTAssertEqual(dismiss.label, "OK")
         dismiss.click()
@@ -972,6 +1074,10 @@ import ApplicationServices
         assertHex("#ff00ff")
         XCTAssertTrue(app.staticTexts["palette.count"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["sample.save"].exists)
+        XCTAssertFalse(app.buttons["about.close"].exists, "Error dismissal must not reveal a queued About sheet")
+        openAboutFromAppMenu()
+        closeAboutAndRestoreWorkspace()
+        assertHex("#ff00ff")
         try finishRetainedAudits([corruptAuditError], route: "corrupt alert preserves previous source")
     }
 

@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from secondary_privacy_navigation_contract import before_secondary_privacy
 from unittest.mock import Mock, patch
 import uuid
 
@@ -97,8 +98,9 @@ class RunnerLeaseSourceTests(unittest.TestCase):
             'testOfficialAccessibilityCorruptPasteRetainsPreviousSource': '8c3bb9cf9d27568bec531e079563e0b280926397ea693e2fc13db2003837c0a8',
         }
         self.assertEqual(set(expected), {method for method, _ in CASES.values()})
+        historical = before_secondary_privacy('TouchColorVisionUITests/VisionWorkflowTests.swift', self.source)
         for name, digest in expected.items():
-            self.assertEqual(hashlib.sha256(swift_method(self.source, name).encode()).hexdigest(), digest)
+            self.assertEqual(hashlib.sha256(swift_method(historical, name).encode()).hexdigest(), digest)
 
     def test_capture_helper_identity_checks_and_command_caps_are_byte_unchanged(self):
         self.assertEqual(hashlib.sha256((ROOT/'scripts/capture_simulator_checkpoint.py').read_bytes()).hexdigest(),

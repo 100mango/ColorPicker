@@ -103,3 +103,7 @@
 "Delete" = "删除";
 "Copy color %lld" = "复制第 %lld 个颜色";
 "Delete color %lld" = "删除第 %lld 个颜色";
+
+/* Secondary app information. */
+"About" = "关于";
+"About TouchColor" = "关于 TouchColor";

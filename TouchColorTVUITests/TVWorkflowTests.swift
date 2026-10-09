@@ -147,6 +147,8 @@ final class TVWorkflowTests: XCTestCase {
         XCTAssertEqual(app.buttons["tv.editor.save"].label, "保存颜色")
         select(app.buttons["tv.editor.save"]); capture("Native TV Chinese remote color editor")
         remote.press(.menu)
+        try assertSecondaryPrivacyAndRemoteReturn(context: "zh-normal")
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(zh-Hans)"]
         app.launchEnvironment["TOUCHCOLOR_TEST_LARGEST_TRAIT"] = "1"; app.launch()
         XCTAssertEqual(app.frame, viewport)
@@ -167,6 +169,8 @@ final class TVWorkflowTests: XCTestCase {
         select(app.buttons["tv.editor.save"])
         capture("Native TV largest public trait Chinese editor")
         remote.press(.menu); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "2")
+        try assertSecondaryPrivacyAndRemoteReturn(context: "zh-public-largest")
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "2")
         print("TV_PUBLIC_TRAIT_PROOF: accessibility5; baselineMetric=\(baseline); largestMetric=\(largest); viewport=\(viewport); systemPropagation=unverified")
     }
     private func traitMetric(_ element: XCUIElement, largest: Bool) throws -> Double {
@@ -175,12 +179,58 @@ final class TVWorkflowTests: XCTestCase {
         XCTAssertTrue(proof.hasPrefix("largest=\(largest);metric="), proof)
         return try XCTUnwrap(Double(proof.components(separatedBy: "metric=").last ?? ""))
     }
-    func testRemoteColorEditorAndMenuReturn() {
+    @MainActor private func assertSecondaryPrivacyAndRemoteReturn(context: String) throws {
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
+        select(app.buttons["about.open"])
+        XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 5))
+        let chinese = context.hasPrefix("zh-")
+        XCTAssertEqual(app.buttons["privacy.open"].label, chinese ? "隐私" : "Privacy")
+        XCTAssertTrue(app.frame.contains(app.buttons["privacy.open"].frame))
+        XCTAssertTrue(app.frame.contains(app.buttons["about.close"].frame))
+        let failures = testRun?.totalFailureCount ?? 0
+        capture("Native TV secondary About " + context)
+        try audit("secondary About " + context)
+        if (testRun?.totalFailureCount ?? 0) == failures {
+            let record: [String: Any] = ["schema": 1, "state": "secondary About " + context,
+                "imageName": "Native TV secondary About " + context, "testName": name, "outcome": "passed"]
+            let data = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+            XCTAssertLessThanOrEqual(data.count, 8192)
+            let receipt = XCTAttachment(string: try XCTUnwrap(String(data: data, encoding: .utf8)))
+            receipt.name = "Native TV secondary audit " + context; receipt.lifetime = .keepAlways; add(receipt)
+        }
+        select(app.buttons["privacy.open"])
+        XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.frame.contains(app.buttons["privacy.close"].frame))
+        capture("Native TV secondary Privacy " + context)
+        remote.press(.menu)
+        XCTAssertTrue(app.buttons["about.close"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["privacy.close"].exists)
+        remote.press(.menu)
+        XCTAssertTrue(app.buttons["tv.editor"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
+        // Reopen through focus navigation and exercise explicit Close as well.
+        select(app.buttons["about.open"])
+        select(app.buttons["privacy.open"])
+        select(app.buttons["privacy.close"])
+        select(app.buttons["about.close"])
+        XCTAssertTrue(app.buttons["tv.editor"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testRemoteColorEditorAndMenuReturn() throws {
+        XCTAssertTrue(app.buttons["tv.photos"].waitForExistence(timeout: 10))
+        let primaryFocus = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.app.buttons["tv.photos"].hasFocus || self.app.buttons["tv.editor"].hasFocus
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [primaryFocus], timeout: 5), .completed,
+                       "Cold launch must focus Photos or Create Color, not secondary About")
+        try assertSecondaryPrivacyAndRemoteReturn(context: "empty")
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "0")
         select(app.buttons["tv.editor"])
         select(app.buttons["tv.red.down"])
         XCTAssertEqual(app.staticTexts["tv.editor.hex"].label, "#fe0000")
         select(app.buttons["tv.editor.save"]); remote.press(.menu)
         XCTAssertTrue(app.buttons["tv.photos"].waitForExistence(timeout: 5)); XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
+        try assertSecondaryPrivacyAndRemoteReturn(context: "populated")
+        XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
     }
     @MainActor private func audit(_ state: String) throws {
         if #available(tvOS 27.0, *) {

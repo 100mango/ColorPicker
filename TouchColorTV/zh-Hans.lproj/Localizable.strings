@@ -97,3 +97,7 @@
 "Retry" = "重试";
 "Photo %lld" = "照片 %lld";
 "x %lld, y %lld" = "x %lld，y %lld";
+
+/* Secondary app information. */
+"About" = "关于";
+"About TouchColor" = "关于 TouchColor";

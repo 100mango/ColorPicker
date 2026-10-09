@@ -28,7 +28,7 @@ struct WatchHome: View {
                     }
                 }
                 NavigationLink("Transfer Status") { WatchTransferView(transfer: transfer) }.accessibilityIdentifier("watch.transfer.open")
-                NavigationLink("Privacy") { WatchPrivacy() }.accessibilityIdentifier("watch.privacy")
+                NavigationLink("About") { WatchAbout() }.accessibilityIdentifier("watch.about")
             }.navigationTitle("TouchColor")
         }
     }
@@ -266,6 +266,14 @@ struct WatchPhotoView: View {
             }
         }
         .onDisappear { model.cancel() }
+    }
+}
+private struct WatchAbout: View {
+    var body: some View {
+        List {
+            Text("TouchColor")
+            NavigationLink("Privacy") { WatchPrivacy() }.accessibilityIdentifier("watch.privacy")
+        }.navigationTitle("About")
     }
 }
 struct WatchPrivacy: View {

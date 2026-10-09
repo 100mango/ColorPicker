@@ -81,6 +81,7 @@ def read_file(path, maximum=MAX_FILE):
 def allowed(binding):
     platform = binding['platform']
     roots = {'architecture.txt', 'job-budget.json', REPORT,
+             'secondary-about-evidence.json',
              platform + '-runtime.json', platform + '-summary.json',
              platform + '-ui-summary.json', platform + '-largest-text-summary.json'}
     folders = {platform + suffix for suffix in ('-screenshots', '-ui-screenshots', '-largest-text-screenshots')}

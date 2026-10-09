@@ -83,3 +83,7 @@
 "Image canvas. Select a point, or use the precision pixel controls." = "图片画布。请选择取色位置，或使用精确像素控制。";
 "Delete" = "删除";
 "Reopen Export" = "重新打开导出文件";
+
+/* Secondary app information. */
+"About" = "关于";
+"About TouchColor" = "关于 TouchColor";

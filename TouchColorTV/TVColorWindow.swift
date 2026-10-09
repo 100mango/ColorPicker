@@ -8,7 +8,7 @@ struct TVColorWindow: View {
     @StateObject private var session = ImageSession()
     @StateObject private var photoLibrary = TVPhotoLibrary()
     @State private var photos = false
-    @State private var privacy = false
+    @State private var about = false
     @State private var exportSelection: TVExportSelection?
     @State private var manual = false
     @ViewBuilder private var paletteCount: some View {
@@ -33,12 +33,12 @@ struct TVColorWindow: View {
                                 .accessibilityIdentifier("tv.palette.\(index)")
                         }
                     }
+                    Button("About") { about = true }.font(.caption).accessibilityIdentifier("about.open")
                 }.frame(width: 270).focusSection()
                 VStack(spacing: 18) {
                     HStack {
                         Button("Photos") { photos = true }.accessibilityIdentifier("tv.photos")
                         Button("Create Color") { manual = true }.accessibilityIdentifier("tv.editor")
-                        Button("Privacy") { privacy = true }.accessibilityIdentifier("privacy.open")
                     }
                     if let raster = session.raster {
                         TVSamplingCanvas(raster: raster, point: session.selectedPoint, zoom: session.zoom).frame(minHeight: 250)
@@ -76,7 +76,7 @@ struct TVColorWindow: View {
             }.padding(40).navigationTitle("TouchColor")
         }
         .sheet(isPresented: $photos) { TVPhotoBrowser(library: photoLibrary, session: session) }
-        .sheet(isPresented: $privacy) { PrivacyView() }
+        .sheet(isPresented: $about) { TVAboutView() }
         .sheet(item: $exportSelection) { selection in
             TVExportView(color: selection.color, index: selection.index, library: library)
         }
@@ -91,6 +91,20 @@ struct TVColorWindow: View {
         .onDisappear { photoLibrary.cancel(session) }
     }
 }
+private struct TVAboutView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingPrivacy = false
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("About TouchColor").font(.title2)
+            Button("Privacy") { showingPrivacy = true }.accessibilityIdentifier("privacy.open")
+            Button("Close") { dismiss() }.accessibilityIdentifier("about.close")
+        }.padding(40)
+            .onExitCommand { dismiss() }
+            .sheet(isPresented: $showingPrivacy) { PrivacyView() }
+    }
+}
+
 struct TVSamplingCanvas: View {
     let raster: ColorRaster
     let point: NormalizedPoint

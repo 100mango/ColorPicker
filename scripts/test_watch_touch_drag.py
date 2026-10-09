@@ -6,6 +6,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from secondary_privacy_navigation_contract import before_secondary_privacy
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = ROOT / 'TouchColorWatchUITests/TCWatchListDragGeometry.h'
@@ -309,6 +310,7 @@ live=photo;live.height-=0.5;assert(!TCWatchListTouchAnchorReady(&p,photo,live,1,
     def test_touch_anchor_delta_preserves_all_other_methods_and_original_geometry(self):
         import hashlib
         source = (ROOT / 'TouchColorWatchUITests/WatchWorkflowTests.swift').read_text()
+        source = before_secondary_privacy('TouchColorWatchUITests/WatchWorkflowTests.swift', source)
         begin = source.index('    @MainActor private func reachSavedColorByTouch(')
         end = source.index('    @MainActor func testEditSavedCopy', begin)
         self.assertEqual(hashlib.sha256((source[:begin] + source[end:]).encode()).hexdigest(),

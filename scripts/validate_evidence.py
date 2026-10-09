@@ -22,6 +22,7 @@ if (root/'mac-passive-lifecycle.json').exists():
         raise RuntimeError('Oversize passive Mac projection')
     allowed_root.add('mac-passive-lifecycle.json')
 allowed_root.add('native-text-evidence.json')
+allowed_root.add('secondary-about-evidence.json')
 allowed_dirs = {'screenshots', 'vision-checkpoints', 'sandbox-screenshots', 'vision-ui-screenshots', 'vision-screenshots', 'watch-screenshots', 'watch-ui-screenshots', 'tv-screenshots'}
 allowed_dirs.add('modal-probe-screenshots')
 allowed_root.update({'vision-largest-text-summary.json','watch-largest-text-summary.json'})
@@ -84,6 +85,10 @@ for folder, dirs, files in os.walk(root, followlinks=False):
                                 raise RuntimeError('Invalid Photos diagnostic source record')
                             photos_text_count+=1;photos_text_bytes+=actual.stat().st_size
                             if photos_text_count>3 or photos_text_bytes>MAX_TOTAL:raise RuntimeError('Photos diagnostic aggregate exceeded')
+                        elif title.startswith(('Native TV secondary audit ', 'Native Watch secondary audit ', 'Native Vision secondary audit ')):
+                            from secondary_about_evidence import is_audit_title, MAX_AUDIT
+                            if not is_audit_title(title) or (directory / exported).lstat().st_size > MAX_AUDIT:
+                                raise RuntimeError('Unknown or oversized secondary About audit receipt')
                         elif not title.startswith('Native Mac accessibility issue'):
                             raise RuntimeError('Unexpected text attachment provenance')
                         approved_text_files.add(directory / exported)
@@ -101,6 +106,8 @@ from vision_offline_result import evidence_complete
 # A validated explicit omission packet remains uploadable but cannot qualify.
 # Legacy controller-only fallback still requires its exact authenticated provenance.
 vision_complete=False if (root/TEXT_SELECTION).is_file() and not text_complete else evidence_complete(root)
+from secondary_about_evidence import complete as secondary_complete
+secondary_evidence_complete = secondary_complete(root)
 if not count:
     raise RuntimeError('No bounded evidence to retain')
 print(f'Final evidence guard passed: {count} files, {total} bytes (including final manifests)')
@@ -116,3 +123,7 @@ if os.environ.get('GITHUB_OUTPUT'):
 
 if os.environ.get('GITHUB_OUTPUT') and os.environ.get('TOUCHCOLOR_JOB_PLATFORM') in ('vision','watch'):
     with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('native_text_evidence_complete='+str(text_complete).lower()+'\n')
+
+if secondary_evidence_complete is not None and os.environ.get('GITHUB_OUTPUT'):
+    with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+        output.write('secondary_evidence_complete='+str(secondary_evidence_complete).lower()+'\n')

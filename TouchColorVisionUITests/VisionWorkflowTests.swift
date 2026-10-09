@@ -147,7 +147,20 @@ final class VisionWorkflowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["sample.zoom.value"].exists)
         app.buttons["sample.center"].tap(); hex("#ff00ff")
         capture("Native Vision pasted image with precision sampling and zoom")
-        app.buttons["privacy.open"].tap(); XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5)); app.buttons["privacy.close"].tap()
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
+        for _ in 0..<2 {
+            app.buttons["about.open"].tap()
+            XCTAssertTrue(app.buttons["privacy.open"].waitForExistence(timeout: 5))
+            app.buttons["privacy.open"].tap()
+            XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+            app.buttons["privacy.close"].tap()
+            XCTAssertTrue(app.buttons["about.close"].waitForExistence(timeout: 5))
+            app.buttons["about.close"].tap()
+            XCTAssertTrue(app.buttons["sample.save"].waitForExistence(timeout: 5))
+            XCTAssertFalse(app.buttons["privacy.open"].exists)
+            hex("#ff00ff")
+            XCTAssertEqual(app.staticTexts["palette.count"].label, "2")
+        }
         app.terminate(); app.launchArguments = ["-AppleLanguages", "(en)"]; app.launch()
         let count = app.staticTexts["palette.count"]
         XCTAssertTrue(count.waitForExistence(timeout: 15)); XCTAssertEqual(count.label, "2")
@@ -298,7 +311,7 @@ final class VisionWorkflowTests: XCTestCase {
             }
         }
     }
-    func testChinesePasteAndPrecisionControls() {
+    @MainActor func testChinesePasteAndPrecisionControls() throws {
         paste(); app.buttons["sample.above"].tap(); hex("#00ff00")
         XCTAssertEqual(app.buttons["sample.save"].label, "保存颜色")
         app.buttons["sample.save"].tap()
@@ -306,6 +319,9 @@ final class VisionWorkflowTests: XCTestCase {
         // fails to resolve; the containment/value assertions still gate success.
         capture("Native Vision Chinese pasted image and precision controls")
         assertSavedPaletteValuesAreContained()
+        try assertSecondaryVisionPrivacy(context: "zh", chinese: true)
+        hex("#00ff00")
+        XCTAssertEqual(app.staticTexts["palette.count"].label, "1")
     }
     func testNativeFileAndPhotosCancelRepeatedly() {
         XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 20))
@@ -320,6 +336,40 @@ final class VisionWorkflowTests: XCTestCase {
             XCTAssertTrue(app.buttons["image.open"].waitForExistence(timeout: 5))
         }
         XCTAssertEqual(app.staticTexts["palette.count"].label, "0")
+    }
+    @MainActor private func assertSecondaryVisionPrivacy(context: String, chinese: Bool) throws {
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
+        let about = app.buttons["about.open"]
+        XCTAssertTrue(about.waitForExistence(timeout: 5))
+        XCTAssertEqual(about.label, chinese ? "关于" : "About")
+        XCTAssertTrue(about.isHittable)
+        about.tap()
+        let privacy = app.buttons["privacy.open"], close = app.buttons["about.close"]
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5)); XCTAssertTrue(close.exists)
+        XCTAssertEqual(privacy.label, chinese ? "隐私" : "Privacy")
+        XCTAssertTrue(privacy.isHittable); XCTAssertTrue(close.isHittable)
+        XCTAssertTrue(app.frame.contains(privacy.frame)); XCTAssertTrue(app.frame.contains(close.frame))
+        let heading = app.staticTexts[chinese ? "关于 TouchColor" : "About TouchColor"]
+        XCTAssertTrue(heading.exists); XCTAssertTrue(app.frame.contains(heading.frame))
+        let failures = testRun?.totalFailureCount ?? 0
+        capture("Native Vision secondary About " + context)
+        try audit("secondary About " + context)
+        if (testRun?.totalFailureCount ?? 0) == failures {
+            let record: [String: Any] = ["schema": 1, "state": "secondary About " + context,
+                "imageName": "Native Vision secondary About " + context, "testName": name, "outcome": "passed"]
+            let data = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+            XCTAssertLessThanOrEqual(data.count, 8192)
+            let receipt = XCTAttachment(string: try XCTUnwrap(String(data: data, encoding: .utf8)))
+            receipt.name = "Native Vision secondary audit " + context; receipt.lifetime = .keepAlways; add(receipt)
+        }
+        privacy.tap()
+        XCTAssertTrue(app.buttons["privacy.close"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["privacy.close"].isHittable)
+        capture("Native Vision secondary Privacy " + context)
+        app.buttons["privacy.close"].tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 5)); close.tap()
+        XCTAssertTrue(about.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["privacy.open"].exists)
     }
     @MainActor private func audit(_ state: String) throws {
         if #available(visionOS 27.0, *) {
@@ -339,6 +389,9 @@ final class VisionWorkflowTests: XCTestCase {
         try audit("empty workspace")
         paste(); app.buttons["sample.save"].tap()
         try audit("pasted image and palette")
+        try assertSecondaryVisionPrivacy(context: "audit", chinese: false)
+        hex("#ff00ff")
+        XCTAssertEqual(app.staticTexts["palette.count"].label, "1")
     }
 
     @MainActor func testOfficialAccessibilityCorruptPasteRetainsPreviousSource() throws {

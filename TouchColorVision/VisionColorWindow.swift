@@ -11,7 +11,7 @@ struct VisionColorWindow: View {
     private var paletteColumnMinimum: CGFloat { max(240, paletteValueWidth + 48) }
     @State private var photo: PhotosPickerItem?
     @State private var importing = false
-    @State private var privacy = false
+    @State private var about = false
     @State private var exporting = false
     @State private var preparingExport = false
     @State private var exportType = UTType.json
@@ -27,7 +27,12 @@ struct VisionColorWindow: View {
                 }
                 Button("Export Palette…") { preparePaletteExport() }.disabled(library.colors.isEmpty)
                     .accessibilityIdentifier("palette.export")
-            }.accessibilityIdentifier("palette.list").navigationTitle("Palette").navigationSplitViewColumnWidth(min: paletteColumnMinimum,
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button("About") { about = true }.font(.footnote)
+                    .accessibilityIdentifier("about.open").padding(12)
+            }
+            .accessibilityIdentifier("palette.list").navigationTitle("Palette").navigationSplitViewColumnWidth(min: paletteColumnMinimum,
                 ideal: max(260, paletteColumnMinimum), max: max(320, paletteColumnMinimum))
         } detail: {
             VStack(spacing: 12) {
@@ -64,7 +69,6 @@ struct VisionColorWindow: View {
                             .accessibilityIdentifier("image.paste")
                         Button { prepareImageExport() } label: { Label("Export PNG", systemImage: "square.and.arrow.up") }
                             .disabled(session.raster == nil || preparingExport).accessibilityIdentifier("image.export")
-                        Button { privacy = true } label: { Label("Privacy", systemImage: "hand.raised") }.accessibilityIdentifier("privacy.open")
                     }
                 }
         }
@@ -87,7 +91,7 @@ struct VisionColorWindow: View {
         .alert("Could Not Complete", isPresented: Binding(get: { session.errorMessage != nil }, set: { if !$0, session.errorMessage != nil { session.errorMessage = nil } })) {
             Button("OK", role: .cancel) { session.errorMessage = nil }
         } message: { Text(session.errorMessage ?? "") }
-        .sheet(isPresented: $privacy) { PrivacyView() }
+        .sheet(isPresented: $about) { VisionAboutView() }
         .task(id: photo) {
             guard let selected = photo else { return }
             defer { if photo == selected { photo = nil } }
@@ -115,6 +119,20 @@ struct VisionColorWindow: View {
             case .failure(let error): session.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+private struct VisionAboutView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingPrivacy = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("About TouchColor").font(.title2)
+            Button("Privacy") { showingPrivacy = true }.accessibilityIdentifier("privacy.open")
+            Button("Close") { dismiss() }.accessibilityIdentifier("about.close")
+        }.padding(24).frame(width: 320)
+            .accessibilityHidden(showingPrivacy)
+            .sheet(isPresented: $showingPrivacy) { PrivacyView() }
     }
 }
 

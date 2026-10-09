@@ -35,7 +35,7 @@ import OSLog
         .defaultSize(width: 960, height: 640)
         .commands { ColorCommands() }
         .workspaceDefaultLaunchPolicy()
-        Settings { PrivacyView() }
+        Settings { MacAboutView(showsClose: false) }
     }
 }
 
@@ -50,9 +50,14 @@ private extension Scene {
     }
 }
 
+struct AboutFocusKey: FocusedValueKey { typealias Value = () -> Void }
 struct SessionFocusKey: FocusedValueKey { typealias Value = ImageSession }
 struct LibraryFocusKey: FocusedValueKey { typealias Value = PaletteLibrary }
 extension FocusedValues {
+    var showAbout: (() -> Void)? {
+        get { self[AboutFocusKey.self] }
+        set { self[AboutFocusKey.self] = newValue }
+    }
     var colorSession: ImageSession? {
         get { self[SessionFocusKey.self] }
         set { self[SessionFocusKey.self] = newValue }
@@ -66,7 +71,12 @@ extension FocusedValues {
 struct ColorCommands: Commands {
     @FocusedValue(\.colorSession) private var session
     @FocusedValue(\.colorLibrary) private var library
+    @FocusedValue(\.showAbout) private var showAbout
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About TouchColor") { showAbout?() }
+                .disabled(showAbout == nil).accessibilityIdentifier("about.open")
+        }
         CommandGroup(after: .newItem) {
             Button("Open Image or Palette…") { if let session, let library { MacImportExport.open(session: session, library: library) } }
                 .keyboardShortcut("o")

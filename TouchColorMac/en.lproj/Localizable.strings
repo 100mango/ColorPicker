@@ -23,3 +23,7 @@
 "Delete" = "Delete";
 "Copy color %lld" = "Copy color %lld";
 "Delete color %lld" = "Delete color %lld";
+
+/* Secondary app information. */
+"About" = "About";
+"About TouchColor" = "About TouchColor";
