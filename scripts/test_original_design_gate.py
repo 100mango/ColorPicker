@@ -1123,309 +1123,151 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertIn('[self dismissPopoverOnceWithAttachment:name]', routing)
         self.assertIn('[self cancelPickerOnce:self.app.buttons[@"Cancel"].firstMatch attachment:name]', routing)
 
-    def test_popover_dismissal_is_one_stable_primary_tap_outside_controls(self):
-        import re
-        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
-        body = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[0]
-        self.assertEqual(body.count('popover.frame'), 2)
-        self.assertEqual(body.count('snapshotWithError:&snapshotError'), 1)
-        self.assertNotIn('region.frame', body)
-        self.assertEqual(body.count('self.app.windows.firstMatch.frame'), 1)
-        self.assertNotIn('self.app.buttons[identifier].frame', body)
-        self.assertEqual(body.count('] tap]'), 1)
-        for forbidden in ['[region tap]', 'buttons[@"Close"]', 'buttons[@"Cancel"]', 'sleep', 'dismissViewController', 'swipe']:
-            self.assertNotIn(forbidden, body)
-        for identifier in ['choosePhoto', 'takePhoto', 'liveColor', 'original.picker', 'original.library']:
-            self.assertIn('@"' + identifier + '"', body)
-        for required in ['CGRectIntersection(CGRectInset(window,24,24),CGRectInset(regionFrame,24,24))',
-                         'CGRectGetMaxY(firstFrame)+24', 'CGRectGetMaxY(value.CGRectValue)+24',
-                         'CGRectContainsPoint(window,point)', 'CGRectContainsPoint(regionFrame,point)',
-                         '!CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point)',
-                         '!CGRectContainsPoint(CGRectInset(value.CGRectValue,-12,-12),point)',
-                         'CGRectEqualToRect(firstFrame,secondFrame)', 'secondSample-firstSample<0.25',
-                         '[self waitAbsent:popover]', 'XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists']:
-            self.assertIn(required, body)
-        order=[body.index(token) for token in ['snapshotWithError:&snapshotError', 'CGRect firstFrame=', 'NSTimeInterval firstSample=', '[self capture:name]',
-            '[self recordAppPickerTrace:@"before-popover-dismiss"]', 'NSTimeInterval secondSample=', 'CGRect secondFrame=', 'ORIGINAL_PICKER_POPOVER_SINGLE_TAP', '] tap]', '[self waitAbsent:popover]']]
-        self.assertEqual(order, sorted(order))
-        self.assertEqual(len(re.findall(r'XCTFail\([^;]*;\s*return;', body)), body.count('XCTFail('))
-        self.assertGreater(body.count('XCTFail('), 0)
-
-    def test_local_snapshot_contract_keeps_live_popover_queries_and_bounded_unique_frames(self):
-        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
-        body = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[0]
-        for token in ['[self.app snapshotWithError:&snapshotError]',
-                      '!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeApplication',
-                      'NSMutableArray<id<XCUIElementSnapshot>>', 'index<pending.count',
-                      'children.count>2048-pending.count', '[pending addObjectsFromArray:children]',
-                      'if (frames[key])', 'if (!TCDesignFiniteRect(frame))',
-                      'frames.count!=6', 'XCUIElementTypeOther', 'XCUIElementTypeButton',
-                      'CGRect firstFrame=popover.frame', 'CGRect secondFrame=popover.frame']:
-            self.assertIn(token, body)
-        for token in ['key=@"popover"', 'snapshotWithAttributes', '_XCT', 'valueForKey:',
-                      'popover.exists', 'region.exists', 'cached', 'while (']:
-            self.assertNotIn(token, body)
-        # Only this helper changes. All seven testcase bodies, original home
-        # checks and phone Cancel implementation remain exact baseline bytes.
-        before, rest = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)
-        _, after = rest.split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)
-        unchanged = before + '<IPAD_DISMISS_HELPER>' + after
-        self.assertEqual(hashlib.sha256(unchanged.encode()).hexdigest(), '35655c8dbd89495fa8860242b5d345dc3a91bf6e794ce4b8f09eb27f73f73413')
-
-    @staticmethod
-    def snapshot_fixture():
-        # Portable model of immutable local XCUIElementSnapshot attributes;
-        # neither this model nor source checks claim native SDK execution.
-        controls = [('choosePhoto',(219.8,613,304.5,76.5)), ('takePhoto',(219.8,692.5,304.5,76.5)),
-                    ('liveColor',(219.8,772,304.5,76.5)), ('original.picker',(216,97,156,44)),
-                    ('original.library',(372,97,156,44))]
-        return {'type':'Window', 'id':'', 'frame':(0,0,744,1133), 'children':[
-            {'type':'Other','id':'PopoverDismissRegion','frame':(0,0,744,1133),'children':[]},
-            *[{'type':'Button','id':name,'frame':frame,'children':[]} for name,frame in controls]]}
-
-    @staticmethod
-    def snapshot_model(root, error=False):
-        import math
-        identifiers={'choosePhoto','takePhoto','liveColor','original.picker','original.library'}
-        if root is None or error or root['type']!='Window': raise ValueError('snapshot')
-        frames={}; pending=[root]; index=0
-        while index<len(pending):
-            node=pending[index]; index+=1
-            key=('window' if node['type']=='Window' else
-                 'region' if node['type']=='Other' and node['id']=='PopoverDismissRegion' else
-                 node['id'] if node['type']=='Button' and node['id'] in identifiers else None)
-            if key:
-                if key in frames: raise ValueError('duplicate')
-                frame=node['frame']
-                if not all(math.isfinite(x) for x in frame) or min(frame[2:])<=0: raise ValueError('frame')
-                frames[key]=frame
-            children=node['children']
-            if len(children)>2048-len(pending): raise ValueError('inventory bound')
-            pending.extend(children)
-        if len(frames)!=7 or not {'window','region'} <= frames.keys(): raise ValueError('missing')
-        return frames
-
-    def test_snapshot_model_rejects_missing_duplicate_wrong_type_invalid_and_oversized_nodes(self):
-        root=self.snapshot_fixture(); self.assertEqual(len(self.snapshot_model(root)),7)
-        # A missing remote Photos subtree is valid: all geometry here is local.
-        root['children'].append({'type':'Popover','id':'','frame':(0,0,0,0),'children':[]})
-        self.assertEqual(len(self.snapshot_model(root)),7)
-        for index in range(6):
-            bad=self.snapshot_fixture(); bad['children'].pop(index)
-            with self.subTest(missing=index), self.assertRaises(ValueError): self.snapshot_model(bad)
-            bad=self.snapshot_fixture(); bad['children'].append(copy.deepcopy(bad['children'][index]))
-            with self.subTest(duplicate=index), self.assertRaises(ValueError): self.snapshot_model(bad)
-            bad=self.snapshot_fixture(); bad['children'][index]['type']='StaticText'
-            with self.subTest(wrong_type=index), self.assertRaises(ValueError): self.snapshot_model(bad)
-        for index in range(7):
-            for frame in [(float('nan'),0,1,1),(0,float('inf'),1,1),(0,0,0,1),(0,0,1,-1)]:
-                bad=self.snapshot_fixture(); node=bad if index==0 else bad['children'][index-1]; node['frame']=frame
-                with self.subTest(index=index,frame=frame), self.assertRaises(ValueError): self.snapshot_model(bad)
-        for root,error in [(None,False),(self.snapshot_fixture(),True),({'type':'Other'},False)]:
-            with self.subTest(root=root,error=error), self.assertRaises(ValueError): self.snapshot_model(root,error)
-        bad=self.snapshot_fixture(); bad['children'].append(copy.deepcopy(bad))
-        with self.assertRaisesRegex(ValueError,'duplicate'): self.snapshot_model(bad)
-        filler={'type':'Other','id':'unrelated','frame':(0,0,0,0),'children':[]}
-        edge=self.snapshot_fixture(); edge['children'] += [filler] * (2048-7)
-        self.assertEqual(len(self.snapshot_model(edge)),7)
-        edge['children'].append(filler)
-        with self.assertRaisesRegex(ValueError,'inventory bound'): self.snapshot_model(edge)
-        # No shallow depth assumption: 64 unrelated ancestors remain bounded.
-        deep=self.snapshot_fixture(); child=deep['children'].pop()
-        for _ in range(64): child={**filler,'children':[child]}
-        deep['children'].append(child); self.assertEqual(len(self.snapshot_model(deep)),7)
-
-    @staticmethod
-    def dismissal_point_model(frames, first=(10,32,724,581), second=(10,32,724,581), gap=0.25):
-        import math
-        def finite(r): return all(math.isfinite(x) for x in r) and min(r[2:])>0
-        def contains(r,p,padding=0): return r[0]-padding<=p[0]<=r[0]+r[2]+padding and r[1]-padding<=p[1]<=r[1]+r[3]+padding
-        def rect_inside(outer,inner): return contains(outer,(inner[0]+1,inner[1]+1)) and contains(outer,(inner[0]+inner[2]-1,inner[1]+inner[3]-1))
-        window=frames['window'];region=frames['region'];controls=[v for k,v in frames.items() if k not in ('window','region')]
-        if not all(finite(x) for x in [window,region,first,*controls]): raise ValueError('frame')
-        if not all(rect_inside(window,x) for x in [first,*controls]): raise ValueError('outside')
-        left=max(window[0]+24,region[0]+24);top=max(window[1]+24,region[1]+24)
-        right=min(window[0]+window[2]-24,region[0]+region[2]-24);bottom=min(window[1]+window[3]-24,region[1]+region[3]-24)
-        safe=(left,top,right-left,bottom-top);top=max(top,first[1]+first[3]+24,*[c[1]+c[3]+24 for c in controls])
-        band=(left,top,right-left,bottom-top)
-        if not finite(safe) or not finite(band): raise ValueError('no empty band')
-        point=((left+right)/2,(top+bottom)/2)
-        if not all(contains(x,point) for x in [window,region,safe]) or any(contains(x,point,12) for x in [first,*controls]): raise ValueError('unsafe point')
-        if first!=second or gap<0.25: raise ValueError('unstable')
-        return point
-
-    def test_snapshot_geometry_model_preserves_point_and_rejects_unsafe_or_moving_bounds(self):
-        frames=self.snapshot_model(self.snapshot_fixture());self.assertEqual(self.dismissal_point_model(frames),(372,990.75))
-        mutations=[('window',(0,0,0,1133)),('region',(1000,0,744,1133)),
-                   ('region',(0,0,744,610)),('liveColor',(0,1000,744,120)),
-                   ('choosePhoto',(-100,600,20,20))]
-        for key,value in mutations:
-            bad=dict(frames);bad[key]=value
-            with self.subTest(key=key,value=value), self.assertRaises(ValueError): self.dismissal_point_model(bad)
-        for first,second,gap in [((10,32,724,1080),(10,32,724,1080),0.25),
-                                 ((10,32,724,581),(10,33,724,581),0.25),
-                                 ((10,32,724,581),(10,32,724,581),0.249),
-                                 ((float('nan'),32,724,581),(10,32,724,581),0.25)]:
-            with self.subTest(first=first,second=second,gap=gap), self.assertRaises(ValueError): self.dismissal_point_model(frames,first,second,gap)
-
-    def test_snapshot_failure_diagnostics_are_whitelisted_bounded_and_before_every_local_failure(self):
-        import re
-        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
-        body = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[0]
-        self.assertEqual(body.count('snapshotWithError:&snapshotError'),1)
-        self.assertEqual(body.count('popover.frame'),2)
-        self.assertEqual(body.count('] tap]'),1)
-        self.assertIn('snapshot=[self.app snapshotWithError:&snapshotError]',body)
-        for token in ['[controlIdentifiers arrayByAddingObject:@"PopoverDismissRegion"]',
-                      'if (diagnosticCounts[identifier])', 'samples.count<2',
-                      '@"type":@(node.elementType)', '@"frame":diagnosticFrame(node.frame)',
-                      'text.length<=128', 'header.length<=1024', 'row.length<=1024',
-                      'visited=%lu queued=%lu complete=%d', 'windows=%lu matchedFrames=%lu',
-                      'scope=application', 'traversalComplete=YES',
-                      'recordGeometryDiagnostic(@"missing-required-inventory")']:
-            self.assertIn(token,body)
-        self.assertLess(body.index('if (diagnosticCounts[identifier])'),body.index('if (node.elementType==XCUIElementTypeOther &&'))
-        self.assertEqual(len(re.findall(r'recordGeometryDiagnostic\([^;]*;\s*XCTFail\(',body)),body.count('XCTFail('))
-        for token in ['node.label','node.value','debugDescription','dictionaryRepresentation',
-                      'snapshotError.domain','snapshotError.description','snapshotError.localizedDescription',
-                      'frames=%@','pending=%@','children=%@','snapshot=%@']:
-            self.assertNotIn(token,body)
-        self.assertNotIn('required: %@",snapshotError',body)
-
-    def test_diagnostic_fixture_drops_unowned_data_and_caps_samples_and_frame_text(self):
-        # This is a portable logger-format model, not native XCTest execution.
-        import math
-        whitelist=['choosePhoto','takePhoto','liveColor','original.picker','original.library','PopoverDismissRegion']
-        counts={key:0 for key in whitelist}; samples={key:[] for key in whitelist}
-        def observe(identifier,type_number,frame,**unowned):
-            if identifier not in counts:return
-            counts[identifier]+=1
-            if len(samples[identifier])<2:
-                rendered='{'+','.join(format(float(x),'.17g') for x in frame)+'}'
-                samples[identifier].append({'type':type_number,'frame':rendered if len(rendered)<=128 else 'frame-format-out-of-bound'})
-        observe('private-photo-name',9,(0,0,1,1),label='private-content',value='private-value')
-        observe('choosePhoto',9,(0,0,1,1),label='private-content',value='private-value')
-        observe('choosePhoto',48,(math.nan,math.inf,-math.inf,0))
-        observe('choosePhoto',9,(1e308,-1e308,1e-308,1e-308))
-        self.assertEqual(counts['choosePhoto'],3);self.assertEqual(len(samples['choosePhoto']),2)
-        self.assertEqual(samples['choosePhoto'][1]['type'],48,'Wrong-type occurrence remains observable')
-        self.assertEqual(counts['PopoverDismissRegion'],0,'Missing target is explicitly zero')
-        for key in whitelist[1:]:observe(key,9,(1e308,-1e308,1e-308,1e-308))
-        rows=[json.dumps({'identifier':key,'count':counts[key],'samples':samples[key]},sort_keys=True) for key in whitelist]
-        self.assertTrue(all(len(row)<=1024 for row in rows))
-        self.assertTrue(all(len(sample['frame'])<=128 for values in samples.values() for sample in values))
-        output='\n'.join(rows)
-        for forbidden in ['private-photo-name','private-content','private-value','label','value','children']:
-            self.assertNotIn(forbidden,output)
-        self.assertEqual(set(counts),set(whitelist));self.assertEqual(set(samples),set(whitelist))
-
-    def test_application_snapshot_keeps_global_unique_targets_and_common_nearest_window(self):
+    def modal_dismissal_source(self):
         source=(gate.ROOT/'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
         body=source.split('- (void)dismissPopoverOnceWithAttachment:',1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:',1)[0]
-        for token in ['snapshot=[self.app snapshotWithError:&snapshotError]',
-                      'snapshot.elementType!=XCUIElementTypeApplication',
-                      'windowOwners=[NSMutableArray arrayWithObject:@(-1)]',
-                      'NSInteger owner=windowOwners[index].integerValue',
-                      'owner=(NSInteger)index', 'windowFrames[@(owner)]',
-                      'targetOwners[key]=@(owner)',
-                      'diagnosticCounts[identifier].unsignedIntegerValue!=1',
-                      'frames.count!=6', 'owner.integerValue<0',
-                      '![targetOwners[key] isEqualToNumber:owner]',
-                      'NSValue *ownerFrame=windowFrames[owner]',
-                      'CGRect window=self.app.windows.firstMatch.frame',
-                      'CGRectEqualToRect(window,ownerFrame.CGRectValue)',
-                      '@"windowIndex":@(owner)']:
-            self.assertIn(token,body)
-        self.assertEqual(body.count('snapshotWithError:&snapshotError'),1)
-        self.assertEqual(body.count('self.app.windows.firstMatch.frame'),1)
-        self.assertEqual(body.count('popover.frame'),2)
-        self.assertNotIn('snapshot=[self.app.windows',body)
-        self.assertLess(body.index('diagnosticCounts[identifier].unsignedIntegerValue!=1'),body.index('if (node.elementType==XCUIElementTypeOther &&'))
-        order=[body.index(x) for x in ['traversalComplete=YES','owner.integerValue<0','CGRect window=self.app.windows.firstMatch.frame','CGRect firstFrame=popover.frame','] tap]']]
-        self.assertEqual(order,sorted(order))
+        return source,body
 
-    @classmethod
-    def application_fixture(cls):
-        first=cls.snapshot_fixture()
-        second={'type':'Window','id':'','frame':first['frame'],'children':[]}
-        return {'type':'Application','id':'','frame':first['frame'],'children':[first,second]}
+    def test_modal_dismissal_uses_current_geometry_and_one_outside_region_tap(self):
+        _,body=self.modal_dismissal_source()
+        for token in ['popover.frame','windowElement.frame','region.frame']:
+            self.assertEqual(body.count(token),2,token)
+        self.assertEqual(body.count('region.hittable'),1)
+        self.assertEqual(body.count('] tap]'),1)
+        for forbidden in ['snapshotWithError','XCUIElementSnapshot','[region tap]', 'buttons[@"Close"]',
+                          'buttons[@"Cancel"]','sleep','dismissViewController','swipe','_XCT','valueForKey:']:
+            self.assertNotIn(forbidden,body)
+        before_tap=body.split('] tap]',1)[0]
+        for identifier in ['choosePhoto','takePhoto','liveColor','original.picker','original.library']:
+            self.assertNotIn('@"'+identifier+'"',before_tap)
+        for required in ['CGRectIntersection(CGRectInset(window,24,24),CGRectInset(regionFrame,24,24))',
+                         'CGRectGetMaxY(firstFrame)+24','CGRectContainsPoint(window,point)',
+                         'CGRectContainsPoint(regionFrame,point)','CGRectContainsPoint(safeRegion,point)',
+                         '!CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point)',
+                         'coordinateWithNormalizedOffset:CGVectorMake(0,0)',
+                         'point.x-CGRectGetMinX(secondRegion),point.y-CGRectGetMinY(secondRegion)']:
+            self.assertIn(required,body)
+
+    def test_modal_dismissal_checks_all_geometry_stability_then_hittability_before_tap(self):
+        _,body=self.modal_dismissal_source()
+        for required in ['CGRectEqualToRect(firstFrame,secondFrame)','CGRectEqualToRect(window,secondWindow)',
+                         'CGRectEqualToRect(regionFrame,secondRegion)','secondSample-firstSample<0.25']:
+            self.assertIn(required,body)
+        order=[body.index(token) for token in ['CGRect window=', 'CGRect firstFrame=', 'NSTimeInterval firstSample=',
+              '[self capture:name]', '[self recordAppPickerTrace:@"before-popover-dismiss"]',
+              'NSTimeInterval secondSample=', 'CGRect secondFrame=', 'CGRect secondWindow=',
+              'CGRectEqualToRect(firstFrame,secondFrame)', 'BOOL hittable=region.hittable',
+              'if (!hittable)', 'ORIGINAL_PICKER_POPOVER_SINGLE_TAP', '] tap]', '[self waitAbsent:popover]']]
+        self.assertEqual(order,sorted(order))
+        self.assertIn('Hittable is an element-level check',body)
+        self.assertIn('public per-coordinate hit test',body)
+
+    def test_modal_dismissal_failed_preconditions_return_without_action(self):
+        import re
+        _,body=self.modal_dismissal_source()
+        failures=re.findall(r'XCTFail\([^;]*;\s*return;',body)
+        self.assertEqual(len(failures),5)
+        self.assertEqual(body.count('XCTFail('),len(failures))
+        self.assertTrue(all(body.index(failure)<body.index('] tap]') for failure in failures))
+        self.assertIn('!TCDesignFiniteRect(window)',body)
+        self.assertIn('!TCDesignFiniteRect(regionFrame)',body)
+        self.assertIn('!TCDesignFiniteRect(firstFrame)',body)
+        self.assertIn('!CGRectContainsRect(window,regionFrame)',body)
+        self.assertIn('!CGRectContainsRect(window,firstFrame)',body)
+        self.assertIn('!TCDesignFiniteRect(safeRegion) || !TCDesignFiniteRect(dismissalBand)',body)
+
+    def test_modal_cancel_keeps_real_close_and_no_mistap_postconditions(self):
+        source,body=self.modal_dismissal_source()
+        after=body.split('] tap]',1)[1]
+        for token in ['[self waitAbsent:popover]','XCTAssertFalse(region.exists',
+                      'XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists',
+                      'XCTAssertTrue(self.app.buttons[@"original.picker"].selected',
+                      'XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists',
+                      'XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists',
+                      'XCTAssertEqual(self.app.alerts.count,0u',
+                      '[self recordAppPickerTrace:@"after-popover-dismiss"]']:
+            self.assertIn(token,after)
+        absence=source.split('- (void)waitAbsent:',1)[1].split('- (XCUIElement *)openLibrary',1)[0]
+        self.assertIn('exists == false',absence)
+        self.assertIn('timeout:10',absence)
+        self.assertNotIn('executionTimeAllowance',source)
+
+    def test_modal_change_preserves_all_case_bodies_home_checks_and_phone_cancel(self):
+        source,_=self.modal_dismissal_source()
+        before,rest=source.split('- (void)dismissPopoverOnceWithAttachment:',1)
+        _,after=rest.split('- (void)dismissPhotoPickerOnceWithAttachment:',1)
+        unchanged=before+'<IPAD_DISMISS_HELPER>'+after
+        self.assertEqual(hashlib.sha256(unchanged.encode()).hexdigest(),
+                         '35655c8dbd89495fa8860242b5d345dc3a91bf6e794ce4b8f09eb27f73f73413')
+        repeated=source.split('- (void)testOriginalHomeTabsAndRepeatedPhotoPickerCancellation',1)[1].split('- (void)deleteOnlySavedColor',1)[0]
+        for token in ['attempt<2','[self tap:@"choosePhoto"]','if (![self waitForPhotoPickerSurface]) return;',
+                      '[self assertHomeUsable]','[self assertRedHistory:table count:0]']:
+            self.assertIn(token,repeated)
 
     @staticmethod
-    def application_snapshot_model(root,live_window=(0,0,744,1133)):
+    def modal_dismissal_point(window=(0,0,744,1133),region=(0,0,744,1133),first=(10,32,724,581),
+                              second_window=None,second_region=None,second=None,gap=0.25,hittable=True):
+        # Portable geometry/guard model only; this does not model UIKit event
+        # dispatch, certify per-coordinate hit testing, or claim a native pass.
         import math
-        expected={'choosePhoto':'Button','takePhoto':'Button','liveColor':'Button',
-                  'original.picker':'Button','original.library':'Button','PopoverDismissRegion':'Other'}
-        if root is None or root['type']!='Application':raise ValueError('root')
-        pending=[root];owners=[-1];index=0;window_frames={};counts={};frames={};target_owners={}
-        def finite(frame):return all(math.isfinite(x) for x in frame) and min(frame[2:])>0
-        while index<len(pending):
-            node=pending[index];owner=owners[index]
-            if node['type']=='Window':owner=index;window_frames[owner]=node['frame']
-            identifier=node['id']
-            if identifier in expected:
-                counts[identifier]=counts.get(identifier,0)+1
-                if counts[identifier]!=1:raise ValueError('duplicate identifier')
-                if node['type']==expected[identifier]:
-                    if not finite(node['frame']):raise ValueError('frame')
-                    key='region' if identifier=='PopoverDismissRegion' else identifier
-                    frames[key]=node['frame'];target_owners[key]=owner
-            children=node['children']
-            if len(children)>2048-len(pending):raise ValueError('bound')
-            pending.extend(children);owners.extend([owner]*len(children));index+=1
-        if len(frames)!=6 or 'region' not in frames:raise ValueError('missing inventory')
-        owner=target_owners['region']
-        if owner<0 or any(value!=owner for value in target_owners.values()):raise ValueError('window owner')
-        frame=window_frames.get(owner)
-        if frame is None or not finite(frame):raise ValueError('window frame')
-        if not finite(live_window) or live_window!=frame:raise ValueError('live window')
-        return {**frames,'window':live_window}
+        def finite(r):return all(math.isfinite(x) for x in r) and min(r[2:])>0
+        def inside(outer,inner):return (outer[0]<=inner[0] and outer[1]<=inner[1] and
+            inner[0]+inner[2]<=outer[0]+outer[2] and inner[1]+inner[3]<=outer[1]+outer[3])
+        def contains(r,p,padding=0):return (r[0]-padding<=p[0]<r[0]+r[2]+padding and
+            r[1]-padding<=p[1]<r[1]+r[3]+padding)
+        if not all(finite(r) for r in [window,region,first]):raise ValueError('finite geometry')
+        if not inside(window,region) or not inside(window,first):raise ValueError('visible geometry')
+        left=max(window[0]+24,region[0]+24);right=min(window[0]+window[2]-24,region[0]+region[2]-24)
+        top=max(window[1]+24,region[1]+24);bottom=min(window[1]+window[3]-24,region[1]+region[3]-24)
+        safe=(left,top,right-left,bottom-top);top=max(top,first[1]+first[3]+24)
+        band=(left,top,right-left,bottom-top)
+        if not finite(safe) or not finite(band):raise ValueError('dismissal band')
+        point=((left+right)/2,(top+bottom)/2)
+        if not all(contains(r,point) for r in [window,region,safe]) or contains(first,point,12):raise ValueError('outside point')
+        if second_window is None:second_window=window
+        if second_region is None:second_region=region
+        if second is None:second=first
+        if window!=second_window or region!=second_region or first!=second or gap<0.25:raise ValueError('stable geometry')
+        if not hittable:raise ValueError('hittable region')
+        return point
 
-    def test_application_snapshot_model_rejects_cross_window_duplicate_or_unbound_targets(self):
-        root=self.application_fixture();frames=self.application_snapshot_model(root)
-        self.assertEqual(self.dismissal_point_model(frames),(372,990.75))
-        self.assertEqual(len(root['children']),2,'Equal-frame unrelated window is allowed without mixing targets')
-        for index in range(6):
-            bad=self.application_fixture();target=bad['children'][0]['children'][index]
-            bad['children'][1]['children'].append(copy.deepcopy(target))
-            with self.subTest(duplicate=index),self.assertRaisesRegex(ValueError,'duplicate identifier'):self.application_snapshot_model(bad)
-            bad['children'][1]['children'][0]['type']='StaticText'
-            with self.subTest(wrong_type_duplicate=index),self.assertRaisesRegex(ValueError,'duplicate identifier'):self.application_snapshot_model(bad)
-            bad=self.application_fixture();target=bad['children'][0]['children'].pop(index);bad['children'][1]['children'].append(target)
-            with self.subTest(split_window=index),self.assertRaisesRegex(ValueError,'window owner'):self.application_snapshot_model(bad)
-            bad=self.application_fixture();target=bad['children'][0]['children'].pop(index);bad['children'].append(target)
-            with self.subTest(orphan=index),self.assertRaisesRegex(ValueError,'window owner'):self.application_snapshot_model(bad)
-        bad=self.application_fixture();target=bad['children'][0]['children'].pop()
-        bad['children'][0]['children'].append({'type':'Window','id':'','frame':(0,0,744,1133),'children':[target]})
-        with self.assertRaisesRegex(ValueError,'window owner'):self.application_snapshot_model(bad)
-        for live in [(0,0,745,1133),(0,0,0,1133),(float('nan'),0,744,1133)]:
-            with self.subTest(live=live),self.assertRaisesRegex(ValueError,'live window'):self.application_snapshot_model(self.application_fixture(),live)
-        bad=self.application_fixture();bad['children'][0]['frame']=(0,0,744,0)
-        with self.assertRaisesRegex(ValueError,'window frame'):self.application_snapshot_model(bad)
-        for bad in [None,self.snapshot_fixture()]:
-            with self.assertRaisesRegex(ValueError,'root'):self.application_snapshot_model(bad)
-        # Application + two windows + six targets = nine nodes.
-        filler={'type':'Other','id':'unrelated','frame':(0,0,0,0),'children':[]}
-        edge=self.application_fixture();edge['children'] += [filler]*(2048-9)
-        self.assertEqual(self.application_snapshot_model(edge)['window'],(0,0,744,1133))
-        edge['children'].append(filler)
-        with self.assertRaisesRegex(ValueError,'bound'):self.application_snapshot_model(edge)
+    def test_modal_geometry_model_uses_observed_frames_without_covered_home_inventory(self):
+        self.assertEqual(self.modal_dismissal_point(),(372,873))
+        self.assertEqual(self.modal_dismissal_point(window=(100,200,744,1133),region=(100,200,744,1133),
+                         first=(110,232,724,581)),(472,1073))
+        self.assertEqual(self.modal_dismissal_point(region=(24,24,696,1085)),(372,861))
+        # The earlier (372,990.75) included an unrelated hidden-control bound.
+        # Neither number is hard-coded in native source; each action is computed.
+        _,body=self.modal_dismissal_source()
+        for coordinate in ['990.75','873','744','1133','724','581']:
+            self.assertNotIn(coordinate,body)
 
-    def test_popover_primary_point_fits_observed_ipad_geometry(self):
-        # Same bounded geometry expressed from the actual run-37883561875 AX
-        # frames; this is a calculation check, not a substitute for a native tap.
-        window=(0,0,744,1133); region=window; popover=(10,32,724,581)
-        controls=[(219.8,613,304.5,76.5),(219.8,692.5,304.5,76.5),
-                  (219.8,772,304.5,76.5),(216,97,156,44),(372,97,156,44)]
-        safe=(24,24,696,1085)
-        top=max(safe[1],popover[1]+popover[3]+24,*[c[1]+c[3]+24 for c in controls])
-        point=(safe[0]+safe[2]/2,(top+safe[1]+safe[3])/2)
-        self.assertEqual(point,(372,990.75))
-        def inside(r,p,padding=0):
-            return r[0]-padding<=p[0]<=r[0]+r[2]+padding and r[1]-padding<=p[1]<=r[1]+r[3]+padding
-        self.assertTrue(inside(window,point)); self.assertTrue(inside(region,point)); self.assertTrue(inside(safe,point))
-        self.assertFalse(inside(popover,point,12))
-        self.assertTrue(all(not inside(c,point,12) for c in controls))
-        self.assertTrue(inside(popover,(window[2]/2,window[3]/2)), 'Blind region center would be inside Photos')
+    def test_modal_geometry_model_rejects_invalid_or_unreachable_geometry(self):
+        for key in ['window','region','first']:
+            for value in [(0,0,0,1133),(0,0,-1,1133),(0,0,744,0),(0,0,744,-1),
+                          (float('nan'),0,744,1133),(0,float('inf'),744,1133),
+                          (0,0,float('inf'),1133),(0,0,744,float('nan'))]:
+                with self.subTest(key=key,value=value),self.assertRaises(ValueError):
+                    self.modal_dismissal_point(**{key:value})
+        for args in [dict(first=(-1,32,724,581)),dict(first=(10,32,735,581)),
+                     dict(region=(1,0,744,1133)),dict(region=(0,-1,744,1133)),
+                     dict(region=(0,0,744,610)),dict(first=(10,32,724,1080)),
+                     dict(region=(0,0,47,1133))]:
+            with self.subTest(args=args),self.assertRaises(ValueError):self.modal_dismissal_point(**args)
+
+    def test_modal_geometry_model_rejects_movement_short_gap_or_unhittable_region(self):
+        for args in [dict(second_window=(1,0,744,1133)),dict(second_window=(0,0,745,1133)),
+                     dict(second_region=(0,1,744,1133)),dict(second_region=(0,0,744,1132)),
+                     dict(second=(11,32,724,581)),dict(second=(10,32,724,582)),
+                     dict(gap=0.249),dict(hittable=False)]:
+            with self.subTest(args=args),self.assertRaises(ValueError):self.modal_dismissal_point(**args)
+
+    def test_original_source_uses_view_anchor_without_custom_passthrough_or_dismissal_override(self):
+        source=(gate.ROOT/'ColorPicker/ColorMainViewController.m').read_text()
+        self.assertIn('sourceView:self.sourceButtons.arrangedSubviews.firstObject',source)
+        self.assertIn('controller.popoverPresentationController.sourceView = anchor',source)
+        for forbidden in ['passthroughViews','modalInPopover','popoverPresentationControllerShouldDismissPopover']:
+            self.assertNotIn(forbidden,source)
 
     def test_permissionless_bootstrap_precedes_seeding_on_both_devices(self):
         runner = Path(gate.__file__).read_text()
