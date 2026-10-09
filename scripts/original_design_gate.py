@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """One owned, unsigned device per independent matrix job. Never a release/design approval."""
 import argparse
+import datetime
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import re
+import resource
 import signal
+import stat
 import shutil
 import struct
 import subprocess
@@ -32,6 +35,8 @@ HOSTED_SOURCES = {
 DEVICE_NAMES = {'se3': 'iPhone SE (3rd generation)', 'ipad-mini': 'iPad mini (A17 Pro)'}
 CONTROLLER_TIMEOUT_SECONDS = 23 * 60
 EVIDENCE_BUDGET_BYTES = 12 * 1024 * 1024  # Two jobs together retain at most the original 24 MiB.
+HOST_DIAGNOSTIC_PHASE_SECONDS = 20  # Charged to the unchanged controller deadline.
+HOST_DIAGNOSTIC_LOG_BYTES = 256 * 1024
 
 
 def require(condition, message):
@@ -55,6 +60,35 @@ def fixture_png():
     def chunk(kind, value):
         return struct.pack('>I', len(value)) + kind + value + struct.pack('>I', zlib.crc32(kind + value) & 0xffffffff)
     return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b'')
+
+
+def fixture_observation(path):
+    """Read only the generated host file, without following a final symlink."""
+    def metadata(value):
+        return {key: getattr(value, 'st_' + key) for key in
+                ('dev', 'ino', 'mode', 'uid', 'gid', 'size', 'mtime_ns', 'ctime_ns')}
+    result = {'path': str(path), 'observed_at': time.time()}
+    try:
+        before = path.lstat()
+        result.update(lstat=metadata(before), permission_mode=oct(stat.S_IMODE(before.st_mode)),
+                      parent_lstat=metadata(path.parent.lstat()))
+        require(stat.S_ISREG(before.st_mode), 'Fixture is not a regular non-symlink file')
+        require(before.st_size <= 1024 * 1024, 'Fixture exceeds the diagnostic read limit')
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, 'rb') as stream:
+            opened = os.fstat(stream.fileno())
+            result['fstat'] = metadata(opened)
+            require(stat.S_ISREG(opened.st_mode) and (opened.st_dev, opened.st_ino) == (before.st_dev, before.st_ino),
+                    'Fixture identity changed while opening')
+            data = stream.read(1024 * 1024 + 1)
+            require(len(data) <= 1024 * 1024, 'Fixture grew beyond the diagnostic read limit')
+            after = os.fstat(stream.fileno())
+        result.update(fstat_after=metadata(after), bytes_read=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                      matches_generated_fixture=data == fixture_png(),
+                      stable_during_read=metadata(opened) == metadata(after), status='observed')
+    except Exception as error:
+        result.update(status='unavailable', error=str(error)[:300])
+    return result
 
 
 def testcase_names(path):
@@ -102,7 +136,8 @@ class Gate:
         WORK.mkdir(parents=True, exist_ok=True)
         EVIDENCE.mkdir(parents=True, exist_ok=True)
 
-    def command(self, name, argv, seconds, *, simulator=False, allow_failure=False):
+    def command(self, name, argv, seconds, *, simulator=False, allow_failure=False,
+                output_limit_bytes=None, cleanup_grace=10):
         from bounded_process import group_exists, stop_group
         require(not simulator or not self.uncertain_simulator, 'An uncertain simulator command blocks further simulator actions')
         remaining = self.deadline - time.monotonic() - 25
@@ -111,17 +146,26 @@ class Gate:
         path = WORK / 'logs' / (name + '.log'); path.parent.mkdir(parents=True, exist_ok=True)
         record = {'name': name, 'argv': argv, 'started': time.time(), 'simulator': simulator,
                   'started_monotonic': time.monotonic(), 'timeout_seconds': timeout}
+        if output_limit_bytes is not None:
+            require(not simulator and 0 < output_limit_bytes <= HOST_DIAGNOSTIC_LOG_BYTES,
+                    'Output-limited observations must be bounded host-only commands')
+            record['output_limit_bytes'] = output_limit_bytes
+            record['cleanup_grace_seconds_per_signal'] = cleanup_grace
         self.commands.append(record)
         print('ORIGINAL_DESIGN_COMMAND_BEGIN ' + json.dumps({k: record[k] for k in ('name', 'started', 'timeout_seconds', 'simulator')}), flush=True)
         process = None
         try:
             with path.open('wb') as output:
-                process = subprocess.Popen(argv, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                options = {}
+                if output_limit_bytes is not None:
+                    # Limit this child only. No shell, daemon or machine setting.
+                    options['preexec_fn'] = lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (output_limit_bytes, output_limit_bytes))
+                process = subprocess.Popen(argv, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, start_new_session=True, **options)
                 code = process.wait(timeout=timeout)
             require(not group_exists(process.pid), 'Owned command descendants outlived the command')
             record.update(exit_code=code, host_group_exit_confirmed=True, finished=time.time())
         except BaseException as error:
-            confirmed = stop_group(process, grace=10) if process is not None else True
+            confirmed = stop_group(process, grace=cleanup_grace) if process is not None else True
             record.update(error=str(error)[:300], host_group_exit_confirmed=confirmed, finished=time.time())
             if simulator:
                 self.uncertain_simulator = True
@@ -137,6 +181,8 @@ class Gate:
                 available = max(0, (EVIDENCE_BUDGET_BYTES - 4 * 1024 * 1024) - sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file()))
                 retained = tail[-available:] if available else b''
                 record.update(log_bytes=total, log_sha256=digest.hexdigest(), log_tail_truncated=total > len(retained), log_retained_bytes=len(retained))
+                if output_limit_bytes is not None:
+                    record['output_limit_reached'] = total >= output_limit_bytes
                 (EVIDENCE / (name + '.log')).write_bytes(retained)
             record['elapsed_seconds'] = max(0, time.monotonic() - record['started_monotonic'])
             write_json(EVIDENCE / 'commands.json', self.commands)
@@ -144,6 +190,90 @@ class Gate:
         require(allow_failure or code == 0, name + ' failed; see its bounded log')
         require(path.stat().st_size <= 8 * 1024 * 1024 or name == 'build', 'Command output exceeded the explicit parsing limit')
         return code, path
+
+    def seed_host_diagnostics(self, label, device, fixture, phase, began, finished):
+        """No device RPC: bounded host observations, never a readiness assertion."""
+        deadline = min(time.monotonic() + HOST_DIAGNOSTIC_PHASE_SECONDS, self.deadline - 25)
+        receipt = {'source_sha': self.expected_sha, 'owned_device': device, 'phase': phase,
+                   'simulator_uncertain': self.uncertain_simulator, 'started': time.time(),
+                   'phase_budget_seconds': HOST_DIAGNOSTIC_PHASE_SECONDS,
+                   'fixture': fixture_observation(fixture), 'observations': [],
+                   'claim': 'Host observations only; missing logs are not service health or callback evidence'}
+        path = EVIDENCE / (label + '-seed-host-' + phase + '.json')
+        try:
+            usage = os.statvfs(WORK)
+            receipt['resources'] = {'cpu_count': os.cpu_count(), 'load_average': list(os.getloadavg()),
+                                    'filesystem_available_bytes': usage.f_bavail * usage.f_frsize}
+        except Exception as error:
+            receipt['resources'] = {'status': 'unavailable', 'error': str(error)[:300]}
+        # Explicit UTC offsets avoid interpreting runner-local dates as UTC.
+        stamp = lambda value: datetime.datetime.fromtimestamp(value, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S%z')
+        start, end = stamp(math.floor(began)), stamp(math.ceil(finished))
+        predicate = ('process == "CoreSimulatorService" OR process == "simdiskimaged" OR '
+                     'process == "simctl" OR subsystem BEGINSWITH "com.apple.CoreSimulator" OR '
+                     'eventMessage CONTAINS[c] "' + device + '"')
+        commands = [
+            ('processes', ['/bin/ps', '-axo', 'pid,ppid,pcpu,pmem,rss,state,etime,comm'], 3),
+            ('memory', ['/usr/bin/vm_stat'], 3),
+            ('log', ['/usr/bin/log', 'show', '--style', 'compact', '--info', '--debug', '--timezone', 'UTC',
+                     '--start', start, '--end', end, '--predicate', predicate], 8),
+        ]
+        receipt['log_window'] = {'start': start, 'end': end, 'predicate': predicate}
+        write_json(path, receipt)
+        try:
+            for kind, argv, ceiling in commands:
+                # Two seconds reserve for the two one-second group-stop phases.
+                seconds = min(ceiling, deadline - time.monotonic() - 2)
+                row = {'kind': kind, 'argv': argv}
+                receipt['observations'].append(row)
+                if seconds < 1:
+                    row.update(status='unavailable', error='Diagnostic/controller budget exhausted; command not launched')
+                    continue
+                count = len(self.commands)
+                try:
+                    code, _ = self.command(label + '-seed-host-' + phase + '-' + kind, argv, seconds,
+                                           simulator=False, allow_failure=True,
+                                           output_limit_bytes=HOST_DIAGNOSTIC_LOG_BYTES, cleanup_grace=1)
+                    record = self.commands[-1]
+                    row.update(status='captured' if code == 0 and record.get('log_bytes', 0) > 0 and
+                               not record.get('output_limit_reached') and not record.get('log_tail_truncated')
+                               else 'unavailable_or_partial', exit_code=code)
+                except Exception as error:
+                    row.update(status='unavailable', error=str(error)[:300])
+                except BaseException as error:
+                    row.update(status='interrupted', error=str(error)[:300])
+                    raise
+                finally:
+                    if len(self.commands) > count:
+                        row['command'] = self.commands[-1]
+                        if not self.commands[-1].get('host_group_exit_confirmed', False):
+                            # Also run on cancellation: never let outer cleanup
+                            # act on a device beside an unconfirmed host group.
+                            self.uncertain_simulator = True
+                            row['stop_reason'] = 'Host diagnostic process-group exit unconfirmed; device actions blocked'
+                    write_json(path, receipt)
+                if 'stop_reason' in row:
+                    raise RuntimeError(row['stop_reason'])
+        finally:
+            receipt.update(finished=time.time(), simulator_uncertain=self.uncertain_simulator)
+            write_json(path, receipt)
+
+    def seed_fixture(self, label, device, fixture):
+        now = time.time()
+        self.seed_host_diagnostics(label, device, fixture, 'before', now - 30, now)
+        began = time.time()
+        try:
+            self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
+        except BaseException:
+            finished = time.time()
+            try:
+                self.seed_host_diagnostics(label, device, fixture, 'after', began, finished)
+            except BaseException:
+                # Keep the exact seed failure, including cancellation, even if
+                # secondary host diagnostics are interrupted or unavailable.
+                pass
+            raise
+        self.seed_host_diagnostics(label, device, fixture, 'after', began, time.time())
 
     def await_owned_boot(self, label, device, owned_name):
         # Reuse the exact c664 public-output parser. A timely zero exit alone is
@@ -281,7 +411,7 @@ class Gate:
         # exact build products on this UUID within its unchanged suite budget.
         self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
         self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})
-        self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
+        self.seed_fixture(label, device, fixture)
         self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)], ui)
         self.command(label + '-shutdown', ['xcrun', 'simctl', 'shutdown', device], 60, simulator=True)
         self.command(label + '-delete', ['xcrun', 'simctl', 'delete', device], 45, simulator=True)

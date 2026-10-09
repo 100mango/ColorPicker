@@ -154,6 +154,265 @@ class OriginalDesignGateTests(unittest.TestCase):
             self.assertEqual(worker.commands[0]['timeout_seconds'], 300)
             self.assertGreaterEqual(worker.commands[0]['elapsed_seconds'], 0)
 
+    def test_host_fixture_observation_records_exact_identity_without_changes(self):
+        import os, stat
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'fixture.png'; path.write_bytes(gate.fixture_png()); path.chmod(0o640)
+            before = path.stat(); observed = gate.fixture_observation(path)
+            self.assertEqual(observed['status'], 'observed')
+            self.assertEqual(observed['permission_mode'], '0o640')
+            self.assertEqual(observed['lstat']['uid'], os.getuid())
+            self.assertEqual(observed['lstat']['gid'], before.st_gid)
+            self.assertEqual(observed['fstat']['ino'], before.st_ino)
+            self.assertEqual(observed['bytes_read'], 1675)
+            self.assertEqual(observed['sha256'], '6190ef70ec7da8b038c026cb8ffc0fc03b40a67ebdc6a382ee68b502135874ba')
+            self.assertTrue(observed['matches_generated_fixture'])
+            self.assertTrue(observed['stable_during_read'])
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+            self.assertEqual(path.stat().st_mtime_ns, before.st_mtime_ns)
+
+    def test_host_fixture_observation_never_follows_link_or_reads_oversized_file(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); target = root / 'target'; target.write_bytes(b'not the synthetic fixture')
+            link = root / 'fixture.png'; link.symlink_to(target)
+            large = root / 'large.png'
+            with large.open('wb') as stream: stream.truncate(1024 * 1024 + 1)
+            for path in [link, large, root / 'missing.png']:
+                with patch.object(gate.os, 'open') as opened:
+                    result = gate.fixture_observation(path)
+                self.assertEqual(result['status'], 'unavailable'); opened.assert_not_called()
+                self.assertNotIn('sha256', result)
+
+    def test_host_diagnostics_use_only_capped_host_reads_after_simulator_uncertainty(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); fixture = root / 'fixture.png'; fixture.write_bytes(gate.fixture_png())
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3'); worker.uncertain_simulator = True
+                def command(name, argv, seconds, **kwargs):
+                    worker.commands.append({'name': name, 'host_group_exit_confirmed': True, 'log_bytes': 10})
+                    return 0, root / 'unused'
+                with patch.object(worker, 'command', side_effect=command) as calls:
+                    worker.seed_host_diagnostics('se3', 'OWNED-UUID', fixture, 'after', 100, 160)
+                self.assertEqual(calls.call_count, 3)
+                for call in calls.call_args_list:
+                    self.assertFalse(call.kwargs['simulator'])
+                    self.assertTrue(call.kwargs['allow_failure'])
+                    self.assertEqual(call.kwargs['output_limit_bytes'], 256 * 1024)
+                    self.assertEqual(call.kwargs['cleanup_grace'], 1)
+                    self.assertLessEqual(call.args[2], 8)
+                    self.assertNotIn('simctl', call.args[1])
+                    self.assertNotIn('spawn', call.args[1])
+                    self.assertNotIn('sudo', call.args[1])
+                self.assertEqual(calls.call_args_list[0].args[1], ['/bin/ps', '-axo', 'pid,ppid,pcpu,pmem,rss,state,etime,comm'])
+                log = calls.call_args_list[2].args[1]
+                self.assertEqual(log[:2], ['/usr/bin/log', 'show'])
+                self.assertEqual(log[log.index('--start') + 1], '1970-01-01 00:01:40+0000')
+                self.assertEqual(log[log.index('--end') + 1], '1970-01-01 00:02:40+0000')
+                self.assertIn('CoreSimulator', log[-1]); self.assertIn('OWNED-UUID', log[-1])
+                receipt = json.loads((root / 'evidence/se3-seed-host-after.json').read_text())
+                self.assertTrue(receipt['simulator_uncertain'])
+                self.assertEqual(receipt['phase_budget_seconds'], 20)
+                self.assertIn('not service health', receipt['claim'])
+                self.assertTrue(worker.uncertain_simulator)
+
+    def test_host_diagnostic_timeout_with_confirmed_cleanup_is_explicit_and_best_effort(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                def command(name, *args, **kwargs):
+                    worker.commands.append({'name': name, 'host_group_exit_confirmed': True, 'error': 'diagnostic timeout'})
+                    raise gate.subprocess.TimeoutExpired('host-only', 3)
+                with patch.object(worker, 'command', side_effect=command) as calls:
+                    worker.seed_host_diagnostics('se3', 'U', root / 'missing.png', 'before', 100, 130)
+                self.assertEqual(calls.call_count, 3)
+                self.assertFalse(worker.uncertain_simulator)
+                receipt = json.loads((root / 'evidence/se3-seed-host-before.json').read_text())
+                self.assertTrue(all(row['status'] == 'unavailable' for row in receipt['observations']))
+                self.assertTrue(all(row['command']['host_group_exit_confirmed'] for row in receipt['observations']))
+
+    def test_host_diagnostic_budget_exhaustion_launches_nothing(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3'); worker.deadline = gate.time.monotonic() + 25
+                with patch.object(worker, 'command') as calls:
+                    worker.seed_host_diagnostics('se3', 'U', root / 'fixture.png', 'after', 100, 130)
+                calls.assert_not_called()
+                receipt = json.loads((root / 'evidence/se3-seed-host-after.json').read_text())
+                self.assertEqual(len(receipt['observations']), 3)
+                self.assertTrue(all('not launched' in row['error'] for row in receipt['observations']))
+
+    def test_diagnostic_receipt_persistence_failure_stops_before_new_seed(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(gate, 'write_json', side_effect=OSError('evidence cannot be retained')), patch.object(worker, 'command') as command:
+                    with self.assertRaisesRegex(OSError, 'evidence cannot be retained'):
+                        worker.seed_fixture('se3', 'U', root / 'fixture.png')
+                command.assert_not_called()
+                self.assertFalse(worker.uncertain_simulator)
+
+    def test_empty_capped_or_unretained_host_output_is_not_complete_diagnostics(self):
+        from unittest.mock import patch
+        for fields in [{'log_bytes': 0}, {'log_bytes': 100, 'output_limit_reached': True},
+                       {'log_bytes': 100, 'log_tail_truncated': True, 'log_retained_bytes': 0}]:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                    worker = gate.Gate('a' * 40, 'se3')
+                    def command(name, *args, **kwargs):
+                        worker.commands.append(dict(name=name, host_group_exit_confirmed=True, **fields))
+                        return 0, root / 'unused'
+                    with patch.object(worker, 'command', side_effect=command):
+                        worker.seed_host_diagnostics('se3', 'U', root / 'fixture.png', 'before', 100, 130)
+                    receipt = json.loads((root / 'evidence/se3-seed-host-before.json').read_text())
+                    self.assertTrue(all(row['status'] == 'unavailable_or_partial' for row in receipt['observations']))
+
+    def test_host_phase_consumes_at_most_its_own_and_controller_budget(self):
+        from unittest.mock import patch
+        for remaining, expected in [(1000, [3, 3, 8]), (37, [3, 3])]:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve(); clock = [100.0]
+                with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.time, 'monotonic', side_effect=lambda: clock[0]):
+                    worker = gate.Gate('a' * 40, 'se3'); worker.deadline = clock[0] + remaining
+                    def command(name, argv, seconds, **kwargs):
+                        clock[0] += seconds + 2  # Worst-case two signal cleanup reserves.
+                        worker.commands.append({'name': name, 'host_group_exit_confirmed': True, 'log_bytes': 10})
+                        return 0, root / 'unused'
+                    with patch.object(worker, 'command', side_effect=command) as calls:
+                        worker.seed_host_diagnostics('se3', 'U', root / 'fixture.png', 'after', 100, 130)
+                    self.assertEqual([call.args[2] for call in calls.call_args_list], expected)
+                    self.assertLessEqual(clock[0], min(120, worker.deadline - 25))
+
+    def test_receipt_failure_after_successful_seed_never_starts_ui(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_host_diagnostics', side_effect=[None, OSError('receipt unavailable')]), patch.object(worker, 'command') as calls:
+                    with self.assertRaisesRegex(OSError, 'receipt unavailable'):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                self.assertEqual([call.args[0] for call in calls.call_args_list], ['se3-boot', 'se3-seed'])
+                self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap'])
+                self.assertFalse(worker.uncertain_simulator)
+
+    def test_host_diagnostic_unconfirmed_group_aborts_seed_and_device_cleanup(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3'); worker.owned = ['U']
+                def command(name, *args, **kwargs):
+                    worker.commands.append({'name': name, 'host_group_exit_confirmed': False})
+                    raise RuntimeError('diagnostic group remains')
+                with patch.object(worker, 'command', side_effect=command) as calls:
+                    with self.assertRaisesRegex(RuntimeError, 'Host diagnostic process-group exit unconfirmed'):
+                        worker.seed_fixture('se3', 'U', root / 'fixture.png')
+                    worker.cleanup()
+                self.assertEqual(calls.call_count, 1)
+                self.assertTrue(worker.uncertain_simulator)
+                receipt = json.loads((root / 'evidence/se3-seed-host-before.json').read_text())
+                self.assertIn('device actions blocked', receipt['observations'][0]['stop_reason'])
+
+    def test_interrupted_host_diagnostic_still_blocks_cleanup_when_group_unconfirmed(self):
+        from unittest.mock import patch
+        for interruption in [KeyboardInterrupt('stop'), SystemExit('stop')]:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                    worker = gate.Gate('a' * 40, 'se3'); worker.owned = ['U']
+                    def command(name, *args, **kwargs):
+                        worker.commands.append({'name': name, 'host_group_exit_confirmed': False})
+                        raise interruption
+                    with patch.object(worker, 'command', side_effect=command) as calls:
+                        with self.assertRaises(type(interruption)) as caught:
+                            worker.seed_fixture('se3', 'U', root / 'fixture.png')
+                        worker.cleanup()
+                    self.assertIs(caught.exception, interruption)
+                    self.assertEqual(calls.call_count, 1)
+                    self.assertTrue(worker.uncertain_simulator)
+                    receipt = json.loads((root / 'evidence/se3-seed-host-before.json').read_text())
+                    self.assertIn('device actions blocked', receipt['observations'][0]['stop_reason'])
+
+    def test_diagnostic_raw_output_is_capped_in_child_without_changing_parent_limit(self):
+        import contextlib, io, sys
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); before = gate.resource.getrlimit(gate.resource.RLIMIT_FSIZE)
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'), contextlib.redirect_stdout(io.StringIO()):
+                worker = gate.Gate('a' * 40, 'se3')
+                code, path = worker.command('host-output-cap', [sys.executable, '-c', 'import os; os.write(1, b"x" * (1024 * 1024)); os.write(1,b"y")'],
+                                            3, allow_failure=True, output_limit_bytes=256 * 1024, cleanup_grace=1)
+            self.assertNotEqual(code, 0)
+            self.assertLessEqual(path.stat().st_size, 256 * 1024)
+            self.assertTrue(worker.commands[-1]['output_limit_reached'])
+            self.assertTrue(worker.commands[-1]['host_group_exit_confirmed'])
+            self.assertFalse(worker.uncertain_simulator)
+            self.assertEqual(gate.resource.getrlimit(gate.resource.RLIMIT_FSIZE), before)
+
+    def test_seed_still_runs_exactly_once_with_unchanged_command_and_budget(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(worker, 'seed_host_diagnostics') as diagnostic, patch.object(worker, 'command') as command:
+                    worker.seed_fixture('se3', 'U', root / 'fixture.png')
+                command.assert_called_once_with('se3-seed', ['xcrun', 'simctl', 'addmedia', 'U', str(root / 'fixture.png')], 60, simulator=True)
+                self.assertEqual([call.args[3] for call in diagnostic.call_args_list], ['before', 'after'])
+                self.assertEqual(gate.CONTROLLER_TIMEOUT_SECONDS, 23 * 60)
+
+    def test_original_seed_failure_survives_secondary_diagnostic_exception_or_interrupt(self):
+        from unittest.mock import patch
+        for secondary in [RuntimeError('host diagnostics failed'), KeyboardInterrupt('host diagnostic interrupted')]:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                    worker = gate.Gate('a' * 40, 'se3'); original = gate.subprocess.TimeoutExpired('exact-original-addmedia', 60)
+                    with patch.object(worker, 'seed_host_diagnostics', side_effect=[None, secondary]), patch.object(worker, 'command', side_effect=original) as command:
+                        with self.assertRaises(gate.subprocess.TimeoutExpired) as caught:
+                            worker.seed_fixture('se3', 'U', root / 'fixture.png')
+                    self.assertIs(caught.exception, original); command.assert_called_once()
+
+    def test_pre_seed_cancellation_never_launches_addmedia(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(worker, 'seed_host_diagnostics', side_effect=KeyboardInterrupt('stop')), patch.object(worker, 'command') as command:
+                    with self.assertRaises(KeyboardInterrupt): worker.seed_fixture('se3', 'U', root / 'fixture.png')
+                command.assert_not_called()
+
+    def test_seed_uncertainty_allows_host_evidence_only_and_never_ui_or_cleanup(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                def command(name, argv, *args, **kwargs):
+                    if name == 'se3-seed':
+                        worker.uncertain_simulator = True
+                        raise gate.subprocess.TimeoutExpired(argv, 60)
+                with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_host_diagnostics') as diagnostic, patch.object(worker, 'command', side_effect=command) as calls:
+                    with self.assertRaises(gate.subprocess.TimeoutExpired):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                    worker.cleanup()
+                self.assertEqual([call.args[0] for call in calls.call_args_list], ['se3-boot', 'se3-seed'])
+                self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap'])
+                self.assertEqual([call.args[3] for call in diagnostic.call_args_list], ['before', 'after'])
+                self.assertTrue(worker.uncertain_simulator); self.assertEqual(worker.owned, [owned])
+
     def test_import_lifecycle_adapter_preserves_every_other_original_byte(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / 'ColorPickerTests/TCPhotoImportLifecycleTests.m').read_text()
@@ -219,14 +478,16 @@ class OriginalDesignGateTests(unittest.TestCase):
         for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:
             self.assertNotIn(stale, source)
 
-    def test_matrix_is_exact_two_independent_jobs_with_distinct_evidence(self):
+    def test_workflow_selects_only_se3_diagnostic_without_weakening_full_device_contract(self):
         workflow = (gate.ROOT / '.github/workflows/original-design-gate.yml').read_text()
-        for required in ['device: [se3, ipad-mini]', 'fail-fast: false', 'max-parallel: 2',
+        for required in ['device: [se3]', 'fail-fast: false', 'max-parallel: 2',
                          'timeout-minutes: 25', 'runs-on: xcode-27', 'ref: ${{ github.sha }}',
                          'EXPECTED_SHA: ${{ github.sha }}', 'DEVICE_LABEL: ${{ matrix.device }}',
                          '--expected-sha "$EXPECTED_SHA" --device "$DEVICE_LABEL"',
                          'name: touchcolor-original-design-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.device }}']:
             self.assertIn(required, workflow)
+        self.assertEqual(workflow.count('device: [se3]'), 1)
+        self.assertNotIn('device: [se3, ipad-mini]', workflow)
         self.assertEqual(workflow.count('runs-on:'), 1)
         self.assertNotIn('continue-on-error', workflow)
         self.assertNotIn('strategy.job-total', workflow)
@@ -253,14 +514,15 @@ class OriginalDesignGateTests(unittest.TestCase):
             for label, name in gate.DEVICE_NAMES.items():
                 with patch.object(gate, 'WORK', root / label), patch.object(gate, 'EVIDENCE', root / label / 'evidence'):
                     worker = gate.Gate('a' * 40, label)
-                    with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot') as ready, patch.object(worker, 'run_tests') as tests:
+                    with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot') as ready, patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_fixture') as seed:
                         worker.run_device(types, runtime, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
                     create.assert_called_once()
                     args = create.call_args.args
                     self.assertEqual(args[0], label + '-create')
                     self.assertEqual(args[1][-2:], ['type.' + label, 'owned-runtime'])
                     ready.assert_called_once_with(label, owned, worker.devices[0]['owned_name'])
-                    self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-seed', '-shutdown', '-delete']])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-shutdown', '-delete']])
+                    seed.assert_called_once_with(label, owned, root / 'fixture.png')
                     self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui'])
                     self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, {'ui'}])
                     self.assertEqual(worker.devices[0]['name'], name)
@@ -570,7 +832,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         runner = Path(gate.__file__).read_text()
         method = runner.split('    def run_device(', 1)[1].split('    def cleanup(', 1)[0]
         self.assertLess(method.index("device, 'hosted'"), method.index("device, 'bootstrap'"))
-        self.assertLess(method.index("device, 'bootstrap'"), method.index("label + '-seed'"))
+        self.assertLess(method.index("device, 'bootstrap'"), method.index("self.seed_fixture(label, device, fixture)"))
         self.assertNotIn("if label == 'ipad-mini'", method)
         self.assertIn("'bootstrap_inventory': 1", runner)
         self.assertNotIn("else 'addmedia after hosted tests'", runner)
