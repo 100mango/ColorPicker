@@ -285,26 +285,61 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     NSTimeInterval snapshotStarted=NSProcessInfo.processInfo.systemUptime;
     id<XCUIElementSnapshot> snapshot=[self.app.windows.firstMatch snapshotWithError:&snapshotError];
     NSTimeInterval snapshotFinished=NSProcessInfo.processInfo.systemUptime;
+    NSArray<NSString *> *controlIdentifiers=@[@"choosePhoto",@"takePhoto",@"liveColor",@"original.picker",@"original.library"];
+    NSArray<NSString *> *diagnosticIdentifiers=[controlIdentifiers arrayByAddingObject:@"PopoverDismissRegion"];
+    NSMutableDictionary<NSString *,NSNumber *> *diagnosticCounts=[NSMutableDictionary new];
+    NSMutableDictionary<NSString *,NSMutableArray *> *diagnosticSamples=[NSMutableDictionary new];
+    for (NSString *identifier in diagnosticIdentifiers) {
+        diagnosticCounts[identifier]=@0;
+        diagnosticSamples[identifier]=[NSMutableArray new];
+    }
+    NSMutableDictionary<NSString *,NSValue *> *frames=[NSMutableDictionary new];
+    __block NSUInteger visitedNodes=0, queuedNodes=snapshot ? 1 : 0, windowNodes=0;
+    __block BOOL traversalComplete=NO;
+    NSString *(^diagnosticFrame)(CGRect)=^NSString *(CGRect frame) {
+        NSString *text=[NSString stringWithFormat:@"{%.17g,%.17g,%.17g,%.17g}",(double)frame.origin.x,(double)frame.origin.y,(double)frame.size.width,(double)frame.size.height];
+        return text.length<=128 ? text : @"frame-format-out-of-bound";
+    };
+    // Only six fixed test-owned identifiers and numeric geometry are logged.
+    // All attributes below belong to the one immutable snapshot, never live AX.
+    void (^recordGeometryDiagnostic)(NSString *)=^(NSString *reason) {
+        NSString *header=[NSString stringWithFormat:@"ORIGINAL_PICKER_SNAPSHOT_DIAGNOSTIC scope=first-window reason=%@ visited=%lu queued=%lu complete=%d windows=%lu matchedFrames=%lu rootType=%lu rootFrame=%@ snapshotSeconds=%.6f",
+              reason,(unsigned long)visitedNodes,(unsigned long)queuedNodes,traversalComplete,(unsigned long)windowNodes,(unsigned long)frames.count,
+              (unsigned long)(snapshot ? snapshot.elementType : XCUIElementTypeAny),snapshot ? diagnosticFrame(snapshot.frame) : @"unavailable",snapshotFinished-snapshotStarted];
+        NSLog(@"%@",header.length<=1024 ? header : @"ORIGINAL_PICKER_SNAPSHOT_DIAGNOSTIC reason=header-size-limit");
+        for (NSString *identifier in diagnosticIdentifiers) {
+            NSString *row=[NSString stringWithFormat:@"ORIGINAL_PICKER_SNAPSHOT_TARGET identifier=%@ count=%@ samples=%@",identifier,diagnosticCounts[identifier],diagnosticSamples[identifier]];
+            NSLog(@"%@",row.length<=1024 ? row : @"ORIGINAL_PICKER_SNAPSHOT_TARGET reason=row-size-limit");
+        }
+    };
     if (!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeWindow) {
-        XCTFail(@"A current native window snapshot is required: %@",snapshotError);
+        recordGeometryDiagnostic(@"snapshot-unavailable-or-wrong-root");
+        XCTFail(@"A current native window snapshot is required");
         return;
     }
-    NSArray<NSString *> *controlIdentifiers=@[@"choosePhoto",@"takePhoto",@"liveColor",@"original.picker",@"original.library"];
-    NSMutableDictionary<NSString *,NSValue *> *frames=[NSMutableDictionary new];
     NSMutableArray<id<XCUIElementSnapshot>> *pending=[NSMutableArray arrayWithObject:snapshot];
     for (NSUInteger index=0;index<pending.count;index++) {
         id<XCUIElementSnapshot> node=pending[index];
+        ++visitedNodes;
         NSString *key=nil, *identifier=node.identifier ?: @"";
+        if (node.elementType==XCUIElementTypeWindow) ++windowNodes;
+        if (diagnosticCounts[identifier]) {
+            diagnosticCounts[identifier]=@(diagnosticCounts[identifier].unsignedIntegerValue+1);
+            NSMutableArray *samples=diagnosticSamples[identifier];
+            if (samples.count<2) [samples addObject:@{@"type":@(node.elementType),@"frame":diagnosticFrame(node.frame)}];
+        }
         if (node.elementType==XCUIElementTypeWindow) key=@"window";
         else if (node.elementType==XCUIElementTypeOther && [identifier isEqualToString:@"PopoverDismissRegion"]) key=@"region";
         else if (node.elementType==XCUIElementTypeButton && [controlIdentifiers containsObject:identifier]) key=identifier;
         if (key) {
             if (frames[key]) {
+                recordGeometryDiagnostic(@"duplicate-required-node");
                 XCTFail(@"Snapshot geometry must have one unambiguous node for %@",key);
                 return;
             }
             CGRect frame=node.frame;
             if (!TCDesignFiniteRect(frame)) {
+                recordGeometryDiagnostic(@"nonfinite-or-empty-required-frame");
                 XCTFail(@"Snapshot geometry %@ must have a finite nonempty frame",key);
                 return;
             }
@@ -312,12 +347,16 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
         }
         NSArray<id<XCUIElementSnapshot>> *children=node.children;
         if (children.count>2048-pending.count) {
+            recordGeometryDiagnostic(@"node-limit");
             XCTFail(@"The one geometry snapshot must stay within 2048 nodes");
             return;
         }
         [pending addObjectsFromArray:children];
+        queuedNodes=pending.count;
     }
+    traversalComplete=YES;
     if (frames.count!=7 || !frames[@"window"] || !frames[@"region"]) {
+        recordGeometryDiagnostic(@"missing-required-inventory");
         XCTFail(@"The current snapshot must contain the window, dismissal region and all five original controls");
         return;
     }
@@ -326,17 +365,20 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     for (NSString *identifier in controlIdentifiers) {
         NSValue *value=frames[identifier];
         if (!value || !CGRectContainsRect(window,CGRectInset(value.CGRectValue,1,1))) {
+            recordGeometryDiagnostic(@"control-outside-window");
             XCTFail(@"Original control %@ must have a known visible frame before choosing a dismissal point",identifier);
             return;
         }
         [controlFrames addObject:value];
     }
+    recordGeometryDiagnostic(@"inventory-accepted");
     NSLog(@"ORIGINAL_PICKER_GEOMETRY_SNAPSHOT nodes=%lu frames=%lu elapsed=%.6f",(unsigned long)pending.count,(unsigned long)frames.count,snapshotFinished-snapshotStarted);
     // Keep two live queries of the actual popover; remote Photos descendants
     // need not be present in the local window snapshot.
     CGRect firstFrame=popover.frame;
     NSTimeInterval firstSample=NSProcessInfo.processInfo.systemUptime;
     if (!TCDesignFiniteRect(firstFrame) || !CGRectContainsRect(window,CGRectInset(firstFrame,1,1))) {
+        recordGeometryDiagnostic(@"popover-outside-window");
         XCTFail(@"The actual popover frame must be finite and inside the visible window");
         return;
     }
@@ -348,6 +390,7 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     for (NSValue *value in controlFrames) top=MAX(top,CGRectGetMaxY(value.CGRectValue)+24);
     CGRect emptyBand=CGRectMake(CGRectGetMinX(safeRegion),top,CGRectGetWidth(safeRegion),CGRectGetMaxY(safeRegion)-top);
     if (!TCDesignFiniteRect(safeRegion) || !TCDesignFiniteRect(emptyBand)) {
+        recordGeometryDiagnostic(@"no-safe-empty-band");
         XCTFail(@"No safe empty dismissal band exists below the popover and original controls");
         return;
     }
@@ -355,6 +398,7 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     BOOL safe=CGRectContainsPoint(window,point) && CGRectContainsPoint(regionFrame,point) && CGRectContainsPoint(safeRegion,point) && !CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point);
     for (NSValue *value in controlFrames) safe=safe && !CGRectContainsPoint(CGRectInset(value.CGRectValue,-12,-12),point);
     if (!safe) {
+        recordGeometryDiagnostic(@"unsafe-dismissal-point");
         XCTFail(@"The one dismissal point must be inside the window/region and outside Photos and original controls");
         return;
     }
@@ -363,6 +407,7 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     NSTimeInterval secondSample=NSProcessInfo.processInfo.systemUptime;
     CGRect secondFrame=popover.frame;
     if (!CGRectEqualToRect(firstFrame,secondFrame) || secondSample-firstSample<0.25) {
+        recordGeometryDiagnostic(@"unstable-popover");
         XCTFail(@"The actual popover frame must remain unchanged across samples at least 0.25 seconds apart");
         return;
     }

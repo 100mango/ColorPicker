@@ -1268,6 +1268,57 @@ class OriginalDesignGateTests(unittest.TestCase):
                                  ((float('nan'),32,724,581),(10,32,724,581),0.25)]:
             with self.subTest(first=first,second=second,gap=gap), self.assertRaises(ValueError): self.dismissal_point_model(frames,first,second,gap)
 
+    def test_snapshot_failure_diagnostics_are_whitelisted_bounded_and_before_every_local_failure(self):
+        import re
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        body = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[0]
+        self.assertEqual(body.count('snapshotWithError:&snapshotError'),1)
+        self.assertEqual(body.count('popover.frame'),2)
+        self.assertEqual(body.count('] tap]'),1)
+        self.assertIn('snapshot=[self.app.windows.firstMatch snapshotWithError:&snapshotError]',body)
+        for token in ['[controlIdentifiers arrayByAddingObject:@"PopoverDismissRegion"]',
+                      'if (diagnosticCounts[identifier])', 'samples.count<2',
+                      '@"type":@(node.elementType)', '@"frame":diagnosticFrame(node.frame)',
+                      'text.length<=128', 'header.length<=1024', 'row.length<=1024',
+                      'visited=%lu queued=%lu complete=%d', 'windows=%lu matchedFrames=%lu',
+                      'scope=first-window', 'traversalComplete=YES',
+                      'recordGeometryDiagnostic(@"missing-required-inventory")']:
+            self.assertIn(token,body)
+        self.assertLess(body.index('if (diagnosticCounts[identifier])'),body.index('if (node.elementType==XCUIElementTypeWindow) key='))
+        self.assertEqual(len(re.findall(r'recordGeometryDiagnostic\([^;]*;\s*XCTFail\(',body)),body.count('XCTFail('))
+        for token in ['node.label','node.value','debugDescription','dictionaryRepresentation',
+                      'snapshotError.domain','snapshotError.description','snapshotError.localizedDescription',
+                      'frames=%@','pending=%@','children=%@','snapshot=%@','self.app snapshotWithError']:
+            self.assertNotIn(token,body)
+        self.assertNotIn('required: %@",snapshotError',body)
+
+    def test_diagnostic_fixture_drops_unowned_data_and_caps_samples_and_frame_text(self):
+        # This is a portable logger-format model, not native XCTest execution.
+        import math
+        whitelist=['choosePhoto','takePhoto','liveColor','original.picker','original.library','PopoverDismissRegion']
+        counts={key:0 for key in whitelist}; samples={key:[] for key in whitelist}
+        def observe(identifier,type_number,frame,**unowned):
+            if identifier not in counts:return
+            counts[identifier]+=1
+            if len(samples[identifier])<2:
+                rendered='{'+','.join(format(float(x),'.17g') for x in frame)+'}'
+                samples[identifier].append({'type':type_number,'frame':rendered if len(rendered)<=128 else 'frame-format-out-of-bound'})
+        observe('private-photo-name',9,(0,0,1,1),label='private-content',value='private-value')
+        observe('choosePhoto',9,(0,0,1,1),label='private-content',value='private-value')
+        observe('choosePhoto',48,(math.nan,math.inf,-math.inf,0))
+        observe('choosePhoto',9,(1e308,-1e308,1e-308,1e-308))
+        self.assertEqual(counts['choosePhoto'],3);self.assertEqual(len(samples['choosePhoto']),2)
+        self.assertEqual(samples['choosePhoto'][1]['type'],48,'Wrong-type occurrence remains observable')
+        self.assertEqual(counts['PopoverDismissRegion'],0,'Missing target is explicitly zero')
+        for key in whitelist[1:]:observe(key,9,(1e308,-1e308,1e-308,1e-308))
+        rows=[json.dumps({'identifier':key,'count':counts[key],'samples':samples[key]},sort_keys=True) for key in whitelist]
+        self.assertTrue(all(len(row)<=1024 for row in rows))
+        self.assertTrue(all(len(sample['frame'])<=128 for values in samples.values() for sample in values))
+        output='\n'.join(rows)
+        for forbidden in ['private-photo-name','private-content','private-value','label','value','children']:
+            self.assertNotIn(forbidden,output)
+        self.assertEqual(set(counts),set(whitelist));self.assertEqual(set(samples),set(whitelist))
+
     def test_popover_primary_point_fits_observed_ipad_geometry(self):
         # Same bounded geometry expressed from the actual run-37883561875 AX
         # frames; this is a calculation check, not a substitute for a native tap.
