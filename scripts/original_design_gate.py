@@ -280,8 +280,7 @@ class Gate:
         # The existing hosted test-without-building owns installation of the
         # exact build products on this UUID within its unchanged suite budget.
         self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
-        if label == 'ipad-mini':
-            self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})
+        self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})
         self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
         self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)], ui)
         self.command(label + '-shutdown', ['xcrun', 'simctl', 'shutdown', device], 60, simulator=True)
@@ -355,8 +354,8 @@ def main():
         write_json(EVIDENCE / 'acceptance.json', {'functional_passed': passed, 'scope': 'selected device only; both matrix jobs must pass',
                    'device_label': args.device, 'device_name': DEVICE_NAMES[args.device], 'required_devices': list(DEVICE_NAMES),
                    'reviewed_inventory': {'hosted': 29, 'ui': 6},
-                   'bootstrap_inventory': 1 if args.device == 'ipad-mini' else 0,
-                   'photos_preparation': 'real PHPicker bootstrap before addmedia; no cold Photos-service claim' if args.device == 'ipad-mini' else 'addmedia after hosted tests',
+                   'bootstrap_inventory': 1,
+                   'photos_preparation': 'real PHPicker bootstrap before addmedia; no cold Photos-service claim',
                    'error': error, 'source_sha': args.expected_sha,
                    'pending_owned_devices': gate.owned, 'simulator_uncertain': gate.uncertain_simulator, 'evidence_bytes': total,
                    'visual_comparison': 'not automatically accepted; inspect six named screenshots per device against original design',

@@ -261,8 +261,8 @@ class OriginalDesignGateTests(unittest.TestCase):
                     self.assertEqual(args[1][-2:], ['type.' + label, 'owned-runtime'])
                     ready.assert_called_once_with(label, owned, worker.devices[0]['owned_name'])
                     self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-seed', '-shutdown', '-delete']])
-                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui'] if label == 'ipad-mini' else ['hosted', 'ui'])
-                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, {'ui'}] if label == 'ipad-mini' else [{'hosted'}, {'ui'}])
+                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui'])
+                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, {'ui'}])
                     self.assertEqual(worker.devices[0]['name'], name)
                     self.assertEqual(worker.owned, [])
 
@@ -477,16 +477,16 @@ class OriginalDesignGateTests(unittest.TestCase):
         source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
         bootstrap = source.split('- (void)' + gate.BOOTSTRAP_TEST + ' {', 1)[1].split('- (void)testOriginalHomeTabs', 1)[0]
         for required in ['[self launchReset:YES extra:nil]', 'photosView_content_scroll_view', 'bootstrap-picker-ready',
-                         'bootstrap-cancel-before', '[self cancelPickerOnce:cancel', '[self assertHomeUsable]', 'count:0']:
+                         'bootstrap-cancel-before', '[self dismissPhotoPickerOnceWithAttachment:', '[self assertHomeUsable]', 'count:0']:
             self.assertIn(required, bootstrap)
         for forbidden in ['selectOnlySeededPhoto', 'sampleAndSaveRed', 'delete', 'authorization', 'requestAuthorization']:
             self.assertNotIn(forbidden, bootstrap)
         runner = Path(gate.__file__).read_text()
         self.assertIn('ui.remove(BOOTSTRAP_TEST)', runner)
-        self.assertIn("if label == 'ipad-mini':", runner)
+        self.assertNotIn("if label == 'ipad-mini':", runner)
         self.assertIn("['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)]", runner)
         self.assertIn("['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60", runner)
-        self.assertIn("'bootstrap_inventory': 1 if args.device == 'ipad-mini' else 0", runner)
+        self.assertIn("'bootstrap_inventory': 1", runner)
         self.assertIn('no cold Photos-service claim', runner)
 
     def test_failed_bootstrap_never_starts_addmedia_or_acceptance_ui(self):
@@ -504,6 +504,83 @@ class OriginalDesignGateTests(unittest.TestCase):
                     self.assertEqual([call.args[2] for call in runs.call_args_list], ['hosted', 'bootstrap'])
                     self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot'])
                 self.assertEqual(worker.owned, [owned])
+
+    def test_native_picker_readiness_matches_each_surface(self):
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        ready = source.split('- (BOOL)waitForPhotoPickerSurface {', 1)[1].split('- (void)dismissPopoverOnceWithAttachment:', 1)[0]
+        self.assertIn('UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad', ready)
+        for required in ['XCUIElementTypePopover', 'PopoverDismissRegion', 'photosView_content_scroll_view']:
+            self.assertIn(required, ready)
+        self.assertIn('} else if (![self.app.buttons[@"Cancel"].firstMatch waitForExistenceWithTimeout:10])', ready)
+        for method, end in [('selectOnlySeededPhoto', 'sampleAndSaveRed'),
+                            ('testPhotosLibraryBootstrapCanCancelWithoutSelecting', 'testOriginalHomeTabsAndRepeatedPhotoPickerCancellation'),
+                            ('testOriginalHomeTabsAndRepeatedPhotoPickerCancellation', 'deleteOnlySavedColor')]:
+            body = source.split('- (void)' + method, 1)[1].split('- (void)' + end, 1)[0]
+            self.assertIn('if (![self waitForPhotoPickerSurface]) return;', body)
+            self.assertNotIn('buttons[@"Cancel"]', body)
+        routing = source.split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[1].split('- (void)cancelPickerOnce:', 1)[0]
+        self.assertIn('UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad', routing)
+        self.assertIn('[self dismissPopoverOnceWithAttachment:name]', routing)
+        self.assertIn('[self cancelPickerOnce:self.app.buttons[@"Cancel"].firstMatch attachment:name]', routing)
+
+    def test_popover_dismissal_is_one_stable_primary_tap_outside_controls(self):
+        import re
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        body = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[0]
+        self.assertEqual(body.count('popover.frame'), 2)
+        self.assertEqual(body.count('region.frame'), 1)
+        self.assertEqual(body.count('self.app.windows.firstMatch.frame'), 1)
+        self.assertEqual(body.count('] tap]'), 1)
+        for forbidden in ['[region tap]', 'buttons[@"Close"]', 'buttons[@"Cancel"]', 'sleep', 'dismissViewController', 'swipe']:
+            self.assertNotIn(forbidden, body)
+        for identifier in ['choosePhoto', 'takePhoto', 'liveColor', 'original.picker', 'original.library']:
+            self.assertIn('@"' + identifier + '"', body)
+        for required in ['CGRectIntersection(CGRectInset(window,24,24),CGRectInset(regionFrame,24,24))',
+                         'CGRectGetMaxY(firstFrame)+24', 'CGRectGetMaxY(value.CGRectValue)+24',
+                         'CGRectContainsPoint(window,point)', 'CGRectContainsPoint(regionFrame,point)',
+                         '!CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point)',
+                         '!CGRectContainsPoint(CGRectInset(value.CGRectValue,-12,-12),point)',
+                         'CGRectEqualToRect(firstFrame,secondFrame)', 'secondSample-firstSample<0.25',
+                         '[self waitAbsent:popover]', 'XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists']:
+            self.assertIn(required, body)
+        order=[body.index(token) for token in ['CGRect firstFrame=', 'NSTimeInterval firstSample=', '[self capture:name]',
+            '[self recordAppPickerTrace:@"before-popover-dismiss"]', 'NSTimeInterval secondSample=', 'CGRect secondFrame=', 'ORIGINAL_PICKER_POPOVER_SINGLE_TAP', '] tap]', '[self waitAbsent:popover]']]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(len(re.findall(r'XCTFail\([^;]*;\s*return;', body)), body.count('XCTFail('))
+        self.assertGreater(body.count('XCTFail('), 0)
+
+    def test_popover_primary_point_fits_observed_ipad_geometry(self):
+        # Same bounded geometry expressed from the actual run-37883561875 AX
+        # frames; this is a calculation check, not a substitute for a native tap.
+        window=(0,0,744,1133); region=window; popover=(10,32,724,581)
+        controls=[(219.8,613,304.5,76.5),(219.8,692.5,304.5,76.5),
+                  (219.8,772,304.5,76.5),(216,97,156,44),(372,97,156,44)]
+        safe=(24,24,696,1085)
+        top=max(safe[1],popover[1]+popover[3]+24,*[c[1]+c[3]+24 for c in controls])
+        point=(safe[0]+safe[2]/2,(top+safe[1]+safe[3])/2)
+        self.assertEqual(point,(372,990.75))
+        def inside(r,p,padding=0):
+            return r[0]-padding<=p[0]<=r[0]+r[2]+padding and r[1]-padding<=p[1]<=r[1]+r[3]+padding
+        self.assertTrue(inside(window,point)); self.assertTrue(inside(region,point)); self.assertTrue(inside(safe,point))
+        self.assertFalse(inside(popover,point,12))
+        self.assertTrue(all(not inside(c,point,12) for c in controls))
+        self.assertTrue(inside(popover,(window[2]/2,window[3]/2)), 'Blind region center would be inside Photos')
+
+    def test_permissionless_bootstrap_precedes_seeding_on_both_devices(self):
+        runner = Path(gate.__file__).read_text()
+        method = runner.split('    def run_device(', 1)[1].split('    def cleanup(', 1)[0]
+        self.assertLess(method.index("device, 'hosted'"), method.index("device, 'bootstrap'"))
+        self.assertLess(method.index("device, 'bootstrap'"), method.index("label + '-seed'"))
+        self.assertNotIn("if label == 'ipad-mini'", method)
+        self.assertIn("'bootstrap_inventory': 1", runner)
+        self.assertNotIn("else 'addmedia after hosted tests'", runner)
+        for forbidden in ['privacy grant', 'requestAuthorization', 'PHPhotoLibrary', 'simctl erase']:
+            self.assertNotIn(forbidden, method)
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        repeated = source.split('- (void)testOriginalHomeTabsAndRepeatedPhotoPickerCancellation', 1)[1].split('- (void)deleteOnlySavedColor', 1)[0]
+        self.assertIn('attempt<2', repeated)
+        self.assertIn('[self assertHomeUsable]', repeated)
+        self.assertIn('[self assertRedHistory:table count:0]', repeated)
 
     def test_trace_capture_is_owned_read_only_bounded_and_missing_is_not_no_callback(self):
         source = Path(gate.__file__).read_text()

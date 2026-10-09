@@ -48,6 +48,10 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     }];
 }
 
+static BOOL TCDesignFiniteRect(CGRect frame) {
+    return isfinite(frame.origin.x) && isfinite(frame.origin.y) && isfinite(frame.size.width) && isfinite(frame.size.height) && frame.size.width>0 && frame.size.height>0;
+}
+
 // Separate original-product regression suite. No production fixture button,
 // sidebar, redesigned home history, or direct home privacy action is required.
 @interface TouchColorOriginalDesignUITests : XCTestCase
@@ -163,8 +167,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     XCTAssertTrue(TCDesignFixtureThumbnail(TCDesignRecognitionControl(NO)));
     XCTAssertFalse(TCDesignFixtureThumbnail(TCDesignRecognitionControl(YES)),@"A changed color must never be accepted as the fixture");
     [self tap:@"choosePhoto"];
-    XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
-    XCTAssertTrue([cancel waitForExistenceWithTimeout:10]);
+    if (![self waitForPhotoPickerSurface]) return;
     // Fresh iOS27 simulators contain six stock photos before the one seeded
     // chart is added. A label/date or first-row position alone is not identity.
     NSPredicate *selector=[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"];
@@ -254,6 +257,91 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     BOOL available=[value isKindOfClass:NSString.class] && [(NSString *)value containsString:@"TC_PICKER_TRACE"];
     NSLog(@"ORIGINAL_PICKER_APP_TRACE phase=%@ evidence=%@ value=%@",phase,available ? @"available" : @"missing",available ? value : @"AX may hide the source; missing is not proof the delegate was not called");
 }
+- (BOOL)waitForPhotoPickerSurface {
+    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad) {
+        XCUIElement *popover=[self.app descendantsMatchingType:XCUIElementTypePopover].firstMatch;
+        XCUIElement *region=self.app.otherElements[@"PopoverDismissRegion"].firstMatch;
+        if (![popover waitForExistenceWithTimeout:10] || ![region waitForExistenceWithTimeout:10]) {
+            XCTFail(@"The original iPad picker must expose its native popover and dismissal region");
+            return NO;
+        }
+    } else if (![self.app.buttons[@"Cancel"].firstMatch waitForExistenceWithTimeout:10]) {
+        XCTFail(@"The phone picker must expose its native Cancel button");
+        return NO;
+    }
+    if (![self.app.scrollViews[@"photosView_content_scroll_view"] waitForExistenceWithTimeout:10]) {
+        XCTFail(@"The real Photos gallery must be available before selection or dismissal");
+        return NO;
+    }
+    return YES;
+}
+- (void)dismissPopoverOnceWithAttachment:(NSString *)name {
+    XCUIElement *popover=[self.app descendantsMatchingType:XCUIElementTypePopover].firstMatch;
+    XCUIElement *region=self.app.otherElements[@"PopoverDismissRegion"].firstMatch;
+    if (!popover.exists || !region.exists) {
+        XCTFail(@"Only the observed native iPad popover dismissal surface may be used");
+        return;
+    }
+    CGRect window=self.app.windows.firstMatch.frame, regionFrame=region.frame;
+    if (!TCDesignFiniteRect(window) || !TCDesignFiniteRect(regionFrame)) {
+        XCTFail(@"The popover dismissal window and region must have finite nonempty frames");
+        return;
+    }
+    NSMutableArray<NSValue *> *controlFrames=[NSMutableArray new];
+    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"original.picker",@"original.library"]) {
+        CGRect frame=self.app.buttons[identifier].frame;
+        if (!TCDesignFiniteRect(frame) || !CGRectContainsRect(window,CGRectInset(frame,1,1))) {
+            XCTFail(@"Original control %@ must have a known visible frame before choosing a dismissal point",identifier);
+            return;
+        }
+        [controlFrames addObject:[NSValue valueWithCGRect:frame]];
+    }
+    CGRect firstFrame=popover.frame;
+    NSTimeInterval firstSample=NSProcessInfo.processInfo.systemUptime;
+    if (!TCDesignFiniteRect(firstFrame) || !CGRectContainsRect(window,CGRectInset(firstFrame,1,1))) {
+        XCTFail(@"The actual popover frame must be finite and inside the visible window");
+        return;
+    }
+    // The system dismissal region spans the whole window. Its center may be
+    // inside Photos, so use one checked empty point below this popover and all
+    // five original controls. This is the primary iPad action, never a retry.
+    CGRect safeRegion=CGRectIntersection(CGRectInset(window,24,24),CGRectInset(regionFrame,24,24));
+    CGFloat top=MAX(CGRectGetMinY(safeRegion),CGRectGetMaxY(firstFrame)+24);
+    for (NSValue *value in controlFrames) top=MAX(top,CGRectGetMaxY(value.CGRectValue)+24);
+    CGRect emptyBand=CGRectMake(CGRectGetMinX(safeRegion),top,CGRectGetWidth(safeRegion),CGRectGetMaxY(safeRegion)-top);
+    if (!TCDesignFiniteRect(safeRegion) || !TCDesignFiniteRect(emptyBand)) {
+        XCTFail(@"No safe empty dismissal band exists below the popover and original controls");
+        return;
+    }
+    CGPoint point=CGPointMake(CGRectGetMidX(emptyBand),CGRectGetMidY(emptyBand));
+    BOOL safe=CGRectContainsPoint(window,point) && CGRectContainsPoint(regionFrame,point) && CGRectContainsPoint(safeRegion,point) && !CGRectContainsPoint(CGRectInset(firstFrame,-12,-12),point);
+    for (NSValue *value in controlFrames) safe=safe && !CGRectContainsPoint(CGRectInset(value.CGRectValue,-12,-12),point);
+    if (!safe) {
+        XCTFail(@"The one dismissal point must be inside the window/region and outside Photos and original controls");
+        return;
+    }
+    [self capture:name];
+    [self recordAppPickerTrace:@"before-popover-dismiss"];
+    NSTimeInterval secondSample=NSProcessInfo.processInfo.systemUptime;
+    CGRect secondFrame=popover.frame;
+    if (!CGRectEqualToRect(firstFrame,secondFrame) || secondSample-firstSample<0.25) {
+        XCTFail(@"The actual popover frame must remain unchanged across samples at least 0.25 seconds apart");
+        return;
+    }
+    NSLog(@"ORIGINAL_PICKER_POPOVER_SINGLE_TAP uptime=%.6f frame=%@ region=%@ point=%@ sampleGap=%.6f",NSProcessInfo.processInfo.systemUptime,NSStringFromCGRect(secondFrame),NSStringFromCGRect(regionFrame),NSStringFromCGPoint(point),secondSample-firstSample);
+    XCUICoordinate *origin=[region coordinateWithNormalizedOffset:CGVectorMake(0,0)];
+    [[origin coordinateWithOffset:CGVectorMake(point.x-CGRectGetMinX(regionFrame),point.y-CGRectGetMinY(regionFrame))] tap];
+    [self waitAbsent:popover];
+    XCTAssertFalse(self.app.scrollViews[@"photosView_content_scroll_view"].exists,@"The dismissed popover must not retain its gallery");
+    [self recordAppPickerTrace:@"after-popover-dismiss"];
+}
+- (void)dismissPhotoPickerOnceWithAttachment:(NSString *)name {
+    if (UIDevice.currentDevice.userInterfaceIdiom==UIUserInterfaceIdiomPad) {
+        [self dismissPopoverOnceWithAttachment:name];
+    } else {
+        [self cancelPickerOnce:self.app.buttons[@"Cancel"].firstMatch attachment:name];
+    }
+}
 - (void)cancelPickerOnce:(XCUIElement *)cancel attachment:(NSString *)name {
     if (![cancel waitForExistenceWithTimeout:5]) {
         XCTFail(@"Cancel must exist before observing its frame");
@@ -292,14 +380,12 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
 - (void)testPhotosLibraryBootstrapCanCancelWithoutSelecting {
     [self launchReset:YES extra:nil];
     [self tap:@"choosePhoto"];
-    XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
-    XCTAssertTrue([cancel waitForExistenceWithTimeout:10]);
+    if (![self waitForPhotoPickerSurface]) return;
     XCUIElement *gallery=self.app.scrollViews[@"photosView_content_scroll_view"];
-    XCTAssertTrue([gallery waitForExistenceWithTimeout:10],@"Observe the real Photos gallery before seeding, without reading or selecting stock assets");
     CGRect viewport=gallery.frame;
     XCTAssertGreaterThan(viewport.size.width,0); XCTAssertGreaterThan(viewport.size.height,0);
     [self capture:@"bootstrap-picker-ready"];
-    [self cancelPickerOnce:cancel attachment:@"bootstrap-cancel-before"];
+    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"];
     [self assertHomeUsable];
     XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists);
     XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists);
@@ -310,9 +396,8 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     [self capture:@"01-original-home"];
     for (NSUInteger attempt=0;attempt<2;attempt++) {
         [self tap:@"choosePhoto"];
-        XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
-        XCTAssertTrue([cancel waitForExistenceWithTimeout:10]); XCTAssertTrue(cancel.hittable);
-        [self cancelPickerOnce:cancel attachment:[NSString stringWithFormat:@"picker-cancel-before-%lu",(unsigned long)attempt+1]]; [self assertHomeUsable];
+        if (![self waitForPhotoPickerSurface]) return;
+        [self dismissPhotoPickerOnceWithAttachment:[NSString stringWithFormat:@"picker-cancel-before-%lu",(unsigned long)attempt+1]]; [self assertHomeUsable];
     }
     XCUIElement *table=[self openLibrary];
     [self assertRedHistory:table count:0];
