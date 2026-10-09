@@ -1,0 +1,126 @@
+name: TouchColor public SDK owned-group capability (single synthetic diagnostic)
+on:
+  push:
+    branches: [touchcolor-mac-owned-capability]
+    paths:
+      - .github/workflows/mac-owned-capability.yml
+      - tools/mac-owned-capability/**
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-mac-owned-capability
+  cancel-in-progress: false
+jobs:
+  capability:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-mac-owned-capability' && github.run_attempt == 1 }}
+    runs-on: xcode-27
+    timeout-minutes: 2
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out exact capability source
+        id: checkout
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Exact source and public capability preflight
+        id: setup
+        if: ${{ success() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          mkdir -p build
+          git rev-parse HEAD > build/capability-head.txt
+          git rev-list --parents -n 1 HEAD > build/capability-parent.txt
+          git diff --name-only --no-renames 84da71d3526426a6e630887dc88fed59e1edc055 HEAD -- > build/capability-changes.txt
+          git diff --exit-code HEAD --
+          python3 tools/mac-owned-capability/controller.py verify-source
+          xcodebuild -version > build/capability-xcode.txt
+          python3 tools/mac-owned-capability/preflight.py build/capability-xcode.txt > build/capability-preflight.json
+      - name: Compile only installed public SDK declarations
+        id: compile
+        if: ${{ success() && steps.setup.outcome == 'success' && steps.setup.outputs.exit == '0' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror tools/mac-owned-capability/owned_group_capability.c -o build/owned-group-capability > build/capability-compile.txt 2>&1
+      - name: Observe one self-expiring synthetic group once
+        id: probe
+        if: ${{ success() && steps.compile.outcome == 'success' && steps.compile.outputs.exit == '0' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          build/owned-group-capability > build/capability-observation.json
+      - name: Retain a bounded complete or incomplete record
+        id: receipt
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          SETUP_OUTCOME: ${{ steps.setup.outcome }}
+          SETUP_EXIT: ${{ steps.setup.outputs.exit }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          COMPILE_EXIT: ${{ steps.compile.outputs.exit }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          PROBE_EXIT: ${{ steps.probe.outputs.exit }}
+        run: |
+          set -euo pipefail
+          destination="$RUNNER_TEMP/touch-owned-capability-evidence"
+          mkdir -p "$destination"
+          printf '%s\n' '{"schema":1,"complete":false,"reason":"finalizer_not_completed_or_source_unavailable","general_owned_runner_approved":false,"product_qualified":false}' > "$destination/capability.json"
+          # This fallback exists before importing any checked-out helper. It
+          # records missing checkout/setup truth without launching target work.
+          python3 - <<'FALLBACK'
+          import json,os
+          from pathlib import Path
+          value={'schema':1,'complete':False,'reason':'source_or_setup_incomplete','source_sha':os.environ.get('GITHUB_SHA',''),'run_id':os.environ.get('GITHUB_RUN_ID',''),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT',''),'stages':{k:{'outcome':os.environ.get(k.upper()+'_OUTCOME','missing'),'exit':os.environ.get(k.upper()+'_EXIT','missing')} for k in ('setup','compile','probe')},'general_owned_runner_approved':False,'product_qualified':False}
+          raw=(json.dumps(value,sort_keys=True)+'\n').encode()
+          if len(raw)>8192:raise ValueError('Fallback size limit')
+          (Path(os.environ['RUNNER_TEMP'])/'touch-owned-capability-evidence/capability.json').write_bytes(raw)
+          FALLBACK
+          if ! test -f tools/mac-owned-capability/controller.py; then
+            printf 'complete=false\n' >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          set +e
+          python3 tools/mac-owned-capability/controller.py finish > "$destination/receipt.tmp"
+          code=$?
+          set -e
+          if test -s "$destination/receipt.tmp" && test "$(wc -c < "$destination/receipt.tmp")" -le 8192; then
+            mv "$destination/receipt.tmp" "$destination/capability.json"
+          else
+            printf 'complete=false\n' >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          exit "$code"
+      - name: Preserve only the at-most8KB receipt
+        if: ${{ always() }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-owned-capability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/touch-owned-capability-evidence/capability.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 9
+      - name: Require actual successful steps and measured capability
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          SETUP_OUTCOME: ${{ steps.setup.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          RECEIPT_OUTCOME: ${{ steps.receipt.outcome }}
+          CAPABILITY_COMPLETE: ${{ steps.receipt.outputs.complete }}
+        run: |
+          set -euo pipefail
+          test "$SETUP_OUTCOME" = success
+          test "$COMPILE_OUTCOME" = success
+          test "$PROBE_OUTCOME" = success
+          test "$RECEIPT_OUTCOME" = success
+          test "$CAPABILITY_COMPLETE" = true
