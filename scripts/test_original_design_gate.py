@@ -1130,7 +1130,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertEqual(body.count('popover.frame'), 2)
         self.assertEqual(body.count('snapshotWithError:&snapshotError'), 1)
         self.assertNotIn('region.frame', body)
-        self.assertNotIn('self.app.windows.firstMatch.frame', body)
+        self.assertEqual(body.count('self.app.windows.firstMatch.frame'), 1)
         self.assertNotIn('self.app.buttons[identifier].frame', body)
         self.assertEqual(body.count('] tap]'), 1)
         for forbidden in ['[region tap]', 'buttons[@"Close"]', 'buttons[@"Cancel"]', 'sleep', 'dismissViewController', 'swipe']:
@@ -1154,12 +1154,12 @@ class OriginalDesignGateTests(unittest.TestCase):
     def test_local_snapshot_contract_keeps_live_popover_queries_and_bounded_unique_frames(self):
         source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
         body = source.split('- (void)dismissPopoverOnceWithAttachment:', 1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:', 1)[0]
-        for token in ['[self.app.windows.firstMatch snapshotWithError:&snapshotError]',
-                      '!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeWindow',
+        for token in ['[self.app snapshotWithError:&snapshotError]',
+                      '!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeApplication',
                       'NSMutableArray<id<XCUIElementSnapshot>>', 'index<pending.count',
                       'children.count>2048-pending.count', '[pending addObjectsFromArray:children]',
                       'if (frames[key])', 'if (!TCDesignFiniteRect(frame))',
-                      'frames.count!=7', 'XCUIElementTypeOther', 'XCUIElementTypeButton',
+                      'frames.count!=6', 'XCUIElementTypeOther', 'XCUIElementTypeButton',
                       'CGRect firstFrame=popover.frame', 'CGRect secondFrame=popover.frame']:
             self.assertIn(token, body)
         for token in ['key=@"popover"', 'snapshotWithAttributes', '_XCT', 'valueForKey:',
@@ -1275,20 +1275,20 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertEqual(body.count('snapshotWithError:&snapshotError'),1)
         self.assertEqual(body.count('popover.frame'),2)
         self.assertEqual(body.count('] tap]'),1)
-        self.assertIn('snapshot=[self.app.windows.firstMatch snapshotWithError:&snapshotError]',body)
+        self.assertIn('snapshot=[self.app snapshotWithError:&snapshotError]',body)
         for token in ['[controlIdentifiers arrayByAddingObject:@"PopoverDismissRegion"]',
                       'if (diagnosticCounts[identifier])', 'samples.count<2',
                       '@"type":@(node.elementType)', '@"frame":diagnosticFrame(node.frame)',
                       'text.length<=128', 'header.length<=1024', 'row.length<=1024',
                       'visited=%lu queued=%lu complete=%d', 'windows=%lu matchedFrames=%lu',
-                      'scope=first-window', 'traversalComplete=YES',
+                      'scope=application', 'traversalComplete=YES',
                       'recordGeometryDiagnostic(@"missing-required-inventory")']:
             self.assertIn(token,body)
-        self.assertLess(body.index('if (diagnosticCounts[identifier])'),body.index('if (node.elementType==XCUIElementTypeWindow) key='))
+        self.assertLess(body.index('if (diagnosticCounts[identifier])'),body.index('if (node.elementType==XCUIElementTypeOther &&'))
         self.assertEqual(len(re.findall(r'recordGeometryDiagnostic\([^;]*;\s*XCTFail\(',body)),body.count('XCTFail('))
         for token in ['node.label','node.value','debugDescription','dictionaryRepresentation',
                       'snapshotError.domain','snapshotError.description','snapshotError.localizedDescription',
-                      'frames=%@','pending=%@','children=%@','snapshot=%@','self.app snapshotWithError']:
+                      'frames=%@','pending=%@','children=%@','snapshot=%@']:
             self.assertNotIn(token,body)
         self.assertNotIn('required: %@",snapshotError',body)
 
@@ -1318,6 +1318,97 @@ class OriginalDesignGateTests(unittest.TestCase):
         for forbidden in ['private-photo-name','private-content','private-value','label','value','children']:
             self.assertNotIn(forbidden,output)
         self.assertEqual(set(counts),set(whitelist));self.assertEqual(set(samples),set(whitelist))
+
+    def test_application_snapshot_keeps_global_unique_targets_and_common_nearest_window(self):
+        source=(gate.ROOT/'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        body=source.split('- (void)dismissPopoverOnceWithAttachment:',1)[1].split('- (void)dismissPhotoPickerOnceWithAttachment:',1)[0]
+        for token in ['snapshot=[self.app snapshotWithError:&snapshotError]',
+                      'snapshot.elementType!=XCUIElementTypeApplication',
+                      'windowOwners=[NSMutableArray arrayWithObject:@(-1)]',
+                      'NSInteger owner=windowOwners[index].integerValue',
+                      'owner=(NSInteger)index', 'windowFrames[@(owner)]',
+                      'targetOwners[key]=@(owner)',
+                      'diagnosticCounts[identifier].unsignedIntegerValue!=1',
+                      'frames.count!=6', 'owner.integerValue<0',
+                      '![targetOwners[key] isEqualToNumber:owner]',
+                      'NSValue *ownerFrame=windowFrames[owner]',
+                      'CGRect window=self.app.windows.firstMatch.frame',
+                      'CGRectEqualToRect(window,ownerFrame.CGRectValue)',
+                      '@"windowIndex":@(owner)']:
+            self.assertIn(token,body)
+        self.assertEqual(body.count('snapshotWithError:&snapshotError'),1)
+        self.assertEqual(body.count('self.app.windows.firstMatch.frame'),1)
+        self.assertEqual(body.count('popover.frame'),2)
+        self.assertNotIn('snapshot=[self.app.windows',body)
+        self.assertLess(body.index('diagnosticCounts[identifier].unsignedIntegerValue!=1'),body.index('if (node.elementType==XCUIElementTypeOther &&'))
+        order=[body.index(x) for x in ['traversalComplete=YES','owner.integerValue<0','CGRect window=self.app.windows.firstMatch.frame','CGRect firstFrame=popover.frame','] tap]']]
+        self.assertEqual(order,sorted(order))
+
+    @classmethod
+    def application_fixture(cls):
+        first=cls.snapshot_fixture()
+        second={'type':'Window','id':'','frame':first['frame'],'children':[]}
+        return {'type':'Application','id':'','frame':first['frame'],'children':[first,second]}
+
+    @staticmethod
+    def application_snapshot_model(root,live_window=(0,0,744,1133)):
+        import math
+        expected={'choosePhoto':'Button','takePhoto':'Button','liveColor':'Button',
+                  'original.picker':'Button','original.library':'Button','PopoverDismissRegion':'Other'}
+        if root is None or root['type']!='Application':raise ValueError('root')
+        pending=[root];owners=[-1];index=0;window_frames={};counts={};frames={};target_owners={}
+        def finite(frame):return all(math.isfinite(x) for x in frame) and min(frame[2:])>0
+        while index<len(pending):
+            node=pending[index];owner=owners[index]
+            if node['type']=='Window':owner=index;window_frames[owner]=node['frame']
+            identifier=node['id']
+            if identifier in expected:
+                counts[identifier]=counts.get(identifier,0)+1
+                if counts[identifier]!=1:raise ValueError('duplicate identifier')
+                if node['type']==expected[identifier]:
+                    if not finite(node['frame']):raise ValueError('frame')
+                    key='region' if identifier=='PopoverDismissRegion' else identifier
+                    frames[key]=node['frame'];target_owners[key]=owner
+            children=node['children']
+            if len(children)>2048-len(pending):raise ValueError('bound')
+            pending.extend(children);owners.extend([owner]*len(children));index+=1
+        if len(frames)!=6 or 'region' not in frames:raise ValueError('missing inventory')
+        owner=target_owners['region']
+        if owner<0 or any(value!=owner for value in target_owners.values()):raise ValueError('window owner')
+        frame=window_frames.get(owner)
+        if frame is None or not finite(frame):raise ValueError('window frame')
+        if not finite(live_window) or live_window!=frame:raise ValueError('live window')
+        return {**frames,'window':live_window}
+
+    def test_application_snapshot_model_rejects_cross_window_duplicate_or_unbound_targets(self):
+        root=self.application_fixture();frames=self.application_snapshot_model(root)
+        self.assertEqual(self.dismissal_point_model(frames),(372,990.75))
+        self.assertEqual(len(root['children']),2,'Equal-frame unrelated window is allowed without mixing targets')
+        for index in range(6):
+            bad=self.application_fixture();target=bad['children'][0]['children'][index]
+            bad['children'][1]['children'].append(copy.deepcopy(target))
+            with self.subTest(duplicate=index),self.assertRaisesRegex(ValueError,'duplicate identifier'):self.application_snapshot_model(bad)
+            bad['children'][1]['children'][0]['type']='StaticText'
+            with self.subTest(wrong_type_duplicate=index),self.assertRaisesRegex(ValueError,'duplicate identifier'):self.application_snapshot_model(bad)
+            bad=self.application_fixture();target=bad['children'][0]['children'].pop(index);bad['children'][1]['children'].append(target)
+            with self.subTest(split_window=index),self.assertRaisesRegex(ValueError,'window owner'):self.application_snapshot_model(bad)
+            bad=self.application_fixture();target=bad['children'][0]['children'].pop(index);bad['children'].append(target)
+            with self.subTest(orphan=index),self.assertRaisesRegex(ValueError,'window owner'):self.application_snapshot_model(bad)
+        bad=self.application_fixture();target=bad['children'][0]['children'].pop()
+        bad['children'][0]['children'].append({'type':'Window','id':'','frame':(0,0,744,1133),'children':[target]})
+        with self.assertRaisesRegex(ValueError,'window owner'):self.application_snapshot_model(bad)
+        for live in [(0,0,745,1133),(0,0,0,1133),(float('nan'),0,744,1133)]:
+            with self.subTest(live=live),self.assertRaisesRegex(ValueError,'live window'):self.application_snapshot_model(self.application_fixture(),live)
+        bad=self.application_fixture();bad['children'][0]['frame']=(0,0,744,0)
+        with self.assertRaisesRegex(ValueError,'window frame'):self.application_snapshot_model(bad)
+        for bad in [None,self.snapshot_fixture()]:
+            with self.assertRaisesRegex(ValueError,'root'):self.application_snapshot_model(bad)
+        # Application + two windows + six targets = nine nodes.
+        filler={'type':'Other','id':'unrelated','frame':(0,0,0,0),'children':[]}
+        edge=self.application_fixture();edge['children'] += [filler]*(2048-9)
+        self.assertEqual(self.application_snapshot_model(edge)['window'],(0,0,744,1133))
+        edge['children'].append(filler)
+        with self.assertRaisesRegex(ValueError,'bound'):self.application_snapshot_model(edge)
 
     def test_popover_primary_point_fits_observed_ipad_geometry(self):
         # Same bounded geometry expressed from the actual run-37883561875 AX

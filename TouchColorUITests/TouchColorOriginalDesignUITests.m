@@ -278,12 +278,12 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
 - (void)dismissPopoverOnceWithAttachment:(NSString *)name {
     XCUIElement *popover=[self.app descendantsMatchingType:XCUIElementTypePopover].firstMatch;
     XCUIElement *region=self.app.otherElements[@"PopoverDismissRegion"].firstMatch;
-    // One current window snapshot supplies local presentation/control geometry.
-    // Never require the remote Photos subtree to expand, and never reuse an
-    // earlier home layout. Missing or ambiguous shell nodes fail without a tap.
+    // One current application snapshot keeps each target's nearest Window
+    // owner. Never merge targets across windows or reuse an earlier layout.
+    // This broader receiver is a reviewed observation change, not a fallback.
     NSError *snapshotError=nil;
     NSTimeInterval snapshotStarted=NSProcessInfo.processInfo.systemUptime;
-    id<XCUIElementSnapshot> snapshot=[self.app.windows.firstMatch snapshotWithError:&snapshotError];
+    id<XCUIElementSnapshot> snapshot=[self.app snapshotWithError:&snapshotError];
     NSTimeInterval snapshotFinished=NSProcessInfo.processInfo.systemUptime;
     NSArray<NSString *> *controlIdentifiers=@[@"choosePhoto",@"takePhoto",@"liveColor",@"original.picker",@"original.library"];
     NSArray<NSString *> *diagnosticIdentifiers=[controlIdentifiers arrayByAddingObject:@"PopoverDismissRegion"];
@@ -303,7 +303,7 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     // Only six fixed test-owned identifiers and numeric geometry are logged.
     // All attributes below belong to the one immutable snapshot, never live AX.
     void (^recordGeometryDiagnostic)(NSString *)=^(NSString *reason) {
-        NSString *header=[NSString stringWithFormat:@"ORIGINAL_PICKER_SNAPSHOT_DIAGNOSTIC scope=first-window reason=%@ visited=%lu queued=%lu complete=%d windows=%lu matchedFrames=%lu rootType=%lu rootFrame=%@ snapshotSeconds=%.6f",
+        NSString *header=[NSString stringWithFormat:@"ORIGINAL_PICKER_SNAPSHOT_DIAGNOSTIC scope=application reason=%@ visited=%lu queued=%lu complete=%d windows=%lu matchedFrames=%lu rootType=%lu rootFrame=%@ snapshotSeconds=%.6f",
               reason,(unsigned long)visitedNodes,(unsigned long)queuedNodes,traversalComplete,(unsigned long)windowNodes,(unsigned long)frames.count,
               (unsigned long)(snapshot ? snapshot.elementType : XCUIElementTypeAny),snapshot ? diagnosticFrame(snapshot.frame) : @"unavailable",snapshotFinished-snapshotStarted];
         NSLog(@"%@",header.length<=1024 ? header : @"ORIGINAL_PICKER_SNAPSHOT_DIAGNOSTIC reason=header-size-limit");
@@ -312,24 +312,35 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
             NSLog(@"%@",row.length<=1024 ? row : @"ORIGINAL_PICKER_SNAPSHOT_TARGET reason=row-size-limit");
         }
     };
-    if (!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeWindow) {
+    if (!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeApplication) {
         recordGeometryDiagnostic(@"snapshot-unavailable-or-wrong-root");
-        XCTFail(@"A current native window snapshot is required");
+        XCTFail(@"A current native application snapshot is required");
         return;
     }
     NSMutableArray<id<XCUIElementSnapshot>> *pending=[NSMutableArray arrayWithObject:snapshot];
+    NSMutableArray<NSNumber *> *windowOwners=[NSMutableArray arrayWithObject:@(-1)];
+    NSMutableDictionary<NSNumber *,NSValue *> *windowFrames=[NSMutableDictionary new];
+    NSMutableDictionary<NSString *,NSNumber *> *targetOwners=[NSMutableDictionary new];
     for (NSUInteger index=0;index<pending.count;index++) {
         id<XCUIElementSnapshot> node=pending[index];
         ++visitedNodes;
         NSString *key=nil, *identifier=node.identifier ?: @"";
-        if (node.elementType==XCUIElementTypeWindow) ++windowNodes;
+        NSInteger owner=windowOwners[index].integerValue;
+        if (node.elementType==XCUIElementTypeWindow) {
+            ++windowNodes; owner=(NSInteger)index;
+            windowFrames[@(owner)]=[NSValue valueWithCGRect:node.frame];
+        }
         if (diagnosticCounts[identifier]) {
             diagnosticCounts[identifier]=@(diagnosticCounts[identifier].unsignedIntegerValue+1);
             NSMutableArray *samples=diagnosticSamples[identifier];
-            if (samples.count<2) [samples addObject:@{@"type":@(node.elementType),@"frame":diagnosticFrame(node.frame)}];
+            if (samples.count<2) [samples addObject:@{@"type":@(node.elementType),@"frame":diagnosticFrame(node.frame),@"windowIndex":@(owner)}];
+            if (diagnosticCounts[identifier].unsignedIntegerValue!=1) {
+                recordGeometryDiagnostic(@"duplicate-target-identifier");
+                XCTFail(@"Each target identifier must be globally unique in the application snapshot");
+                return;
+            }
         }
-        if (node.elementType==XCUIElementTypeWindow) key=@"window";
-        else if (node.elementType==XCUIElementTypeOther && [identifier isEqualToString:@"PopoverDismissRegion"]) key=@"region";
+        if (node.elementType==XCUIElementTypeOther && [identifier isEqualToString:@"PopoverDismissRegion"]) key=@"region";
         else if (node.elementType==XCUIElementTypeButton && [controlIdentifiers containsObject:identifier]) key=identifier;
         if (key) {
             if (frames[key]) {
@@ -344,6 +355,7 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
                 return;
             }
             frames[key]=[NSValue valueWithCGRect:frame];
+            targetOwners[key]=@(owner);
         }
         NSArray<id<XCUIElementSnapshot>> *children=node.children;
         if (children.count>2048-pending.count) {
@@ -352,15 +364,38 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
             return;
         }
         [pending addObjectsFromArray:children];
+        for (NSUInteger child=0;child<children.count;child++) [windowOwners addObject:@(owner)];
         queuedNodes=pending.count;
     }
     traversalComplete=YES;
-    if (frames.count!=7 || !frames[@"window"] || !frames[@"region"]) {
+    if (frames.count!=6 || !frames[@"region"]) {
         recordGeometryDiagnostic(@"missing-required-inventory");
-        XCTFail(@"The current snapshot must contain the window, dismissal region and all five original controls");
+        XCTFail(@"The current snapshot must contain one dismissal region and all five original controls");
         return;
     }
-    CGRect window=frames[@"window"].CGRectValue, regionFrame=frames[@"region"].CGRectValue;
+    NSNumber *owner=targetOwners[@"region"];
+    for (NSString *key in [controlIdentifiers arrayByAddingObject:@"region"]) {
+        if (!owner || owner.integerValue<0 || ![targetOwners[key] isEqualToNumber:owner]) {
+            recordGeometryDiagnostic(@"targets-do-not-share-window-owner");
+            XCTFail(@"All six targets must belong to the same real Window ancestor");
+            return;
+        }
+    }
+    NSValue *ownerFrame=windowFrames[owner];
+    if (!ownerFrame || !TCDesignFiniteRect(ownerFrame.CGRectValue)) {
+        recordGeometryDiagnostic(@"missing-or-invalid-window-owner");
+        XCTFail(@"The common Window owner must have a finite nonempty frame");
+        return;
+    }
+    // This is independent current viewport geometry, not window identity by
+    // frame alone; global target uniqueness and common ownership were required.
+    CGRect window=self.app.windows.firstMatch.frame;
+    if (!TCDesignFiniteRect(window) || !CGRectEqualToRect(window,ownerFrame.CGRectValue)) {
+        recordGeometryDiagnostic(@"live-window-frame-mismatch");
+        XCTFail(@"The current live window frame must equal the target-owning snapshot window");
+        return;
+    }
+    CGRect regionFrame=frames[@"region"].CGRectValue;
     NSMutableArray<NSValue *> *controlFrames=[NSMutableArray new];
     for (NSString *identifier in controlIdentifiers) {
         NSValue *value=frames[identifier];
