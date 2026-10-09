@@ -1,0 +1,530 @@
+name: Corrected TouchColor unsigned platform qualification (closed)
+on:
+  push:
+    branches: [touchcolor-platform-qualification]
+    paths: [.github/platform-qualification.json]
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-platform-qualification
+  cancel-in-progress: false
+jobs:
+  native-platform:
+    name: Unsigned ${{ matrix.lane || matrix.platform }} on a fresh standard VM
+    # BEGIN LOCAL QUALIFICATION SELECTION
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-platform-qualification' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - platform: tv
+            minutes: 25
+            evidence_bytes: 2000000
+    # END LOCAL QUALIFICATION SELECTION
+    runs-on: xcode-27
+    timeout-minutes: ${{ matrix.minutes }}
+    env:
+      TOUCHCOLOR_JOB_PLATFORM: ${{ matrix.platform }}
+      TOUCHCOLOR_JOB_MINUTES: ${{ matrix.minutes }}
+      TOUCHCOLOR_JOB_LANE: ${{ matrix.lane || matrix.platform }}
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      TOUCHCOLOR_WATCH_PROFILE: ${{ matrix.watch_profile }}
+      TOUCHCOLOR_TEXT_PHASE: ${{ matrix.text_phase }}
+      TOUCHCOLOR_VISION_CASE: ${{ matrix.vision_case }}
+      TOUCHCOLOR_EVIDENCE_LIMIT: ${{ matrix.evidence_bytes }}
+    steps:
+      - name: Start exact native job clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              stream.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
+      - name: Check out exact source
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 64
+      - name: Verify exact corrected product and control binding
+        timeout-minutes: 1
+        run: python3 scripts/platform_qualification.py admit
+      - name: Initialize exact row budget
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py initialize
+      - name: Verify source and stable toolchain
+        id: toolchain
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          python3 scripts/platform_qualification.py admit
+          mkdir -p build
+          cat > build/tv-host-boundary.py <<'TV_HOST_POLICY'
+          """Exact TV host policy and independent simulator-result binding; no OS equivalence."""
+          import datetime,hashlib,json,math,os,re,stat,sys
+          from pathlib import Path
+          
+          PRODUCT='7c671f04e4d69884741a411851ae26083361c7f7'
+          PAIRS={('27.0','26A428'),('27.0.1','26A434')}
+          KEY='tv_host_runtime_boundary'
+          STATE=Path('build/tv-host-preflight.json')
+          
+          def require(ok,message):
+              if not ok: raise ValueError(message)
+          
+          def load(path):
+              info=path.lstat()
+              require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and info.st_size<=5_000_000,'Unsafe/oversized runtime evidence')
+              raw=path.read_bytes()
+              def pairs(values):
+                  result={}
+                  for key,value in values:
+                      require(key not in result,'Duplicate evidence key');result[key]=value
+                  return result
+              return json.loads(raw,object_pairs_hook=pairs,parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Nonfinite evidence'))),raw
+          
+          def digest(raw): return hashlib.sha256(raw).hexdigest()
+          def canonical(value): return json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
+          def environment():
+              sha=os.environ.get('GITHUB_SHA','')
+              require(re.fullmatch('[0-9a-f]{40}',sha) and os.environ.get('GITHUB_WORKFLOW_SHA')==sha,'Control source mismatch')
+              require(os.environ.get('GITHUB_REPOSITORY')=='100mango/ColorPicker' and os.environ.get('GITHUB_REF')=='refs/heads/touchcolor-platform-qualification','Wrong runtime route')
+              require(os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='tv' and os.environ.get('TOUCHCOLOR_JOB_LANE')=='tv','Only the full TV row is admitted')
+              return sha
+          
+          def validate_host(record):
+              require(set(record)=={'schema','control_sha','product_sha','host_version','host_build','architecture','host_os_equivalence_claim','run_id','run_attempt'},'Host record fields')
+              require(type(record['schema']) is int and record['schema']==1 and record['control_sha']==environment() and record['product_sha']==PRODUCT,'Host/source binding')
+              require((record['host_version'],record['host_build']) in PAIRS and record['architecture']=='arm64','Unapproved exact host pair/architecture')
+              require(record['host_os_equivalence_claim'] is False,'Host equivalence must remain unclaimed')
+              require(all(re.fullmatch('[1-9][0-9]*',record.get(k,'')) and record[k]==os.environ.get('GITHUB_'+k.upper()) for k in ('run_id','run_attempt')),'Host run binding')
+          
+          def preflight(probe=None):
+              if probe is None:
+                  sys.path.insert(0,'scripts')
+                  from bounded_process import check_output
+                  probe=lambda command:check_output(command,text=True,timeout=10).strip()
+              record={'schema':1,'control_sha':environment(),'product_sha':PRODUCT,
+                      'host_version':probe(['/usr/bin/sw_vers','-productVersion']),
+                      'host_build':probe(['/usr/bin/sw_vers','-buildVersion']),
+                      'architecture':probe(['/usr/bin/uname','-m']),'host_os_equivalence_claim':False,
+                      'run_id':os.environ.get('GITHUB_RUN_ID',''),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT','')}
+              print('TV_ACTUAL_HOST_BOUNDARY',json.dumps(record,sort_keys=True))
+              validate_host(record);require(not STATE.exists(),'Do not replace an earlier host observation')
+              STATE.parent.mkdir(parents=True,exist_ok=True);STATE.write_text(json.dumps(record,indent=2)+'\n')
+              return record
+          
+          def assess(host,runtime,summary,summary_raw):
+              validate_host(host);sha=environment()
+              require(runtime.get('sha')==sha and runtime.get('platform')=='tv' and runtime.get('result')=='passed','TV runtime source/result mismatch')
+              require(runtime.get('runtime')=='com.apple.CoreSimulator.SimRuntime.tvOS-27-0','TV simulator runtime must remain27.0')
+              require(runtime.get('photos_seed')=='passed' and not runtime.get('cleanup_unconfirmed') and not runtime.get('budget_incomplete') and not runtime.get('failures'),'TV prerequisites/cleanup incomplete')
+              require(summary.get('result')=='Passed' and summary.get('testFailures')==[],'TV xcresult failed')
+              for key,value in [('totalTestCount',9),('passedTests',9),('failedTests',0),('skippedTests',0),('expectedFailures',0)]:
+                  require(type(summary.get(key)) is int and summary[key]==value,'Full TV9/9 zero-skip summary required')
+              configurations=summary.get('devicesAndConfigurations')
+              require(isinstance(configurations,list) and len(configurations)==1,'One TV xcresult device required')
+              for key,value in [('passedTests',9),('failedTests',0),('skippedTests',0),('expectedFailures',0)]:
+                  require(type(configurations[0].get(key)) is int and configurations[0][key]==value,'TV device configuration counts mismatch')
+              device=configurations[0]['device'];udid=runtime.get('device',{}).get('udid')
+              require(isinstance(udid,str) and re.fullmatch('[0-9a-fA-F-]{36}',udid) and device.get('deviceId')==udid,'Runtime/xcresult device mismatch')
+              require(device.get('platform')=='tvOS Simulator' and device.get('osVersion')=='27.0' and device.get('architecture')=='arm64','TV xcresult runtime mismatch')
+              stages=[s for s in runtime.get('stages',[]) if s.get('command',[])[:2]==['xcodebuild','test-without-building']]
+              require(len(stages)==1,'One complete TV test command required');stage=stages[0];command=stage['command']
+              require(stage.get('exit')==0 and stage.get('started') is True and stage.get('process_group_gone') is True and stage.get('capture_reader_finished') is True,'TV test process not successful/clean')
+              for flag,value in [('-scheme','TouchColorTV'),('-project','TouchColorTV.xcodeproj'),('-destination','platform=tvOS Simulator,id='+udid),('-resultBundlePath','build/tv-tests.xcresult')]:
+                  require(command.count(flag)==1 and command[command.index(flag)+1]==value,'TV test destination/scheme/result mismatch')
+              require(not any(x.startswith(('-only-testing','-skip-testing')) for x in command),'Diagnostic subset cannot qualify full TV')
+              start,finish=summary.get('startTime'),summary.get('finishTime')
+              require(all(type(x) in (int,float) and math.isfinite(x) for x in (start,finish)) and start<=finish,'Invalid xcresult timestamps')
+              began=datetime.datetime.fromisoformat(stage['started_at']);ended=datetime.datetime.fromisoformat(stage['finished_at'])
+              require(began.tzinfo is not None and ended.tzinfo is not None and began.timestamp()<=start<=finish<=ended.timestamp(),'xcresult outside actual test command')
+              return {'host':host,'summary_sha256':digest(summary_raw),'runtime_body_sha256':digest(canonical(runtime)),
+                      'simulator':{'identifier':runtime['runtime'],'device_id':udid,'os_version':device['osVersion'],'platform':device['platform'],'architecture':device['architecture']},
+                      'full_test_summary':{'total':9,'passed':9,'failed':0,'skipped':0},'host_os_equivalence_claim':False}
+          
+          def bind(root):
+              root=Path(root);path=root/'tv-runtime.json'
+              runtime,_=load(path) if path.exists() else ({'platform':'tv','sha':environment(),'result':'incomplete'},b'')
+              require(KEY not in runtime,'Do not replace an earlier runtime binding')
+              boundary={'schema':1,'complete':False,'host_os_equivalence_claim':False}
+              try:
+                  host,_=load(STATE);summary,raw=load(root/'tv-summary.json')
+                  boundary.update(complete=True,binding=assess(host,runtime,summary,raw))
+              except (ValueError,OSError,KeyError,TypeError,IndexError) as error:
+                  boundary['reason']=str(error)[:256]
+                  if STATE.is_file():
+                      try: boundary['actual_host']=load(STATE)[0]
+                      except (ValueError,OSError): pass
+              runtime[KEY]=boundary;path.write_text(json.dumps(runtime,indent=2,allow_nan=False)+'\n')
+              return boundary['complete']
+          
+          def complete(root):
+              try:
+                  root=Path(root);runtime,_=load(root/'tv-runtime.json');boundary=runtime.pop(KEY)
+                  require(boundary.get('schema')==1 and boundary.get('complete') is True and boundary.get('host_os_equivalence_claim') is False,'Host/runtime binding incomplete')
+                  host,_=load(STATE);summary,raw=load(root/'tv-summary.json')
+                  return boundary=={'schema':1,'complete':True,'host_os_equivalence_claim':False,'binding':assess(host,runtime,summary,raw)}
+              except (ValueError,OSError,KeyError,TypeError,IndexError): return False
+          
+          if __name__=='__main__':
+              require(sys.argv[1:] in (['preflight'],['bind','build/evidence'],['check','build/evidence']),'Unknown runtime boundary command')
+              if sys.argv[1]=='preflight':preflight()
+              elif sys.argv[1]=='bind':print('TV_HOST_RESULT_BINDING',bind(sys.argv[2]))
+              else:
+                  value=complete(sys.argv[2]);print('TV_HOST_RESULT_COMPLETE',value)
+                  if os.environ.get('GITHUB_OUTPUT'):
+                      with open(os.environ['GITHUB_OUTPUT'],'a') as output:output.write('tv_runtime_boundary_complete='+str(value).lower()+'\n')
+          TV_HOST_POLICY
+          python3 build/tv-host-boundary.py preflight
+          xcodebuild -version | tee /tmp/touchcolor-platform-xcode.txt
+          grep -Fx 'Xcode 27.0' /tmp/touchcolor-platform-xcode.txt
+          grep -Fx 'Build version 27A266a' /tmp/touchcolor-platform-xcode.txt
+          xcodebuild -showsdks
+          uname -m | grep -Fx arm64
+          python3 scripts/generate_project.py
+          python3 scripts/generate_mac_project.py
+          python3 scripts/generate_vision_project.py
+          python3 scripts/generate_watch_project.py
+          python3 scripts/generate_tv_project.py
+          python3 scripts/verify_mac_icons.py
+          python3 scripts/verify_native_localizations.py
+          python3 scripts/test_evidence_guard.py
+          python3 scripts/test_retain_mac_evidence.py
+          python3 scripts/test_capture_checkpoint.py
+          python3 scripts/test_watch_profiles.py
+          python3 scripts/test_watch_runtime_pair.py
+          python3 scripts/test_bounded_process.py
+          python3 scripts/test_paired_watch_harness.py
+          python3 scripts/test_embedded_watch.py
+          python3 scripts/test_vision_suites.py
+          python3 scripts/test_native_runtime_diagnostics.py
+          python3 scripts/test_native_resources.py
+          python3 scripts/test_vision_offline_result.py
+          python3 scripts/test_vision_result_snapshot.py
+          python3 scripts/test_vision_read_isolation.py
+          python3 scripts/test_vision_diagnostic_result.py
+          python3 scripts/test_checkpoint_image.py
+          python3 scripts/test_secondary_about_coverage.py
+          python3 -O scripts/test_secondary_about_coverage.py
+          python3 scripts/test_secondary_about_evidence.py
+          python3 -O scripts/test_secondary_about_evidence.py
+          git diff --exit-code HEAD --
+          xcodebuild -list -project TouchColorMac.xcodeproj
+      - name: Probe native XCTest accessibility audit availability
+        if: ${{ !cancelled() && matrix.platform == 'mac' && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Probe native XCTest accessibility audit availability' --seconds 420 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/probe_accessibility_audits.py
+          TC_BUDGET_BODY
+      - name: Portable domain, raster and preservation tests
+        if: ${{ matrix.platform == 'mac' }}
+        timeout-minutes: 11
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Portable domain, raster and preservation tests' --seconds 480 --phase work <<'TC_BUDGET_BODY'
+          swift test --package-path Packages/ColorCore --scratch-path build/package
+          TC_BUDGET_BODY
+      - name: Build native arm64 Release app and inspect identity
+        if: ${{ matrix.platform == 'mac' }}
+        timeout-minutes: 11
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Build native arm64 Release app and inspect identity' --seconds 480 --phase work <<'TC_BUDGET_BODY'
+          set -euo pipefail
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings -json > build/mac-release-settings.json
+          python3 scripts/verify_mac_release_settings.py build/mac-release-settings.json
+          APP=build/mac-arm64/Build/Products/Release/TouchColor.app
+          python3 scripts/verify_privacy_manifest.py "$APP/Contents/Resources/PrivacyInfo.xcprivacy" selected
+          file "$APP/Contents/MacOS/TouchColor"
+          lipo -info "$APP/Contents/MacOS/TouchColor"
+          otool -L "$APP/Contents/MacOS/TouchColor"
+          otool -l "$APP/Contents/MacOS/TouchColor" | grep -A8 LC_BUILD_VERSION
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")" = com.mango.touchColor
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' "$APP/Contents/Info.plist")" = TouchColor
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print NSCameraUsageDescription' "$APP/Contents/Info.plist")"
+          strings "$APP/Contents/MacOS/TouchColor" > /tmp/touchcolor-mac-release-strings.txt
+          if grep -E -- '--ui-test-|TOUCHCOLOR_TEST_DEFAULTS|TOUCHCOLOR_SANDBOX_PROBE_FILE|TOUCHCOLOR_NATIVE_MODAL_PROBE|TOUCHCOLOR_MAC_LIFECYCLE|MAC_PASSIVE_LIFECYCLE|com.mango.touchColor.MacLifecycle|debug.sandbox.proof|TouchColor-fixture-' /tmp/touchcolor-mac-release-strings.txt; then
+            echo 'Test seam leaked into Release'; exit 1
+          fi
+          TC_BUDGET_BODY
+      - name: Build x86_64 slice only if accepted by the real SDK
+        if: ${{ matrix.platform == 'mac' }}
+        id: intel
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Build x86_64 slice only if accepted by the real SDK' --seconds 420 --phase work <<'TC_BUDGET_BODY'
+          set -euo pipefail
+          xcodebuild -quiet -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath build/mac-x86_64 \
+            ARCHS=x86_64 CODE_SIGNING_ALLOWED=NO build
+          python3 scripts/verify_privacy_manifest.py build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/Resources/PrivacyInfo.xcprivacy selected
+          lipo -info build/mac-x86_64/Build/Products/Release/TouchColor.app/Contents/MacOS/TouchColor
+          echo 'x86_64 build only; no Intel runtime execution claimed'
+          TC_BUDGET_BODY
+      - name: Native Mac app-hosted unit tests
+        if: ${{ matrix.platform == 'mac' }}
+        id: units
+        timeout-minutes: 11
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Native Mac app-hosted unit tests' --seconds 480 --phase work <<'TC_BUDGET_BODY'
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
+            -resultBundlePath build/mac-unit.xcresult -parallel-testing-enabled NO \
+            -collect-test-diagnostics never -only-testing:TouchColorMacTests ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+          TC_BUDGET_BODY
+      - name: Native Mac UI runtime workflows
+        id: ui
+        if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
+        timeout-minutes: 13
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Native Mac UI runtime workflows' --seconds 600 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/prepare_sandbox_probe.py build/mac-tests/probe-info.json
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
+            -resultBundlePath build/mac-ui.xcresult -parallel-testing-enabled NO \
+            -collect-test-diagnostics never -maximum-test-execution-time-allowance 120 \
+            -only-testing:TouchColorMacUITests \
+            -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit \
+            -skip-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test
+          TC_BUDGET_BODY
+      - name: Diagnose standard AppKit modal audits separately
+        if: ${{ !cancelled() && matrix.platform == 'mac' && steps.units.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 7
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Diagnose standard AppKit modal audits separately' --seconds 240 --phase work <<'TC_BUDGET_BODY'
+          xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' -derivedDataPath build/mac-tests \
+            -resultBundlePath build/mac-modal-probe.xcresult -parallel-testing-enabled NO \
+            -collect-test-diagnostics never -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60 -maximum-test-execution-time-allowance 60 \
+            -only-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit \
+            -only-testing:TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit \
+            ARCHS=arm64 CODE_SIGNING_ALLOWED=NO test-without-building
+          TC_BUDGET_BODY
+      - name: Native visionOS executable and real simulator workflows
+        id: vision
+        if: ${{ !cancelled() && matrix.platform == 'vision' && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 25
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Native visionOS executable and real simulator workflows' --seconds 1320 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_extra_platforms.py vision
+          TC_BUDGET_BODY
+      - name: Native watchOS executable and real simulator workflows
+        id: watch
+        if: ${{ !cancelled() && matrix.platform == 'watch' && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 45
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Native watchOS executable and real simulator workflows' --seconds 2520 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_extra_platforms.py watch
+          TC_BUDGET_BODY
+      - name: Native tvOS executable and real remote workflows
+        id: tv
+        if: ${{ !cancelled() && matrix.platform == 'tv' && steps.toolchain.outcome == 'success' }}
+        timeout-minutes: 25
+        run: |
+          python3 scripts/run_budgeted_step.py --cleanup-driver --label 'Native tvOS executable and real remote workflows' --seconds 1320 --phase work <<'TC_BUDGET_BODY'
+          python3 scripts/test_extra_platforms.py tv
+          TC_BUDGET_BODY
+      - name: Report bounded evidence and unchanged source
+        if: always()
+        timeout-minutes: 4
+        run: |
+          python3 scripts/run_budgeted_step.py --label 'Report bounded evidence and unchanged source' --seconds 180 --phase evidence <<'TC_BUDGET_BODY'
+          mkdir -p build/evidence
+          python3 scripts/vision_offline_result.py qualify
+          if test -f build/paired-runtime/runtime.json; then cp build/paired-runtime/runtime.json build/evidence/paired-runtime.json; fi
+          for role in phone watch; do
+            if test -d "build/paired-$role.xcresult"; then
+              if test -f "build/paired-runtime/$role-summary.json"; then
+                cp "build/paired-runtime/$role-summary.json" "build/evidence/paired-$role-summary.json"
+              fi
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/paired-$role.xcresult" --output-path "build/evidence/paired-$role-screenshots" || true
+            fi
+          done
+          if test -f build/accessibility-api/results.json; then cp build/accessibility-api/results.json build/evidence/accessibility-api.json; fi
+          echo 'Intel slice build outcome: ${{ steps.intel.outcome }}; Intel runtime: not tested' | tee build/evidence/architecture.txt
+          for name in unit ui sandbox modal-probe; do
+            if test -d "build/mac-$name.xcresult"; then
+              python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/mac-$name.xcresult" | tee "build/evidence/mac-$name-summary.json" || true
+            fi
+          done
+          if test -d build/iPhoneCompact-TouchColorTests.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/iPhoneCompact-TouchColorTests.xcresult | tee build/evidence/ios-equivalence-summary.json || true
+          fi
+          if test -d build/mac-ui.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-ui.xcresult --output-path build/evidence/screenshots || true
+          fi
+          if test -d build/mac-sandbox.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-sandbox.xcresult --output-path build/evidence/sandbox-screenshots || true
+          fi
+          if test -d build/mac-modal-probe.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/mac-modal-probe.xcresult --output-path build/evidence/modal-probe-screenshots || true
+          fi
+          if test -f build/mac-sandbox-entitlements.plist; then
+            python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-entitlements.json
+          fi
+          if test -f build/mac-sandbox-post-entitlements.plist; then
+            python3 -c "import json,plistlib; print(json.dumps(plistlib.load(open('build/mac-sandbox-post-entitlements.plist','rb')),indent=2))" > build/evidence/mac-sandbox-post-entitlements.json
+          fi
+          if test -d build/vision-runtime/screenshots; then
+            cp -R build/vision-runtime/screenshots build/evidence/vision-checkpoints
+          fi
+          if test -d build/vision-ui.xcresult; then
+            python3 scripts/vision_offline_result.py copy-normal-summary
+          fi
+          if test -d build/watch-ui.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/watch-ui.xcresult | tee build/evidence/watch-ui-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/watch-ui.xcresult --output-path build/evidence/watch-ui-screenshots || true
+          fi
+          if test -d build/watch-public-trait.xcresult; then
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path build/watch-public-trait.xcresult | tee build/evidence/watch-public-trait-summary.json || true
+            python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path build/watch-public-trait.xcresult --output-path build/evidence/watch-public-trait-screenshots || true
+          fi
+          for platform in vision watch; do
+            if test -d "build/$platform-largest-text.xcresult"; then
+              if test "$platform" = vision; then
+                python3 scripts/vision_offline_result.py copy-summary
+              else
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-largest-text.xcresult" | tee "build/evidence/$platform-largest-text-summary.json" || true
+              fi
+              if test "$platform" != vision; then
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-largest-text.xcresult" --output-path "build/evidence/$platform-largest-text-screenshots" || true
+              fi
+            fi
+          done
+          for platform in vision watch tv; do
+            if test -d "build/$platform-tests.xcresult"; then
+              if test "$platform" = vision; then
+                python3 scripts/vision_offline_result.py copy-hosted-summary
+              else
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool get test-results summary --path "build/$platform-tests.xcresult" | tee "build/evidence/$platform-summary.json" || true
+              fi
+              if test "$platform" != vision; then
+                python3 scripts/budget_command.py --seconds 20 -- xcrun xcresulttool export attachments --path "build/$platform-tests.xcresult" --output-path "build/evidence/$platform-screenshots" || true
+              fi
+            fi
+            if test -f "build/$platform-runtime/runtime.json"; then
+              cp "build/$platform-runtime/runtime.json" "build/evidence/$platform-runtime.json"
+            fi
+          done
+          if test "$TOUCHCOLOR_JOB_PLATFORM" = tv && test -f build/tv-host-boundary.py; then
+            python3 build/tv-host-boundary.py bind build/evidence
+          fi
+          python3 scripts/vision_photos_evidence.py build/evidence
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
+          for manifest in root.glob('*/manifest.json'):
+              groups=json.loads(manifest.read_text()); keep=set()
+              for group in groups:
+                  group['attachments']=[a for a in group['attachments'] if a.get('suggestedHumanReadableName','').startswith(('Native Mac','Native Vision','Native Watch','Native TV','touchcolor-paired-phone'))]
+                  keep.update(a['exportedFileName'] for a in group['attachments'])
+              for p in manifest.parent.iterdir():
+                  if p.is_file() and p.name!='manifest.json' and p.name not in keep: p.unlink()
+              manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
+              for group in groups:
+                  for item in group['attachments']:
+                      diagnostic=manifest.parent/item['exportedFileName']
+                      if diagnostic.suffix=='.txt' and item.get('suggestedHumanReadableName','').startswith('Native Mac accessibility issue'):
+                          text=diagnostic.read_text().split('\nHierarchy:',1)[0]
+                          print('RETAINED_MAC_ACCESSIBILITY_DIAGNOSTIC',text[:12000],flush=True)
+          PY
+          python3 scripts/compress_vision_evidence.py build/evidence
+          case "$TOUCHCOLOR_JOB_PLATFORM" in
+            mac|tv|watch|vision)
+              python3 scripts/secondary_about_evidence.py prepare build/evidence
+              ;;
+          esac
+          python3 scripts/retain_mac_evidence.py build/evidence
+          python3 scripts/native_text_evidence.py retain build/evidence
+          python3 - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0) # Mac keeps its explicit priority/omission plan.
+          if os.environ.get('TOUCHCOLOR_JOB_PLATFORM') in ('vision','watch'): sys.exit(0) # Native text rows keep mandatory proof and explicit omissions.
+          root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
+          for p in sorted(root.rglob('*'), key=lambda p: (0 if p.suffix=='.json' else 1 if p.suffix in ('.txt','.log') else 2,str(p))):
+              if p.is_file():
+                  size=p.stat().st_size
+                  if size>5_000_000 or total+size>limit: p.unlink()
+                  else: total+=size
+          for manifest in root.glob('*/manifest.json'):
+              groups=json.loads(manifest.read_text())
+              for group in groups:
+                  group['attachments']=[a for a in group['attachments'] if (manifest.parent/a['exportedFileName']).exists()]
+              manifest.write_text(json.dumps(groups,ensure_ascii=False,indent=2))
+          total=sum(p.stat().st_size for p in root.rglob('*') if p.is_file())
+          print('Final bounded evidence bytes:',total)
+          PY
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD --
+          TC_BUDGET_BODY
+      - name: Validate final evidence byte and path limits
+        id: evidence_guard
+        if: always()
+        timeout-minutes: 1
+        env:
+          TOUCHCOLOR_SECONDARY_EVIDENCE_REQUIRED: ${{ (matrix.platform == 'mac' || matrix.platform == 'tv' || matrix.platform == 'watch' || matrix.platform == 'vision') && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_evidence.py build/evidence "$TOUCHCOLOR_EVIDENCE_LIMIT"
+          if test -f build/tv-host-boundary.py; then
+            python3 build/tv-host-boundary.py check build/evidence
+          else
+            echo 'tv_runtime_boundary_complete=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify artifact upload reserve
+        id: upload_budget
+        if: ${{ always() && steps.evidence_guard.outcome == 'success' }}
+        timeout-minutes: 1
+        run: python3 scripts/job_budget.py check-upload
+      - name: Retain small test evidence for review
+        if: ${{ always() && steps.evidence_guard.outcome == 'success' && steps.upload_budget.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touchcolor-unsigned-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane || matrix.platform }}
+          path: build/evidence
+          retention-days: 1
+          compression-level: 9
+          if-no-files-found: error
+      - name: Full Mac evidence remains blocked without deferred sandbox proof
+        if: ${{ always() && matrix.platform == 'mac' }}
+        timeout-minutes: 1
+        env:
+          MAC_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.mac_evidence_complete }}
+        run: test "$MAC_EVIDENCE_COMPLETE" = true
+      - name: Require every deferred Vision result qualification
+        if: ${{ always() && matrix.platform == 'vision' }}
+        timeout-minutes: 1
+        run: test '${{ steps.evidence_guard.outputs.vision_offline_qualified }}' = 'true'
+      - name: Require complete exact native text row evidence
+        if: ${{ always() && (matrix.platform == 'vision' || matrix.platform == 'watch') }}
+        timeout-minutes: 1
+        env:
+          NATIVE_TEXT_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.native_text_evidence_complete }}
+        run: test "$NATIVE_TEXT_EVIDENCE_COMPLETE" = true
+      - name: Require retained secondary About evidence
+        if: ${{ always() && (matrix.platform == 'mac' || matrix.platform == 'tv' || matrix.platform == 'watch' || matrix.platform == 'vision') }}
+        timeout-minutes: 1
+        env:
+          SECONDARY_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.secondary_evidence_complete }}
+        run: test "$SECONDARY_EVIDENCE_COMPLETE" = true
+      - name: Require exact TV host and xcresult runtime boundary
+        if: ${{ always() && matrix.platform == 'tv' }}
+        timeout-minutes: 1
+        env:
+          TV_RUNTIME_BOUNDARY_COMPLETE: ${{ steps.evidence_guard.outputs.tv_runtime_boundary_complete }}
+        run: test "$TV_RUNTIME_BOUNDARY_COMPLETE" = true

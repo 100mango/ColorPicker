@@ -106,6 +106,9 @@ def png_dimensions(data):
 
 
 WORKFLOW_IDENTITIES = {
+    ('100mango/ColorPicker', 'refs/heads/touchcolor-platform-qualification',
+     '100mango/ColorPicker/.github/workflows/platform-qualification.yml@refs/heads/touchcolor-platform-qualification'):
+        ('.github/workflows/platform-qualification.yml', ('push',)),
     ('100mango/ColorPicker', 'refs/heads/platform-integration',
      '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/platform-integration'):
         ('.github/workflows/apple-platforms.yml', ('push', 'workflow_dispatch')),

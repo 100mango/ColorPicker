@@ -366,8 +366,8 @@ class WorkflowIdentityTests(unittest.TestCase):
         return {**SOURCE, **identity, 'workflow_file_sha256': keep.digest((ROOT / identity['workflow_file']).read_bytes()),
                 'test_file_sha256': keep.digest((ROOT / 'TouchColorMacUITests/TouchColorMacUITests.swift').read_bytes())}
 
-    def test_only_two_exact_workflow_identities_and_original_events_are_admitted(self):
-        self.assertEqual(len(keep.WORKFLOW_IDENTITIES), 2)
+    def test_three_exact_workflow_identities_preserve_original_events(self):
+        self.assertEqual(len(keep.WORKFLOW_IDENTITIES), 3)
         for dedicated, event in [(False, 'push'), (False, 'workflow_dispatch'), (True, 'push')]:
             with self.subTest(dedicated=dedicated, event=event):
                 value = keep.workflow_identity(self.environment(dedicated, event))
