@@ -17,7 +17,7 @@ from palette_lifecycle_diagnostics import require, strict_json, valid_uuid
 from uikit_runtime_diagnostics import read_identity, validate_identity
 
 REPOSITORY = '100mango/ColorPicker'
-REF = 'refs/heads/codex/ios-original-release'
+REF = 'refs/heads/ios-original-release'
 WORKFLOW = REPOSITORY + '/.github/workflows/ios.yml@' + REF
 RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'
 PROFILES = {'iPadMini': 'iPad mini (A17 Pro)',

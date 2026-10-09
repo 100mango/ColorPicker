@@ -257,8 +257,8 @@
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
 				"INFOPLIST_KEY_NSPhotoLibraryUsageDescription" = "TouchColor uses your photo library to let you choose images for color sampling.";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
-				"MARKETING_VERSION" = "2.0";
-				"CURRENT_PROJECT_VERSION" = "20001";
+				"MARKETING_VERSION" = "2.0.1";
+				"CURRENT_PROJECT_VERSION" = "20002";
 				"ONLY_ACTIVE_ARCH" = "YES";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
@@ -291,8 +291,8 @@
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation" = "YES";
 				"INFOPLIST_KEY_NSPhotoLibraryUsageDescription" = "TouchColor uses your photo library to let you choose images for color sampling.";
 				"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
-				"MARKETING_VERSION" = "2.0";
-				"CURRENT_PROJECT_VERSION" = "20001";
+				"MARKETING_VERSION" = "2.0.1";
+				"CURRENT_PROJECT_VERSION" = "20002";
 				"ONLY_ACTIVE_ARCH" = "NO";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";

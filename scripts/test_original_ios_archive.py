@@ -84,13 +84,13 @@ class ArchiveFixture:
         self.dwarf.parent.mkdir(parents=True)
         self.dwarf.write_bytes(struct.pack('<8I', 0xfeedfacf, 0x100000c, 0, 10, 1, 24, 0, 0) + b'synthetic DWARF')
         self.dsym_info = {'CFBundleIdentifier': 'com.apple.xcode.dsym.com.mango.touchColor',
-                          'CFBundlePackageType': 'dSYM', 'CFBundleVersion': '20001'}
+                          'CFBundlePackageType': 'dSYM', 'CFBundleVersion': '20002'}
         self.write_dsym()
         self.metadata = {'ArchiveVersion': 2, 'SchemeName': 'TouchColor',
             'CreationDate': datetime.datetime(2026, 10, 6, 12),
             'ApplicationProperties': {'ApplicationPath': 'Applications/TouchColor.app',
-                'CFBundleIdentifier': 'com.mango.touchColor', 'CFBundleShortVersionString': '2.0',
-                'CFBundleVersion': '20001'}}
+                'CFBundleIdentifier': 'com.mango.touchColor', 'CFBundleShortVersionString': '2.0.1',
+                'CFBundleVersion': '20002'}}
         self.write_metadata()
         self.calls = []
 
@@ -187,7 +187,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_dsym_versions_are_observed_comparisons_without_new_hard_gate(self):
         cases = [({}, 'missing', 'missing'),
-            ({'CFBundleVersion': '20001', 'CFBundleShortVersionString': '2.0'}, 'same', 'same'),
+            ({'CFBundleVersion': '20002', 'CFBundleShortVersionString': '2.0.1'}, 'same', 'same'),
             ({'CFBundleVersion': '1', 'CFBundleShortVersionString': '1.0'}, 'different', 'different'),
             ({'CFBundleVersion': '1'}, 'different', 'missing')]
         for values, version_status, short_status in cases:
@@ -285,6 +285,19 @@ class ArchiveTests(unittest.TestCase):
                 deadline=time.monotonic() + 8, seconds=2, cap=5, receipts=receipts)
         self.assertTrue(receipts[0]['owned_cleanup_confirmed'])
         self.assertFalse(receipts[0]['complete'])
+
+    def test_renamed_archive_accepts_current_pair_and_rejects_old_prefix(self):
+        env = environment()
+        self.assertEqual(archive.BRANCH, 'refs/heads/ios-original-archive')
+        self.assertEqual(archive.environment(env)['GITHUB_REF'], 'refs/heads/ios-original-archive')
+        self.assertEqual(env['GITHUB_WORKFLOW_REF'],
+                         '100mango/ColorPicker/.github/workflows/ios-original-archive.yml@refs/heads/ios-original-archive')
+        old_ref = 'refs/heads/codex/ios-original-archive'
+        old_workflow = '100mango/ColorPicker/.github/workflows/ios-original-archive.yml@refs/heads/codex/ios-original-archive'
+        for changed in ({'GITHUB_REF': old_ref}, {'GITHUB_WORKFLOW_REF': old_workflow},
+                        {'GITHUB_REF': old_ref, 'GITHUB_WORKFLOW_REF': old_workflow}):
+            with self.subTest(changed=changed), self.assertRaises(archive.Rejected):
+                archive.environment({**env, **changed})
 
     def test_source_ref_attempt_sha_job_and_scope_mismatch(self):
         valid = environment(); archive.environment(valid)

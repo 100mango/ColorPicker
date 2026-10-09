@@ -677,7 +677,7 @@ class ProductInventoryTests(unittest.TestCase):
 
     def test_preparation_mode_rejects_original_foreign_or_mixed_scan_routes(self):
         with self.completion_environment():
-            changes = ({'GITHUB_REF': 'refs/heads/codex/ios-original-release'},
+            changes = ({'GITHUB_REF': 'refs/heads/ios-original-release'},
                        {'GITHUB_WORKFLOW_SHA': 'b'*40}, {'GITHUB_REPOSITORY': 'other/ColorPicker'},
                        {'TC_COMPLETION_GROUP': 'ipad-large'}, {'GITHUB_JOB': 'compatibility'})
             for changed in changes:

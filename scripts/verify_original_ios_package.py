@@ -20,12 +20,16 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 MAX_ENTRIES, MAX_BYTES, MAX_SECONDS = 8192, 1024 * 1024 * 1024, 30
 IMPORT_SHA = "9174667d6dd918f5f8d10ab17e1d3beba08f08d7083387db74c9f18c759cbf97"
-POLICY_LOCALIZATIONS = {'en': 'eaaff16f7db2531ea3c518ab7918ab28a4517cf3bbfda8dd373e5a857456f8b5', 'zh-Hans': '02074237db3a5589d8c9fc6c98ae99596660519fb1c4457493ab50364d62b78a'}
+POLICY_LOCALIZATIONS = {'en': '601d0cfa9f990dd0de223120d4e2cbd8af1e014aa08dad3d00cecebd6b2f7a38', 'zh-Hans': '17c88348f3a8902aae1821519ff3007833d8fd0e2f82fa69059fc4da98a487e2'}
 APP_SOURCES = sorted(['ColorPicker/' + name for name in (
     'main.m', 'ColorAppDelegate.m', 'ColorSceneDelegate.m', 'ColorMainViewController.m',
     'ColorViewController.m', 'ColorRealTimeViewController.m', 'ColorDetectView.m',
     'TCColorUtilities.m', 'TCPrivacyViewController.m', 'TCWorkspaceViewController.m',
-    'TCPhotoImportTask.swift')] + ['TouchColorPhoneCompanion/PhonePaletteImportController.swift'])
+    'TCOriginalDesign.m', 'TCPhotoImportTask.swift')] + ['TouchColorPhoneCompanion/PhonePaletteImportController.swift'])
+ORIGINAL_DESIGN_SOURCES = {
+    'ColorPicker/TCOriginalDesign.m': 'ea5009b30dce5d341123ce04d2fb6b63e2cb963dfeede6c1876055d77b2327fd',
+    'ColorPicker/TCOriginalDesign.h': '84b869cb2b00875f3772cb1a1b44e6dac4400eba274b23494863c8ccba92b449',
+}
 COMPANION = (b"TCWatchPaletteInbox", b"PhonePaletteInboxController", b"PhonePaletteInbox")
 PAIRED = (b"PhonePairedTransferTests", b"PairedReceiptBarrier")
 SEAMS = (b"--ui-test-", b"TOUCHCOLOR_TEST_DEFAULTS", b"TOUCHCOLOR_PAIRED_E2E", b"TOUCHCOLOR_PAIRED_BARRIER", b"WATCH_EDITOR")
@@ -176,7 +180,11 @@ def source_graph(root):
             memberships += [x['path'] for x in refs]
         if phase['isa'] == 'PBXResourcesBuildPhase':
             resource_refs += [objects[objects[b]['fileRef']] for b in phase['files']]
-    require(sorted(memberships) == APP_SOURCES, 'App source membership differs from reviewed twelve-file graph')
+    require(sorted(memberships) == APP_SOURCES, 'App source membership differs from reviewed thirteen-file graph')
+    for path, digest in ORIGINAL_DESIGN_SOURCES.items():
+        source = root / path
+        require(source.is_file() and not source.is_symlink(), 'Missing or linked original-design source: ' + path)
+        require(hashlib.sha256(source.read_bytes()).hexdigest() == digest, 'Reviewed original-design source changed: ' + path)
     require(not any('PrivacyPolicy.html' in str(ref) for ref in resource_refs), 'Retired web policy resource retained')
     groups = [ref for ref in resource_refs if ref.get('name') == 'Localizable.strings']
     require(len(groups) == 1 and groups[0].get('isa') == 'PBXVariantGroup' and groups[0].get('sourceTree') == '<group>',
@@ -284,7 +292,7 @@ def verify(app, mode='device', release=True, *, build_for_testing=False, root=RO
     metadata = info('app'); expected_platform = 'iPhoneOS' if mode == 'device' else 'iPhoneSimulator'
     for key, value in {'CFBundleIdentifier': 'com.mango.touchColor', 'CFBundleExecutable': 'TouchColor',
                        'CFBundlePackageType': 'APPL', 'CFBundleName': 'TouchColor', 'CFBundleDisplayName': 'TouchColor',
-                       'CFBundleShortVersionString': '2.0', 'CFBundleVersion': '20001', 'MinimumOSVersion': '15.0',
+                       'CFBundleShortVersionString': '2.0.1', 'CFBundleVersion': '20002', 'MinimumOSVersion': '15.0',
                        'CFBundleSupportedPlatforms': [expected_platform], 'UIDeviceFamily': [1, 2],
                        'UIRequiredDeviceCapabilities': ['arm64']}.items():
         require(metadata.get(key) == value, 'App metadata mismatch: ' + key)

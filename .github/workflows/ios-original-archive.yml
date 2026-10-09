@@ -1,7 +1,7 @@
 name: Fixed original-iOS unsigned archive proof
 on:
   push:
-    branches: [codex/ios-original-archive]
+    branches: [ios-original-archive]
   workflow_dispatch:
 permissions:
   contents: read

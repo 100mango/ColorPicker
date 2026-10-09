@@ -25,7 +25,7 @@ def verify(phone, mode='device', release=True, *, build_for_testing=False):
         info=plistlib.loads((app/'Info.plist').read_bytes())
         require(info.get('CFBundleIdentifier')==identifier,role+' identifier mismatch')
         require(info.get('CFBundleExecutable')=='TouchColor',role+' executable mismatch')
-        require(info.get('CFBundleShortVersionString')=='2.0' and info.get('CFBundleVersion')=='20001',role+' version mismatch')
+        require(info.get('CFBundleShortVersionString')=='2.0.1' and info.get('CFBundleVersion')=='20002',role+' version mismatch')
         require(info.get('MinimumOSVersion')==minimum,role+' deployment floor mismatch')
         require(info.get('CFBundleSupportedPlatforms')==[platform],role+' actual SDK product mismatch')
         require((app/'Assets.car').is_file(),role+' compiled icon assets missing')

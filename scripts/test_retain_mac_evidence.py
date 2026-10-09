@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = {'sha': 'a' * 40, 'tree': 'b' * 40, 'workflow_sha': 'a' * 40, 'run_id': '1',
           'run_attempt': '1', 'job': 'native-platform', 'tracked_source_clean': True,
           'workflow_file_sha256': 'c' * 64, 'test_file_sha256': 'd' * 64,
-          'repository': '100mango/ColorPicker', 'ref': 'refs/heads/codex/platform-integration',
-          'workflow_ref': '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/codex/platform-integration',
+          'repository': '100mango/ColorPicker', 'ref': 'refs/heads/platform-integration',
+          'workflow_ref': '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/platform-integration',
           'workflow_file': '.github/workflows/apple-platforms.yml', 'event_name': 'push'}
 DEVICE = 'actual-mac-device'
 
@@ -352,7 +352,7 @@ class RetentionTests(unittest.TestCase):
 
 class WorkflowIdentityTests(unittest.TestCase):
     def environment(self, dedicated=False, event='push'):
-        branch = 'codex/mac-watch-repair' if dedicated else 'codex/platform-integration'
+        branch = 'mac-watch-repair' if dedicated else 'platform-integration'
         path = '.github/workflows/mac-watch-repair.yml' if dedicated else '.github/workflows/apple-platforms.yml'
         return {'GITHUB_REPOSITORY': '100mango/ColorPicker', 'GITHUB_REF': 'refs/heads/' + branch,
                 'GITHUB_WORKFLOW_REF': '100mango/ColorPicker/' + path + '@refs/heads/' + branch,
@@ -382,13 +382,29 @@ class WorkflowIdentityTests(unittest.TestCase):
             with self.subTest(event=event), self.assertRaises(ValueError):
                 keep.workflow_identity(self.environment(True, event))
 
+    def test_former_prefixed_mac_refs_and_workflows_are_rejected(self):
+        historical = (
+            (False, 'refs/heads/codex/platform-integration',
+             '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/codex/platform-integration'),
+            (True, 'refs/heads/codex/mac-watch-repair',
+             '100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair'),
+        )
+        for dedicated, old_ref, old_workflow in historical:
+            env = self.environment(dedicated)
+            expected_ref = 'refs/heads/mac-watch-repair' if dedicated else 'refs/heads/platform-integration'
+            self.assertEqual(keep.workflow_identity(env)['ref'], expected_ref)
+            for changed in ({'GITHUB_REF': old_ref}, {'GITHUB_WORKFLOW_REF': old_workflow},
+                            {'GITHUB_REF': old_ref, 'GITHUB_WORKFLOW_REF': old_workflow}):
+                with self.subTest(dedicated=dedicated, changed=changed), self.assertRaises(ValueError):
+                    keep.workflow_identity({**env, **changed})
+
     def test_crossed_repository_branch_workflow_and_paths_are_rejected(self):
         for dedicated in (False, True):
             for field in ('GITHUB_REF', 'GITHUB_WORKFLOW_REF'):
                 with self.subTest(dedicated=dedicated, field=field), self.assertRaises(ValueError):
                     keep.workflow_identity({**self.environment(dedicated), field: self.environment(not dedicated)[field]})
-            for ref in ('100mango/ColorPicker/.github/workflows/../workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair',
-                        'other/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair',
+            for ref in ('100mango/ColorPicker/.github/workflows/../workflows/mac-watch-repair.yml@refs/heads/mac-watch-repair',
+                        'other/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/mac-watch-repair',
                         self.environment(dedicated)['GITHUB_WORKFLOW_REF'].replace('@refs/heads/', '@refs/tags/')):
                 with self.subTest(ref=ref), self.assertRaises(ValueError):
                     keep.workflow_identity({**self.environment(dedicated), 'GITHUB_WORKFLOW_REF': ref})

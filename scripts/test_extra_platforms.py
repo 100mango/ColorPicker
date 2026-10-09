@@ -161,7 +161,7 @@ try:
     expected_minimum={'watch':'9.0','tv':'17.0','vision':'1.0'}[kind]
     assert info['CFBundleIdentifier']==expected_id, info.get('CFBundleIdentifier')
     assert info['MinimumOSVersion']==expected_minimum, info.get('MinimumOSVersion')
-    assert info['CFBundleShortVersionString']=='2.0' and info['CFBundleVersion']=='20001'
+    assert info['CFBundleShortVersionString']=='2.0.1' and info['CFBundleVersion']=='20002'
     assert info['CFBundleExecutable']=='TouchColor'
     privacy=bundle/'PrivacyInfo.xcprivacy';assert privacy.is_file(), 'Release privacy manifest missing'
     privacy_value=plistlib.loads(privacy.read_bytes())

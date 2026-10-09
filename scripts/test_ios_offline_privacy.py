@@ -145,7 +145,7 @@ class OfflinePrivacyContracts(unittest.TestCase):
         graph=source_graph(ROOT)
         self.assertEqual(set(graph['native_privacy_localizations']),{'en','zh-Hans'})
         self.assertNotIn('ColorPicker/PrivacyPolicy.html',graph['resource_paths'])
-        self.assertEqual(len(graph['source_paths']),12)
+        self.assertEqual(len(graph['source_paths']),13)
 
     def test_counts_and_workflow_clocks_are_explicit_and_unchanged(self):
         for source,expected in [(self.phone,17),(self.ipad,16),(self.audit,7)]:

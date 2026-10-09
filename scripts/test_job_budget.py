@@ -109,6 +109,12 @@ class JobBudgetTests(unittest.TestCase):
             label,body=match.groups()
             if label in expected:
                 body='\n'.join(line[10:] if line.startswith(' '*10) else line for line in body.splitlines()).rstrip('\n')+'\n'
+                if label == 'Build native arm64 Release app and inspect identity':
+                    # Keep the original body fingerprint; permit only the reviewed same-build query path.
+                    original_query = "-destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings"
+                    reviewed_query = "-destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings"
+                    self.assertEqual(body.count(reviewed_query), 1)
+                    body = body.replace(reviewed_query, original_query, 1)
                 actual[label]=hashlib.sha256(body.encode()).hexdigest()
         self.assertEqual(actual,expected)
         self.assertLess(source.index('Start exact native job clock'),source.index('Initialize exact row budget'))

@@ -170,6 +170,18 @@ class ClosedGroups(unittest.TestCase):
         with patch.dict(os.environ,{'TC_COMPLETION_GROUP':'testWhatever'},clear=True),self.assertRaises(ValueError):
             c.completion_group('iPadMini')
 
+    def test_renamed_completion_accepts_only_the_current_ref_workflow_pair(self):
+        self.assertEqual(c.REF, 'refs/heads/ios-original-completion')
+        self.assertEqual(c.WORKFLOW, '100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/ios-original-completion')
+        with patch.dict(os.environ, environment(), clear=True):
+            self.assertEqual(d.require_job('iPadMini')['ref'], c.REF)
+        old_ref = 'refs/heads/codex/ios-original-completion'
+        old_workflow = '100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/codex/ios-original-completion'
+        for changed in ({'GITHUB_REF': old_ref}, {'GITHUB_WORKFLOW_REF': old_workflow},
+                        {'GITHUB_REF': old_ref, 'GITHUB_WORKFLOW_REF': old_workflow}):
+            with self.subTest(changed=changed), patch.dict(os.environ, {**environment(), **changed}, clear=True):
+                with self.assertRaises(ValueError): d.require_job('iPadMini')
+
     def test_exact_selection_argv_and_original_case_clocks(self):
         for key,g in c.GROUPS.items():
             with patch.dict(os.environ,environment(key),clear=True):
@@ -190,8 +202,8 @@ class ClosedGroups(unittest.TestCase):
 
     def test_workflow_has_three_closed_groups_and_reduced_finite_ceiling(self):
         text=(ROOT/'.github/workflows/ios-completion.yml').read_text()
-        self.assertIn('branches: [codex/ios-original-completion]',text)
-        self.assertIn('group: touchcolor-ios-refs/heads/codex/ios-original-release',text)
+        self.assertIn('branches: [ios-original-completion]',text)
+        self.assertIn('group: touchcolor-ios-refs/heads/ios-original-release',text)
         self.assertIn('cancel-in-progress: false',text);self.assertIn('max-parallel: 2',text)
         self.assertNotIn('inputs:',text)
         for key,g in c.GROUPS.items():self.assertIn('{group: '+key+', family: '+g['family']+', audits: '+str(bool(g['audits'])).lower()+'}',text)

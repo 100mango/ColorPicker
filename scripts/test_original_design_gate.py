@@ -291,7 +291,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                     self.assertEqual([call.args[2] for call in calls.call_args_list], expected)
                     self.assertLessEqual(clock[0], min(120, worker.deadline - 25))
 
-    def test_receipt_failure_after_successful_seed_never_starts_ui(self):
+    def test_receipt_failure_after_successful_seed_never_starts_dependent_ui(self):
         from unittest.mock import patch
         owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
         with tempfile.TemporaryDirectory() as tmp:
@@ -300,9 +300,9 @@ class OriginalDesignGateTests(unittest.TestCase):
                 worker = gate.Gate('a' * 40, 'se3')
                 with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_host_diagnostics', side_effect=[None, OSError('receipt unavailable')]), patch.object(worker, 'command') as calls:
                     with self.assertRaisesRegex(OSError, 'receipt unavailable'):
-                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
                 self.assertEqual([call.args[0] for call in calls.call_args_list], ['se3-boot', 'se3-seed'])
-                self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap'])
+                self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui-independent'])
                 self.assertFalse(worker.uncertain_simulator)
 
     def test_host_diagnostic_unconfirmed_group_aborts_seed_and_device_cleanup(self):
@@ -393,7 +393,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                     with self.assertRaises(KeyboardInterrupt): worker.seed_fixture('se3', 'U', root / 'fixture.png')
                 command.assert_not_called()
 
-    def test_seed_uncertainty_allows_host_evidence_only_and_never_ui_or_cleanup(self):
+    def test_seed_uncertainty_preserves_prior_ui_but_never_starts_dependent_ui_or_cleanup(self):
         from unittest.mock import patch
         owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
         with tempfile.TemporaryDirectory() as tmp:
@@ -406,12 +406,208 @@ class OriginalDesignGateTests(unittest.TestCase):
                         raise gate.subprocess.TimeoutExpired(argv, 60)
                 with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_host_diagnostics') as diagnostic, patch.object(worker, 'command', side_effect=command) as calls:
                     with self.assertRaises(gate.subprocess.TimeoutExpired):
-                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
                     worker.cleanup()
                 self.assertEqual([call.args[0] for call in calls.call_args_list], ['se3-boot', 'se3-seed'])
-                self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap'])
+                self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui-independent'])
                 self.assertEqual([call.args[3] for call in diagnostic.call_args_list], ['before', 'after'])
                 self.assertTrue(worker.uncertain_simulator); self.assertEqual(worker.owned, [owned])
+
+    def test_dependency_phases_cover_all_six_cases_once_without_changing_bodies(self):
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        independent = gate.UI_PHASE_TESTS['ui-independent']; seeded = gate.UI_PHASE_TESTS['ui-seeded']
+        self.assertEqual(len(independent), 3); self.assertEqual(len(seeded), 3)
+        self.assertFalse(independent & seeded)
+        self.assertEqual(independent | seeded, gate.testcase_names(gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m') - {gate.BOOTSTRAP_TEST})
+        guard = self.trace_guard()
+        for case in independent:
+            body = guard.method(source, '- (void)' + case)
+            self.assertNotIn('sampleAndSaveRed', body)
+            self.assertNotIn('selectOnlySeededPhoto', body)
+        for case in seeded:
+            self.assertIn('sampleAndSaveRed', guard.method(source, '- (void)' + case))
+        method = Path(gate.__file__).read_text().split('    def run_device(', 1)[1].split('    def cleanup(', 1)[0]
+        positions = [method.index(x) for x in ["device, 'hosted'", "device, 'bootstrap'", "device, 'ui-independent'", 'self.seed_fixture(', "device, 'ui-seeded'", 'self.qualify_ui_completion(']]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(method.count("device, 'bootstrap'"), 1)
+
+    def test_ui_and_evidence_budgets_are_shared_not_multiplied_by_two_phases(self):
+        from unittest.mock import patch
+        self.assertEqual(gate.UI_TOTAL_BUDGETS, {'execution': 600, 'summary': 30, 'attachments': 60, 'picker-trace': 30})
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); clock = [100.0]
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.time, 'monotonic', side_effect=lambda: clock[0]):
+                worker = gate.Gate('a' * 40, 'se3')
+                def command(*args, **kwargs): clock[0] += 5; return 0, root / 'log'
+                with patch.object(worker, 'command', side_effect=command) as calls:
+                    for key, ceiling in gate.UI_TOTAL_BUDGETS.items():
+                        worker.ui_command(key, 'first-' + key, ['host-fixture'])
+                        self.assertEqual(calls.call_args.args[2], ceiling)
+                        worker.ui_command(key, 'second-' + key, ['host-fixture'])
+                        self.assertEqual(calls.call_args.args[2], ceiling - 5)
+                        self.assertEqual(worker.ui_budgets[key], ceiling - 10)
+                worker.ui_budgets['execution'] = 0.9
+                with patch.object(worker, 'command') as command:
+                    with self.assertRaisesRegex(RuntimeError, 'Shared UI execution budget exhausted'):
+                        worker.ui_command('execution', 'no-launch', ['xcodebuild'])
+                command.assert_not_called()
+
+    def test_ui_budget_is_charged_even_when_command_is_interrupted(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); clock = [100.0]
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.time, 'monotonic', side_effect=lambda: clock[0]):
+                worker = gate.Gate('a' * 40, 'se3'); original = KeyboardInterrupt('stop')
+                def command(*args, **kwargs): clock[0] += 12; raise original
+                with patch.object(worker, 'command', side_effect=command):
+                    with self.assertRaises(KeyboardInterrupt) as caught: worker.ui_command('execution', 'ui', ['fixture'])
+                self.assertIs(caught.exception, original); self.assertEqual(worker.ui_budgets['execution'], 588)
+
+    def test_ui_phase_records_pass_failure_unrun_and_rejects_duplicate_execution(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(worker, 'execute_tests') as execute:
+                    worker.run_tests('se3', 'U', 'ui-independent', [], gate.UI_PHASE_TESTS['ui-independent'])
+                    self.assertEqual(worker.ui_phase_results['ui-independent']['status'], 'passed')
+                    self.assertEqual(worker.ui_phase_results['ui-seeded']['status'], 'not_run')
+                    with self.assertRaisesRegex(RuntimeError, 'never execute twice'):
+                        worker.run_tests('se3', 'U', 'ui-independent', [], gate.UI_PHASE_TESTS['ui-independent'])
+                    with self.assertRaisesRegex(RuntimeError, 'Unknown or unsplit'):
+                        worker.run_tests('se3', 'U', 'ui', [], set().union(*gate.UI_PHASE_TESTS.values()))
+                    self.assertEqual(execute.call_count, 1)
+                original = RuntimeError('seeded test assertion failed')
+                with patch.object(worker, 'execute_tests', side_effect=original):
+                    with self.assertRaises(RuntimeError) as caught:
+                        worker.run_tests('se3', 'U', 'ui-seeded', [], gate.UI_PHASE_TESTS['ui-seeded'])
+                self.assertIs(caught.exception, original)
+                receipt = json.loads((root / 'evidence/se3-ui-phases.json').read_text())
+                self.assertEqual(receipt['phases']['ui-independent']['status'], 'passed')
+                self.assertEqual(receipt['phases']['ui-seeded']['status'], 'failed')
+
+    def test_independent_ui_failure_stops_before_seed_and_dependent_ui(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                def execute(label, device, suite, *args):
+                    if suite == 'ui-independent': raise RuntimeError('independent assertion failure')
+                with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'command'), patch.object(worker, 'await_owned_boot'), patch.object(worker, 'execute_tests', side_effect=execute) as calls, patch.object(worker, 'seed_fixture') as seed:
+                    with self.assertRaisesRegex(RuntimeError, 'independent assertion failure'):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
+                seed.assert_not_called()
+                self.assertEqual([call.args[2] for call in calls.call_args_list], ['hosted', 'bootstrap', 'ui-independent'])
+                self.assertEqual(worker.ui_phase_results['ui-independent']['status'], 'failed')
+                self.assertEqual(worker.ui_phase_results['ui-seeded']['status'], 'not_run')
+
+    def test_seed_failure_retains_three_prior_ui_cases_and_declares_three_unrun(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                def seed(*args): worker.uncertain_simulator = True; raise gate.subprocess.TimeoutExpired('addmedia', 60)
+                with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'command') as commands, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'execute_tests') as cases, patch.object(worker, 'seed_fixture', side_effect=seed):
+                    with self.assertRaises(gate.subprocess.TimeoutExpired):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
+                    worker.cleanup()
+                receipt = json.loads((root / 'evidence/se3-ui-phases.json').read_text())['phases']
+                self.assertEqual(receipt['ui-independent']['status'], 'passed')
+                self.assertEqual(len(receipt['ui-independent']['expected_tests']), 3)
+                self.assertEqual(receipt['ui-seeded']['status'], 'not_run')
+                self.assertEqual(len(receipt['ui-seeded']['expected_tests']), 3)
+                self.assertEqual([call.args[2] for call in cases.call_args_list], ['hosted', 'bootstrap', 'ui-independent'])
+                self.assertEqual([call.args[0] for call in commands.call_args_list], ['se3-boot'])
+
+    def test_phase_screenshots_are_disjoint_retained_and_globally_complete(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                def export(budget, name, argv, **kwargs):
+                    self.assertEqual(budget, 'attachments')
+                    destination = Path(argv[argv.index('--output-path') + 1]); destination.mkdir()
+                    phase = 'ui-independent' if 'ui-independent' in name else 'ui-seeded'
+                    rows = []
+                    for image in gate.UI_PHASE_IMAGES[phase]:
+                        filename = image + '.png'; (destination / filename).write_bytes(gate.fixture_png())
+                        rows.append({'exportedFileName': filename, 'name': image})
+                    (destination / 'manifest.json').write_text(json.dumps(rows))
+                    return 0, root / 'log'
+                with patch.object(worker, 'ui_command', side_effect=export) as calls:
+                    worker.export_screenshots('se3', root / 'one.xcresult', require_complete=True, phase='ui-independent')
+                    first = (root / 'evidence/se3-ui-independent-screenshots.json').read_bytes()
+                    self.assertEqual(len(worker.ui_screenshots), 4)
+                    worker.export_screenshots('se3', root / 'two.xcresult', require_complete=True, phase='ui-seeded')
+                self.assertEqual((root / 'evidence/se3-ui-independent-screenshots.json').read_bytes(), first)
+                self.assertTrue((root / 'evidence/se3-ui-seeded-screenshots.json').exists())
+                self.assertNotEqual(calls.call_args_list[0].args[1], calls.call_args_list[1].args[1])
+                self.assertEqual(len(list((root / 'evidence').glob('*.png'))), 6)
+                for row in worker.ui_phase_results.values(): row['status'] = 'passed'
+                worker.qualify_ui_completion('se3')
+                self.assertEqual(len(json.loads((root / 'evidence/se3-screenshots.json').read_text())), 6)
+                worker.ui_screenshots.append(dict(worker.ui_screenshots[0]))
+                with self.assertRaisesRegex(RuntimeError, 'Duplicate screenshot'): worker.qualify_ui_completion('se3')
+
+    def test_incomplete_phase_or_missing_global_image_never_qualifies(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with self.assertRaisesRegex(RuntimeError, 'Both UI phases'): worker.qualify_ui_completion('se3')
+                for row in worker.ui_phase_results.values(): row['status'] = 'passed'
+                worker.ui_screenshots = [{'name': name} for name in sum(gate.UI_PHASE_IMAGES.values(), [])[:-1]]
+                with self.assertRaisesRegex(RuntimeError, 'Incomplete six-image'): worker.qualify_ui_completion('se3')
+
+    def test_global_ui_case_inventory_rejects_duplicate_across_phases(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                for row in worker.ui_phase_results.values(): row['status'] = 'passed'
+                worker.ui_phase_results['ui-seeded']['expected_tests'][0] = worker.ui_phase_results['ui-independent']['expected_tests'][0]
+                with self.assertRaisesRegex(RuntimeError, 'UI testcase inventory'):
+                    worker.qualify_ui_completion('se3')
+
+    def test_both_ui_phases_use_shared_execution_summary_attachment_and_trace_allowances(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.time, 'time', return_value=100):
+                worker = gate.Gate('a' * 40, 'se3'); selections = []
+                def ui_command(budget, name, argv, **kwargs):
+                    path = root / (name + '.log')
+                    if budget == 'execution':
+                        selected = {value.rsplit('/', 1)[-1] for value in argv if value.startswith('-only-testing:')}
+                        selections.append(selected)
+                        self.assertEqual(argv[argv.index('-destination') + 1], 'platform=iOS Simulator,id=U')
+                        self.assertIn('test-without-building', argv)
+                        self.assertEqual(argv[argv.index('-default-test-execution-time-allowance') + 1], '120')
+                        self.assertEqual(argv[argv.index('-maximum-test-execution-time-allowance') + 1], '180')
+                        path.write_text(''.join("Test Case '-[Suite " + case + "]' passed (0.1 seconds).\n" for case in sorted(selected)))
+                    elif budget == 'summary':
+                        summary = self.summary(); summary.update(totalTestCount=3, passedTests=3, startTime=100, finishTime=100)
+                        summary['devicesAndConfigurations'][0]['passedTests'] = 3
+                        summary['devicesAndConfigurations'][0]['device']['deviceId'] = 'U'
+                        path.write_text(json.dumps(summary))
+                    else: path.write_text('TC_PICKER_TRACE event=delegate')
+                    return 0, path
+                with patch.object(worker, 'ui_command', side_effect=ui_command) as commands, patch.object(worker, 'export_screenshots') as exports:
+                    for phase, selected in gate.UI_PHASE_TESTS.items():
+                        selectors = ['TouchColorUITests/' + gate.UI_CLASS + '/' + name for name in sorted(selected)]
+                        worker.run_tests('se3', 'U', phase, selectors, selected)
+                self.assertEqual([c.args[0] for c in commands.call_args_list], ['execution', 'summary', 'picker-trace'] * 2)
+                self.assertEqual([c.kwargs['phase'] for c in exports.call_args_list], list(gate.UI_PHASE_TESTS))
+                self.assertEqual(len(set().union(*selections)), 6)
+                self.assertTrue(all(row['observed_counts']['passedTests'] == 3 for row in worker.ui_phase_results.values()))
 
     def test_import_lifecycle_adapter_preserves_every_other_original_byte(self):
         root = Path(__file__).resolve().parents[1]
@@ -478,16 +674,71 @@ class OriginalDesignGateTests(unittest.TestCase):
         for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:
             self.assertNotIn(stale, source)
 
-    def test_workflow_selects_only_se3_diagnostic_without_weakening_full_device_contract(self):
+    def test_only_original_design_workflow_matches_its_push_branch(self):
+        import yaml
+        expected = {
+            'apple-platforms.yml': 'platform-integration',
+            'mac-watch-repair.yml': 'mac-watch-repair',
+            'ios.yml': 'ios-original-release',
+            'ios-completion.yml': 'ios-original-completion',
+            'ios-original-archive.yml': 'ios-original-archive',
+            'original-design-gate.yml': 'touchcolor-original-design',
+        }
+        workflows = {path.name: yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+                     for path in (gate.ROOT / '.github/workflows').glob('*.yml')}
+        self.assertEqual(set(workflows), set(expected))
+        matched = []
+        for filename, workflow in workflows.items():
+            self.assertEqual(workflow['on']['push'], {'branches': [expected[filename]]})
+            self.assertNotIn('codex/', (gate.ROOT / '.github/workflows' / filename).read_text())
+            if 'touchcolor-original-design' in workflow['on']['push']['branches']: matched.append(filename)
+        self.assertEqual(matched, ['original-design-gate.yml'])
+        self.assertEqual(workflows['original-design-gate.yml']['on'],
+                         {'push': {'branches': ['touchcolor-original-design']}})
+        for canonical, followup in [('apple-platforms.yml', 'mac-watch-repair.yml'),
+                                    ('ios.yml', 'ios-completion.yml')]:
+            group = workflows[canonical]['concurrency']['group']
+            self.assertIn('${{ github.ref }}', group)
+            expanded = group.replace('${{ github.ref }}', 'refs/heads/' + expected[canonical])
+            self.assertEqual(workflows[followup]['concurrency']['group'], expanded)
+
+    def test_original_design_runtime_rejects_other_routes_before_commands(self):
+        from unittest.mock import patch
+        controller = object.__new__(gate.Gate)
+        controller.expected_sha = 'a' * 40
+        environment = {'GITHUB_REPOSITORY': '100mango/ColorPicker',
+                       'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/touchcolor-original-design',
+                       'GITHUB_SHA': 'a' * 40, 'GITHUB_WORKFLOW_SHA': 'a' * 40}
+        rejected = ('refs/heads/platform-integration', 'refs/heads/mac-watch-repair',
+                    'refs/heads/ios-original-release', 'refs/heads/ios-original-completion',
+                    'refs/heads/ios-original-archive', 'refs/heads/main',
+                    'refs/heads/codex/platform-integration', 'refs/heads/codex/mac-watch-repair',
+                    'refs/heads/codex/ios-original-release', 'refs/heads/codex/ios-original-completion',
+                    'refs/heads/codex/ios-original-archive', 'refs/heads/codex/touchcolor-original-design')
+        changes = [{'GITHUB_REF': ref} for ref in rejected]
+        changes.extend({'GITHUB_EVENT_NAME': event} for event in ('workflow_dispatch', 'pull_request', 'workflow_run', 'schedule'))
+        for changed in changes:
+            with self.subTest(changed=changed), patch.dict(gate.os.environ, {**environment, **changed}, clear=True), \
+                    patch.object(gate.sys, 'platform', 'darwin'), \
+                    patch.object(controller, 'text') as text, patch.object(controller, 'command') as command:
+                with self.assertRaisesRegex(RuntimeError, 'Only the root-controlled'): controller.main()
+                text.assert_not_called(); command.assert_not_called()
+        class ReachedSourceVerification(Exception): pass
+        with patch.dict(gate.os.environ, environment, clear=True), patch.object(gate.sys, 'platform', 'darwin'), \
+                patch.object(controller, 'text', side_effect=ReachedSourceVerification) as text:
+            with self.assertRaises(ReachedSourceVerification): controller.main()
+            text.assert_called_once_with('source-sha', ['git', 'rev-parse', 'HEAD'])
+
+    def test_workflow_requires_both_release_devices_without_weakening_contract(self):
         workflow = (gate.ROOT / '.github/workflows/original-design-gate.yml').read_text()
-        for required in ['device: [se3]', 'fail-fast: false', 'max-parallel: 2',
+        for required in ['device: [se3, ipad-mini]', 'fail-fast: false', 'max-parallel: 1',
                          'timeout-minutes: 25', 'runs-on: xcode-27', 'ref: ${{ github.sha }}',
                          'EXPECTED_SHA: ${{ github.sha }}', 'DEVICE_LABEL: ${{ matrix.device }}',
                          '--expected-sha "$EXPECTED_SHA" --device "$DEVICE_LABEL"',
                          'name: touchcolor-original-design-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.device }}']:
             self.assertIn(required, workflow)
-        self.assertEqual(workflow.count('device: [se3]'), 1)
-        self.assertNotIn('device: [se3, ipad-mini]', workflow)
+        self.assertEqual(workflow.count('device: [se3, ipad-mini]'), 1)
+        self.assertNotIn('device: [se3]', workflow)
         self.assertEqual(workflow.count('runs-on:'), 1)
         self.assertNotIn('continue-on-error', workflow)
         self.assertNotIn('strategy.job-total', workflow)
@@ -514,8 +765,8 @@ class OriginalDesignGateTests(unittest.TestCase):
             for label, name in gate.DEVICE_NAMES.items():
                 with patch.object(gate, 'WORK', root / label), patch.object(gate, 'EVIDENCE', root / label / 'evidence'):
                     worker = gate.Gate('a' * 40, label)
-                    with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot') as ready, patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_fixture') as seed:
-                        worker.run_device(types, runtime, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                    with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot') as ready, patch.object(worker, 'run_tests') as tests, patch.object(worker, 'seed_fixture') as seed, patch.object(worker, 'qualify_ui_completion') as completion:
+                        worker.run_device(types, runtime, root / 'app', root / 'fixture.png', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
                     create.assert_called_once()
                     args = create.call_args.args
                     self.assertEqual(args[0], label + '-create')
@@ -523,8 +774,9 @@ class OriginalDesignGateTests(unittest.TestCase):
                     ready.assert_called_once_with(label, owned, worker.devices[0]['owned_name'])
                     self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-shutdown', '-delete']])
                     seed.assert_called_once_with(label, owned, root / 'fixture.png')
-                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui'])
-                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, {'ui'}])
+                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui-independent', 'ui-seeded'])
+                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, gate.UI_PHASE_TESTS['ui-independent'], gate.UI_PHASE_TESTS['ui-seeded']])
+                    completion.assert_called_once_with(label)
                     self.assertEqual(worker.devices[0]['name'], name)
                     self.assertEqual(worker.owned, [])
 
@@ -537,7 +789,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                 worker = gate.Gate('a' * 40, 'se3')
                 with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests', side_effect=RuntimeError('test failed')):
                     with self.assertRaisesRegex(RuntimeError, 'test failed'):
-                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'owned-runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'owned-runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
                     create.assert_called_once()
                     self.assertEqual([call.args[0] for call in command.call_args_list], ['se3-boot'])
                 self.assertEqual(worker.owned, [owned])
@@ -588,7 +840,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                     raise RuntimeError('managed install or hosted execution uncertain')
                 with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests', side_effect=tests) as runs:
                     with self.assertRaisesRegex(RuntimeError, 'hosted execution uncertain'):
-                        worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                        worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
                     worker.cleanup()
                     self.assertEqual([call.args[2] for call in runs.call_args_list], ['hosted'])
                     self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot'])
@@ -621,6 +873,8 @@ class OriginalDesignGateTests(unittest.TestCase):
         import sys
         from unittest.mock import patch
         class Worker:
+            ui_phase_results = {}
+            ui_budgets = dict(gate.UI_TOTAL_BUDGETS)
             owned = []
             uncertain_simulator = False
             def __init__(self, *args): pass
@@ -746,7 +1000,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         runner = Path(gate.__file__).read_text()
         self.assertIn('ui.remove(BOOTSTRAP_TEST)', runner)
         self.assertNotIn("if label == 'ipad-mini':", runner)
-        self.assertIn("['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)]", runner)
+        self.assertIn("['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(seeded)]", runner)
         self.assertIn("['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60", runner)
         self.assertIn("'bootstrap_inventory': 1", runner)
         self.assertIn('no cold Photos-service claim', runner)
@@ -762,7 +1016,7 @@ class OriginalDesignGateTests(unittest.TestCase):
                     if suite == 'bootstrap': raise RuntimeError('bootstrap failure')
                 with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests', side_effect=tests) as runs:
                     with self.assertRaisesRegex(RuntimeError, 'bootstrap failure'):
-                        worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                        worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, set().union(*gate.UI_PHASE_TESTS.values()))
                     self.assertEqual([call.args[2] for call in runs.call_args_list], ['hosted', 'bootstrap'])
                     self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot'])
                 self.assertEqual(worker.owned, [owned])
@@ -846,7 +1100,7 @@ class OriginalDesignGateTests(unittest.TestCase):
 
     def test_trace_capture_is_owned_read_only_bounded_and_missing_is_not_no_callback(self):
         source = Path(gate.__file__).read_text()
-        trace = source.split("trace_code, trace = self.command", 1)[1].split('qualify_summary(summary', 1)[0]
+        trace = source.split("trace_command = ", 1)[1].split('qualify_summary(summary', 1)[0]
         self.assertIn("['xcrun', 'simctl', 'spawn', device, 'log', 'show'", trace)
         self.assertIn('TC_PICKER_TRACE', trace)
         self.assertIn('30, simulator=True, allow_failure=True', trace)

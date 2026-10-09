@@ -24,7 +24,7 @@ from palette_lifecycle_diagnostics import capture, CaptureStopped
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '2f15761aec8d97b94b4a5595ff5778297dcf5130'
 BASE_TREE = '35baaf3fe29cee370229c2806b852febb862ba5f'
-BRANCH = 'refs/heads/codex/ios-original-archive'
+BRANCH = 'refs/heads/ios-original-archive'
 WORKFLOW = '.github/workflows/ios-original-archive.yml'
 NEW_PATHS = (WORKFLOW, 'scripts/original_ios_archive.py', 'scripts/test_original_ios_archive.py')
 ARCHIVE = Path('build/TouchColor.xcarchive')

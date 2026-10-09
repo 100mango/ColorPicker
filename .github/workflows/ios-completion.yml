@@ -1,12 +1,12 @@
 name: Fixed original-iOS missing-case completion
 on:
   push:
-    branches: [codex/ios-original-completion]
+    branches: [ios-original-completion]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: touchcolor-ios-refs/heads/codex/ios-original-release
+  group: touchcolor-ios-refs/heads/ios-original-release
   cancel-in-progress: false
 jobs:
   compile-prerequisites:
@@ -26,8 +26,8 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/ios-original-completion
-          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/codex/ios-original-completion
+          test "$GITHUB_REF" = refs/heads/ios-original-completion
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/ios-original-completion
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --
@@ -130,8 +130,8 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/ios-original-completion
-          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/codex/ios-original-completion
+          test "$GITHUB_REF" = refs/heads/ios-original-completion
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/ios-completion.yml@refs/heads/ios-original-completion
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git diff --exit-code HEAD --

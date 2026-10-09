@@ -10,7 +10,7 @@ The completed Large iPad and all audit selections are retired from this route.
 import os
 from palette_lifecycle_diagnostics import require
 
-REF = 'refs/heads/codex/ios-original-completion'
+REF = 'refs/heads/ios-original-completion'
 WORKFLOW = '100mango/ColorPicker/.github/workflows/ios-completion.yml@' + REF
 BOOTSTRAP = tuple('TouchColorTests/PhonePaletteImportTests/' + name for name in (
     'testOriginalIOSImportIsPresentWithoutCompanion',

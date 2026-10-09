@@ -55,7 +55,7 @@ for name,kind,refs in [('TouchColor','application',apprefs[:len(sources)]+compan
     products.append(product)
     phases=[phase(name+'sources','PBXSourcesBuildPhase',refs),phase(name+'frameworks','PBXFrameworksBuildPhase',[]),phase(name+'resources','PBXResourcesBuildPhase',resources if isapp else testresources if name=='TouchColorTests' else [])]
     settings=dict(PRODUCT_NAME='$(TARGET_NAME)', PRODUCT_BUNDLE_IDENTIFIER='com.mango.touchColor' if isapp else 'com.mango.touchColor.'+name, CODE_SIGN_STYLE='Automatic', HEADER_SEARCH_PATHS=['$(inherited)','$(SRCROOT)/ColorPicker'], LD_RUNPATH_SEARCH_PATHS=['$(inherited)','@executable_path/Frameworks','@loader_path/Frameworks'])
-    if isapp: settings.update(INFOPLIST_FILE='ColorPicker/TouchColor-Info.plist', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', MARKETING_VERSION='2.0', CURRENT_PROJECT_VERSION='20001', SWIFT_VERSION='5.0', DEFINES_MODULE='YES', SWIFT_OBJC_INTERFACE_HEADER_NAME='TouchColor-Swift.h', SWIFT_OBJC_BRIDGING_HEADER='ColorPicker/TouchColor-Bridging-Header.h')
+    if isapp: settings.update(INFOPLIST_FILE='ColorPicker/TouchColor-Info.plist', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon', MARKETING_VERSION='2.0.1', CURRENT_PROJECT_VERSION='20002', SWIFT_VERSION='5.0', DEFINES_MODULE='YES', SWIFT_OBJC_INTERFACE_HEADER_NAME='TouchColor-Swift.h', SWIFT_OBJC_BRIDGING_HEADER='ColorPicker/TouchColor-Bridging-Header.h')
     else: settings.update(GENERATE_INFOPLIST_FILE='YES', IPHONEOS_DEPLOYMENT_TARGET='17.0')
     if kind=='bundle.unit-test': settings.update(TEST_HOST='$(BUILT_PRODUCTS_DIR)/TouchColor.app/TouchColor', BUNDLE_LOADER='$(TEST_HOST)')
     if kind=='bundle.ui-testing': settings.update(TEST_TARGET_NAME='TouchColor',SWIFT_VERSION='5.0')

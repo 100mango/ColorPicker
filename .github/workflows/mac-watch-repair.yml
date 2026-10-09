@@ -1,11 +1,11 @@
 name: Targeted Mac and Watch repair evidence
 on:
   push:
-    branches: [codex/mac-watch-repair]
+    branches: [mac-watch-repair]
 permissions:
   contents: read
 concurrency:
-  group: touchcolor-platforms-refs/heads/codex/platform-integration
+  group: touchcolor-platforms-refs/heads/platform-integration
   cancel-in-progress: false
 jobs:
   native-prerequisites:
@@ -25,9 +25,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/mac-watch-repair
+          test "$GITHUB_REF" = refs/heads/mac-watch-repair
           test "$GITHUB_EVENT_NAME" = push
-          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/mac-watch-repair
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           sw_vers -buildVersion | grep -Fx 26A428
@@ -141,9 +141,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 100mango/ColorPicker
-          test "$GITHUB_REF" = refs/heads/codex/mac-watch-repair
+          test "$GITHUB_REF" = refs/heads/mac-watch-repair
           test "$GITHUB_EVENT_NAME" = push
-          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair
+          test "$GITHUB_WORKFLOW_REF" = 100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/mac-watch-repair
           test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           sw_vers
@@ -202,7 +202,7 @@ jobs:
             -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 \
             ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
           xcodebuild -project TouchColorMac.xcodeproj -scheme TouchColorMac -configuration Release \
-            -destination 'generic/platform=macOS' ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings -json > build/mac-release-settings.json
+            -destination 'generic/platform=macOS' -derivedDataPath build/mac-arm64 ARCHS=arm64 CODE_SIGNING_ALLOWED=NO -showBuildSettings -json > build/mac-release-settings.json
           python3 scripts/verify_mac_release_settings.py build/mac-release-settings.json
           APP=build/mac-arm64/Build/Products/Release/TouchColor.app
           python3 scripts/verify_privacy_manifest.py "$APP/Contents/Resources/PrivacyInfo.xcprivacy" selected

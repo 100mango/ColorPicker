@@ -107,7 +107,7 @@ class PairedHarnessTests(unittest.TestCase):
     def test_installed_record_includes_debug_dylib_not_only_launcher(self):
         with tempfile.TemporaryDirectory() as folder:
             app=Path(folder)/'TouchColor.app';app.mkdir()
-            (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.mango.touchColor.watchkitapp','CFBundleExecutable':'TouchColor','CFBundleShortVersionString':'2.0','CFBundleVersion':'20001','CFBundleSupportedPlatforms':['WatchSimulator'],'WKCompanionAppBundleIdentifier':'com.mango.touchColor'}))
+            (app/'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'com.mango.touchColor.watchkitapp','CFBundleExecutable':'TouchColor','CFBundleShortVersionString':'2.0.1','CFBundleVersion':'20002','CFBundleSupportedPlatforms':['WatchSimulator'],'WKCompanionAppBundleIdentifier':'com.mango.touchColor'}))
             (app/'TouchColor').write_bytes(b'fixed launcher');(app/'TouchColor.debug.dylib').write_bytes(b'first actual implementation')
             before=harness.product_record(app,'watch')
             (app/'TouchColor.debug.dylib').write_bytes(b'changed actual implementation')

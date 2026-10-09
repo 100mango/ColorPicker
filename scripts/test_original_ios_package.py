@@ -57,12 +57,15 @@ class Fixture:
         color = self.root / 'ColorPicker'; color.mkdir()
         for name in ('ColorAppDelegate.m', 'ColorMainViewController.h', 'ColorMainViewController.m', 'TCWorkspaceViewController.m'):
             (color / name).write_text('// synthetic original-iOS product\n')
+        for name in package.ORIGINAL_DESIGN_SOURCES:
+            path = self.root / name; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((package.ROOT / name).read_bytes())
         for name in ('TouchColor-Info.plist', 'PrivacyInfo.xcprivacy'):
             (color / name).write_bytes((package.ROOT / 'ColorPicker' / name).read_bytes())
         self.metadata = plistlib.loads((color / 'TouchColor-Info.plist').read_bytes())
         self.metadata.update(CFBundleIdentifier='com.mango.touchColor', CFBundleExecutable='TouchColor',
                              CFBundleName='TouchColor', CFBundleDisplayName='TouchColor',
-                             CFBundleShortVersionString='2.0', CFBundleVersion='20001', MinimumOSVersion='15.0',
+                             CFBundleShortVersionString='2.0.1', CFBundleVersion='20002', MinimumOSVersion='15.0',
                              CFBundleSupportedPlatforms=['iPhoneSimulator' if debug else 'iPhoneOS'], UIDeviceFamily=[1, 2],
                              CFBundleIcons={'CFBundlePrimaryIcon': {'CFBundleIconName': 'AppIcon'}})
         self.write_info()

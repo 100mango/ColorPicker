@@ -106,11 +106,11 @@ def png_dimensions(data):
 
 
 WORKFLOW_IDENTITIES = {
-    ('100mango/ColorPicker', 'refs/heads/codex/platform-integration',
-     '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/codex/platform-integration'):
+    ('100mango/ColorPicker', 'refs/heads/platform-integration',
+     '100mango/ColorPicker/.github/workflows/apple-platforms.yml@refs/heads/platform-integration'):
         ('.github/workflows/apple-platforms.yml', ('push', 'workflow_dispatch')),
-    ('100mango/ColorPicker', 'refs/heads/codex/mac-watch-repair',
-     '100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair'):
+    ('100mango/ColorPicker', 'refs/heads/mac-watch-repair',
+     '100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/mac-watch-repair'):
         ('.github/workflows/mac-watch-repair.yml', ('push',)),
 }
 

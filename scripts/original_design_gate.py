@@ -27,6 +27,24 @@ BOOTSTATUS_TIMEOUT_SECONDS = 300  # One bounded preparation; no automatic retry 
 BUNDLE_ID = 'com.mango.touchColor'
 UI_CLASS = 'TouchColorOriginalDesignUITests'
 BOOTSTRAP_TEST = 'testPhotosLibraryBootstrapCanCancelWithoutSelecting'
+UI_PHASE_TESTS = {
+    'ui-independent': {
+        'testOriginalHomeTabsAndRepeatedPhotoPickerCancellation',
+        'testNativePrivacyContentAndActionsFromEmptyLibrary',
+        'testLiveUnavailableCannotSaveAndReturnsToOriginalHome',
+    },
+    'ui-seeded': {
+        'testRealPhotoSaveRelaunchDelete',
+        'testDelayedImportCancellationPreservesSavedColor',
+        'testNativePrivacyBackgroundClosePreservesRealSavedColor',
+    },
+}
+UI_PHASE_IMAGES = {
+    'ui-independent': ['01-original-home', '02-original-empty-library',
+                       '05-secondary-privacy-policy', '06-original-live-unavailable'],
+    'ui-seeded': ['03-original-photo-sampled', '04-original-saved-library'],
+}
+UI_TOTAL_BUDGETS = {'execution': 600, 'summary': 30, 'attachments': 60, 'picker-trace': 30}
 HOSTED_SOURCES = {
     'ColorPickerTests': 'ColorPickerTests/ColorPickerTests.m',
     'TCPhotoImportTests': 'ColorPickerTests/TCPhotoImportTests.swift',
@@ -133,6 +151,10 @@ class Gate:
         self.owned = []
         self.commands = []
         self.devices = []
+        self.ui_budgets = dict(UI_TOTAL_BUDGETS)
+        self.ui_phase_results = {phase: {'status': 'not_run', 'expected_tests': sorted(names)}
+                                 for phase, names in UI_PHASE_TESTS.items()}
+        self.ui_screenshots = []
         WORK.mkdir(parents=True, exist_ok=True)
         EVIDENCE.mkdir(parents=True, exist_ok=True)
 
@@ -294,7 +316,37 @@ class Gate:
         _, path = self.command(name, argv, seconds, **kwargs)
         return path.read_text(errors='replace').strip()
 
+    def ui_command(self, budget, name, argv, **kwargs):
+        """Both UI phases share each original UI-stage allowance, not two copies."""
+        seconds = self.ui_budgets[budget]
+        require(seconds >= 1, 'Shared UI ' + budget + ' budget exhausted; no command launched')
+        began = time.monotonic()
+        try:
+            return self.command(name, argv, seconds, **kwargs)
+        finally:
+            self.ui_budgets[budget] = max(0, seconds - max(0, time.monotonic() - began))
+
     def run_tests(self, label, device, suite, selectors, expected_names):
+        require(suite in ('hosted', 'bootstrap') or suite in UI_PHASE_TESTS, 'Unknown or unsplit test phase')
+        if suite not in UI_PHASE_TESTS:
+            return self.execute_tests(label, device, suite, selectors, expected_names)
+        require(expected_names == UI_PHASE_TESTS[suite], 'Wrong UI phase inventory')
+        row = self.ui_phase_results[suite]
+        require(row['status'] == 'not_run', 'A UI phase must never execute twice')
+        row.update(status='running', started=time.time())
+        try:
+            self.execute_tests(label, device, suite, selectors, expected_names)
+            row['status'] = 'passed'
+        except BaseException as error:
+            row.update(status='failed', error=str(error)[:300])
+            raise
+        finally:
+            row['finished'] = time.time()
+            write_json(EVIDENCE / (label + '-ui-phases.json'),
+                       {'phases': self.ui_phase_results, 'remaining_seconds': self.ui_budgets})
+
+    def execute_tests(self, label, device, suite, selectors, expected_names):
+        ui_phase = suite in UI_PHASE_TESTS
         result = WORK / (label + '-' + suite + '.xcresult')
         require(not result.exists(), 'Refusing to reuse a previous result bundle')
         command = ['xcodebuild', '-project', 'TouchColor.xcodeproj', '-scheme', 'TouchColor', '-configuration', 'Debug',
@@ -303,21 +355,37 @@ class Gate:
                    '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '120',
                    '-maximum-test-execution-time-allowance', '180', *['-only-testing:' + s for s in selectors], 'CODE_SIGNING_ALLOWED=NO', 'test-without-building']
         began = time.time()
-        code, log = self.command(label + '-' + suite, command, 600, simulator=True, allow_failure=True)
+        if ui_phase:
+            code, log = self.ui_command('execution', label + '-' + suite, command, simulator=True, allow_failure=True)
+        else:
+            code, log = self.command(label + '-' + suite, command, 600, simulator=True, allow_failure=True)
         finished = time.time()
-        raw = self.text(label + '-' + suite + '-summary', ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(result)])
+        summary_command = ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(result)]
+        if ui_phase:
+            _, summary_path = self.ui_command('summary', label + '-' + suite + '-summary', summary_command)
+            raw = summary_path.read_text()
+        else:
+            raw = self.text(label + '-' + suite + '-summary', summary_command)
         summary = json.loads(raw)
         write_json(EVIDENCE / (label + '-' + suite + '-summary.json'), summary)
+        if ui_phase:
+            self.ui_phase_results[suite]['observed_counts'] = {key: summary.get(key) for key in
+                ('totalTestCount', 'passedTests', 'failedTests', 'skippedTests', 'expectedFailures')}
         # Preserve screenshot evidence even when a real assertion failed.
-        if suite in ('ui', 'bootstrap'):
-            self.export_screenshots(label if suite == 'ui' else label + '-bootstrap', result,
-                                    require_complete=code == 0, bootstrap=suite == 'bootstrap')
+        if ui_phase or suite == 'bootstrap':
+            self.export_screenshots(label if ui_phase else label + '-bootstrap', result,
+                                    require_complete=code == 0, bootstrap=suite == 'bootstrap',
+                                    phase=suite if ui_phase else None)
             # XCTest is terminal and attachments are safe before this optional
             # bounded observation. Missing log transport is never 'no callback'.
-            trace_code, trace = self.command(label + '-' + suite + '-picker-trace',
-                ['xcrun', 'simctl', 'spawn', device, 'log', 'show', '--style', 'compact', '--info', '--debug',
-                 '--last', '15m', '--predicate', 'eventMessage BEGINSWITH "TC_PICKER_TRACE"'],
-                30, simulator=True, allow_failure=True)
+            trace_command = ['xcrun', 'simctl', 'spawn', device, 'log', 'show', '--style', 'compact', '--info', '--debug',
+                             '--last', '15m', '--predicate', 'eventMessage BEGINSWITH "TC_PICKER_TRACE"']
+            if ui_phase:
+                trace_code, trace = self.ui_command('picker-trace', label + '-' + suite + '-picker-trace',
+                                                   trace_command, simulator=True, allow_failure=True)
+            else:
+                trace_code, trace = self.command(label + '-' + suite + '-picker-trace', trace_command,
+                                                 30, simulator=True, allow_failure=True)
             write_json(EVIDENCE / (label + '-' + suite + '-picker-trace.json'),
                        {'device': device, 'source_sha': self.expected_sha, 'exit_code': trace_code,
                         'evidence': 'available' if trace_code == 0 and 'TC_PICKER_TRACE event=' in trace.read_text(errors='replace') else 'missing',
@@ -325,10 +393,14 @@ class Gate:
         qualify_summary(summary, expected_count=len(expected_names), device=device, began=began, finished=finished, exit_code=code)
         qualify_cases(log.read_text(errors='replace'), expected_names)
 
-    def export_screenshots(self, label, result, *, require_complete, bootstrap=False):
-        destination = WORK / (label + '-raw-attachments')
-        self.command(label + '-attachments', ['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result),
-                                             '--output-path', str(destination)], 60)
+    def export_screenshots(self, label, result, *, require_complete, bootstrap=False, phase=None):
+        prefix = label + ('-' + phase if phase else '')
+        destination = WORK / (prefix + '-raw-attachments')
+        argv = ['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result), '--output-path', str(destination)]
+        if phase:
+            self.ui_command('attachments', prefix + '-attachments', argv)
+        else:
+            self.command(prefix + '-attachments', argv, 60)
         def records(value):
             if isinstance(value, dict):
                 if 'exportedFileName' in value: yield value
@@ -339,7 +411,8 @@ class Gate:
         names = ['01-original-home', '02-original-empty-library', '03-original-photo-sampled',
                  '04-original-saved-library', '05-secondary-privacy-policy', '06-original-live-unavailable']
         if bootstrap: names = ['bootstrap-picker-ready']
-        diagnostics = ['bootstrap-cancel-before'] if bootstrap else ['picker-cancel-before-1', 'picker-cancel-before-2']
+        if phase: names = UI_PHASE_IMAGES[phase]
+        diagnostics = ['bootstrap-cancel-before'] if bootstrap else ['picker-cancel-before-1', 'picker-cancel-before-2'] if phase == 'ui-independent' else []
         kept = []
         for name in names + diagnostics + ['original-design-failure']:
             matches = [row for row in rows if any(name in value for value in row.values() if isinstance(value, str))]
@@ -353,9 +426,23 @@ class Gate:
                 data = source.read_bytes(); require(data.startswith(b'\x89PNG\r\n\x1a\n'), 'Expected lossless PNG evidence')
                 total = sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file())
                 require(total + len(data) <= EVIDENCE_BUDGET_BYTES - 64 * 1024, 'Evidence package budget exceeded')
-                target = EVIDENCE / (label + '-' + name + '.png'); target.write_bytes(data)
+                target = EVIDENCE / (label + '-' + name + '.png')
+                require(not target.exists(), 'A phase must not overwrite an existing screenshot')
+                target.write_bytes(data)
                 kept.append({'name': name, 'path': target.name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
-        write_json(EVIDENCE / (label + '-screenshots.json'), kept)
+        write_json(EVIDENCE / (prefix + '-screenshots.json'), kept)
+        if phase: self.ui_screenshots.extend(kept)
+
+    def qualify_ui_completion(self, label):
+        require(all(row['status'] == 'passed' for row in self.ui_phase_results.values()), 'Both UI phases must pass')
+        tests = [name for row in self.ui_phase_results.values() for name in row['expected_tests']]
+        require(len(tests) == len(set(tests)) == 6, 'UI testcase inventory must total six without duplicates')
+        names = [item['name'] for item in self.ui_screenshots]
+        required = sum(UI_PHASE_IMAGES.values(), [])
+        require(len(required) == len(set(required)) == 6, 'The UI contract requires six distinct named images')
+        require(len(names) == len(set(names)), 'Duplicate screenshot names across UI phases')
+        require(sorted(name for name in names if name in required) == sorted(required), 'Incomplete six-image UI evidence')
+        write_json(EVIDENCE / (label + '-screenshots.json'), self.ui_screenshots)
 
     def main(self):
         require(sys.platform == 'darwin', 'This gate requires the xcode-27 cloud runner')
@@ -386,6 +473,7 @@ class Gate:
         require(BOOTSTRAP_TEST in ui, 'The separately selected bootstrap is missing')
         ui.remove(BOOTSTRAP_TEST)
         require(len(hosted) == 29 and len(ui) == 6, 'Reviewed testcase inventory changed; update the explicit gate before execution')
+        require(ui == set().union(*UI_PHASE_TESTS.values()), 'All six UI cases must belong to the reviewed dependency phases')
         fixture = WORK / 'original-design-six-colors.png'; fixture.write_bytes(fixture_png())
         write_json(EVIDENCE / 'fixture.json', {'sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(), 'width': 300, 'height': 200,
                                              'colors': ['#ff0000', '#00ff00', '#0000ff', '#00ffff', '#ff00ff', '#ffff00']})
@@ -395,6 +483,7 @@ class Gate:
         self.command('clean-end', ['git', 'diff', '--exit-code', 'HEAD', '--'], 30)
 
     def run_device(self, types, runtime, app, fixture, hosted, ui):
+        require(ui == set().union(*UI_PHASE_TESTS.values()), 'All six UI cases must be assigned exactly once')
         label = self.device_label
         name = DEVICE_NAMES[label]
         found = [d for d in types if d['name'] == name]
@@ -411,8 +500,12 @@ class Gate:
         # exact build products on this UUID within its unchanged suite budget.
         self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
         self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})
+        independent = UI_PHASE_TESTS['ui-independent']
+        self.run_tests(label, device, 'ui-independent', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(independent)], independent)
         self.seed_fixture(label, device, fixture)
-        self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)], ui)
+        seeded = ui - independent
+        self.run_tests(label, device, 'ui-seeded', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(seeded)], seeded)
+        self.qualify_ui_completion(label)
         self.command(label + '-shutdown', ['xcrun', 'simctl', 'shutdown', device], 60, simulator=True)
         self.command(label + '-delete', ['xcrun', 'simctl', 'delete', device], 45, simulator=True)
         self.owned.remove(device)
@@ -485,6 +578,7 @@ def main():
                    'device_label': args.device, 'device_name': DEVICE_NAMES[args.device], 'required_devices': list(DEVICE_NAMES),
                    'reviewed_inventory': {'hosted': 29, 'ui': 6},
                    'bootstrap_inventory': 1,
+                   'ui_phases': gate.ui_phase_results, 'ui_remaining_budget_seconds': gate.ui_budgets,
                    'photos_preparation': 'real PHPicker bootstrap before addmedia; no cold Photos-service claim',
                    'error': error, 'source_sha': args.expected_sha,
                    'pending_owned_devices': gate.owned, 'simulator_uncertain': gate.uncertain_simulator, 'evidence_bytes': total,

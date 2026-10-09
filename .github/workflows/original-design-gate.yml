@@ -13,9 +13,9 @@ jobs:
     name: original-design (${{ matrix.device }})
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
-        device: [se3]
+        device: [se3, ipad-mini]
     timeout-minutes: 25
     env:
       DEVICE_LABEL: ${{ matrix.device }}

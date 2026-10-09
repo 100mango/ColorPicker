@@ -189,8 +189,8 @@ class ProjectionTests(unittest.TestCase):
 class CollectionTests(unittest.TestCase):
     def setUp(self):
         self.time=0.;self.calls=[]
-        self.env=dict(GITHUB_REPOSITORY='100mango/ColorPicker',GITHUB_REF='refs/heads/codex/mac-watch-repair',
-            GITHUB_WORKFLOW_REF='100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/codex/mac-watch-repair',
+        self.env=dict(GITHUB_REPOSITORY='100mango/ColorPicker',GITHUB_REF='refs/heads/mac-watch-repair',
+            GITHUB_WORKFLOW_REF='100mango/ColorPicker/.github/workflows/mac-watch-repair.yml@refs/heads/mac-watch-repair',
             GITHUB_EVENT_NAME='push',GITHUB_SHA='a'*40,GITHUB_WORKFLOW_SHA='a'*40,GITHUB_RUN_ID='1',GITHUB_RUN_ATTEMPT='1',
             TOUCHCOLOR_JOB_PLATFORM='mac',TOUCHCOLOR_EVIDENCE_LIMIT='3000000')
     def run_collect(self,behavior=None,receipts=True):

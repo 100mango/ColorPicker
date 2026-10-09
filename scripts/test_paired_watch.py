@@ -67,7 +67,7 @@ def product_record(app, role):
     app=Path(app);info=plistlib.loads((app/'Info.plist').read_bytes())
     expected='com.mango.touchColor' if role=='phone' else 'com.mango.touchColor.watchkitapp'
     require(info.get('CFBundleIdentifier')==expected and info.get('CFBundleExecutable')=='TouchColor','Actual installed product identity mismatch')
-    require(info.get('CFBundleShortVersionString')=='2.0' and info.get('CFBundleVersion')=='20001','Installed product version mismatch')
+    require(info.get('CFBundleShortVersionString')=='2.0.1' and info.get('CFBundleVersion')=='20002','Installed product version mismatch')
     require(info.get('CFBundleSupportedPlatforms')==(['iPhoneSimulator'] if role=='phone' else ['WatchSimulator']),'Installed simulator platform mismatch')
     if role=='watch': require(info.get('WKCompanionAppBundleIdentifier')=='com.mango.touchColor','Installed companion linkage mismatch')
     payloads=[app/'TouchColor']+sorted(app.glob('*.debug.dylib'))

@@ -113,7 +113,7 @@ class CanonicalIdentity(ManagedFixture):
             with self.subTest(event=event), patch.dict(os.environ, {'GITHUB_EVENT_NAME': event}):
                 result = managed.require_job('iPadMini')
                 self.assertEqual(result['workflow_ref'],
-                    '100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/codex/ios-original-release')
+                    '100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/ios-original-release')
                 self.assertEqual(result['job'], 'compatibility')
                 self.assertEqual(result['event'], event)
         for key in ENV:
@@ -584,16 +584,24 @@ class FixedOriginalIOSRouteTests(unittest.TestCase):
     def test_only_staged_exact_ref_workflow_pair_is_admitted(self):
         with patch.dict(os.environ,ENV,clear=True):
             result=managed.require_job('iPadMini')
-            self.assertEqual(result['ref'],'refs/heads/codex/ios-original-release')
+            self.assertEqual(result['ref'],'refs/heads/ios-original-release')
             self.assertEqual(result['workflow_ref'],managed.WORKFLOW)
-        for ref in ('refs/heads/codex/platform-integration','refs/heads/codex/uikit-hosted-repair','refs/heads/foreign'):
+        for ref in ('refs/heads/platform-integration','refs/heads/codex/uikit-hosted-repair','refs/heads/foreign'):
             for workflow in (managed.WORKFLOW,managed.REPOSITORY+'/.github/workflows/ios.yml@'+ref):
                 with patch.dict(os.environ,{**ENV,'GITHUB_REF':ref,'GITHUB_WORKFLOW_REF':workflow},clear=True):
                     with self.assertRaises(ValueError):managed.require_job('iPadMini')
         for workflow in (managed.REPOSITORY+'/.github/workflows/apple-platforms.yml@'+managed.REF,
-                         managed.REPOSITORY+'/.github/workflows/ios.yml@refs/heads/codex/platform-integration'):
+                         managed.REPOSITORY+'/.github/workflows/ios.yml@refs/heads/platform-integration'):
             with patch.dict(os.environ,{**ENV,'GITHUB_WORKFLOW_REF':workflow},clear=True):
                 with self.assertRaises(ValueError):managed.require_job('iPadMini')
+
+    def test_former_prefix_is_rejected_for_ref_workflow_and_matched_pair(self):
+        old_ref = 'refs/heads/codex/ios-original-release'
+        old_workflow = '100mango/ColorPicker/.github/workflows/ios.yml@refs/heads/codex/ios-original-release'
+        for changed in ({'GITHUB_REF': old_ref}, {'GITHUB_WORKFLOW_REF': old_workflow},
+                        {'GITHUB_REF': old_ref, 'GITHUB_WORKFLOW_REF': old_workflow}):
+            with self.subTest(changed=changed), patch.dict(os.environ, {**ENV, **changed}, clear=True):
+                with self.assertRaises(ValueError): managed.require_job('iPadMini')
 
     def test_staged_route_cannot_change_source_repo_job_or_family(self):
         for key,bad in [('GITHUB_REPOSITORY','foreign/ColorPicker'),('GITHUB_JOB','native-platform'),
@@ -604,12 +612,12 @@ class FixedOriginalIOSRouteTests(unittest.TestCase):
     def test_existing_workflow_allows_only_fixed_push_branch_and_two_guards(self):
         root=Path(__file__).resolve().parents[1]
         source=(root/'.github/workflows/ios.yml').read_text()
-        self.assertIn('branches: [codex/ios-original-release]',source)
-        guard='test "$GITHUB_REF" = refs/heads/codex/ios-original-release'
+        self.assertIn('branches: [ios-original-release]',source)
+        guard='test "$GITHUB_REF" = refs/heads/ios-original-release'
         self.assertEqual(source.count(guard),2)
         native=(root/'.github/workflows/apple-platforms.yml').read_text()
         self.assertNotIn('ios-original-release',native)
-        self.assertIn('branches: [codex/platform-integration]',native)
+        self.assertIn('branches: [platform-integration]',native)
         self.assertIn('family: [iPadMini, iPadLarge, iPhoneCompact, iPhoneLarge]',source)
         self.assertIn('max-parallel: 2',source)
         self.assertNotIn('generate_watch_project.py',source)

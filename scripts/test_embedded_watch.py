@@ -11,7 +11,7 @@ class EmbeddedWatchTests(unittest.TestCase):
         phone=root/'TouchColor.app';watch=phone/'Watch/TouchColor.app'
         for app,identifier,minimum,platform in [(phone,'com.mango.touchColor','15.0','iPhoneOS'),(watch,'com.mango.touchColor.watchkitapp','9.0','WatchOS')]:
             app.mkdir(parents=True,exist_ok=True)
-            info={'CFBundleIdentifier':identifier,'CFBundleExecutable':'TouchColor','CFBundleShortVersionString':'2.0','CFBundleVersion':'20001','MinimumOSVersion':minimum,'CFBundleSupportedPlatforms':[platform]}
+            info={'CFBundleIdentifier':identifier,'CFBundleExecutable':'TouchColor','CFBundleShortVersionString':'2.0.1','CFBundleVersion':'20002','MinimumOSVersion':minimum,'CFBundleSupportedPlatforms':[platform]}
             if app==watch: info.update(WKApplication=True,WKCompanionAppBundleIdentifier='com.mango.touchColor',WKRunsIndependentlyOfCompanionApp=True)
             (app/'Info.plist').write_bytes(plistlib.dumps(info))
             for name in ('TouchColor','Assets.car','PrivacyInfo.xcprivacy'): (app/name).write_bytes(b'synthetic')
