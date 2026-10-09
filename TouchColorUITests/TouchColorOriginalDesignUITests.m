@@ -278,24 +278,62 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
 - (void)dismissPopoverOnceWithAttachment:(NSString *)name {
     XCUIElement *popover=[self.app descendantsMatchingType:XCUIElementTypePopover].firstMatch;
     XCUIElement *region=self.app.otherElements[@"PopoverDismissRegion"].firstMatch;
-    if (!popover.exists || !region.exists) {
-        XCTFail(@"Only the observed native iPad popover dismissal surface may be used");
+    // One current window snapshot supplies local presentation/control geometry.
+    // Never require the remote Photos subtree to expand, and never reuse an
+    // earlier home layout. Missing or ambiguous shell nodes fail without a tap.
+    NSError *snapshotError=nil;
+    NSTimeInterval snapshotStarted=NSProcessInfo.processInfo.systemUptime;
+    id<XCUIElementSnapshot> snapshot=[self.app.windows.firstMatch snapshotWithError:&snapshotError];
+    NSTimeInterval snapshotFinished=NSProcessInfo.processInfo.systemUptime;
+    if (!snapshot || snapshotError || snapshot.elementType!=XCUIElementTypeWindow) {
+        XCTFail(@"A current native window snapshot is required: %@",snapshotError);
         return;
     }
-    CGRect window=self.app.windows.firstMatch.frame, regionFrame=region.frame;
-    if (!TCDesignFiniteRect(window) || !TCDesignFiniteRect(regionFrame)) {
-        XCTFail(@"The popover dismissal window and region must have finite nonempty frames");
+    NSArray<NSString *> *controlIdentifiers=@[@"choosePhoto",@"takePhoto",@"liveColor",@"original.picker",@"original.library"];
+    NSMutableDictionary<NSString *,NSValue *> *frames=[NSMutableDictionary new];
+    NSMutableArray<id<XCUIElementSnapshot>> *pending=[NSMutableArray arrayWithObject:snapshot];
+    for (NSUInteger index=0;index<pending.count;index++) {
+        id<XCUIElementSnapshot> node=pending[index];
+        NSString *key=nil, *identifier=node.identifier ?: @"";
+        if (node.elementType==XCUIElementTypeWindow) key=@"window";
+        else if (node.elementType==XCUIElementTypeOther && [identifier isEqualToString:@"PopoverDismissRegion"]) key=@"region";
+        else if (node.elementType==XCUIElementTypeButton && [controlIdentifiers containsObject:identifier]) key=identifier;
+        if (key) {
+            if (frames[key]) {
+                XCTFail(@"Snapshot geometry must have one unambiguous node for %@",key);
+                return;
+            }
+            CGRect frame=node.frame;
+            if (!TCDesignFiniteRect(frame)) {
+                XCTFail(@"Snapshot geometry %@ must have a finite nonempty frame",key);
+                return;
+            }
+            frames[key]=[NSValue valueWithCGRect:frame];
+        }
+        NSArray<id<XCUIElementSnapshot>> *children=node.children;
+        if (children.count>2048-pending.count) {
+            XCTFail(@"The one geometry snapshot must stay within 2048 nodes");
+            return;
+        }
+        [pending addObjectsFromArray:children];
+    }
+    if (frames.count!=7 || !frames[@"window"] || !frames[@"region"]) {
+        XCTFail(@"The current snapshot must contain the window, dismissal region and all five original controls");
         return;
     }
+    CGRect window=frames[@"window"].CGRectValue, regionFrame=frames[@"region"].CGRectValue;
     NSMutableArray<NSValue *> *controlFrames=[NSMutableArray new];
-    for (NSString *identifier in @[@"choosePhoto",@"takePhoto",@"liveColor",@"original.picker",@"original.library"]) {
-        CGRect frame=self.app.buttons[identifier].frame;
-        if (!TCDesignFiniteRect(frame) || !CGRectContainsRect(window,CGRectInset(frame,1,1))) {
+    for (NSString *identifier in controlIdentifiers) {
+        NSValue *value=frames[identifier];
+        if (!value || !CGRectContainsRect(window,CGRectInset(value.CGRectValue,1,1))) {
             XCTFail(@"Original control %@ must have a known visible frame before choosing a dismissal point",identifier);
             return;
         }
-        [controlFrames addObject:[NSValue valueWithCGRect:frame]];
+        [controlFrames addObject:value];
     }
+    NSLog(@"ORIGINAL_PICKER_GEOMETRY_SNAPSHOT nodes=%lu frames=%lu elapsed=%.6f",(unsigned long)pending.count,(unsigned long)frames.count,snapshotFinished-snapshotStarted);
+    // Keep two live queries of the actual popover; remote Photos descendants
+    // need not be present in the local window snapshot.
     CGRect firstFrame=popover.frame;
     NSTimeInterval firstSample=NSProcessInfo.processInfo.systemUptime;
     if (!TCDesignFiniteRect(firstFrame) || !CGRectContainsRect(window,CGRectInset(firstFrame,1,1))) {
