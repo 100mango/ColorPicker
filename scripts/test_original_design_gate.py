@@ -167,6 +167,31 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertEqual(text.count(new), 1)
         text = text.replace(new, old)
         self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), '9ab82653389d0baa4f713ed758ced976d4910ee8687fca5af078b6bf7e0bb994')
+    def test_split_photo_flows_keep_every_persistence_and_cancellation_assertion(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        def method(name, next_name):
+            return source.split('- (void)' + name + ' {', 1)[1].split('- (void)' + next_name, 1)[0]
+        save = method('testRealPhotoSaveRelaunchDelete', 'testDelayedImportCancellationPreservesSavedColor')
+        cancel = method('testDelayedImportCancellationPreservesSavedColor', 'testNativePrivacyThroughLibraryAboutCloseAndDataPreservation')
+        self.assertIn('[self launchReset:YES extra:nil]', save)
+        self.assertIn('[self sampleAndSaveRed]', save)
+        self.assertEqual(save.count('[self.app terminate]; [self launchReset:NO extra:nil]'), 2)
+        self.assertIn('[self deleteOnlySavedColor:table]', save)
+        self.assertIn('[self assertRedHistory:[self openLibrary] count:0]', save)
+        for required in ['--ui-test-delay-photo-import', '[self sampleAndSaveRed]', '[self selectOnlySeededPhoto]',
+                         'photo.import.cancel', 'late.inverted=YES', 'timeout:9', 'count:1', '[self deleteOnlySavedColor:table]']:
+            self.assertIn(required, cancel)
+        self.assertIn('len(hosted) == 29 and len(ui) == 5', Path(gate.__file__).read_text())
+        self.assertIn("'-default-test-execution-time-allowance', '120'", Path(gate.__file__).read_text())
+        self.assertEqual(gate.BOOTSTATUS_TIMEOUT_SECONDS, 300)
+        home = source.split('- (void)assertHomeUsable {', 1)[1].split('- (void)tap:', 1)[0]
+        for control in ['choose', 'take', 'live']:
+            self.assertEqual(home.count(control + '.frame'), 1)
+        self.assertIn('XCTAssertGreaterThanOrEqual(frame.size.height,44)', home)
+        self.assertEqual(home.count('XCTAssertEqualWithAccuracy('), 2)
+        self.assertEqual(home.count('XCTAssertLessThan('), 3)
+
     def test_photo_fixture_is_selected_by_unique_bounded_content_not_position(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
@@ -188,7 +213,7 @@ class OriginalDesignGateTests(unittest.TestCase):
     def test_privacy_suite_uses_exact_current_native_contract(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
-        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m')), 4)
+        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m')), 5)
         for required in ['privacy.body.zh-Hans', 'privacy.body.en', 'original.about.close', 'original.back', 'photo.import.cancel', '#ff00ff', '#ff0000']:
             self.assertIn(required, source)
         for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:

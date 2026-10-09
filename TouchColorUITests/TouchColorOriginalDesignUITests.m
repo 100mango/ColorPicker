@@ -108,16 +108,23 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     XCUIElement *choose=self.app.buttons[@"choosePhoto"], *take=self.app.buttons[@"takePhoto"], *live=self.app.buttons[@"liveColor"];
     XCTAssertTrue([choose waitForExistenceWithTimeout:5]);
     CGRect window=self.app.windows.firstMatch.frame;
-    for (XCUIElement *control in @[choose,take,live]) {
+    // Each frame read crosses the automation boundary. Capture each once for
+    // this settled home state; retain every original geometry assertion below.
+    CGRect chooseFrame=choose.frame, takeFrame=take.frame, liveFrame=live.frame;
+    CGRect libraryFrame=self.app.buttons[@"original.library"].frame;
+    NSArray<XCUIElement *> *controls=@[choose,take,live];
+    NSArray<NSValue *> *frames=@[[NSValue valueWithCGRect:chooseFrame],[NSValue valueWithCGRect:takeFrame],[NSValue valueWithCGRect:liveFrame]];
+    for (NSUInteger index=0;index<controls.count;index++) {
+        XCUIElement *control=controls[index]; CGRect frame=frames[index].CGRectValue;
         XCTAssertTrue(control.enabled); XCTAssertTrue(control.hittable);
-        XCTAssertTrue(CGRectContainsRect(window,CGRectInset(control.frame,1,1)),@"All three original actions must fit the visible window");
-        XCTAssertGreaterThanOrEqual(control.frame.size.height,44);
+        XCTAssertTrue(CGRectContainsRect(window,CGRectInset(frame,1,1)),@"All three original actions must fit the visible window");
+        XCTAssertGreaterThanOrEqual(frame.size.height,44);
     }
-    XCTAssertEqualWithAccuracy(choose.frame.size.width,take.frame.size.width,1);
-    XCTAssertEqualWithAccuracy(take.frame.size.width,live.frame.size.width,1);
-    XCTAssertLessThan(CGRectGetMaxY(choose.frame),CGRectGetMidY(take.frame));
-    XCTAssertLessThan(CGRectGetMaxY(take.frame),CGRectGetMidY(live.frame));
-    XCTAssertLessThan(CGRectGetMaxY(self.app.buttons[@"original.library"].frame),CGRectGetMinY(choose.frame));
+    XCTAssertEqualWithAccuracy(chooseFrame.size.width,takeFrame.size.width,1);
+    XCTAssertEqualWithAccuracy(takeFrame.size.width,liveFrame.size.width,1);
+    XCTAssertLessThan(CGRectGetMaxY(chooseFrame),CGRectGetMidY(takeFrame));
+    XCTAssertLessThan(CGRectGetMaxY(takeFrame),CGRectGetMidY(liveFrame));
+    XCTAssertLessThan(CGRectGetMaxY(libraryFrame),CGRectGetMinY(chooseFrame));
     XCTAssertTrue(!self.app.buttons[@"privacyPolicy"].exists || !self.app.buttons[@"privacyPolicy"].hittable,@"Privacy must remain reachable through Library/About, not become a primary home action");
     XCTAssertTrue(!self.app.buttons[@"palette.import.open"].exists || !self.app.buttons[@"palette.import.open"].hittable);
 }
@@ -143,7 +150,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     XCTAssertTrue(self.app.buttons[@"original.library"].selected);
     XCUIElement *table=self.app.tables[@"colorHistory"];
     XCTAssertTrue([table waitForExistenceWithTimeout:5]);
-    XCTAssertFalse(self.app.buttons[@"choosePhoto"].hittable);
+    XCTAssertTrue(!self.app.buttons[@"choosePhoto"].exists || !self.app.buttons[@"choosePhoto"].hittable);
     return table;
 }
 - (void)revealFooter:(NSString *)identifier inTable:(XCUIElement *)table {
@@ -255,13 +262,32 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     [self capture:@"02-original-empty-library"];
     [self tap:@"original.picker"]; [self assertHomeUsable];
 }
-- (void)testRealPhotoSaveRelaunchDeleteAndDelayedImportCancel {
-    [self launchReset:YES extra:@[@"--ui-test-delay-photo-import"]];
+- (void)deleteOnlySavedColor:(XCUIElement *)table {
+    [self assertRedHistory:table count:1];
+    [table.cells.firstMatch swipeLeft];
+    XCUIElement *delete=self.app.buttons[@"Delete"].firstMatch;
+    XCTAssertTrue([delete waitForExistenceWithTimeout:5]); XCTAssertTrue(delete.hittable); [delete tap];
+    [self assertRedHistory:table count:0];
+}
+- (void)testRealPhotoSaveRelaunchDelete {
+    // Independent real-photo setup; no state is inherited from another test.
+    [self launchReset:YES extra:nil];
     [self sampleAndSaveRed];
     [self capture:@"03-original-photo-sampled"];
     [self returnFromCanvas];
-    // The existing Debug seam delays only the second actual provider request.
-    // It neither creates an image nor changes selection, decode, or cancellation.
+    XCUIElement *table=[self openLibrary]; [self assertRedHistory:table count:1];
+    [self capture:@"04-original-saved-library"];
+    [self.app terminate]; [self launchReset:NO extra:nil];
+    table=[self openLibrary]; [self assertRedHistory:table count:1];
+    [self deleteOnlySavedColor:table];
+    [self.app terminate]; [self launchReset:NO extra:nil];
+    [self assertRedHistory:[self openLibrary] count:0];
+}
+- (void)testDelayedImportCancellationPreservesSavedColor {
+    // Prime the actual first import before exercising the existing second-
+    // provider delay. This case owns its initial and final synthetic data.
+    [self launchReset:YES extra:@[@"--ui-test-delay-photo-import"]];
+    [self sampleAndSaveRed]; [self returnFromCanvas];
     [self selectOnlySeededPhoto];
     [self tap:@"photo.import.cancel"];
     [self assertHomeUsable];
@@ -269,15 +295,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     late.inverted=YES;
     XCTAssertEqual([XCTWaiter waitForExpectations:@[late] timeout:9],XCTWaiterResultCompleted,@"The cancelled delayed provider must never reopen a canvas");
     XCUIElement *table=[self openLibrary]; [self assertRedHistory:table count:1];
-    [self capture:@"04-original-saved-library"];
-    [self.app terminate]; [self launchReset:NO extra:nil];
-    table=[self openLibrary]; [self assertRedHistory:table count:1];
-    [table.cells.firstMatch swipeLeft];
-    XCUIElement *delete=self.app.buttons[@"Delete"].firstMatch;
-    XCTAssertTrue([delete waitForExistenceWithTimeout:5]); XCTAssertTrue(delete.hittable); [delete tap];
-    [self assertRedHistory:table count:0];
-    [self.app terminate]; [self launchReset:NO extra:nil];
-    [self assertRedHistory:[self openLibrary] count:0];
+    [self deleteOnlySavedColor:table];
 }
 - (void)testNativePrivacyThroughLibraryAboutCloseAndDataPreservation {
     [self launchReset:YES extra:nil];

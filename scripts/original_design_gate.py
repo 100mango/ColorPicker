@@ -235,7 +235,7 @@ class Gate:
         types = json.loads(self.text('device-types', ['xcrun', 'simctl', 'list', 'devicetypes', '-j'], simulator=True))['devicetypes']
         hosted = set().union(*(testcase_names(ROOT / path) for path in HOSTED_SOURCES.values()))
         ui = testcase_names(ROOT / 'TouchColorUITests' / (UI_CLASS + '.m'))
-        require(len(hosted) == 29 and len(ui) == 4, 'Reviewed testcase inventory changed; update the explicit gate before execution')
+        require(len(hosted) == 29 and len(ui) == 5, 'Reviewed testcase inventory changed; update the explicit gate before execution')
         fixture = WORK / 'original-design-six-colors.png'; fixture.write_bytes(fixture_png())
         write_json(EVIDENCE / 'fixture.json', {'sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(), 'width': 300, 'height': 200,
                                              'colors': ['#ff0000', '#00ff00', '#0000ff', '#00ffff', '#ff00ff', '#ffff00']})
