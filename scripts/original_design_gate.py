@@ -23,6 +23,7 @@ RUNTIME_VERSION = '27.0'
 BOOTSTATUS_TIMEOUT_SECONDS = 300  # One bounded preparation; no automatic retry or escalating timeout.
 BUNDLE_ID = 'com.mango.touchColor'
 UI_CLASS = 'TouchColorOriginalDesignUITests'
+BOOTSTRAP_TEST = 'testPhotosLibraryBootstrapCanCancelWithoutSelecting'
 HOSTED_SOURCES = {
     'ColorPickerTests': 'ColorPickerTests/ColorPickerTests.m',
     'TCPhotoImportTests': 'ColorPickerTests/TCPhotoImportTests.swift',
@@ -178,12 +179,23 @@ class Gate:
         summary = json.loads(raw)
         write_json(EVIDENCE / (label + '-' + suite + '-summary.json'), summary)
         # Preserve screenshot evidence even when a real assertion failed.
-        if suite == 'ui':
-            self.export_screenshots(label, result, require_complete=code == 0)
+        if suite in ('ui', 'bootstrap'):
+            self.export_screenshots(label if suite == 'ui' else label + '-bootstrap', result,
+                                    require_complete=code == 0, bootstrap=suite == 'bootstrap')
+            # XCTest is terminal and attachments are safe before this optional
+            # bounded observation. Missing log transport is never 'no callback'.
+            trace_code, trace = self.command(label + '-' + suite + '-picker-trace',
+                ['xcrun', 'simctl', 'spawn', device, 'log', 'show', '--style', 'compact', '--info', '--debug',
+                 '--last', '15m', '--predicate', 'eventMessage BEGINSWITH "TC_PICKER_TRACE"'],
+                30, simulator=True, allow_failure=True)
+            write_json(EVIDENCE / (label + '-' + suite + '-picker-trace.json'),
+                       {'device': device, 'source_sha': self.expected_sha, 'exit_code': trace_code,
+                        'evidence': 'available' if trace_code == 0 and 'TC_PICKER_TRACE event=' in trace.read_text(errors='replace') else 'missing',
+                        'missing_semantics': 'Transport absent is not proof a delegate callback did not occur'})
         qualify_summary(summary, expected_count=len(expected_names), device=device, began=began, finished=finished, exit_code=code)
         qualify_cases(log.read_text(errors='replace'), expected_names)
 
-    def export_screenshots(self, label, result, *, require_complete):
+    def export_screenshots(self, label, result, *, require_complete, bootstrap=False):
         destination = WORK / (label + '-raw-attachments')
         self.command(label + '-attachments', ['xcrun', 'xcresulttool', 'export', 'attachments', '--path', str(result),
                                              '--output-path', str(destination)], 60)
@@ -196,12 +208,14 @@ class Gate:
         rows = list(records(json.loads((destination / 'manifest.json').read_text())))
         names = ['01-original-home', '02-original-empty-library', '03-original-photo-sampled',
                  '04-original-saved-library', '05-secondary-privacy-policy', '06-original-live-unavailable']
+        if bootstrap: names = ['bootstrap-picker-ready']
+        diagnostics = ['bootstrap-cancel-before'] if bootstrap else ['picker-cancel-before-1', 'picker-cancel-before-2']
         kept = []
-        for name in names + ['original-design-failure']:
+        for name in names + diagnostics + ['original-design-failure']:
             matches = [row for row in rows if any(name in value for value in row.values() if isinstance(value, str))]
             if name == 'original-design-failure': matches = matches[:1]
             else:
-                require(len(matches) <= 1 and (not require_complete or len(matches) == 1), 'Missing or duplicate named screenshot: ' + name)
+                require(len(matches) <= 1 and (not require_complete or name not in names or len(matches) == 1), 'Missing or duplicate named screenshot: ' + name)
             for row in matches:
                 source = (destination / row['exportedFileName']).resolve()
                 require(source.is_relative_to(destination.resolve()) and not source.is_symlink(), 'Unsafe attachment path')
@@ -239,6 +253,8 @@ class Gate:
         types = json.loads(self.text('device-types', ['xcrun', 'simctl', 'list', 'devicetypes', '-j'], simulator=True))['devicetypes']
         hosted = set().union(*(testcase_names(ROOT / path) for path in HOSTED_SOURCES.values()))
         ui = testcase_names(ROOT / 'TouchColorUITests' / (UI_CLASS + '.m'))
+        require(BOOTSTRAP_TEST in ui, 'The separately selected bootstrap is missing')
+        ui.remove(BOOTSTRAP_TEST)
         require(len(hosted) == 29 and len(ui) == 6, 'Reviewed testcase inventory changed; update the explicit gate before execution')
         fixture = WORK / 'original-design-six-colors.png'; fixture.write_bytes(fixture_png())
         write_json(EVIDENCE / 'fixture.json', {'sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(), 'width': 300, 'height': 200,
@@ -263,8 +279,10 @@ class Gate:
         self.await_owned_boot(label, device, owned_name)
         self.command(label + '-install', ['xcrun', 'simctl', 'install', device, str(app)], 90, simulator=True)
         self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
+        if label == 'ipad-mini':
+            self.run_tests(label, device, 'bootstrap', ['TouchColorUITests/' + UI_CLASS + '/' + BOOTSTRAP_TEST], {BOOTSTRAP_TEST})
         self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
-        self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS], ui)
+        self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)], ui)
         self.command(label + '-shutdown', ['xcrun', 'simctl', 'shutdown', device], 60, simulator=True)
         self.command(label + '-delete', ['xcrun', 'simctl', 'delete', device], 45, simulator=True)
         self.owned.remove(device)
@@ -336,6 +354,8 @@ def main():
         write_json(EVIDENCE / 'acceptance.json', {'functional_passed': passed, 'scope': 'selected device only; both matrix jobs must pass',
                    'device_label': args.device, 'device_name': DEVICE_NAMES[args.device], 'required_devices': list(DEVICE_NAMES),
                    'reviewed_inventory': {'hosted': 29, 'ui': 6},
+                   'bootstrap_inventory': 1 if args.device == 'ipad-mini' else 0,
+                   'photos_preparation': 'real PHPicker bootstrap before addmedia; no cold Photos-service claim' if args.device == 'ipad-mini' else 'addmedia after hosted tests',
                    'error': error, 'source_sha': args.expected_sha,
                    'pending_owned_devices': gate.owned, 'simulator_uncertain': gate.uncertain_simulator, 'evidence_bytes': total,
                    'visual_comparison': 'not automatically accepted; inspect six named screenshots per device against original design',

@@ -14,11 +14,59 @@ def method(source, signature):
     end = source.find('\n- (', start + len(signature))
     return source[start:end if end >= 0 else source.index('\n@end', start)].strip()
 
+PICKER_TRACE_BLOCKS = (
+    r"""
+#if DEBUG // TC_PICKER_TRACE_BEGIN helper
+- (void)recordPickerTrace:(PHPickerViewController *)picker event:(NSString *)event results:(NSInteger)count {
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-picker-trace"]) return;
+    UIViewController *owner=[self sourcePresenter];
+    NSString *line=[NSString stringWithFormat:@"TC_PICKER_TRACE event=%@ uptime=%.6f owner=%p picker=%p presenter=%p ownerPresented=%p results=%ld generation=%lu beingPresented=%d beingDismissed=%d",event,NSProcessInfo.processInfo.systemUptime,owner,picker,picker.presentingViewController,owner.presentedViewController,(long)count,(unsigned long)self.selectionGeneration,picker.isBeingPresented,picker.isBeingDismissed];
+    NSLog(@"%@",line);
+    // Supplemental test-only AX transport. A modal may hide this control; the
+    // test records missing evidence rather than interpreting it as no callback.
+    UIButton *button=(UIButton *)self.sourceButtons.arrangedSubviews.firstObject;
+    NSString *previous=[button.accessibilityValue isKindOfClass:NSString.class] ? button.accessibilityValue : @"";
+    if (previous.length>4096) previous=@"TC_PICKER_TRACE earlier-events-truncated";
+    button.accessibilityValue=[previous stringByAppendingFormat:@"\n%@",line];
+}
+#endif // TC_PICKER_TRACE_END helper
+""",
+    r"""
+#if DEBUG // TC_PICKER_TRACE_BEGIN created
+    [self recordPickerTrace:picker event:@"created" results:-1];
+#endif // TC_PICKER_TRACE_END created
+""",
+    r"""
+#if DEBUG // TC_PICKER_TRACE_BEGIN delegate
+    [self recordPickerTrace:picker event:@"delegate" results:(NSInteger)results.count];
+#endif // TC_PICKER_TRACE_END delegate
+""",
+    r"""
+#if DEBUG // TC_PICKER_TRACE_BEGIN dismiss-request
+    [self recordPickerTrace:picker event:@"dismiss-request" results:(NSInteger)results.count];
+#endif // TC_PICKER_TRACE_END dismiss-request
+""",
+    r"""
+#if DEBUG // TC_PICKER_TRACE_BEGIN dismiss-completion
+        [self recordPickerTrace:picker event:@"dismiss-completion" results:(NSInteger)results.count];
+#endif // TC_PICKER_TRACE_END dismiss-completion
+""",
+)
+
+def strip_picker_trace(source):
+    for index, block in enumerate(PICKER_TRACE_BLOCKS):
+        require(source.count(block) == 1, 'Missing, altered or duplicate reviewed DEBUG trace block')
+        source = source.replace(block, '' if index in (0, 3) else '\n', 1)
+    require('TC_PICKER_TRACE_BEGIN' not in source and 'TC_PICKER_TRACE_END' not in source,
+            'Unreviewed diagnostic block cannot bypass source preservation')
+    return source
+
 def main():
     contract = json.loads((ROOT / 'scripts/fixtures/original-design-preservation.json').read_text())
     for key, expected in contract['protected_methods'].items():
         name, signature = key.split(':', 1)
         source = (ROOT / 'ColorPicker' / name).read_text()
+        if name == 'ColorMainViewController.m': source = strip_picker_trace(source)
         require(digest(method(source, signature).encode()) == expected, 'Changed protected method: ' + key)
     for category in ['original_pngs', 'unchanged_core_and_metadata']:
         for path, expected in contract[category].items():

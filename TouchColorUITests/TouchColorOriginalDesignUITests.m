@@ -77,6 +77,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
 - (void)recordIssue:(XCTIssue *)issue {
     if (!self.recordingFailure) {
         self.recordingFailure=YES;
+        [self recordAppPickerTrace:@"failure"];
         NSData *png=UIImagePNGRepresentation(XCUIScreen.mainScreen.screenshot.image);
         if (png.length && png.length<=2*1024*1024) {
             XCTAttachment *attachment=[XCTAttachment attachmentWithData:png uniformTypeIdentifier:@"public.png"];
@@ -95,7 +96,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     attachment.name=name; attachment.lifetime=XCTAttachmentLifetimeKeepAlways; [self addAttachment:attachment];
 }
 - (void)launchReset:(BOOL)reset extra:(NSArray<NSString *> *)extra {
-    NSMutableArray *arguments=[NSMutableArray arrayWithArray:@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US"]];
+    NSMutableArray *arguments=[NSMutableArray arrayWithArray:@[@"-AppleLanguages",@"(en)",@"-AppleLocale",@"en_US",@"--ui-test-picker-trace"]];
     if (reset) [arguments addObject:@"--ui-test-reset"];
     [arguments addObjectsFromArray:extra ?: @[]];
     self.app.launchArguments=arguments;
@@ -247,6 +248,63 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     XCTAssertTrue([(NSString *)chinese.value containsString:@"100mango@gmail.com"]);
     XCTAssertTrue([(NSString *)english.value containsString:@"100mango@gmail.com"]);
 }
+- (void)recordAppPickerTrace:(NSString *)phase {
+    XCUIElement *source=self.app.buttons[@"choosePhoto"];
+    id value=source.exists ? source.value : nil;
+    BOOL available=[value isKindOfClass:NSString.class] && [(NSString *)value containsString:@"TC_PICKER_TRACE"];
+    NSLog(@"ORIGINAL_PICKER_APP_TRACE phase=%@ evidence=%@ value=%@",phase,available ? @"available" : @"missing",available ? value : @"AX may hide the source; missing is not proof the delegate was not called");
+}
+- (void)cancelPickerOnce:(XCUIElement *)cancel attachment:(NSString *)name {
+    if (![cancel waitForExistenceWithTimeout:5]) {
+        XCTFail(@"Cancel must exist before observing its frame");
+        return;
+    }
+    BOOL enabled=cancel.enabled, hittable=cancel.hittable;
+    if (!enabled || !hittable) {
+        XCTFail(@"Cancel must be enabled and hittable before exactly one tap");
+        return;
+    }
+    // AX reads can each take seconds. Cache the window and sample the actual
+    // frame only twice, around evidence we already need, rather than polling
+    // five remote properties inside an artificial five-second settling gate.
+    CGRect window=self.app.windows.firstMatch.frame;
+    CGRect firstFrame=cancel.frame;
+    NSTimeInterval firstSample=NSProcessInfo.processInfo.systemUptime;
+    BOOL inside=firstFrame.size.width>0 && firstFrame.size.height>0 && CGRectContainsRect(window,CGRectInset(firstFrame,1,1));
+    if (!inside) {
+        XCTFail(@"Cancel must have a nonempty frame inside the cached window");
+        return;
+    }
+    [self capture:name];
+    [self recordAppPickerTrace:@"before-cancel"];
+    NSTimeInterval secondSample=NSProcessInfo.processInfo.systemUptime;
+    CGRect secondFrame=cancel.frame;
+    BOOL stable=CGRectEqualToRect(firstFrame,secondFrame) && secondSample-firstSample>=0.25;
+    if (!stable) {
+        XCTFail(@"Cancel frame must be unchanged across two samples at least 0.25 seconds apart: %@ -> %@, elapsed=%.6f",NSStringFromCGRect(firstFrame),NSStringFromCGRect(secondFrame),secondSample-firstSample);
+        return;
+    }
+    NSLog(@"ORIGINAL_PICKER_CANCEL_SINGLE_TAP uptime=%.6f frame=%@ sampleGap=%.6f",NSProcessInfo.processInfo.systemUptime,NSStringFromCGRect(secondFrame),secondSample-firstSample);
+    [cancel tap];
+    [self waitAbsent:cancel];
+    [self recordAppPickerTrace:@"after-cancel"];
+}
+- (void)testPhotosLibraryBootstrapCanCancelWithoutSelecting {
+    [self launchReset:YES extra:nil];
+    [self tap:@"choosePhoto"];
+    XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
+    XCTAssertTrue([cancel waitForExistenceWithTimeout:10]);
+    XCUIElement *gallery=self.app.scrollViews[@"photosView_content_scroll_view"];
+    XCTAssertTrue([gallery waitForExistenceWithTimeout:10],@"Observe the real Photos gallery before seeding, without reading or selecting stock assets");
+    CGRect viewport=gallery.frame;
+    XCTAssertGreaterThan(viewport.size.width,0); XCTAssertGreaterThan(viewport.size.height,0);
+    [self capture:@"bootstrap-picker-ready"];
+    [self cancelPickerOnce:cancel attachment:@"bootstrap-cancel-before"];
+    [self assertHomeUsable];
+    XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists);
+    XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists);
+    [self assertRedHistory:[self openLibrary] count:0];
+}
 - (void)testOriginalHomeTabsAndRepeatedPhotoPickerCancellation {
     [self launchReset:YES extra:nil];
     [self capture:@"01-original-home"];
@@ -254,7 +312,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
         [self tap:@"choosePhoto"];
         XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
         XCTAssertTrue([cancel waitForExistenceWithTimeout:10]); XCTAssertTrue(cancel.hittable);
-        [cancel tap]; [self waitAbsent:cancel]; [self assertHomeUsable];
+        [self cancelPickerOnce:cancel attachment:[NSString stringWithFormat:@"picker-cancel-before-%lu",(unsigned long)attempt+1]]; [self assertHomeUsable];
     }
     XCUIElement *table=[self openLibrary];
     [self assertRedHistory:table count:0];

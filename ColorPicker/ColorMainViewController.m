@@ -276,6 +276,21 @@
     else if (button.tag == 2) [self openLiveColor];
     else if (button.tag == 3) [self openPaletteImport];
 }
+
+#if DEBUG // TC_PICKER_TRACE_BEGIN helper
+- (void)recordPickerTrace:(PHPickerViewController *)picker event:(NSString *)event results:(NSInteger)count {
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-picker-trace"]) return;
+    UIViewController *owner=[self sourcePresenter];
+    NSString *line=[NSString stringWithFormat:@"TC_PICKER_TRACE event=%@ uptime=%.6f owner=%p picker=%p presenter=%p ownerPresented=%p results=%ld generation=%lu beingPresented=%d beingDismissed=%d",event,NSProcessInfo.processInfo.systemUptime,owner,picker,picker.presentingViewController,owner.presentedViewController,(long)count,(unsigned long)self.selectionGeneration,picker.isBeingPresented,picker.isBeingDismissed];
+    NSLog(@"%@",line);
+    // Supplemental test-only AX transport. A modal may hide this control; the
+    // test records missing evidence rather than interpreting it as no callback.
+    UIButton *button=(UIButton *)self.sourceButtons.arrangedSubviews.firstObject;
+    NSString *previous=[button.accessibilityValue isKindOfClass:NSString.class] ? button.accessibilityValue : @"";
+    if (previous.length>4096) previous=@"TC_PICKER_TRACE earlier-events-truncated";
+    button.accessibilityValue=[previous stringByAppendingFormat:@"\n%@",line];
+}
+#endif // TC_PICKER_TRACE_END helper
 - (void)choosePhoto {
     PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
     configuration.filter = PHPickerFilter.imagesFilter;
@@ -283,6 +298,9 @@
     configuration.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
     PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
     picker.delegate = self;
+#if DEBUG // TC_PICKER_TRACE_BEGIN created
+    [self recordPickerTrace:picker event:@"created" results:-1];
+#endif // TC_PICKER_TRACE_END created
     [self presentSource:picker sourceView:self.sourceButtons.arrangedSubviews.firstObject];
 }
 - (void)openLiveColor {
@@ -386,10 +404,20 @@
     startImport();
 }
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+#if DEBUG // TC_PICKER_TRACE_BEGIN delegate
+    [self recordPickerTrace:picker event:@"delegate" results:(NSInteger)results.count];
+#endif // TC_PICKER_TRACE_END delegate
     NSUInteger dismissalGeneration = ++self.selectionGeneration;
     [self.photoImportTask cancel];
     self.photoImportTask = nil;
+
+#if DEBUG // TC_PICKER_TRACE_BEGIN dismiss-request
+    [self recordPickerTrace:picker event:@"dismiss-request" results:(NSInteger)results.count];
+#endif // TC_PICKER_TRACE_END dismiss-request
     [picker dismissViewControllerAnimated:YES completion:^{
+#if DEBUG // TC_PICKER_TRACE_BEGIN dismiss-completion
+        [self recordPickerTrace:picker event:@"dismiss-completion" results:(NSInteger)results.count];
+#endif // TC_PICKER_TRACE_END dismiss-completion
         if (dismissalGeneration != self.selectionGeneration) return;
         NSItemProvider *provider = results.firstObject.itemProvider;
         if (!provider) { [self endPhotoLoading]; [self sourceFlowActive:NO]; return; }

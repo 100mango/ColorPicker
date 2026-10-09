@@ -213,7 +213,7 @@ class OriginalDesignGateTests(unittest.TestCase):
     def test_privacy_suite_uses_exact_current_native_contract(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
-        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m')), 6)
+        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m') - {gate.BOOTSTRAP_TEST}), 6)
         for required in ['privacy.body.zh-Hans', 'privacy.body.en', 'original.about.close', 'original.back', 'photo.import.cancel', '#ff00ff', '#ff0000']:
             self.assertIn(required, source)
         for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:
@@ -261,8 +261,8 @@ class OriginalDesignGateTests(unittest.TestCase):
                     self.assertEqual(args[1][-2:], ['type.' + label, 'owned-runtime'])
                     ready.assert_called_once_with(label, owned, worker.devices[0]['owned_name'])
                     self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-install', '-seed', '-shutdown', '-delete']])
-                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'ui'])
-                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {'ui'}])
+                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'bootstrap', 'ui'] if label == 'ipad-mini' else ['hosted', 'ui'])
+                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {gate.BOOTSTRAP_TEST}, {'ui'}] if label == 'ipad-mini' else [{'hosted'}, {'ui'}])
                     self.assertEqual(worker.devices[0]['name'], name)
                     self.assertEqual(worker.owned, [])
 
@@ -346,6 +346,123 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertEqual(lifecycle.count('count:1'), 3)
         self.assertEqual(content.count('05-secondary-privacy-policy'), 1)
         self.assertNotIn('executionTimeAllowance', source)
+
+    def trace_guard(self):
+        spec = importlib.util.spec_from_file_location('preservation', gate.ROOT / 'scripts/verify_original_design_source.py')
+        guard = importlib.util.module_from_spec(spec); spec.loader.exec_module(guard)
+        return guard
+
+    def test_reviewed_debug_blocks_reconstruct_entire_original_app_source(self):
+        guard = self.trace_guard()
+        source = (gate.ROOT / 'ColorPicker/ColorMainViewController.m').read_text()
+        stripped = guard.strip_picker_trace(source)
+        self.assertEqual(hashlib.sha256(stripped.encode()).hexdigest(), 'ac08d2198bfe31e429b32fc69340cdf49fe3e08fe10721eb808a39d4efb85461')
+        self.assertEqual(len(guard.PICKER_TRACE_BLOCKS), 5)
+        for block in guard.PICKER_TRACE_BLOCKS:
+            self.assertTrue(block.startswith('\n#if DEBUG // TC_PICKER_TRACE_BEGIN'))
+            self.assertIn('#endif // TC_PICKER_TRACE_END', block)
+        contract = json.loads((gate.ROOT / 'scripts/fixtures/original-design-preservation.json').read_text())
+        for key, expected in contract['protected_methods'].items():
+            name, signature = key.split(':', 1)
+            if name == 'ColorMainViewController.m':
+                self.assertEqual(hashlib.sha256(guard.method(stripped, signature).encode()).hexdigest(), expected)
+        self.assertNotIn('TC_PICKER_TRACE', stripped)
+
+    def test_unreviewed_or_changed_trace_cannot_bypass_original_hash_guard(self):
+        guard = self.trace_guard()
+        source = (gate.ROOT / 'ColorPicker/ColorMainViewController.m').read_text()
+        for changed in [source.replace('event:@"delegate"', 'event:@"altered"'),
+                        source + guard.PICKER_TRACE_BLOCKS[1],
+                        source + '\n#if DEBUG // TC_PICKER_TRACE_BEGIN unreviewed\n#endif\n']:
+            with self.assertRaises(RuntimeError): guard.strip_picker_trace(changed)
+        changed = source.replace('NSUInteger dismissalGeneration = ++self.selectionGeneration;', 'NSUInteger dismissalGeneration = self.selectionGeneration;')
+        reconstructed = guard.strip_picker_trace(changed)
+        self.assertNotEqual(hashlib.sha256(reconstructed.encode()).hexdigest(), 'ac08d2198bfe31e429b32fc69340cdf49fe3e08fe10721eb808a39d4efb85461')
+
+    def test_cancel_diagnostic_still_taps_once_and_requires_ten_second_absence(self):
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        cancel = source.split('- (void)cancelPickerOnce:', 1)[1].split('- (void)testPhotosLibraryBootstrap', 1)[0]
+        self.assertEqual(cancel.count('[cancel tap]'), 1)
+        self.assertIn('[self waitAbsent:cancel]', cancel)
+        self.assertIn('CGRectEqualToRect(firstFrame,secondFrame)', cancel)
+        self.assertIn('secondSample-firstSample>=0.25', cancel)
+        self.assertLess(cancel.index('[self capture:name]'), cancel.index('[cancel tap]'))
+        self.assertIn('ORIGINAL_PICKER_CANCEL_SINGLE_TAP', cancel)
+        absence = source.split('- (void)waitAbsent:', 1)[1].split('- (XCUIElement *)openLibrary', 1)[0]
+        self.assertIn('exists == false', absence)
+        self.assertIn('timeout:10', absence)
+        self.assertIn('AX may hide the source; missing is not proof', source)
+        self.assertNotIn('coordinateWithNormalizedOffset', cancel)
+
+    def test_cancel_samples_are_separate_and_fail_closed(self):
+        import re
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        cancel = source.split('- (void)cancelPickerOnce:', 1)[1].split('- (void)testPhotosLibraryBootstrap', 1)[0]
+        self.assertEqual(cancel.count('waitForExistenceWithTimeout:5'), 1)
+        self.assertEqual(cancel.count('cancel.enabled'), 1)
+        self.assertEqual(cancel.count('cancel.hittable'), 1)
+        self.assertEqual(cancel.count('self.app.windows.firstMatch.frame'), 1)
+        self.assertEqual(cancel.count('cancel.frame'), 2)
+        self.assertNotIn('predicate', cancel)
+        self.assertNotIn('sleep', cancel)
+        self.assertNotIn('XCTWaiter', cancel)
+        positions = [cancel.index(token) for token in [
+            'CGRect window=', 'CGRect firstFrame=', 'NSTimeInterval firstSample=',
+            '[self capture:name]', '[self recordAppPickerTrace:@"before-cancel"]',
+            'NSTimeInterval secondSample=', 'CGRect secondFrame=', 'BOOL stable=',
+            'if (!stable)', '[cancel tap]']]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('CGRectContainsRect(window,CGRectInset(firstFrame,1,1))', cancel)
+        # Every failed precondition exits the helper; continueAfterFailure is
+        # not relied upon to prevent a tap after missing or moving geometry.
+        failed = re.findall(r'XCTFail\([^;]*;\s*return;', cancel)
+        self.assertEqual(len(failed), 4)
+        self.assertEqual(cancel.count('XCTFail('), 4)
+        self.assertTrue(all(cancel.index(check) < cancel.index('[cancel tap]') for check in failed))
+
+    def test_bootstrap_is_separate_and_never_selects_or_deletes_photos(self):
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        bootstrap = source.split('- (void)' + gate.BOOTSTRAP_TEST + ' {', 1)[1].split('- (void)testOriginalHomeTabs', 1)[0]
+        for required in ['[self launchReset:YES extra:nil]', 'photosView_content_scroll_view', 'bootstrap-picker-ready',
+                         'bootstrap-cancel-before', '[self cancelPickerOnce:cancel', '[self assertHomeUsable]', 'count:0']:
+            self.assertIn(required, bootstrap)
+        for forbidden in ['selectOnlySeededPhoto', 'sampleAndSaveRed', 'delete', 'authorization', 'requestAuthorization']:
+            self.assertNotIn(forbidden, bootstrap)
+        runner = Path(gate.__file__).read_text()
+        self.assertIn('ui.remove(BOOTSTRAP_TEST)', runner)
+        self.assertIn("if label == 'ipad-mini':", runner)
+        self.assertIn("['TouchColorUITests/' + UI_CLASS + '/' + name for name in sorted(ui)]", runner)
+        self.assertIn("['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60", runner)
+        self.assertIn("'bootstrap_inventory': 1 if args.device == 'ipad-mini' else 0", runner)
+        self.assertIn('no cold Photos-service claim', runner)
+
+    def test_failed_bootstrap_never_starts_addmedia_or_acceptance_ui(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'ipad-mini')
+                def tests(label, device, suite, selectors, names):
+                    if suite == 'bootstrap': raise RuntimeError('bootstrap failure')
+                with patch.object(worker, 'text', return_value=owned), patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests', side_effect=tests) as runs:
+                    with self.assertRaisesRegex(RuntimeError, 'bootstrap failure'):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['ipad-mini'], 'identifier': 'ipad-type'}], {'identifier': 'runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                    self.assertEqual([call.args[2] for call in runs.call_args_list], ['hosted', 'bootstrap'])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], ['ipad-mini-boot', 'ipad-mini-install'])
+                self.assertEqual(worker.owned, [owned])
+
+    def test_trace_capture_is_owned_read_only_bounded_and_missing_is_not_no_callback(self):
+        source = Path(gate.__file__).read_text()
+        trace = source.split("trace_code, trace = self.command", 1)[1].split('qualify_summary(summary', 1)[0]
+        self.assertIn("['xcrun', 'simctl', 'spawn', device, 'log', 'show'", trace)
+        self.assertIn('TC_PICKER_TRACE', trace)
+        self.assertIn('30, simulator=True, allow_failure=True', trace)
+        self.assertIn("else 'missing'", trace)
+        self.assertIn('Transport absent is not proof a delegate callback did not occur', trace)
+        self.assertLess(source.index('self.export_screenshots(label if'), source.index('trace_code, trace = self.command'))
+        self.assertEqual(gate.BOOTSTATUS_TIMEOUT_SECONDS, 300)
+        self.assertEqual(gate.CONTROLLER_TIMEOUT_SECONDS, 23 * 60)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
