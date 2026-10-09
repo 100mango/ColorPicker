@@ -674,33 +674,117 @@ class OriginalDesignGateTests(unittest.TestCase):
         for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:
             self.assertNotIn(stale, source)
 
-    def test_only_original_design_workflow_matches_its_push_branch(self):
-        import yaml
+    def workflow_sources(self):
+        return {path.name: path.read_text() for path in (gate.ROOT / '.github/workflows').iterdir()
+                if path.is_file() and path.suffix in ('.yml', '.yaml')}
+
+    def assert_fixed_workflow_headers(self, sources):
+        # A strict contract for these six checked-in headers, not a YAML parser.
+        # The native runner needs only Python's standard library for this gate.
         expected = {
-            'apple-platforms.yml': 'platform-integration',
-            'mac-watch-repair.yml': 'mac-watch-repair',
-            'ios.yml': 'ios-original-release',
-            'ios-completion.yml': 'ios-original-completion',
-            'ios-original-archive.yml': 'ios-original-archive',
-            'original-design-gate.yml': 'touchcolor-original-design',
+            'apple-platforms.yml': ('platform-integration', True, 'touchcolor-platforms-${{ github.ref }}'),
+            'mac-watch-repair.yml': ('mac-watch-repair', False, 'touchcolor-platforms-refs/heads/platform-integration'),
+            'ios.yml': ('ios-original-release', True, 'touchcolor-ios-${{ github.ref }}'),
+            'ios-completion.yml': ('ios-original-completion', True, 'touchcolor-ios-refs/heads/ios-original-release'),
+            'ios-original-archive.yml': ('ios-original-archive', True, 'touchcolor-ios-original-archive'),
+            'original-design-gate.yml': ('touchcolor-original-design', False, 'touchcolor-original-design-${{ github.ref }}'),
         }
-        workflows = {path.name: yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-                     for path in (gate.ROOT / '.github/workflows').glob('*.yml')}
-        self.assertEqual(set(workflows), set(expected))
+        self.assertEqual(set(sources), set(expected))
         matched = []
-        for filename, workflow in workflows.items():
-            self.assertEqual(workflow['on']['push'], {'branches': [expected[filename]]})
-            self.assertNotIn('codex/', (gate.ROOT / '.github/workflows' / filename).read_text())
-            if 'touchcolor-original-design' in workflow['on']['push']['branches']: matched.append(filename)
+        for filename, raw in sources.items():
+            branch, manual, group = expected[filename]
+            name, newline, rest = raw.partition('\n')
+            self.assertEqual(newline, '\n')
+            self.assertRegex(name, r'^name: [A-Za-z0-9 -]+$')
+            # Reject duplicate/unknown top-level keys, document boundaries and aliases.
+            top_level = [line for line in raw.splitlines()
+                         if line and not line[0].isspace() and not line.startswith('#')]
+            self.assertEqual(top_level, [name, 'on:', 'permissions:', 'concurrency:', 'jobs:'])
+            header, separator, body = rest.partition('jobs:\n')
+            self.assertEqual(separator, 'jobs:\n')
+            self.assertTrue(body.strip())
+            allowed = ('on:\n  push:\n    branches: [' + branch + ']\n'
+                       + ('  workflow_dispatch:\n' if manual else '')
+                       + 'permissions:\n  contents: read\nconcurrency:\n  group: ' + group
+                       + '\n  cancel-in-progress: false\n')
+            self.assertEqual(header, allowed)
+            self.assertNotIn('codex/', raw)
+            if branch == 'touchcolor-original-design': matched.append(filename)
         self.assertEqual(matched, ['original-design-gate.yml'])
-        self.assertEqual(workflows['original-design-gate.yml']['on'],
-                         {'push': {'branches': ['touchcolor-original-design']}})
         for canonical, followup in [('apple-platforms.yml', 'mac-watch-repair.yml'),
                                     ('ios.yml', 'ios-completion.yml')]:
-            group = workflows[canonical]['concurrency']['group']
+            branch, _, group = expected[canonical]
             self.assertIn('${{ github.ref }}', group)
-            expanded = group.replace('${{ github.ref }}', 'refs/heads/' + expected[canonical])
-            self.assertEqual(workflows[followup]['concurrency']['group'], expanded)
+            self.assertEqual(expected[followup][2], group.replace('${{ github.ref }}', 'refs/heads/' + branch))
+
+    def test_only_original_design_workflow_matches_its_push_branch(self):
+        sources = self.workflow_sources()
+        self.assert_fixed_workflow_headers(sources)
+
+    def test_fixed_workflow_headers_reject_unknown_duplicate_or_broadened_structure(self):
+        sources = self.workflow_sources()
+        for filename, raw in sources.items():
+            mutations = [
+                raw.replace('on:\n', 'on:\n  pull_request:\n', 1),
+                raw.replace('on:\n', 'on:\non:\n', 1),
+                raw.replace('  push:\n', '  push:\n  push:\n', 1),
+                raw.replace('    branches: [', '    branches: [foreign, ', 1),
+                raw.replace('    branches: [', '    branches: []\n    branches: [', 1),
+                raw.replace('on:\n', 'on: &routes\n', 1),
+                raw.replace('  push:\n', '  push: *routes\n', 1),
+                raw.replace('concurrency:\n', 'concurrency:\nconcurrency:\n', 1),
+                raw.replace('  group: ', '  group: alias\n  group: ', 1),
+                raw.replace('concurrency:\n', 'concurrency: *shared\n', 1),
+                raw.replace('  group: ', '  group: &shared ', 1),
+                raw.replace('contents: read', 'contents: write', 1),
+                raw.replace('cancel-in-progress: false', 'cancel-in-progress: true', 1),
+                raw + '\non:\n  schedule: []\n',
+                '---\n' + raw,
+                raw + '\n---\non: {push: {branches: [foreign]}}\n',
+            ]
+            for index, changed in enumerate(mutations):
+                with self.subTest(filename=filename, mutation=index), self.assertRaises(AssertionError):
+                    self.assert_fixed_workflow_headers({**sources, filename: changed})
+        with self.assertRaises(AssertionError):
+            self.assert_fixed_workflow_headers({**sources, 'unknown.yml': sources['original-design-gate.yml']})
+        with self.assertRaises(AssertionError):
+            self.assert_fixed_workflow_headers({name: raw for name, raw in sources.items() if name != 'ios.yml'})
+
+    def test_workflow_inventory_rejects_unexpected_yaml_suffix_file(self):
+        from unittest.mock import patch
+        sources = self.workflow_sources()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            directory = root / '.github/workflows'
+            directory.mkdir(parents=True)
+            for filename, raw in sources.items(): (directory / filename).write_text(raw)
+            with patch.object(gate, 'ROOT', root):
+                self.test_only_original_design_workflow_matches_its_push_branch()
+                (directory / 'unknown.yaml').write_text(sources['original-design-gate.yml'])
+                with self.assertRaises(AssertionError):
+                    self.test_only_original_design_workflow_matches_its_push_branch()
+
+    def test_workflow_route_guard_does_not_import_optional_yaml(self):
+        import builtins
+        from unittest.mock import patch
+        original_import = builtins.__import__
+        def without_yaml(name, *args, **kwargs):
+            if name == 'yaml' or name.startswith('yaml.'):
+                raise ModuleNotFoundError("No module named 'yaml'")
+            return original_import(name, *args, **kwargs)
+        with patch('builtins.__import__', side_effect=without_yaml):
+            with self.assertRaises(ModuleNotFoundError): builtins.__import__('yaml')
+            self.test_only_original_design_workflow_matches_its_push_branch()
+
+    def test_workflow_route_guard_runs_without_site_packages(self):
+        import os, subprocess, sys
+        environment = dict(os.environ)
+        environment.pop('PYTHONPATH', None)
+        completed = subprocess.run(
+            [sys.executable, '-S', str(Path(__file__).resolve()),
+             'OriginalDesignGateTests.test_only_original_design_workflow_matches_its_push_branch'],
+            cwd=gate.ROOT, env=environment, capture_output=True, text=True, timeout=15)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_original_design_runtime_rejects_other_routes_before_commands(self):
         from unittest.mock import patch
