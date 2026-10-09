@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One owned, unsigned SE3 -> iPad simulator gate. Never a release/design approval."""
+"""One owned, unsigned device per independent matrix job. Never a release/design approval."""
 import argparse
 import hashlib
 import json
@@ -28,7 +28,9 @@ HOSTED_SOURCES = {
     'TCPhotoImportTests': 'ColorPickerTests/TCPhotoImportTests.swift',
     'TCPhotoImportLifecycleTests': 'ColorPickerTests/TCPhotoImportLifecycleTests.m',
 }
-DEVICE_NAMES = ('iPhone SE (3rd generation)', 'iPad mini (A17 Pro)')
+DEVICE_NAMES = {'se3': 'iPhone SE (3rd generation)', 'ipad-mini': 'iPad mini (A17 Pro)'}
+CONTROLLER_TIMEOUT_SECONDS = 23 * 60
+EVIDENCE_BUDGET_BYTES = 12 * 1024 * 1024  # Two jobs together retain at most the original 24 MiB.
 
 
 def require(condition, message):
@@ -87,9 +89,11 @@ def qualify_cases(log, expected_names):
 
 
 class Gate:
-    def __init__(self, expected_sha):
+    def __init__(self, expected_sha, device_label):
+        require(device_label in DEVICE_NAMES, 'Exactly one reviewed device must be selected')
         self.expected_sha = expected_sha
-        self.deadline = time.monotonic() + 35 * 60
+        self.device_label = device_label
+        self.deadline = time.monotonic() + CONTROLLER_TIMEOUT_SECONDS
         self.uncertain_simulator = False
         self.owned = []
         self.commands = []
@@ -129,7 +133,7 @@ class Gate:
                         block = stream.read(64 * 1024)
                         if not block: break
                         total += len(block); digest.update(block); tail = (tail + block)[-512 * 1024:]
-                available = max(0, 20 * 1024 * 1024 - sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file()))
+                available = max(0, (EVIDENCE_BUDGET_BYTES - 4 * 1024 * 1024) - sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file()))
                 retained = tail[-available:] if available else b''
                 record.update(log_bytes=total, log_sha256=digest.hexdigest(), log_tail_truncated=total > len(retained), log_retained_bytes=len(retained))
                 (EVIDENCE / (name + '.log')).write_bytes(retained)
@@ -204,7 +208,7 @@ class Gate:
                 require(0 < source.stat().st_size <= 2 * 1024 * 1024, 'Screenshot exceeds per-image budget')
                 data = source.read_bytes(); require(data.startswith(b'\x89PNG\r\n\x1a\n'), 'Expected lossless PNG evidence')
                 total = sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file())
-                require(total + len(data) <= 24 * 1024 * 1024 - 64 * 1024, 'Evidence package budget exceeded')
+                require(total + len(data) <= EVIDENCE_BUDGET_BYTES - 64 * 1024, 'Evidence package budget exceeded')
                 target = EVIDENCE / (label + '-' + name + '.png'); target.write_bytes(data)
                 kept.append({'name': name, 'path': target.name, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
         write_json(EVIDENCE / (label + '-screenshots.json'), kept)
@@ -235,32 +239,35 @@ class Gate:
         types = json.loads(self.text('device-types', ['xcrun', 'simctl', 'list', 'devicetypes', '-j'], simulator=True))['devicetypes']
         hosted = set().union(*(testcase_names(ROOT / path) for path in HOSTED_SOURCES.values()))
         ui = testcase_names(ROOT / 'TouchColorUITests' / (UI_CLASS + '.m'))
-        require(len(hosted) == 29 and len(ui) == 5, 'Reviewed testcase inventory changed; update the explicit gate before execution')
+        require(len(hosted) == 29 and len(ui) == 6, 'Reviewed testcase inventory changed; update the explicit gate before execution')
         fixture = WORK / 'original-design-six-colors.png'; fixture.write_bytes(fixture_png())
         write_json(EVIDENCE / 'fixture.json', {'sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(), 'width': 300, 'height': 200,
                                              'colors': ['#ff0000', '#00ff00', '#0000ff', '#00ffff', '#ff00ff', '#ffff00']})
         app = WORK / 'derived/Build/Products/Debug-iphonesimulator/TouchColor.app'
         require(app.is_dir(), 'Exact built app is missing')
-        for index, name in enumerate(DEVICE_NAMES):
-            found = [d for d in types if d['name'] == name]
-            require(len(found) == 1, 'Required simulator device type missing: ' + name)
-            label = 'se3' if index == 0 else 'ipad-mini'
-            owned_name = 'TouchColor-Original-' + label + '-' + uuid.uuid4().hex[:12]
-            device = self.text(label + '-create', ['xcrun', 'simctl', 'create', owned_name, found[0]['identifier'], runtime[0]['identifier']], simulator=True)
-            require(re.fullmatch(r'[0-9A-Fa-f-]{36}', device) is not None, 'Invalid created simulator identity')
-            self.owned.append(device)
-            self.devices.append({'name': name, 'owned_name': owned_name, 'udid': device, 'runtime': runtime[0]})
-            write_json(EVIDENCE / 'devices.json', self.devices)
-            self.command(label + '-boot', ['xcrun', 'simctl', 'boot', device], 45, simulator=True)
-            self.await_owned_boot(label, device, owned_name)
-            self.command(label + '-install', ['xcrun', 'simctl', 'install', device, str(app)], 90, simulator=True)
-            self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
-            self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
-            self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS], ui)
-            self.command(label + '-shutdown', ['xcrun', 'simctl', 'shutdown', device], 60, simulator=True)
-            self.command(label + '-delete', ['xcrun', 'simctl', 'delete', device], 45, simulator=True)
-            self.owned.remove(device)
+        self.run_device(types, runtime[0], app, fixture, hosted, ui)
         self.command('clean-end', ['git', 'diff', '--exit-code', 'HEAD', '--'], 30)
+
+    def run_device(self, types, runtime, app, fixture, hosted, ui):
+        label = self.device_label
+        name = DEVICE_NAMES[label]
+        found = [d for d in types if d['name'] == name]
+        require(len(found) == 1, 'Required simulator device type missing: ' + name)
+        owned_name = 'TouchColor-Original-' + label + '-' + uuid.uuid4().hex[:12]
+        device = self.text(label + '-create', ['xcrun', 'simctl', 'create', owned_name, found[0]['identifier'], runtime['identifier']], simulator=True)
+        require(re.fullmatch(r'[0-9A-Fa-f-]{36}', device) is not None, 'Invalid created simulator identity')
+        self.owned.append(device)
+        self.devices.append({'label': label, 'name': name, 'owned_name': owned_name, 'udid': device, 'runtime': runtime})
+        write_json(EVIDENCE / 'devices.json', self.devices)
+        self.command(label + '-boot', ['xcrun', 'simctl', 'boot', device], 45, simulator=True)
+        self.await_owned_boot(label, device, owned_name)
+        self.command(label + '-install', ['xcrun', 'simctl', 'install', device, str(app)], 90, simulator=True)
+        self.run_tests(label, device, 'hosted', ['TouchColorTests/' + c for c in HOSTED_SOURCES], hosted)
+        self.command(label + '-seed', ['xcrun', 'simctl', 'addmedia', device, str(fixture)], 60, simulator=True)
+        self.run_tests(label, device, 'ui', ['TouchColorUITests/' + UI_CLASS], ui)
+        self.command(label + '-shutdown', ['xcrun', 'simctl', 'shutdown', device], 60, simulator=True)
+        self.command(label + '-delete', ['xcrun', 'simctl', 'delete', device], 45, simulator=True)
+        self.owned.remove(device)
 
     def cleanup(self):
         # Never issue more simulator commands after a timed-out/uncertain action.
@@ -284,7 +291,7 @@ def admit_evidence(source=EVIDENCE, destination=WORK / 'published'):
     files = sorted(p for p in source.rglob('*') if p.is_file())
     require(all(not p.is_symlink() and not any(parent.is_symlink() for parent in p.parents) for p in files), 'Linked evidence is not publishable')
     require(all(p.suffix in ('.json', '.log', '.png') for p in files), 'Unexpected artifact type; no raw xcresults are admitted')
-    budget = 24 * 1024 * 1024
+    budget = EVIDENCE_BUDGET_BYTES
     complete = sum(p.stat().st_size for p in files) <= budget - 64 * 1024
     kept = []; omitted = []; used = 0
     if not complete:
@@ -308,6 +315,7 @@ def admit_evidence(source=EVIDENCE, destination=WORK / 'published'):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--expected-sha')
+    parser.add_argument('--device', choices=tuple(DEVICE_NAMES), required=True)
     parser.add_argument('--admit-evidence', action='store_true')
     args = parser.parse_args()
     if args.admit_evidence:
@@ -316,7 +324,7 @@ def main():
     def interrupted(signum, frame):
         raise KeyboardInterrupt('Native gate interrupted by signal ' + str(signum))
     signal.signal(signal.SIGTERM, interrupted); signal.signal(signal.SIGINT, interrupted)
-    gate = Gate(args.expected_sha); passed = False; error = None
+    gate = Gate(args.expected_sha, args.device); passed = False; error = None
     try:
         gate.main(); passed = True
     except BaseException as failure:
@@ -324,8 +332,11 @@ def main():
     finally:
         gate.cleanup()
         total = sum(p.stat().st_size for p in EVIDENCE.rglob('*') if p.is_file())
-        passed = passed and not gate.owned and not gate.uncertain_simulator and total <= 24 * 1024 * 1024
-        write_json(EVIDENCE / 'acceptance.json', {'functional_passed': passed, 'error': error, 'source_sha': args.expected_sha,
+        passed = passed and not gate.owned and not gate.uncertain_simulator and total <= EVIDENCE_BUDGET_BYTES - 128 * 1024
+        write_json(EVIDENCE / 'acceptance.json', {'functional_passed': passed, 'scope': 'selected device only; both matrix jobs must pass',
+                   'device_label': args.device, 'device_name': DEVICE_NAMES[args.device], 'required_devices': list(DEVICE_NAMES),
+                   'reviewed_inventory': {'hosted': 29, 'ui': 6},
+                   'error': error, 'source_sha': args.expected_sha,
                    'pending_owned_devices': gate.owned, 'simulator_uncertain': gate.uncertain_simulator, 'evidence_bytes': total,
                    'visual_comparison': 'not automatically accepted; inspect six named screenshots per device against original design',
                    'release_claim': False})

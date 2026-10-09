@@ -297,10 +297,9 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     XCUIElement *table=[self openLibrary]; [self assertRedHistory:table count:1];
     [self deleteOnlySavedColor:table];
 }
-- (void)testNativePrivacyThroughLibraryAboutCloseAndDataPreservation {
+- (void)testNativePrivacyContentAndActionsFromEmptyLibrary {
     [self launchReset:YES extra:nil];
-    [self sampleAndSaveRed]; [self returnFromCanvas];
-    XCUIElement *table=[self openLibrary]; [self assertRedHistory:table count:1];
+    XCUIElement *table=[self openLibrary]; [self assertRedHistory:table count:0];
     [self revealFooter:@"original.about" inTable:table]; [self tap:@"original.about"];
     XCTAssertTrue([self.app.buttons[@"original.about.close"] waitForExistenceWithTimeout:5]);
     [self tap:@"privacyPolicy"];
@@ -317,7 +316,23 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     }
     XCTAssertFalse(self.app.staticTexts[@"privacy.externalError"].exists);
     [self capture:@"05-secondary-privacy-policy"];
+    [self tap:@"privacy.close"]; [self waitAbsent:content];
+    XCTAssertTrue(self.app.buttons[@"original.library"].selected);
+    [self assertRedHistory:self.app.tables[@"colorHistory"] count:0];
+    [self tap:@"original.picker"]; [self assertHomeUsable];
+}
+- (void)testNativePrivacyBackgroundClosePreservesRealSavedColor {
+    [self launchReset:YES extra:nil];
+    [self sampleAndSaveRed]; [self returnFromCanvas];
+    XCUIElement *table=[self openLibrary]; [self assertRedHistory:table count:1];
+    [self revealFooter:@"original.about" inTable:table]; [self tap:@"original.about"];
+    XCTAssertTrue([self.app.buttons[@"original.about.close"] waitForExistenceWithTimeout:5]);
+    [self tap:@"privacyPolicy"];
+    XCUIElement *content=self.app.scrollViews[@"privacy.content"];
+    XCTAssertTrue([content waitForExistenceWithTimeout:5]);
+    XCTAssertTrue([self.app.buttons[@"privacy.close"] waitForExistenceWithTimeout:5]);
     [XCUIDevice.sharedDevice pressButton:XCUIDeviceButtonHome]; [self.app activate];
+    XCTAssertTrue([content waitForExistenceWithTimeout:5],@"Foreground restoration must retain the open native policy");
     [self tap:@"privacy.close"];
     [self waitAbsent:content];
     XCTAssertTrue(self.app.buttons[@"original.library"].selected);
@@ -326,6 +341,7 @@ static UIImage *TCDesignRecognitionControl(BOOL mutate) {
     [self tap:@"original.about"];
     [self tap:@"original.about.close"];
     [self assertRedHistory:self.app.tables[@"colorHistory"] count:1];
+    [self deleteOnlySavedColor:self.app.tables[@"colorHistory"]];
     [self tap:@"original.picker"]; [self assertHomeUsable];
 }
 - (void)testLiveUnavailableCannotSaveAndReturnsToOriginalHome {

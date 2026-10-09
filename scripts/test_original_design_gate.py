@@ -107,7 +107,7 @@ class OriginalDesignGateTests(unittest.TestCase):
             root = Path(tmp).resolve(); raw = root / 'ready.log'
             raw.write_text('Monitoring boot status for Owned (U).\nDevice already booted, nothing to do.\n\n')
             with patch.object(gate, 'WORK', root / 'work'), patch.object(gate, 'EVIDENCE', root / 'evidence'):
-                worker = gate.Gate('a' * 40)
+                worker = gate.Gate('a' * 40, 'se3')
                 worker.commands = [{'name': 'se3-ready', 'exit_code': 0}]
                 with patch.object(worker, 'command', return_value=(0, raw)) as command:
                     worker.await_owned_boot('se3', 'U', 'Owned')
@@ -126,7 +126,7 @@ class OriginalDesignGateTests(unittest.TestCase):
             for text in variants:
                 raw.write_text(text)
                 with patch.object(gate, 'WORK', root / 'work'), patch.object(gate, 'EVIDENCE', root / 'evidence'):
-                    worker = gate.Gate('a' * 40); worker.owned = ['U']
+                    worker = gate.Gate('a' * 40, 'se3'); worker.owned = ['U']
                     with patch.object(worker, 'command', return_value=(0, raw)) as command:
                         with self.assertRaises(ValueError): worker.await_owned_boot('se3', 'U', 'Owned')
                         worker.cleanup()
@@ -144,7 +144,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve(); output = io.StringIO()
             with patch.object(gate, 'WORK', root / 'work'), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.subprocess, 'Popen', Process), patch.dict(sys.modules, {'bounded_process': bounded}), contextlib.redirect_stdout(output):
-                worker = gate.Gate('a' * 40)
+                worker = gate.Gate('a' * 40, 'se3')
                 code, _ = worker.command('fixture-stage', ['fixture-only'], 300)
             self.assertEqual(code, 0)
             lines = output.getvalue().splitlines()
@@ -173,7 +173,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         def method(name, next_name):
             return source.split('- (void)' + name + ' {', 1)[1].split('- (void)' + next_name, 1)[0]
         save = method('testRealPhotoSaveRelaunchDelete', 'testDelayedImportCancellationPreservesSavedColor')
-        cancel = method('testDelayedImportCancellationPreservesSavedColor', 'testNativePrivacyThroughLibraryAboutCloseAndDataPreservation')
+        cancel = method('testDelayedImportCancellationPreservesSavedColor', 'testNativePrivacyContentAndActionsFromEmptyLibrary')
         self.assertIn('[self launchReset:YES extra:nil]', save)
         self.assertIn('[self sampleAndSaveRed]', save)
         self.assertEqual(save.count('[self.app terminate]; [self launchReset:NO extra:nil]'), 2)
@@ -182,7 +182,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         for required in ['--ui-test-delay-photo-import', '[self sampleAndSaveRed]', '[self selectOnlySeededPhoto]',
                          'photo.import.cancel', 'late.inverted=YES', 'timeout:9', 'count:1', '[self deleteOnlySavedColor:table]']:
             self.assertIn(required, cancel)
-        self.assertIn('len(hosted) == 29 and len(ui) == 5', Path(gate.__file__).read_text())
+        self.assertIn('len(hosted) == 29 and len(ui) == 6', Path(gate.__file__).read_text())
         self.assertIn("'-default-test-execution-time-allowance', '120'", Path(gate.__file__).read_text())
         self.assertEqual(gate.BOOTSTATUS_TIMEOUT_SECONDS, 300)
         home = source.split('- (void)assertHomeUsable {', 1)[1].split('- (void)tap:', 1)[0]
@@ -213,11 +213,139 @@ class OriginalDesignGateTests(unittest.TestCase):
     def test_privacy_suite_uses_exact_current_native_contract(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
-        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m')), 5)
+        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m')), 6)
         for required in ['privacy.body.zh-Hans', 'privacy.body.en', 'original.about.close', 'original.back', 'photo.import.cancel', '#ff00ff', '#ff0000']:
             self.assertIn(required, source)
         for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:
             self.assertNotIn(stale, source)
+
+    def test_matrix_is_exact_two_independent_jobs_with_distinct_evidence(self):
+        workflow = (gate.ROOT / '.github/workflows/original-design-gate.yml').read_text()
+        for required in ['device: [se3, ipad-mini]', 'fail-fast: false', 'max-parallel: 2',
+                         'timeout-minutes: 25', 'runs-on: xcode-27', 'ref: ${{ github.sha }}',
+                         'EXPECTED_SHA: ${{ github.sha }}', 'DEVICE_LABEL: ${{ matrix.device }}',
+                         '--expected-sha "$EXPECTED_SHA" --device "$DEVICE_LABEL"',
+                         'name: touchcolor-original-design-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.device }}']:
+            self.assertIn(required, workflow)
+        self.assertEqual(workflow.count('runs-on:'), 1)
+        self.assertNotIn('continue-on-error', workflow)
+        self.assertNotIn('strategy.job-total', workflow)
+        self.assertEqual(gate.CONTROLLER_TIMEOUT_SECONDS, 23 * 60)
+        self.assertEqual(len(gate.DEVICE_NAMES), 2)
+        self.assertEqual(gate.EVIDENCE_BUDGET_BYTES * len(gate.DEVICE_NAMES), 24 * 1024 * 1024)
+        source = Path(gate.__file__).read_text()
+        self.assertIn("parser.add_argument('--device', choices=tuple(DEVICE_NAMES), required=True)", source)
+        self.assertIn("'scope': 'selected device only; both matrix jobs must pass'", source)
+        self.assertIn("'required_devices': list(DEVICE_NAMES)", source)
+        self.assertIn("'reviewed_inventory': {'hosted': 29, 'ui': 6}", source)
+
+    def test_explicit_device_rejects_missing_unknown_or_all_selection(self):
+        for label in [None, '', 'all', 'iphone', 'se3,ipad-mini']:
+            with self.assertRaises(RuntimeError): gate.Gate('a' * 40, label)
+
+    def test_each_job_runs_only_its_owned_selected_device_and_full_inventory(self):
+        from unittest.mock import patch
+        types = [dict(name=name, identifier='type.' + label) for label, name in gate.DEVICE_NAMES.items()]
+        runtime = {'identifier': 'owned-runtime'}
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            for label, name in gate.DEVICE_NAMES.items():
+                with patch.object(gate, 'WORK', root / label), patch.object(gate, 'EVIDENCE', root / label / 'evidence'):
+                    worker = gate.Gate('a' * 40, label)
+                    with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot') as ready, patch.object(worker, 'run_tests') as tests:
+                        worker.run_device(types, runtime, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                    create.assert_called_once()
+                    args = create.call_args.args
+                    self.assertEqual(args[0], label + '-create')
+                    self.assertEqual(args[1][-2:], ['type.' + label, 'owned-runtime'])
+                    ready.assert_called_once_with(label, owned, worker.devices[0]['owned_name'])
+                    self.assertEqual([call.args[0] for call in command.call_args_list], [label + suffix for suffix in ['-boot', '-install', '-seed', '-shutdown', '-delete']])
+                    self.assertEqual([call.args[2] for call in tests.call_args_list], ['hosted', 'ui'])
+                    self.assertEqual([call.args[-1] for call in tests.call_args_list], [{'hosted'}, {'ui'}])
+                    self.assertEqual(worker.devices[0]['name'], name)
+                    self.assertEqual(worker.owned, [])
+
+    def test_device_failure_is_not_swallowed_or_followed_by_other_device(self):
+        from unittest.mock import patch
+        owned = '01234567-89AB-CDEF-0123-456789ABCDEF'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'):
+                worker = gate.Gate('a' * 40, 'se3')
+                with patch.object(worker, 'text', return_value=owned) as create, patch.object(worker, 'command') as command, patch.object(worker, 'await_owned_boot'), patch.object(worker, 'run_tests', side_effect=RuntimeError('test failed')):
+                    with self.assertRaisesRegex(RuntimeError, 'test failed'):
+                        worker.run_device([{'name': gate.DEVICE_NAMES['se3'], 'identifier': 'type.se3'}], {'identifier': 'owned-runtime'}, root / 'app', root / 'fixture.png', {'hosted'}, {'ui'})
+                    create.assert_called_once()
+                    self.assertEqual([call.args[0] for call in command.call_args_list], ['se3-boot', 'se3-install'])
+                self.assertEqual(worker.owned, [owned])
+
+    def test_controller_deadline_prevents_launch_after_23_minutes(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with patch.object(gate, 'WORK', root), patch.object(gate, 'EVIDENCE', root / 'evidence'), patch.object(gate.time, 'monotonic', return_value=100):
+                worker = gate.Gate('a' * 40, 'ipad-mini')
+                self.assertEqual(worker.deadline, 1480)
+            with patch.object(gate.time, 'monotonic', return_value=1456), patch.object(gate.subprocess, 'Popen') as process:
+                with self.assertRaisesRegex(RuntimeError, 'budget exhausted'):
+                    worker.command('past-deadline', ['fixture'], 300, simulator=True)
+                process.assert_not_called()
+
+    def test_per_device_upload_budget_cannot_double_workflow_ceiling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); source = root / 'evidence'; source.mkdir()
+            with (source / 'over-device-budget.png').open('wb') as stream: stream.truncate(13 * 1024 * 1024)
+            (source / 'acceptance.json').write_text('{"functional_passed":false}')
+            self.assertFalse(gate.admit_evidence(source, root / 'published'))
+            receipt = json.loads((root / 'published/artifact-admission.json').read_text())
+            self.assertEqual(receipt['limit_bytes'], 12 * 1024 * 1024)
+            self.assertFalse((root / 'published/over-device-budget.png').exists())
+
+    def test_acceptance_leaves_room_for_receipt_and_upload_admission(self):
+        import sys
+        from unittest.mock import patch
+        class Worker:
+            owned = []
+            uncertain_simulator = False
+            def __init__(self, *args): pass
+            def main(self): pass
+            def cleanup(self): pass
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            with (root / 'near-ceiling.log').open('wb') as stream:
+                stream.truncate(gate.EVIDENCE_BUDGET_BYTES - 100 * 1024)
+            with patch.object(gate, 'EVIDENCE', root), patch.object(gate, 'Gate', Worker), patch.object(gate.signal, 'signal'), patch.object(sys, 'argv', ['gate', '--expected-sha', 'a' * 40, '--device', 'se3']):
+                self.assertEqual(gate.main(), 1)
+            receipt = json.loads((root / 'acceptance.json').read_text())
+            self.assertFalse(receipt['functional_passed'])
+            self.assertEqual(receipt['device_label'], 'se3')
+            self.assertEqual(receipt['required_devices'], ['se3', 'ipad-mini'])
+
+    def test_privacy_split_preserves_content_actions_lifecycle_and_real_data(self):
+        source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        content = source.split('- (void)testNativePrivacyContentAndActionsFromEmptyLibrary {', 1)[1].split('- (void)testNativePrivacyBackgroundClosePreservesRealSavedColor', 1)[0]
+        lifecycle = source.split('- (void)testNativePrivacyBackgroundClosePreservesRealSavedColor {', 1)[1].split('- (void)testLiveUnavailable', 1)[0]
+        for case in [content, lifecycle]:
+            self.assertIn('[self launchReset:YES extra:nil]', case)
+            self.assertIn('[self tap:@"original.about"]', case)
+            self.assertIn('[self tap:@"privacyPolicy"]', case)
+            self.assertIn('[self tap:@"privacy.close"]', case)
+            self.assertIn('[self waitAbsent:content]', case)
+            self.assertIn('[self tap:@"original.picker"]; [self assertHomeUsable]', case)
+        for required in ['count:0', '[self assertLocalPolicyBody]', 'privacy.contact', 'privacy.externalPolicy',
+                         '[self revealPrivacyAction:button inScrollView:actions]', 'XCTAssertTrue(button.enabled)',
+                         'XCTAssertTrue(button.hittable)', 'privacy.externalError', '05-secondary-privacy-policy']:
+            self.assertIn(required, content)
+        for forbidden in ['sampleAndSaveRed', '[self tap:@"privacy.contact"]', '[self tap:@"privacy.externalPolicy"]', '[button tap]']:
+            self.assertNotIn(forbidden, content)
+        for required in ['[self sampleAndSaveRed]', 'pressButton:XCUIDeviceButtonHome', '[self.app activate]',
+                         'Foreground restoration must retain', '[self tap:@"original.about.close"]',
+                         '[self deleteOnlySavedColor:self.app.tables[@"colorHistory"]]']:
+            self.assertIn(required, lifecycle)
+        self.assertEqual(lifecycle.count('count:1'), 3)
+        self.assertEqual(content.count('05-secondary-privacy-policy'), 1)
+        self.assertNotIn('executionTimeAllowance', source)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
