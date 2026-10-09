@@ -341,7 +341,7 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     [self launchReset:YES extra:nil];
     [self tap:@"choosePhoto"];
     if (![self waitForPhotoPickerSurface]) return;
-    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"];
+    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-picker-ready"];
     [self assertHomeUsable];
     XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists);
     XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists);

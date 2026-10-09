@@ -1077,7 +1077,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         source = (gate.ROOT / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
         bootstrap = source.split('- (void)' + gate.BOOTSTRAP_TEST + ' {', 1)[1].split('- (void)testOriginalHomeTabs', 1)[0]
         for required in ['[self launchReset:YES extra:nil]', 'if (![self waitForPhotoPickerSurface]) return;',
-                         'bootstrap-cancel-before', '[self dismissPhotoPickerOnceWithAttachment:', '[self assertHomeUsable]', 'count:0']:
+                         'bootstrap-picker-ready', '[self dismissPhotoPickerOnceWithAttachment:', '[self assertHomeUsable]', 'count:0']:
             self.assertIn(required, bootstrap)
         for forbidden in ['selectOnlySeededPhoto', 'sampleAndSaveRed', 'delete', 'authorization', 'requestAuthorization']:
             self.assertNotIn(forbidden, bootstrap)
@@ -1210,7 +1210,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         bootstrap=source.split('- (void)testPhotosLibraryBootstrapCanCancelWithoutSelecting',1)[1].split('- (void)testOriginalHomeTabs',1)[0]
         for token in ['[self launchReset:YES extra:nil]','[self tap:@"choosePhoto"]',
                       'if (![self waitForPhotoPickerSurface]) return;',
-                      '[self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"]',
+                      '[self dismissPhotoPickerOnceWithAttachment:@"bootstrap-picker-ready"]',
                       '[self assertHomeUsable]','XCTAssertFalse(self.app.buttons[@"sampleCenter"].exists)',
                       'XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists)',
                       '[self assertRedHistory:[self openLibrary] count:0]']:
@@ -1221,10 +1221,10 @@ class OriginalDesignGateTests(unittest.TestCase):
         for forbidden in ['selectOnlySeededPhoto','sampleAndSaveRed','requestAuthorization','delete']:
             self.assertNotIn(forbidden,bootstrap)
 
-    def test_native_change_is_limited_to_helper_and_four_redundant_bootstrap_lines(self):
+    def test_native_change_is_limited_to_helper_bootstrap_deduplication_and_capture_label(self):
         source,_=self.native_dismissal_source()
         marker='''    if (![self waitForPhotoPickerSurface]) return;
-    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"];
+    [self dismissPhotoPickerOnceWithAttachment:@"bootstrap-picker-ready"];
 '''
         restored='''    if (![self waitForPhotoPickerSurface]) return;
     XCUIElement *gallery=self.app.scrollViews[@"photosView_content_scroll_view"];
@@ -1237,10 +1237,139 @@ class OriginalDesignGateTests(unittest.TestCase):
         source=source.replace(marker,restored)
         before,rest=source.split('- (void)dismissPopoverOnceWithAttachment:',1)
         _,after=rest.split('- (void)dismissPhotoPickerOnceWithAttachment:',1)
-        # Restoring exactly those four lines must reproduce every byte outside
+        # Restoring the four lines and prior call label reproduces every byte outside
         # the iPad helper: six acceptance cases, home design, phone cancel, etc.
         self.assertEqual(hashlib.sha256((before+'<IPAD_DISMISS_HELPER>'+after).encode()).hexdigest(),
                          '35655c8dbd89495fa8860242b5d345dc3a91bf6e794ce4b8f09eb27f73f73413')
+
+    @staticmethod
+    def original_ui_case_bodies(source):
+        import re
+        return dict(re.findall(r'^- \(void\)(test\w+)\s*\{(.*?)(?=^- \(|^@end)',source,re.M|re.S))
+
+    @classmethod
+    def bootstrap_capture_label(cls,source):
+        import re
+        body=cls.original_ui_case_bodies(source)[gate.BOOTSTRAP_TEST]
+        names=re.findall(r'\[self dismissPhotoPickerOnceWithAttachment:@"([^"\n]+)"\]',body)
+        if len(names)!=1:raise ValueError('one bootstrap capture label')
+        return names[0]
+
+    def export_source_image_names(self,names,*,bootstrap=False,phase=None):
+        # Exercise the production exporter with attachment names derived from
+        # the UI source. Only xcresulttool is simulated; no native pass is claimed.
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                worker=gate.Gate('a'*40,'ipad-mini')
+                def export(*args,**kwargs):
+                    argv=args[2] if phase else args[1]
+                    destination=Path(argv[argv.index('--output-path')+1]);destination.mkdir()
+                    rows=[]
+                    for index,name in enumerate(names):
+                        filename=f'{index}.png';(destination/filename).write_bytes(gate.fixture_png())
+                        rows.append({'exportedFileName':filename,'suggestedHumanReadableName':name+'_0_TEST.png'})
+                    (destination/'manifest.json').write_text(json.dumps(rows))
+                    return 0,root/'log'
+                method='ui_command' if phase else 'command'
+                with patch.object(worker,method,side_effect=export) as commands:
+                    worker.export_screenshots('ipad-mini-bootstrap' if bootstrap else 'ipad-mini',root/'result.xcresult',require_complete=True,bootstrap=bootstrap,phase=phase)
+                self.assertEqual(commands.call_count,1)
+                prefix='ipad-mini-bootstrap' if bootstrap else 'ipad-mini-'+phase
+                rows=json.loads((root/'evidence'/(prefix+'-screenshots.json')).read_text())
+                self.assertEqual(len(list((root/'evidence').glob('*.png'))),len(rows))
+                for row in rows:
+                    data=(root/'evidence'/row['path']).read_bytes()
+                    self.assertEqual(row['bytes'],len(data));self.assertEqual(row['sha256'],hashlib.sha256(data).hexdigest())
+                return rows
+
+    def test_bootstrap_ui_label_flows_through_real_exporter_as_one_required_image(self):
+        source,_=self.native_dismissal_source();name=self.bootstrap_capture_label(source)
+        rows=self.export_source_image_names([name],bootstrap=True)
+        self.assertEqual([row['name'] for row in rows],['bootstrap-picker-ready'])
+        # This same runtime name is passed through both idiom helpers, each of
+        # which still captures exactly once; no second bootstrap image is added.
+        routing=source.split('- (void)dismissPhotoPickerOnceWithAttachment:',1)[1].split('- (void)cancelPickerOnce:',1)[0]
+        self.assertIn('[self dismissPopoverOnceWithAttachment:name]',routing)
+        self.assertIn('attachment:name]',routing)
+        phone=source.split('- (void)cancelPickerOnce:',1)[1].split('- (void)testPhotosLibraryBootstrap',1)[0]
+        _,ipad=self.native_dismissal_source()
+        self.assertEqual(ipad.count('[self capture:name]'),1);self.assertEqual(phone.count('[self capture:name]'),1)
+
+    def test_bootstrap_exporter_reproduces_prior_mismatch_and_rejects_missing_duplicate_images(self):
+        source,_=self.native_dismissal_source();name=self.bootstrap_capture_label(source)
+        prior=source.replace('[self dismissPhotoPickerOnceWithAttachment:@"'+name+'"]',
+                             '[self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"]',1)
+        old_name=self.bootstrap_capture_label(prior)
+        for names in [[old_name],[],[name,name]]:
+            with self.subTest(names=names),self.assertRaisesRegex(RuntimeError,'Missing or duplicate named screenshot: bootstrap-picker-ready'):
+                self.export_source_image_names(names,bootstrap=True)
+
+    def test_all_phase_required_image_names_are_derived_from_ui_calls_and_admitted(self):
+        import re
+        source,_=self.native_dismissal_source();cases=self.original_ui_case_bodies(source)
+        self.assertEqual(set(cases),{gate.BOOTSTRAP_TEST}|set().union(*gate.UI_PHASE_TESTS.values()))
+        all_required=[]
+        for phase,names in gate.UI_PHASE_TESTS.items():
+            captures=[capture for name in names for capture in re.findall(r'\[self capture:@"([^"\n]+)"\]',cases[name])]
+            self.assertCountEqual(captures,gate.UI_PHASE_IMAGES[phase])
+            self.assertEqual(len(captures),len(set(captures)))
+            diagnostics=[]
+            if phase=='ui-independent':
+                repeated=cases['testOriginalHomeTabsAndRepeatedPhotoPickerCancellation']
+                self.assertIn('attempt<2',repeated)
+                self.assertIn('NSString stringWithFormat:@"picker-cancel-before-%lu",(unsigned long)attempt+1',repeated)
+                diagnostics=['picker-cancel-before-1','picker-cancel-before-2']
+            rows=self.export_source_image_names(captures+diagnostics,phase=phase)
+            self.assertCountEqual([row['name'] for row in rows],captures+diagnostics)
+            all_required.extend(captures)
+        self.assertEqual(len(all_required),6);self.assertEqual(len(set(all_required)),6)
+
+    def test_all_phase_exports_reject_each_missing_or_duplicate_ui_required_image(self):
+        import re
+        source,_=self.native_dismissal_source();cases=self.original_ui_case_bodies(source)
+        for phase,names in gate.UI_PHASE_TESTS.items():
+            captures=[capture for name in names for capture in re.findall(r'\[self capture:@"([^"\n]+)"\]',cases[name])]
+            for missing in captures:
+                for changed in [[x for x in captures if x!=missing],captures+[missing]]:
+                    with self.subTest(phase=phase,image=missing,images=changed),self.assertRaisesRegex(RuntimeError,'Missing or duplicate named screenshot:'):
+                        self.export_source_image_names(changed,phase=phase)
+
+    def test_source_derived_exports_pass_real_six_image_completion_and_fail_missing_duplicate(self):
+        import re
+        from unittest.mock import patch
+        source,_=self.native_dismissal_source();cases=self.original_ui_case_bodies(source);exported=[]
+        for phase,names in gate.UI_PHASE_TESTS.items():
+            captures=[capture for name in names for capture in re.findall(r'\[self capture:@"([^"\n]+)"\]',cases[name])]
+            if phase=='ui-independent':captures+=['picker-cancel-before-1','picker-cancel-before-2']
+            exported.extend(self.export_source_image_names(captures,phase=phase))
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            with patch.object(gate,'WORK',root),patch.object(gate,'EVIDENCE',root/'evidence'):
+                worker=gate.Gate('a'*40,'ipad-mini')
+                for row in worker.ui_phase_results.values():row['status']='passed'
+                worker.ui_screenshots=exported;worker.qualify_ui_completion('ipad-mini')
+                kept=json.loads((root/'evidence/ipad-mini-screenshots.json').read_text())
+                self.assertEqual(len(kept),8)
+                self.assertEqual(len({row['name'] for row in kept}),8)
+                required=sum(gate.UI_PHASE_IMAGES.values(),[])
+                self.assertCountEqual([row['name'] for row in kept if row['name'] in required],required)
+                for missing in required:
+                    worker.ui_screenshots=[row for row in exported if row['name']!=missing]
+                    with self.subTest(missing=missing),self.assertRaisesRegex(RuntimeError,'Incomplete six-image UI evidence'):
+                        worker.qualify_ui_completion('ipad-mini')
+                worker.ui_screenshots=exported+[dict(exported[0])]
+                with self.assertRaisesRegex(RuntimeError,'Duplicate screenshot names'):
+                    worker.qualify_ui_completion('ipad-mini')
+
+    def test_screenshot_fix_changes_only_the_bootstrap_argument_in_native_source(self):
+        source,_=self.native_dismissal_source()
+        new='[self dismissPhotoPickerOnceWithAttachment:@"bootstrap-picker-ready"]'
+        old='[self dismissPhotoPickerOnceWithAttachment:@"bootstrap-cancel-before"]'
+        self.assertEqual(source.count(new),1)
+        self.assertEqual(hashlib.sha256(source.replace(new,old).encode()).hexdigest(),
+                         '730173c0e5b60e47ed78b144b212f28907f3511496cfef66579926887f79f02d')
 
     def test_permissionless_bootstrap_precedes_seeding_on_both_devices(self):
         runner = Path(gate.__file__).read_text()
