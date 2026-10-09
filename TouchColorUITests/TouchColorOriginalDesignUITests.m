@@ -2,6 +2,51 @@
 #import <UIKit/UIKit.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
+
+// This test-only recognizer identifies the seeded chart by image content, not
+// picker ordering or the number of unrelated built-in simulator photos.
+static BOOL TCDesignFixturePixel(UIImage *image, CGFloat nx, CGFloat ny, const uint8_t expected[3]) {
+    CGSize size=CGSizeMake(image.size.width*image.scale,image.size.height*image.scale);
+    if (!isfinite(size.width) || !isfinite(size.height) || size.width<1 || size.height<1 || size.width>4096 || size.height>4096) return NO;
+    CGFloat x=MIN(floor(nx*size.width),size.width-1), y=MIN(floor(ny*size.height),size.height-1);
+    uint8_t pixel[4]={0,0,0,0};
+    CGColorSpaceRef space=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context=CGBitmapContextCreate(pixel,1,1,8,4,space,(CGBitmapInfo)kCGImageAlphaPremultipliedLast|kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(space);
+    if (!context) return NO;
+    CGContextTranslateCTM(context,0,1); CGContextScaleCTM(context,1,-1);
+    CGContextSetInterpolationQuality(context,kCGInterpolationNone);
+    UIGraphicsPushContext(context);
+    [image drawInRect:CGRectMake(-x,-y,size.width,size.height)];
+    UIGraphicsPopContext(); CGContextRelease(context);
+    if (pixel[3]!=255) return NO;
+    for (NSUInteger channel=0;channel<3;channel++) {
+        if (abs((int)pixel[channel]-(int)expected[channel])>8) return NO;
+    }
+    return YES;
+}
+static BOOL TCDesignFixtureThumbnail(UIImage *image) {
+    if (!image) return NO;
+    const uint8_t colors[6][3]={{255,0,0},{0,255,0},{0,0,255},{0,255,255},{255,0,255},{255,255,0}};
+    const CGFloat columns[3]={0.125,0.5,0.875}, rows[2]={0.25,0.75};
+    const CGPoint probes[5]={{0,0},{-0.02,-0.02},{0.02,-0.02},{-0.02,0.02},{0.02,0.02}};
+    for (NSUInteger row=0;row<2;row++) for (NSUInteger column=0;column<3;column++) {
+        for (NSUInteger probe=0;probe<5;probe++) {
+            if (!TCDesignFixturePixel(image,columns[column]+probes[probe].x,rows[row]+probes[probe].y,colors[row*3+column])) return NO;
+        }
+    }
+    return YES;
+}
+static UIImage *TCDesignRecognitionControl(BOOL mutate) {
+    UIGraphicsImageRendererFormat *format=UIGraphicsImageRendererFormat.defaultFormat; format.scale=1; format.preferredRange=UIGraphicsImageRendererFormatRangeStandard;
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(300,200) format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        NSArray<UIColor *> *colors=@[UIColor.redColor,UIColor.greenColor,UIColor.blueColor,UIColor.cyanColor,UIColor.magentaColor,mutate ? UIColor.blackColor : UIColor.yellowColor];
+        for (NSUInteger index=0;index<6;index++) {
+            [colors[index] setFill]; [context fillRect:CGRectMake((index%3)*100,(index/3)*100,100,100)];
+        }
+    }];
+}
 
 // Separate original-product regression suite. No production fixture button,
 // sidebar, redesigned home history, or direct home privacy action is required.
@@ -107,16 +152,37 @@
     XCTAssertTrue(button.hittable,@"The secondary library action must remain reachable by normal scrolling");
 }
 - (void)selectOnlySeededPhoto {
+    XCTAssertTrue(TCDesignFixtureThumbnail(TCDesignRecognitionControl(NO)));
+    XCTAssertFalse(TCDesignFixtureThumbnail(TCDesignRecognitionControl(YES)),@"A changed color must never be accepted as the fixture");
     [self tap:@"choosePhoto"];
     XCUIElement *cancel=self.app.buttons[@"Cancel"].firstMatch;
     XCTAssertTrue([cancel waitForExistenceWithTimeout:10]);
-    // Both selectors were observed in the release suite. The runner creates a
-    // new disposable simulator and seeds exactly one synthetic 300x200 image.
+    // Fresh iOS27 simulators contain six stock photos before the one seeded
+    // chart is added. A label/date or first-row position alone is not identity.
     NSPredicate *selector=[NSPredicate predicateWithFormat:@"identifier == 'PXGGridLayout-Info' OR label BEGINSWITH 'Photo,'"];
     XCUIElementQuery *photos=[self.app.images matchingPredicate:selector];
     XCTAssertTrue([photos.firstMatch waitForExistenceWithTimeout:15]);
-    XCTAssertEqual(photos.count,1u,@"Ambiguous picker contents must fail instead of selecting an arbitrary photo");
-    XCTAssertTrue(photos.firstMatch.hittable); [photos.firstMatch tap];
+    NSArray<XCUIElement *> *candidates=photos.allElementsBoundByIndex;
+    XCTAssertLessThanOrEqual(candidates.count,16u,@"Fixture discovery is bounded to the reviewed disposable-library inventory");
+    if (candidates.count>16) return;
+    NSMutableArray<XCUIElement *> *matches=[NSMutableArray new];
+    for (XCUIElement *candidate in candidates) {
+        if (!candidate.hittable) continue;
+        BOOL match=TCDesignFixtureThumbnail(candidate.screenshot.image);
+        NSLog(@"ORIGINAL_FIXTURE_CONTENT_CANDIDATE label=%@ frame=%@ sixColorGrid=%d",candidate.label,NSStringFromCGRect(candidate.frame),match);
+        if (match) [matches addObject:candidate];
+    }
+    XCTAssertEqual(matches.count,1u,@"Exactly one independently verified six-color chart must match; never choose an arbitrary first photo");
+    if (matches.count!=1) return;
+    XCUIElement *fixture=matches.firstObject;
+    BOOL actionable=fixture.hittable;
+    XCTAssertTrue(actionable);
+    if (!actionable) return;
+    BOOL verified=TCDesignFixtureThumbnail(fixture.screenshot.image);
+    XCTAssertTrue(verified,@"Recheck the selected content immediately before tapping");
+    if (!verified) return;
+    NSLog(@"ORIGINAL_FIXTURE_CONTENT_SELECTED label=%@ frame=%@ probes=30 tolerance=8",fixture.label,NSStringFromCGRect(fixture.frame));
+    [fixture tap];
 }
 - (void)sampleAndSaveRed {
     [self selectOnlySeededPhoto];

@@ -167,6 +167,24 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertEqual(text.count(new), 1)
         text = text.replace(new, old)
         self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), '9ab82653389d0baa4f713ed758ced976d4910ee8687fca5af078b6bf7e0bb994')
+    def test_photo_fixture_is_selected_by_unique_bounded_content_not_position(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        start = source.index('- (void)selectOnlySeededPhoto {')
+        end = source.index('- (void)sampleAndSaveRed {', start)
+        selection = source[start:end]
+        for required in ['TCDesignRecognitionControl(NO)', 'TCDesignRecognitionControl(YES)', 'candidates.count,16u',
+                         'TCDesignFixtureThumbnail(candidate.screenshot.image)', 'matches.count,1u',
+                         'TCDesignFixtureThumbnail(fixture.screenshot.image)', '[fixture tap]']:
+            self.assertIn(required, selection)
+        self.assertNotIn('[photos.firstMatch tap]', selection)
+        self.assertNotIn('photos.count,1u', selection)
+        self.assertIn('const CGPoint probes[5]', source)
+        self.assertIn('colors[row*3+column]', source)
+        self.assertIn('>8) return NO', source)
+        self.assertIn('contains:@"#ff00ff"', source)
+        self.assertIn('contains:@"#ff0000"', source)
+
     def test_privacy_suite_uses_exact_current_native_contract(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
