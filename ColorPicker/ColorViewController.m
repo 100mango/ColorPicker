@@ -1,4 +1,5 @@
 #import "ColorViewController.h"
+#import "TCOriginalDesign.h"
 #import "ColorDetectView.h"
 #import "TCColorUtilities.h"
 #import <math.h>
@@ -11,105 +12,67 @@
 @property (nonatomic, copy) NSString *selectedHex;
 @property (nonatomic, strong) UIView *swatch;
 @property (nonatomic, strong) UISlider *zoomSlider;
+@property (nonatomic, strong) UIView *originalHeader;
+@property (nonatomic, strong) UIImageView *originalTitle;
+@property (nonatomic, strong) UIButton *backButton;
+@property (nonatomic, strong) TCOriginalReadout *originalReadout;
+@property (nonatomic, strong) UIButton *sampleButton;
+@property (nonatomic, strong) UIScrollView *readoutScroll;
 @end
 @implementation ColorViewController
 - (void)setChooseImage:(UIImage *)image { self.image = image; }
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = NSLocalizedString(@"Photo Color", nil);
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
-    self.colorDetectView = [[ColorDetectView alloc] initWithFrame:CGRectZero andUIImage:self.image];
-    self.colorDetectView.delegate = self;
-    self.colorDetectView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.colorDetectView];
-    self.colorLabel = [UILabel new];
-    self.colorLabel.text = NSLocalizedString(@"Tap a pixel or sample the center", nil);
-    self.colorLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    self.colorLabel.adjustsFontForContentSizeCategory = YES;
-    self.colorLabel.numberOfLines = 0;
-    self.colorLabel.accessibilityIdentifier = @"sampledColor";
-    self.swatch = [UIView new];
-    self.swatch.layer.cornerRadius = 10;
-    [self.swatch.widthAnchor constraintEqualToConstant:44].active = YES;
-    [self.swatch.heightAnchor constraintEqualToConstant:44].active = YES;
-    UIStackView *readout = [[UIStackView alloc] initWithArrangedSubviews:@[self.swatch, self.colorLabel]];
-    readout.spacing = 12;
-    readout.alignment = UIStackViewAlignmentCenter;
-    UIButton *sample = [UIButton buttonWithType:UIButtonTypeSystem];
-    [sample setTitle:NSLocalizedString(@"Sample Center", nil) forState:UIControlStateNormal];
-    sample.accessibilityIdentifier = @"sampleCenter";
-    sample.pointerInteractionEnabled = YES;
-    sample.titleLabel.numberOfLines = 0;
-    sample.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    sample.titleLabel.adjustsFontForContentSizeCategory = YES;
-    [sample setContentCompressionResistancePriority:999 forAxis:UILayoutConstraintAxisVertical];
-    [sample addTarget:self action:@selector(sampleCenter) forControlEvents:UIControlEventTouchUpInside];
-    self.saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    UIButtonConfiguration *saveConfiguration = UIButtonConfiguration.filledButtonConfiguration;
-    saveConfiguration.titleLineBreakMode = NSLineBreakByWordWrapping;
-    self.saveButton.configuration = saveConfiguration;
-    self.saveButton.titleLabel.numberOfLines = 0;
-    self.saveButton.pointerInteractionEnabled = YES;
-    [self.saveButton setContentCompressionResistancePriority:999 forAxis:UILayoutConstraintAxisVertical];
-    [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
-    self.saveButton.accessibilityIdentifier = @"saveColor";
-    self.saveButton.enabled = NO;
-    [self.saveButton addTarget:self action:@selector(saveColor) forControlEvents:UIControlEventTouchUpInside];
-    [sample.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
-    [self.saveButton.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
-    UIStackView *actions = [[UIStackView alloc] initWithArrangedSubviews:@[sample, self.saveButton]];
-    actions.distribution = UIStackViewDistributionFillEqually;
-    actions.spacing = 12;
-    self.zoomSlider = [UISlider new];
-    self.zoomSlider.minimumValue = 0;
-    self.zoomSlider.maximumValue = 2; // Logarithmic 1–100×, matching the original zoom range.
-    self.zoomSlider.minimumValueImage = [UIImage systemImageNamed:@"minus.magnifyingglass"];
-    self.zoomSlider.maximumValueImage = [UIImage systemImageNamed:@"plus.magnifyingglass"];
-    self.zoomSlider.accessibilityLabel = NSLocalizedString(@"Zoom", nil);
-    self.zoomSlider.accessibilityIdentifier = @"photoZoom";
-    self.zoomSlider.accessibilityValue = @"1.0×";
-    [self.zoomSlider.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
-    [self.zoomSlider addTarget:self action:@selector(zoomChanged:) forControlEvents:UIControlEventValueChanged];
-    UIStackView *panel = [[UIStackView alloc] initWithArrangedSubviews:@[readout, self.zoomSlider, actions]];
-    panel.axis = UILayoutConstraintAxisVertical;
-    panel.spacing = 8;
-    panel.translatesAutoresizingMaskIntoConstraints = NO;
-    UIScrollView *controls = [UIScrollView new];
-    controls.accessibilityIdentifier = @"photoControls";
-    controls.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:controls];
-    [controls addSubview:panel];
-    NSLayoutConstraint *naturalHeight = [controls.heightAnchor constraintEqualToAnchor:panel.heightAnchor constant:16];
-    naturalHeight.priority = UILayoutPriorityDefaultLow;
-    naturalHeight.active = YES;
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
-    // Prefer a balanced canvas, but give each individual readout/action enough vertical room
-    // to be fully visible when large text meets a short window or a large safe-area inset.
-    NSLayoutConstraint *balancedHeight = [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.6];
-    balancedHeight.priority = UILayoutPriorityDefaultHigh;
-    balancedHeight.active = YES;
-    for (UIView *component in @[readout, self.zoomSlider, actions]) {
-        NSLayoutConstraint *readableHeight = [controls.heightAnchor constraintGreaterThanOrEqualToAnchor:component.heightAnchor];
-        readableHeight.priority = UILayoutPriorityDefaultHigh + 1;
-        readableHeight.active = YES;
-    }
-    [NSLayoutConstraint activateConstraints:@[
-        [self.colorDetectView.topAnchor constraintEqualToAnchor:safe.topAnchor],
-        [self.colorDetectView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
-        [self.colorDetectView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [self.colorDetectView.bottomAnchor constraintEqualToAnchor:controls.topAnchor constant:-8],
-        [controls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
-        [controls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [controls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
-        [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor constant:-52],
-        [self.colorDetectView.heightAnchor constraintGreaterThanOrEqualToConstant:44],
-        [panel.leadingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.leadingAnchor constant:16],
-        [panel.trailingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.trailingAnchor constant:-16],
-        [panel.topAnchor constraintEqualToAnchor:controls.contentLayoutGuide.topAnchor constant:8],
-        [panel.bottomAnchor constraintEqualToAnchor:controls.contentLayoutGuide.bottomAnchor constant:-8],
-        [panel.widthAnchor constraintEqualToAnchor:controls.frameLayoutGuide.widthAnchor constant:-32]
-    ]];
+    self.title=NSLocalizedString(@"Photo Color",nil); self.view.backgroundColor=TCOriginalBackground();
+    self.originalHeader=[UIView new]; self.originalHeader.backgroundColor=TCOriginalDark();
+    [self.view addSubview:self.originalHeader]; self.originalTitle=TCOriginalArtwork(@"00 B"); [self.originalHeader addSubview:self.originalTitle];
+    self.backButton=TCOriginalButton(@"30x64",nil,NSLocalizedString(@"Back",nil),@"original.back",self,@selector(originalBack));
+    self.saveButton=TCOriginalButton(@"530,64",@"530,64 B",NSLocalizedString(@"Save Color",nil),@"saveColor",self,@selector(saveColor));
+    self.saveButton.enabled=NO;
+    [self.originalHeader addSubview:self.backButton]; [self.originalHeader addSubview:self.saveButton];
+    self.colorDetectView=[[ColorDetectView alloc] initWithFrame:CGRectZero andUIImage:self.image];
+    self.colorDetectView.delegate=self; self.colorDetectView.backgroundColor=TCOriginalBackground(); [self.view addSubview:self.colorDetectView];
+    self.zoomSlider=[UISlider new]; self.zoomSlider.minimumValue=0; self.zoomSlider.maximumValue=2;
+    [self.zoomSlider setThumbImage:TCOriginalImage(@"y 148") forState:UIControlStateNormal];
+    [self.zoomSlider setMinimumTrackImage:TCOriginalImage(@"130x159") forState:UIControlStateNormal];
+    self.zoomSlider.accessibilityLabel=NSLocalizedString(@"Zoom",nil); self.zoomSlider.accessibilityIdentifier=@"photoZoom"; self.zoomSlider.accessibilityValue=@"1.0×";
+    [self.zoomSlider addTarget:self action:@selector(zoomChanged:) forControlEvents:UIControlEventValueChanged]; [self.view addSubview:self.zoomSlider];
+    self.readoutScroll=[UIScrollView new]; self.readoutScroll.accessibilityIdentifier=@"photoControls";
+    self.readoutScroll.contentInsetAdjustmentBehavior=UIScrollViewContentInsetAdjustmentNever;
+    [self.view addSubview:self.readoutScroll];
+    self.originalReadout=[TCOriginalReadout new]; self.originalReadout.hex=nil;
+    self.originalReadout.accessibilityIdentifier=@"sampledColor"; [self.readoutScroll addSubview:self.originalReadout];
+    self.swatch=self.originalReadout.swatch;
+    // The original color chip remains the visible control. Its explicit action
+    // retains center sampling for VoiceOver, keyboard and precise pointer users.
+    self.sampleButton=[UIButton buttonWithType:UIButtonTypeCustom];
+    self.sampleButton.accessibilityLabel=NSLocalizedString(@"Sample Center",nil); self.sampleButton.accessibilityIdentifier=@"sampleCenter";
+    [self.sampleButton addTarget:self action:@selector(sampleCenter) forControlEvents:UIControlEventTouchUpInside]; [self.readoutScroll addSubview:self.sampleButton];
+    self.colorLabel=[UILabel new]; // Keep the existing controller's numeric state.
 }
+- (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
+- (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self.navigationController setNavigationBarHidden:YES animated:NO]; }
+- (void)originalBack { [self.navigationController popViewControllerAnimated:YES]; }
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    UIEdgeInsets safe=self.view.safeAreaInsets; CGFloat scale=TCOriginalScale(self.view), width=320*scale;
+    CGFloat x=(self.view.bounds.size.width-width)/2, header=safe.top+44*scale;
+    self.originalHeader.frame=CGRectMake(0,0,self.view.bounds.size.width,header);
+    self.originalTitle.frame=CGRectMake(x,safe.top-20*scale,width,64*scale);
+    self.backButton.frame=CGRectMake(x+3*scale,safe.top,MAX(44,44*scale),44*scale);
+    self.saveButton.frame=CGRectMake(x+253*scale,safe.top,MAX(44,55*scale),44*scale);
+    ((TCOriginalImageButton *)self.backButton).artworkScale=scale; ((TCOriginalImageButton *)self.saveButton).artworkScale=scale;
+    self.zoomSlider.frame=CGRectMake(x+65*scale,header,190*scale,44);
+    CGFloat readoutHeight=[self.originalReadout preferredHeightForWidth:width];
+    CGFloat available=MAX(0,self.view.bounds.size.height-safe.bottom-header-44);
+    CGFloat readoutViewport=MIN(readoutHeight,MAX(44,available*0.55));
+    self.readoutScroll.frame=CGRectMake(x,self.view.bounds.size.height-safe.bottom-readoutViewport,width,readoutViewport);
+    self.originalReadout.frame=CGRectMake(0,0,width,readoutHeight); self.readoutScroll.contentSize=CGSizeMake(width,readoutHeight);
+    BOOL large=UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
+    self.sampleButton.frame=large ? CGRectMake(16,16,63,63) : CGRectMake(21*scale,(readoutHeight-63*scale)/2,63*scale,63*scale);
+    self.colorDetectView.frame=CGRectMake(x,header+44,width,MAX(1,available-readoutViewport));
+}
+
 - (UIView *)viewForZoomingInScrollView:(UIScrollView *)scrollView { return self.colorDetectView.imageView; }
 - (void)scrollViewDidZoom:(UIScrollView *)scrollView {
     [self.colorDetectView setNeedsLayout];
@@ -123,14 +86,14 @@
     self.selectedHex = hex;
     self.colorLabel.text = [NSString stringWithFormat:@"%@\n%@", hex, TCRGBDescription(hex)];
     self.swatch.backgroundColor = TCUIColorFromHex(hex);
-    self.saveButton.enabled = YES;
-    [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
+    self.saveButton.enabled = YES; self.saveButton.selected=NO;
+    self.originalReadout.hex=hex; self.saveButton.accessibilityValue=nil;
 }
 - (void)saveColor {
     TCColorStore *store = [[TCColorStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
     if ([store addColor:self.selectedHex]) {
         self.saveButton.enabled = NO;
-        [self.saveButton setTitle:NSLocalizedString(@"Saved", nil) forState:UIControlStateNormal];
+        self.saveButton.selected=YES; self.saveButton.accessibilityValue=NSLocalizedString(@"Saved",nil);
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil));
     }
 }
@@ -175,3 +138,4 @@
     [canvas scrollRectToVisible:CGRectMake(selected.x-22,selected.y-22,44,44) animated:NO];
 }
 @end
+

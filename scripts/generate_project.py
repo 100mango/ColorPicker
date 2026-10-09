@@ -26,7 +26,7 @@ def configlist(name, settings):
         configs.append(add(name+configuration,'XCBuildConfiguration',name=configuration,buildSettings=values))
     return add(name+'configs','XCConfigurationList', buildConfigurations=configs, defaultConfigurationIsVisible=0,defaultConfigurationName='Release')
 
-sources=['main.m','ColorAppDelegate.m','ColorSceneDelegate.m','ColorMainViewController.m','ColorViewController.m','ColorRealTimeViewController.m','ColorDetectView.m','TCColorUtilities.m','TCPrivacyViewController.m','TCWorkspaceViewController.m','TCPhotoImportTask.swift']
+sources=['main.m','ColorAppDelegate.m','ColorSceneDelegate.m','ColorMainViewController.m','ColorViewController.m','ColorRealTimeViewController.m','ColorDetectView.m','TCColorUtilities.m','TCOriginalDesign.m','TCPrivacyViewController.m','TCWorkspaceViewController.m','TCPhotoImportTask.swift']
 headers=[p.replace('.m','.h') for p in sources if p.endswith('.m') and p!='main.m']
 headers.append('TouchColor-Bridging-Header.h')
 apprefs=[ref('ColorPicker/'+p,filetype(p)) for p in sources+headers]
@@ -43,7 +43,7 @@ testresources=[ref('ColorPickerTests/Fixtures/photo-over-100mp.b64','text')]
 testresources.append(ref('ColorPickerTests/Fixtures/photos-ipad-large-7e3-hierarchy.json','text.json'))
 bridgeref=ref('ColorPickerTests/ColorCoreEquivalenceTests-Bridging-Header.h','sourcecode.c.h')
 package=add('ColorCorePackage','XCLocalSwiftPackageReference',relativePath='Packages/ColorCore')
-uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m','TouchColorAccessibilityUITests.m','TCPaletteUIHelpers.m']]
+uirefs=[ref('TouchColorUITests/'+name,'sourcecode.c.objc') for name in ['TouchColorUITests.m','TouchColorIPadUITests.m','TouchColorAccessibilityUITests.m','TCPaletteUIHelpers.m','TouchColorOriginalDesignUITests.m']]
 uiheaders=[ref('TouchColorUITests/TCPaletteUIHelpers.h','sourcecode.c.h')]
 products=[]
 projectid=uid('Project')
@@ -101,3 +101,4 @@ reference(ET.SubElement(launch,'BuildableProductRunnable',runnableDebuggingMode=
 ET.SubElement(scheme,'AnalyzeAction',buildConfiguration='Debug');ET.SubElement(scheme,'ArchiveAction',buildConfiguration='Release',revealArchiveInOrganizer='YES')
 ET.indent(scheme)
 ET.ElementTree(scheme).write(ROOT/'TouchColor.xcodeproj/xcshareddata/xcschemes/TouchColor.xcscheme',encoding='UTF-8',xml_declaration=True)
+

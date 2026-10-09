@@ -1,4 +1,5 @@
 #import "ColorDetectView.h"
+#import "TCOriginalDesign.h"
 #import "TCColorUtilities.h"
 
 @interface ColorDetectView () <UIPointerInteractionDelegate>
@@ -12,7 +13,7 @@
 @dynamic delegate;
 - (instancetype)initWithFrame:(CGRect)frame andUIImage:(UIImage *)image {
     if ((self = [super initWithFrame:frame])) {
-        self.backgroundColor = UIColor.secondarySystemBackgroundColor;
+        self.backgroundColor = TCOriginalBackground();
         self.maximumZoomScale = 100;
         self.minimumZoomScale = 1;
         self.bouncesZoom = NO;
@@ -34,8 +35,8 @@
         UILongPressGestureRecognizer *drag = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(sampleGesture:)];
         drag.minimumPressDuration = 0.15;
         [self addGestureRecognizer:drag];
-        self.marker = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"plus.circle"]];
-        self.marker.bounds = CGRectMake(0, 0, 28, 28);
+        self.marker = [[UIImageView alloc] initWithImage:TCOriginalImage(@"picker")];
+        self.marker.bounds = CGRectMake(0, 0, 25, 25);
         self.marker.tintColor = UIColor.whiteColor;
         self.marker.layer.shadowColor = UIColor.blackColor.CGColor;
         self.marker.layer.shadowOpacity = 1;
@@ -102,3 +103,4 @@
     return [UIPointerStyle styleWithShape:[UIPointerShape shapeWithPath:path] constrainedAxes:UIAxisNeither];
 }
 @end
+

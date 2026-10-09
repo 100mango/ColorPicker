@@ -1,4 +1,5 @@
 #import "ColorRealTimeViewController.h"
+#import "TCOriginalDesign.h"
 #import "TCColorUtilities.h"
 
 @interface ColorRealTimeViewController ()
@@ -10,6 +11,11 @@
 @property (nonatomic, strong) UIButton *saveButton;
 @property (nonatomic, strong) UIImageView *reticle;
 @property (nonatomic, strong) TCCaptureGate *captureGate;
+@property (nonatomic, strong) UIButton *backButton;
+@property (nonatomic, strong) UIImageView *originalRGB;
+@property (nonatomic, strong) NSArray<UILabel *> *originalValues;
+@property (nonatomic, strong) UIView *centerSwatch;
+@property (nonatomic, strong) UIScrollView *statusScroll;
 @property (atomic) BOOL interrupted;
 @property (nonatomic) BOOL permissionRequestPending;
 @property (nonatomic, strong) dispatch_queue_t sessionQueue;
@@ -21,59 +27,28 @@
 @implementation ColorRealTimeViewController
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = NSLocalizedString(@"Live Color", nil);
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
-    self.captureGate = [TCCaptureGate new];
-    self.sessionQueue = dispatch_queue_create("com.mango.touchColor.camera", DISPATCH_QUEUE_SERIAL);
-    self.cameraView = [UIView new];
-    self.cameraView.backgroundColor = UIColor.blackColor;
-    self.cameraView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.title=NSLocalizedString(@"Live Color",nil); self.view.backgroundColor=UIColor.blackColor;
+    self.captureGate=[TCCaptureGate new]; self.sessionQueue=dispatch_queue_create("com.mango.touchColor.camera",DISPATCH_QUEUE_SERIAL);
+    self.cameraView=[UIView new]; self.cameraView.backgroundColor=UIColor.blackColor; self.cameraView.accessibilityIdentifier=@"liveViewport";
     [self.view addSubview:self.cameraView];
-    self.reticle = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"viewfinder"]];
-    self.reticle.tintColor = UIColor.whiteColor;
-    self.reticle.translatesAutoresizingMaskIntoConstraints = NO;
-    self.reticle.isAccessibilityElement = YES;
-    self.reticle.accessibilityLabel = NSLocalizedString(@"Live color sample point at the center of the camera", nil);
-    [self.cameraView addSubview:self.reticle];
-    self.statusLabel = [UILabel new];
-    self.statusLabel.numberOfLines = 0;
-    self.statusLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    self.statusLabel.adjustsFontForContentSizeCategory = YES;
-    self.statusLabel.text = self.sourceFlowActive ? NSLocalizedString(@"Camera paused", nil) : NSLocalizedString(@"Waiting for camera", nil);
-    self.statusLabel.accessibilityIdentifier = @"cameraStatus";
-    self.saveButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.saveButton.configuration = UIButtonConfiguration.filledButtonConfiguration;
-    self.saveButton.pointerInteractionEnabled = YES;
-    [self.saveButton setTitle:NSLocalizedString(@"Save Color", nil) forState:UIControlStateNormal];
-    self.saveButton.enabled = NO;
-    self.saveButton.accessibilityIdentifier = @"saveLiveColor";
-    [self.saveButton addTarget:self action:@selector(save) forControlEvents:UIControlEventTouchUpInside];
-    [self.saveButton.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
-    UIStackView *panel = [[UIStackView alloc] initWithArrangedSubviews:@[self.statusLabel, self.saveButton]];
-    panel.axis = UILayoutConstraintAxisVertical;
-    panel.spacing = 8;
-    panel.translatesAutoresizingMaskIntoConstraints = NO;
-    UIScrollView *controls = [UIScrollView new];
-    controls.translatesAutoresizingMaskIntoConstraints = NO;
-    controls.accessibilityIdentifier = @"liveControls";
-    self.cameraView.accessibilityIdentifier = @"liveViewport";
-    [self.view addSubview:controls];
-    [controls addSubview:panel];
-    NSLayoutConstraint *naturalHeight = [controls.heightAnchor constraintEqualToAnchor:panel.heightAnchor constant:16];
-    naturalHeight.priority = UILayoutPriorityDefaultLow;
-    naturalHeight.active = YES;
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
-    [NSLayoutConstraint activateConstraints:@[
-        [self.cameraView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor], [self.cameraView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [self.cameraView.topAnchor constraintEqualToAnchor:safe.topAnchor], [self.cameraView.bottomAnchor constraintEqualToAnchor:controls.topAnchor constant:-8],
-        [controls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor], [controls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [controls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor], [controls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.6],
-        [panel.leadingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.leadingAnchor constant:16], [panel.trailingAnchor constraintEqualToAnchor:controls.contentLayoutGuide.trailingAnchor constant:-16],
-        [panel.topAnchor constraintEqualToAnchor:controls.contentLayoutGuide.topAnchor constant:8], [panel.bottomAnchor constraintEqualToAnchor:controls.contentLayoutGuide.bottomAnchor constant:-8],
-        [panel.widthAnchor constraintEqualToAnchor:controls.frameLayoutGuide.widthAnchor constant:-32],
-        [self.reticle.centerXAnchor constraintEqualToAnchor:self.cameraView.centerXAnchor], [self.reticle.centerYAnchor constraintEqualToAnchor:self.cameraView.centerYAnchor],
-        [self.reticle.widthAnchor constraintEqualToConstant:44], [self.reticle.heightAnchor constraintEqualToConstant:44]
-    ]];
+    self.centerSwatch=[UIView new]; [self.cameraView addSubview:self.centerSwatch];
+    self.reticle=TCOriginalArtwork(@"275,436"); self.reticle.isAccessibilityElement=YES;
+    self.reticle.accessibilityLabel=NSLocalizedString(@"Live color sample point at the center of the camera",nil); [self.cameraView addSubview:self.reticle];
+    self.backButton=TCOriginalButton(@"0,23",@"0,23 B",NSLocalizedString(@"Back",nil),@"original.back",self,@selector(originalBack));
+    [self.view addSubview:self.backButton];
+    self.saveButton=TCOriginalButton(@"500,883",@"500,883 B",NSLocalizedString(@"Save Color",nil),@"saveLiveColor",self,@selector(save));
+    [self.saveButton setImage:TCOriginalImage(@"500,883 C") forState:UIControlStateSelected]; self.saveButton.enabled=NO; [self.view addSubview:self.saveButton];
+    self.originalRGB=TCOriginalArtwork(@"0,817"); [self.view addSubview:self.originalRGB];
+    NSMutableArray *values=[NSMutableArray new];
+    for (NSUInteger i=0;i<3;i++) { UILabel *label=TCOriginalValueLabel(); label.text=@"—"; [values addObject:label]; [self.view addSubview:label]; }
+    self.originalValues=values;
+    self.statusLabel=[UILabel new]; self.statusLabel.numberOfLines=0; self.statusLabel.textColor=UIColor.whiteColor;
+    self.statusLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; self.statusLabel.adjustsFontForContentSizeCategory=YES;
+    self.statusLabel.accessibilityIdentifier=@"cameraStatus";
+    self.statusLabel.text=self.sourceFlowActive ? NSLocalizedString(@"Camera paused",nil) : NSLocalizedString(@"Waiting for camera",nil);
+    self.statusScroll=[UIScrollView new]; self.statusScroll.accessibilityIdentifier=@"liveControls";
+    self.statusScroll.backgroundColor=[UIColor colorWithWhite:0 alpha:0.65]; self.statusScroll.layer.cornerRadius=8;
+    [self.statusScroll addSubview:self.statusLabel]; [self.view addSubview:self.statusScroll];
     NSNotificationCenter *notifications = NSNotificationCenter.defaultCenter;
     [notifications addObserver:self selector:@selector(sceneDeactivated:) name:UISceneWillDeactivateNotification object:nil];
     [notifications addObserver:self selector:@selector(sceneActivated:) name:UISceneDidActivateNotification object:nil];
@@ -81,6 +56,9 @@
     [notifications addObserver:self selector:@selector(captureEndedInterruption:) name:AVCaptureSessionInterruptionEndedNotification object:nil];
     [notifications addObserver:self selector:@selector(captureError:) name:AVCaptureSessionRuntimeErrorNotification object:nil];
 }
+- (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
+- (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self.navigationController setNavigationBarHidden:YES animated:NO]; }
+- (void)originalBack { [self.navigationController popViewControllerAnimated:YES]; }
 - (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; self.visible = YES; [self resumeCapture]; }
 - (void)viewWillDisappear:(BOOL)animated { [super viewWillDisappear:animated]; self.visible = NO; [self pauseCapture]; }
 - (void)dealloc {
@@ -96,7 +74,7 @@
 - (void)pauseCapture {
     self.wantsCapture = NO;
     [self.captureGate invalidate];
-    self.saveButton.enabled = NO;
+    self.saveButton.enabled = NO; [self.view setNeedsLayout];
     dispatch_async(self.sessionQueue, ^{ [self.session stopRunning]; });
 }
 - (void)setSourceFlowActive:(BOOL)sourceFlowActive {
@@ -109,7 +87,7 @@
     if (self.sourceFlowActive || !self.visible || !self.view.window || self.view.window.windowScene.activationState != UISceneActivationStateForegroundActive) return;
     if (self.interrupted) { self.statusLabel.text = NSLocalizedString(@"Camera interrupted. Waiting to resume.", nil); return; }
     [self.captureGate invalidate];
-    self.saveButton.enabled = NO;
+    self.saveButton.enabled = NO; [self.view setNeedsLayout];
     AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionBack] ?: [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
     TCCameraAccess access = TCCameraAccessForStatus([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo], device != nil);
     if (access == TCCameraAccessUnavailable || access == TCCameraAccessBlocked) {
@@ -178,6 +156,31 @@
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    UIEdgeInsets safe=self.view.safeAreaInsets; CGFloat scale=TCOriginalScale(self.view);
+    CGFloat width=self.view.bounds.size.width, height=self.view.bounds.size.height;
+    self.cameraView.frame=self.view.bounds;
+    self.reticle.frame=CGRectMake((width-45*scale)/2,(height-45*scale)/2,45*scale,45*scale);
+    self.centerSwatch.frame=CGRectMake((width-23*scale)/2,(height-23*scale)/2,23*scale,23*scale); self.centerSwatch.layer.cornerRadius=11.5*scale;
+    self.backButton.frame=CGRectMake(safe.left,safe.top,MAX(44,52.5*scale),MAX(44,48*scale));
+    self.saveButton.frame=CGRectMake(width-safe.right-70*scale,height-safe.bottom-MAX(44,38.5*scale),70*scale,MAX(44,38.5*scale));
+    CGFloat rgbHeight=71.5*scale;
+    self.originalRGB.frame=CGRectMake(safe.left,height-safe.bottom-rgbHeight,85.5*scale,rgbHeight);
+    for (NSUInteger i=0;i<3;i++) {
+        UILabel *label=self.originalValues[i]; label.font=[[UIFontMetrics metricsForTextStyle:UIFontTextStyleBody] scaledFontForFont:[UIFont systemFontOfSize:17*scale]];
+        label.frame=CGRectMake(safe.left+37*scale,height-safe.bottom-rgbHeight+(2+20*i)*scale,45*scale,40*scale);
+    }
+    BOOL large=UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
+    for (UILabel *label in self.originalValues) label.hidden=large;
+    self.originalRGB.hidden=large;
+    BOOL sampled=self.saveButton.enabled && self.captureGate.selectedHex.length;
+    self.statusLabel.textColor=sampled && !large ? UIColor.clearColor : UIColor.whiteColor;
+    self.statusScroll.backgroundColor=sampled && !large ? UIColor.clearColor : [UIColor colorWithWhite:0 alpha:0.65];
+    CGFloat statusWidth=MAX(44,width-safe.left-safe.right-32);
+    CGSize statusSize=[self.statusLabel sizeThatFits:CGSizeMake(statusWidth-24,CGFLOAT_MAX)];
+    CGFloat viewport=MIN(statusSize.height+24,MAX(44,(height-safe.top-safe.bottom)*0.45));
+    self.statusScroll.frame=CGRectMake(safe.left+16,safe.top+MAX(44,48*scale)+8,statusWidth,viewport);
+    self.statusLabel.frame=CGRectMake(12,12,statusWidth-24,statusSize.height); self.statusScroll.contentSize=CGSizeMake(statusWidth,statusSize.height+24);
+
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     self.preview.frame = self.cameraView.bounds;
     AVCaptureConnection *connection = self.preview.connection;
@@ -204,7 +207,7 @@
 - (void)showCaptureFailure {
     self.wantsCapture = NO;
     [self.captureGate invalidate];
-    self.saveButton.enabled = NO;
+    self.saveButton.enabled = NO; [self.view setNeedsLayout];
     self.statusLabel.text = NSLocalizedString(@"The camera could not start. Go back and try again, or choose a photo.", nil);
 }
 - (void)captureInterrupted:(NSNotification *)notification {
@@ -215,7 +218,7 @@
     NSUInteger generation = [self.captureGate invalidate];
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.captureGate.generation != generation) return;
-        self.saveButton.enabled = NO;
+        self.saveButton.enabled = NO; [self.view setNeedsLayout];
         self.statusLabel.text = NSLocalizedString(@"Camera interrupted. Waiting to resume.", nil);
     });
 }
@@ -231,7 +234,7 @@
     NSError *error = notification.userInfo[AVCaptureSessionErrorKey];
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.captureGate.generation != generation) return;
-        self.saveButton.enabled = NO;
+        self.saveButton.enabled = NO; [self.view setNeedsLayout];
         if (error.code == AVErrorMediaServicesWereReset) [self resumeCapture]; else [self showCaptureFailure];
     });
 }
@@ -250,10 +253,18 @@
 - (void)displaySample:(NSString *)hex generation:(NSUInteger)generation {
     if (self.sourceFlowActive || !self.wantsCapture || self.interrupted || !self.visible || ![self.captureGate acceptHex:hex generation:generation]) return;
     self.statusLabel.text = [NSString stringWithFormat:@"%@  •  %@", hex, TCRGBDescription(hex)];
-    self.saveButton.enabled = YES;
+    self.saveButton.enabled = YES; self.saveButton.selected=NO;
+    self.centerSwatch.backgroundColor=TCUIColorFromHex(hex);
+    unsigned int value=0; [[NSScanner scannerWithString:[hex substringFromIndex:1]] scanHexInt:&value];
+    self.originalValues[0].text=[NSString stringWithFormat:@"%u",(value>>16)&255];
+    self.originalValues[1].text=[NSString stringWithFormat:@"%u",(value>>8)&255];
+    self.originalValues[2].text=[NSString stringWithFormat:@"%u",value&255];
+    self.reticle.accessibilityValue=[NSString stringWithFormat:@"%@, %@",hex,TCRGBDescription(hex)];
+    [self.view setNeedsLayout];
 }
 - (void)save {
     TCColorStore *store = [[TCColorStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
-    if ([store addColor:self.captureGate.selectedHex]) UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil));
+    if ([store addColor:self.captureGate.selectedHex]) { self.saveButton.selected=YES; UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, NSLocalizedString(@"Color saved", nil)); }
 }
 @end
+

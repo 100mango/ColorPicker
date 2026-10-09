@@ -1,4 +1,5 @@
 #import "ColorMainViewController.h"
+#import "TCOriginalDesign.h"
 #import "ColorViewController.h"
 #import "ColorRealTimeViewController.h"
 #import "TCColorUtilities.h"
@@ -26,6 +27,18 @@
 @property (nonatomic, copy) NSArray<NSString *> *colors;
 @property (nonatomic, strong) UIActivityIndicatorView *loading;
 @property (nonatomic) NSUInteger selectionGeneration;
+@property (nonatomic, strong) UIView *originalHeader;
+@property (nonatomic, strong) UIImageView *originalTitle;
+@property (nonatomic, strong) UIButton *pickerTab;
+@property (nonatomic, strong) UIButton *libraryTab;
+@property (nonatomic, strong) UIScrollView *homeScroll;
+@property (nonatomic, strong) UIView *homeStage;
+@property (nonatomic, strong) UIImageView *originalDroplet;
+@property (nonatomic, strong) UIStackView *libraryFooter;
+@property (nonatomic, strong) UIButton *aboutButton;
+@property (nonatomic, strong) UIButton *importPaletteButton;
+@property (nonatomic, strong) UIStackView *loadingPanel;
+@property (nonatomic) BOOL libraryVisible;
 @property (nonatomic, strong) TCPhotoImportTask *photoImportTask;
 #if DEBUG
 @property (nonatomic, strong) UILabel *permissionStatus;
@@ -37,87 +50,73 @@
 @implementation ColorMainViewController
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"TouchColor";
-    self.view.backgroundColor = UIColor.systemBackgroundColor;
-    self.store = [[TCColorStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
+    self.title=@"Touch Color";
+    self.view.backgroundColor=TCOriginalBackground();
+    self.store=[[TCColorStore alloc] initWithDefaults:NSUserDefaults.standardUserDefaults];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(defaultsChanged:) name:NSUserDefaultsDidChangeNotification object:NSUserDefaults.standardUserDefaults];
-    self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
-    self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
-    self.tableView.dataSource = self;
-    self.tableView.delegate = self;
-    self.tableView.accessibilityIdentifier = @"colorHistory";
-    self.tableView.rowHeight = UITableViewAutomaticDimension;
-    self.tableView.estimatedRowHeight = 70;
-    [self.view addSubview:self.tableView];
-    NSArray *titles = @[NSLocalizedString(@"Choose Photo", nil), NSLocalizedString(@"Take Photo", nil), NSLocalizedString(@"Live Color", nil), NSLocalizedString(@"Import Palette", nil)];
-    NSArray *identifiers = @[@"choosePhoto", @"takePhoto", @"liveColor", @"palette.import.open"];
-    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down"];
-    UIStackView *buttons = [UIStackView new];
-    self.sourceButtons = buttons;
-    buttons.axis = UILayoutConstraintAxisVertical;
-    buttons.spacing = 8;
-    buttons.translatesAutoresizingMaskIntoConstraints = NO;
-    for (NSUInteger i = 0; i < titles.count; i++) {
-        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        UIButtonConfiguration *configuration = UIButtonConfiguration.tintedButtonConfiguration;
-        configuration.title = titles[i];
-        configuration.image = [UIImage systemImageNamed:symbols[i]];
-        configuration.imagePadding = 10;
-        configuration.titleLineBreakMode = NSLineBreakByWordWrapping;
-        configuration.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *attributes) {
-            NSMutableDictionary *result = [attributes mutableCopy];
-            result[NSFontAttributeName] = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-            return result;
-        };
-        button.configuration = configuration;
-        button.titleLabel.numberOfLines = 0;
-        button.pointerInteractionEnabled = YES;
-        [button setContentCompressionResistancePriority:999 forAxis:UILayoutConstraintAxisVertical];
-        button.accessibilityIdentifier = identifiers[i];
-        button.tag = i;
-        [button.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
-        [button addTarget:self action:@selector(selectSource:) forControlEvents:UIControlEventTouchUpInside];
-        [buttons addArrangedSubview:button];
+    self.originalHeader=[UIView new]; self.originalHeader.backgroundColor=TCOriginalDark();
+    [self.view addSubview:self.originalHeader];
+    self.originalTitle=TCOriginalArtwork(@"00"); [self.originalHeader addSubview:self.originalTitle];
+    self.pickerTab=TCOriginalButton(@"112x138",@"112x138 B",NSLocalizedString(@"Color Sources",nil),@"original.picker",self,@selector(showOriginalPicker));
+    self.libraryTab=TCOriginalButton(@"320x138",@"320x138 B",NSLocalizedString(@"Saved Colors",nil),@"original.library",self,@selector(showOriginalLibrary));
+    [self.originalHeader addSubview:self.pickerTab]; [self.originalHeader addSubview:self.libraryTab];
+    self.homeScroll=[UIScrollView new]; self.homeScroll.accessibilityIdentifier=@"sourceControls";
+    self.homeScroll.contentInsetAdjustmentBehavior=UIScrollViewContentInsetAdjustmentNever;
+    [self.view addSubview:self.homeScroll]; self.homeStage=[UIView new]; [self.homeScroll addSubview:self.homeStage];
+    self.originalDroplet=TCOriginalArtwork(@"245x248"); [self.homeStage addSubview:self.originalDroplet];
+    self.sourceButtons=[UIStackView new]; self.sourceButtons.axis=UILayoutConstraintAxisVertical;
+    self.sourceButtons.distribution=UIStackViewDistributionFillEqually;
+    NSArray *art=@[@"117x532",@"117x638",@"117x744"];
+    NSArray *titles=@[NSLocalizedString(@"Choose Photo",nil),NSLocalizedString(@"Take Photo",nil),NSLocalizedString(@"Live Color",nil)];
+    NSArray *identifiers=@[@"choosePhoto",@"takePhoto",@"liveColor"];
+    for (NSUInteger i=0;i<3;i++) {
+        UIButton *button=TCOriginalButton(art[i],[art[i] stringByAppendingString:@" B"],titles[i],identifiers[i],self,@selector(selectSource:));
+        button.tag=i; [self.sourceButtons addArrangedSubview:button];
     }
-    UIScrollView *sourceControls;
-#if DEBUG
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-scroll-state"]) sourceControls=[TCScrollStateProbe new];
-    else
-#endif
-    sourceControls = [UIScrollView new];
-    sourceControls.accessibilityIdentifier = @"sourceControls";
-    sourceControls.translatesAutoresizingMaskIntoConstraints = NO;
-    [sourceControls addSubview:buttons];
-    [self.view addSubview:sourceControls];
-    NSLayoutConstraint *naturalHeight = [sourceControls.heightAnchor constraintEqualToAnchor:buttons.heightAnchor constant:8];
-    // Content must retain its full label height and scroll when the viewport is capped.
-    naturalHeight.priority = UILayoutPriorityDefaultLow;
-    naturalHeight.active = YES;
-    self.loading = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.loading.hidesWhenStopped = YES;
-    [self showPrivacyButton];
-    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
-    [NSLayoutConstraint activateConstraints:@[
-        [sourceControls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
-        [sourceControls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [sourceControls.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
-        [sourceControls.heightAnchor constraintLessThanOrEqualToAnchor:safe.heightAnchor multiplier:0.5],
-        [buttons.leadingAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.leadingAnchor constant:16],
-        [buttons.trailingAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.trailingAnchor constant:-16],
-        [buttons.topAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.topAnchor],
-        [buttons.bottomAnchor constraintEqualToAnchor:sourceControls.contentLayoutGuide.bottomAnchor constant:-8],
-        [buttons.widthAnchor constraintEqualToAnchor:sourceControls.frameLayoutGuide.widthAnchor constant:-32],
-        [self.tableView.topAnchor constraintEqualToAnchor:safe.topAnchor],
-        [self.tableView.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],
-        [self.tableView.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],
-        [self.tableView.bottomAnchor constraintEqualToAnchor:sourceControls.topAnchor constant:-8]
-    ]];
+    [self.homeStage addSubview:self.sourceButtons];
+    self.tableView=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    self.tableView.backgroundColor=TCOriginalBackground(); self.tableView.separatorStyle=UITableViewCellSeparatorStyleNone;
+    self.tableView.dataSource=self; self.tableView.delegate=self;
+    self.tableView.accessibilityIdentifier=@"colorHistory";
+    [self.view addSubview:self.tableView];
+    self.libraryFooter=[UIStackView new]; self.libraryFooter.axis=UILayoutConstraintAxisVertical; self.libraryFooter.spacing=4;
+    self.importPaletteButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.importPaletteButton setTitle:NSLocalizedString(@"Import Palette",nil) forState:UIControlStateNormal];
+    self.importPaletteButton.accessibilityIdentifier=@"palette.import.open";
+    [self.importPaletteButton addTarget:self action:@selector(openPaletteImport) forControlEvents:UIControlEventTouchUpInside];
+    self.aboutButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.aboutButton setTitle:NSLocalizedString(@"About",nil) forState:UIControlStateNormal];
+    self.aboutButton.accessibilityIdentifier=@"original.about";
+    [self.aboutButton addTarget:self action:@selector(openOriginalAbout) forControlEvents:UIControlEventTouchUpInside];
+    for (UIButton *button in @[self.importPaletteButton,self.aboutButton]) {
+        button.tintColor=TCOriginalText(); button.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+        button.titleLabel.adjustsFontForContentSizeCategory=YES; button.titleLabel.numberOfLines=0;
+        [button.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
+        [self.libraryFooter addArrangedSubview:button];
+    }
+    self.tableView.tableFooterView=self.libraryFooter;
+    self.loading=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    self.loading.hidesWhenStopped=YES;
+    UIButton *cancel=[UIButton buttonWithType:UIButtonTypeSystem];
+    [cancel setTitle:NSLocalizedString(@"Cancel",nil) forState:UIControlStateNormal];
+    cancel.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; cancel.titleLabel.adjustsFontForContentSizeCategory=YES;
+    cancel.titleLabel.numberOfLines=0; cancel.accessibilityIdentifier=@"photo.import.cancel";
+    [cancel.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
+    [cancel addTarget:self action:@selector(cancelPhotoImport) forControlEvents:UIControlEventTouchUpInside];
+    self.loadingPanel=[[UIStackView alloc] initWithArrangedSubviews:@[self.loading,cancel]];
+    self.loadingPanel.axis=UILayoutConstraintAxisHorizontal; self.loadingPanel.spacing=12;
+    self.loadingPanel.alignment=UIStackViewAlignmentCenter; self.loadingPanel.backgroundColor=TCOriginalBackground();
+    self.loadingPanel.hidden=YES; [self.view addSubview:self.loadingPanel];
+    [self showOriginalPicker];
 #if DEBUG
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-camera-permission"]) {
         self.permissionStatus = [UILabel new];
         self.permissionStatus.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
         self.permissionStatus.accessibilityIdentifier = @"cameraPermissionStatus";
         self.navigationItem.titleView = self.permissionStatus;
+        self.permissionStatus.textColor=UIColor.whiteColor;
+        self.permissionStatus.backgroundColor=TCOriginalDark();
+        [self.originalHeader addSubview:self.permissionStatus];
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(permissionProbeSceneActivated:) name:UISceneDidActivateNotification object:nil];
         [self updatePermissionProbe];
     }
@@ -133,68 +132,85 @@
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    // Large text needs the full width of each source title; the bounded region scrolls vertically.
-    BOOL wide = self.view.bounds.size.width > self.view.bounds.size.height && !UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
-    UILayoutConstraintAxis axis = wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
-    if (self.sourceButtons.axis != axis) {
-        self.sourceButtons.axis = axis;
-        self.sourceButtons.distribution = wide ? UIStackViewDistributionFillEqually : UIStackViewDistributionFill;
+    CGFloat scale=TCOriginalScale(self.view), width=320*scale;
+    UIEdgeInsets safe=self.view.safeAreaInsets;
+    CGFloat x=(self.view.bounds.size.width-width)/2;
+    CGFloat headerHeight=safe.top+76*scale;
+    self.originalHeader.frame=CGRectMake(0,0,self.view.bounds.size.width,headerHeight);
+    self.originalTitle.frame=CGRectMake(x,safe.top-20*scale,width,96*scale);
+    self.pickerTab.frame=CGRectMake(x+56*scale,safe.top+58*scale-22,104*scale,44);
+    self.libraryTab.frame=CGRectMake(x+160*scale,safe.top+58*scale-22,104*scale,44);
+    CGFloat available=MAX(0,self.view.bounds.size.height-headerHeight-safe.bottom);
+    self.homeScroll.frame=CGRectMake(x,headerHeight,width,available);
+    CGFloat stageHeight=MAX(472*scale,available);
+    self.homeStage.frame=CGRectMake(0,0,width,stageHeight); self.homeScroll.contentSize=self.homeStage.bounds.size;
+    CGFloat centerOffset=MAX(0,(stageHeight-472*scale)/2);
+    self.originalDroplet.frame=CGRectMake(122.5*scale,centerOffset+59*scale,75.5*scale,115*scale);
+    self.sourceButtons.spacing=2*scale;
+    self.sourceButtons.frame=CGRectMake(58.5*scale,centerOffset+225*scale,203*scale,157*scale);
+    self.tableView.frame=CGRectMake(x,headerHeight,width,available);
+    CGFloat footerHeight=MAX(96,2*[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote].lineHeight+48);
+    if (fabs(self.libraryFooter.frame.size.width-width)>0.5 || fabs(self.libraryFooter.frame.size.height-footerHeight)>0.5) {
+        self.libraryFooter.frame=CGRectMake(0,0,width,footerHeight); self.tableView.tableFooterView=self.libraryFooter;
     }
-    NSArray *symbols = @[@"photo", @"camera", @"viewfinder", @"square.and.arrow.down"];
-    BOOL hideIcons = UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
-    for (UIButton *button in self.sourceButtons.arrangedSubviews) {
-        BOOL hasImage = button.configuration.image != nil;
-        if (hasImage == hideIcons) {
-            UIButtonConfiguration *configuration = button.configuration;
-            configuration.image = hideIcons ? nil : [UIImage systemImageNamed:symbols[button.tag]];
-            button.configuration = configuration;
-        }
-    }
+    CGFloat busyHeight=MAX(56,[UIFont preferredFontForTextStyle:UIFontTextStyleBody].lineHeight+24);
+    self.loadingPanel.frame=CGRectMake(x+16,self.view.bounds.size.height-safe.bottom-busyHeight,width-32,busyHeight);
+#if DEBUG
+    self.permissionStatus.frame=CGRectMake(x+16,safe.top,width-32,30);
+#endif
 }
+- (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
+- (void)showOriginalPicker {
+    self.libraryVisible=NO; self.pickerTab.selected=YES; self.libraryTab.selected=NO;
+    self.homeScroll.hidden=NO; self.tableView.hidden=YES;
+}
+- (void)showOriginalLibrary {
+    self.libraryVisible=YES; self.pickerTab.selected=NO; self.libraryTab.selected=YES;
+    self.homeScroll.hidden=YES; self.tableView.hidden=NO; [self reloadHistory];
+}
+- (void)openOriginalAbout {
+    if ([self sourcePresenter].presentedViewController || self.loading.isAnimating) return;
+    UIViewController *about=[UIViewController new];
+    about.title=NSLocalizedString(@"About",nil); about.view.backgroundColor=TCOriginalBackground();
+    about.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:self action:@selector(closeOriginalAbout)];
+    about.navigationItem.rightBarButtonItem.accessibilityIdentifier=@"original.about.close";
+    UIButton *policy=[UIButton buttonWithType:UIButtonTypeSystem];
+    [policy setTitle:NSLocalizedString(@"Privacy Policy",nil) forState:UIControlStateNormal];
+    policy.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; policy.titleLabel.adjustsFontForContentSizeCategory=YES;
+    policy.titleLabel.numberOfLines=0; policy.tintColor=TCOriginalText(); policy.accessibilityIdentifier=@"privacyPolicy";
+    [policy addTarget:self action:@selector(openPolicyFromOriginalAbout) forControlEvents:UIControlEventTouchUpInside];
+    policy.translatesAutoresizingMaskIntoConstraints=NO; [about.view addSubview:policy];
+    [NSLayoutConstraint activateConstraints:@[
+        [policy.leadingAnchor constraintEqualToAnchor:about.view.safeAreaLayoutGuide.leadingAnchor constant:24],
+        [policy.trailingAnchor constraintEqualToAnchor:about.view.safeAreaLayoutGuide.trailingAnchor constant:-24],
+        [policy.topAnchor constraintEqualToAnchor:about.view.safeAreaLayoutGuide.topAnchor constant:24],
+        [policy.heightAnchor constraintGreaterThanOrEqualToConstant:44]
+    ]];
+    UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:about];
+    [[self sourcePresenter] presentViewController:navigation animated:YES completion:nil];
+}
+- (void)closeOriginalAbout { [[self sourcePresenter] dismissViewControllerAnimated:YES completion:nil]; }
+- (void)openPolicyFromOriginalAbout {
+    [[self sourcePresenter] dismissViewControllerAnimated:YES completion:^{ [self openPrivacyPolicy]; }];
+}
+
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self.navigationController setNavigationBarHidden:YES animated:NO];
     [self reloadHistory];
 }
+
 - (void)reloadHistory {
-    self.colors = self.store.colors;
-    [self.tableView reloadData];
-    UILabel *empty = [UILabel new];
-    empty.text = NSLocalizedString(@"Your saved colors appear here.\nChoose a photo or use the camera to begin.", nil);
-    empty.numberOfLines = 0;
-    empty.textAlignment = NSTextAlignmentCenter;
-    empty.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    empty.adjustsFontForContentSizeCategory = YES;
-    empty.textColor = UIColor.secondaryLabelColor;
-    empty.accessibilityIdentifier = @"history.empty";
-    empty.translatesAutoresizingMaskIntoConstraints = NO;
-    UIScrollView *emptyScroll;
-#if DEBUG
-    if ([NSProcessInfo.processInfo.arguments containsObject:@"--ui-test-scroll-state"]) emptyScroll=[TCScrollStateProbe new];
-    else
-#endif
-    emptyScroll = [UIScrollView new];
-    emptyScroll.accessibilityIdentifier = @"history.emptyScroll";
-    [emptyScroll addSubview:empty];
-    [NSLayoutConstraint activateConstraints:@[
-        [empty.topAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.topAnchor constant:16],
-        [empty.bottomAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.bottomAnchor constant:-16],
-        [empty.leadingAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.leadingAnchor constant:16],
-        [empty.trailingAnchor constraintEqualToAnchor:emptyScroll.contentLayoutGuide.trailingAnchor constant:-16],
-        [empty.widthAnchor constraintEqualToAnchor:emptyScroll.frameLayoutGuide.widthAnchor constant:-32]
-    ]];
-    self.tableView.backgroundView = self.colors.count ? nil : emptyScroll;
+    self.colors=self.store.colors; [self.tableView reloadData];
+    self.tableView.backgroundView=nil;
+    [self.view setNeedsLayout];
 }
+
 - (void)showPrivacyButton {
-    NSString *title=NSLocalizedString(@"Privacy Policy", nil);
-    // The native sidebar's title needs room to grow with Dynamic Type. A labelled
-    // privacy symbol keeps the same direct action without a competing long toolbar title.
-    UIBarButtonItem *privacy = self.workspaceDelegate
-        ? [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"hand.raised"] style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)]
-        : [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStylePlain target:self action:@selector(openPrivacyPolicy)];
-    privacy.accessibilityLabel = title;
-    privacy.accessibilityIdentifier = @"privacyPolicy";
-    self.navigationItem.rightBarButtonItems = @[privacy];
+    // Policy is reachable from Color Library > About, never a primary home action.
+    self.navigationItem.rightBarButtonItems=nil;
 }
+
 - (UIViewController *)sourcePresenter { return [self.workspaceDelegate sourcePresenterForPalette:self] ?: self; }
 - (void)sourceFlowActive:(BOOL)active { [self.workspaceDelegate palette:self sourceFlowActive:active]; }
 - (void)presentSource:(UIViewController *)controller sourceView:(UIView *)sourceView {
@@ -317,21 +333,18 @@
 }
 - (void)beginPhotoLoading {
     [self sourceFlowActive:YES];
-    self.loading.accessibilityIdentifier = @"photo.import.loading";
-    self.loading.isAccessibilityElement = YES;
-    self.loading.accessibilityLabel = NSLocalizedString(@"Opening Photo", nil);
-    [self.loading startAnimating];
-    UIBarButtonItem *activity = [[UIBarButtonItem alloc] initWithCustomView:self.loading];
-    UIBarButtonItem *cancel = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelPhotoImport)];
-    cancel.accessibilityIdentifier = @"photo.import.cancel";
-    self.navigationItem.rightBarButtonItems = @[cancel, activity];
+    self.loading.accessibilityIdentifier=@"photo.import.loading"; self.loading.isAccessibilityElement=YES;
+    self.loading.accessibilityLabel=NSLocalizedString(@"Opening Photo",nil);
+    [self.loading startAnimating]; self.loadingPanel.hidden=NO;
+    [self.view bringSubviewToFront:self.loadingPanel]; [self.view setNeedsLayout];
     [self.workspaceDelegate palette:self loadingPhoto:YES];
 }
+
 - (void)endPhotoLoading {
-    [self.loading stopAnimating];
-    [self showPrivacyButton];
-    [self.workspaceDelegate palette:self loadingPhoto:NO];
+    [self.loading stopAnimating]; self.loadingPanel.hidden=YES;
+    [self showPrivacyButton]; [self.workspaceDelegate palette:self loadingPhoto:NO];
 }
+
 - (void)cancelPhotoImport {
     ++self.selectionGeneration;
     [self.photoImportTask cancel];
@@ -391,37 +404,58 @@
     [picker dismissViewControllerAnimated:YES completion:^{ [self sourceFlowActive:NO]; [self showImage:image]; }];
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.colors.count; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    // UITableView draws its background behind section headers. The empty-state
-    // paragraph already describes the palette and must not share that header area.
-    return self.colors.count ? NSLocalizedString(@"Saved Colors", nil) : nil;
-}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return nil; }
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"color"];
-    if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"color"];
-    NSString *hex = self.colors[indexPath.row];
-    UIListContentConfiguration *content = cell.defaultContentConfiguration;
-    content.text = hex;
-    content.secondaryText = TCRGBDescription(hex);
-    content.image = [UIImage systemImageNamed:@"circle.fill"];
-    content.imageProperties.tintColor = TCUIColorFromHex(hex);
-    content.textProperties.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
-    content.textProperties.numberOfLines = 0;
-    content.secondaryTextProperties.numberOfLines = 0;
-    cell.contentConfiguration = content;
-    cell.selectionStyle = self.workspaceDelegate ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-    cell.accessoryType = self.workspaceDelegate ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
-    if (self.workspaceDelegate) cell.accessibilityTraits |= UIAccessibilityTraitButton;
-    cell.accessibilityLabel = [NSString stringWithFormat:@"%@, %@", hex, TCRGBDescription(hex)];
+    UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"original.color"];
+    if (!cell) {
+        cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"original.color"];
+        TCOriginalReadout *readout=[TCOriginalReadout new]; readout.tag=601; readout.historyRow=YES;
+        readout.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+        [cell.contentView addSubview:readout]; cell.selectionStyle=UITableViewCellSelectionStyleNone;
+    }
+    TCOriginalReadout *readout=[cell.contentView viewWithTag:601];
+    readout.frame=cell.contentView.bounds; readout.hex=self.colors[indexPath.row];
+    cell.backgroundColor=TCOriginalBackground();
     return cell;
 }
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    TCOriginalReadout *readout=[TCOriginalReadout new]; readout.historyRow=YES;
+    return [readout preferredHeightForWidth:tableView.bounds.size.width traits:tableView.traitCollection];
+}
+
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (style == UITableViewCellEditingStyleDelete && [self.store removeColorAtIndex:indexPath.row]) [self reloadHistory];
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (self.loading.isAnimating) return;
-    if (indexPath.row < self.colors.count) [self.workspaceDelegate palette:self previewSavedColor:self.colors[indexPath.row]];
+    if (indexPath.row >= self.colors.count) return;
+    if (self.workspaceDelegate) [self.workspaceDelegate palette:self previewSavedColor:self.colors[indexPath.row]];
+    else if (self.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
+        NSString *hex=self.colors[indexPath.row];
+        UIAlertController *preview=[UIAlertController alertControllerWithTitle:hex message:TCRGBDescription(hex) preferredStyle:UIAlertControllerStyleAlert];
+        [preview addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Close",nil) style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:preview animated:YES completion:nil];
+    }
+}
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    if (![previous.preferredContentSizeCategory isEqual:self.traitCollection.preferredContentSizeCategory]) { [self.tableView reloadData]; [self.view setNeedsLayout]; }
+}
+- (BOOL)canBecomeFirstResponder { return YES; }
+- (void)viewDidAppear:(BOOL)animated { [super viewDidAppear:animated]; [self becomeFirstResponder]; }
+- (NSArray<UIKeyCommand *> *)keyCommands {
+    if ([self sourcePresenter].presentedViewController || self.loading.isAnimating) return @[];
+    UIKeyCommand *photo=[UIKeyCommand keyCommandWithInput:@"o" modifierFlags:UIKeyModifierCommand action:@selector(choosePhoto)];
+    photo.discoverabilityTitle=NSLocalizedString(@"Choose Photo",nil);
+    UIKeyCommand *camera=[UIKeyCommand keyCommandWithInput:@"o" modifierFlags:UIKeyModifierCommand|UIKeyModifierShift action:@selector(takePhoto)];
+    camera.discoverabilityTitle=NSLocalizedString(@"Take Photo",nil);
+    UIKeyCommand *live=[UIKeyCommand keyCommandWithInput:@"l" modifierFlags:UIKeyModifierCommand action:@selector(openLiveColor)];
+    live.discoverabilityTitle=NSLocalizedString(@"Live Color",nil);
+    UIKeyCommand *library=[UIKeyCommand keyCommandWithInput:@"1" modifierFlags:UIKeyModifierCommand action:@selector(showOriginalLibrary)];
+    library.discoverabilityTitle=NSLocalizedString(@"Saved Colors",nil);
+    return @[photo,camera,live,library];
 }
 - (void)defaultsChanged:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{ if (self.isViewLoaded) [self reloadHistory]; });
@@ -460,3 +494,4 @@
 }
 #endif
 @end
+

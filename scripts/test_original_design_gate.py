@@ -1,0 +1,109 @@
+import copy
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+SPEC = importlib.util.spec_from_file_location('design_gate', Path(__file__).with_name('original_design_gate.py'))
+gate = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(gate)
+
+class OriginalDesignGateTests(unittest.TestCase):
+    def summary(self):
+        counts = {'passedTests': 4, 'failedTests': 0, 'skippedTests': 0, 'expectedFailures': 0}
+        return dict(totalTestCount=4, result='Passed', startTime=110, finishTime=120, **counts,
+                    devicesAndConfigurations=[dict(device={'deviceId': 'owned-device', 'platform': 'iOS Simulator', 'osVersion': '27.0'}, **counts)])
+    def qualify(self, summary, **overrides):
+        fields = dict(expected_count=4, device='owned-device', began=100, finished=130, exit_code=0)
+        fields.update(overrides)
+        gate.qualify_summary(summary, **fields)
+    def test_complete_owned_summary_passes(self):
+        self.qualify(self.summary())
+    def test_failure_skip_expected_failure_cannot_be_passed(self):
+        for field in ['failedTests', 'skippedTests', 'expectedFailures']:
+            value = self.summary(); value[field] = 1
+            with self.assertRaises(RuntimeError): self.qualify(value)
+    def test_partial_foreign_or_stale_summary_is_rejected(self):
+        for mutation in [lambda v: v.update(totalTestCount=3),
+                         lambda v: v.update(startTime=99),
+                         lambda v: v.update(finishTime=float('nan')),
+                         lambda v: v['devicesAndConfigurations'][0]['device'].update(deviceId='another-device'),
+                         lambda v: v['devicesAndConfigurations'][0].update(passedTests=3)]:
+            value = self.summary(); mutation(value)
+            with self.assertRaises(RuntimeError): self.qualify(value)
+    def test_nonzero_command_cannot_have_successful_summary(self):
+        with self.assertRaises(RuntimeError): self.qualify(self.summary(), exit_code=65)
+    def test_objc_and_swift_zero_argument_tests_are_parsed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'Tests'
+            path.write_text('- (void)testObjectiveC { }\nfunc testSwift() async throws { }\n- (void)helper { }')
+            self.assertEqual(gate.testcase_names(path), {'testObjectiveC', 'testSwift'})
+    def test_raw_case_inventory_rejects_missing_duplicate_and_false_green(self):
+        passed = "Test Case '-[Suite testA]' passed (0.1 seconds).\nTest Case '-[Suite testB]' passed (0.1 seconds).\n"
+        gate.qualify_cases(passed, {'testA', 'testB'})
+        for log in [passed.splitlines()[0], passed + passed, passed.replace('testB', 'testC'), passed.replace('passed', 'failed', 1)]:
+            with self.assertRaises(RuntimeError): gate.qualify_cases(log, {'testA', 'testB'})
+    def test_synthetic_fixture_is_exact_original_six_color_png(self):
+        import struct, zlib
+        raw = gate.fixture_png(); self.assertTrue(raw.startswith(b'\x89PNG\r\n\x1a\n'))
+        self.assertEqual(struct.unpack('>II', raw[16:24]), (300, 200))
+        offset = 8; compressed = b''
+        while offset < len(raw):
+            size = struct.unpack('>I', raw[offset:offset+4])[0]
+            kind = raw[offset+4:offset+8]
+            if kind == b'IDAT': compressed += raw[offset+8:offset+8+size]
+            offset += size + 12
+        pixels = zlib.decompress(compressed)
+        def color(x, y): return pixels[y * 901 + 1 + x * 3:y * 901 + 1 + x * 3 + 3]
+        self.assertEqual(color(45, 50), bytes([255, 0, 0]))
+        self.assertEqual(color(150, 100), bytes([255, 0, 255]))
+    def test_admission_retains_small_package_and_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / 'evidence'; source.mkdir()
+            (source / 'sample.png').write_bytes(b'png')
+            (source / 'acceptance.json').write_text('{}')
+            self.assertTrue(gate.admit_evidence(source, root / 'published'))
+            receipt = json.loads((root / 'published/artifact-admission.json').read_text())
+            self.assertTrue(receipt['complete']); self.assertEqual(receipt['omitted'], [])
+    def test_admission_overflow_omits_images_and_stays_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / 'evidence'; source.mkdir()
+            with (source / 'oversized.png').open('wb') as stream: stream.truncate(25 * 1024 * 1024)
+            (source / 'acceptance.json').write_text('{"functional_passed":false}')
+            self.assertFalse(gate.admit_evidence(source, root / 'published'))
+            receipt = json.loads((root / 'published/artifact-admission.json').read_text())
+            self.assertFalse(receipt['complete']); self.assertEqual(receipt['omitted'][0]['path'], 'oversized.png')
+            self.assertFalse((root / 'published/oversized.png').exists())
+            self.assertLess(sum(p.stat().st_size for p in (root / 'published').rglob('*') if p.is_file()), 24 * 1024 * 1024)
+    def test_admission_rejects_linked_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / 'evidence'; source.mkdir()
+            (root / 'other.log').write_text('foreign')
+            (source / 'linked.log').symlink_to(root / 'other.log')
+            with self.assertRaises(RuntimeError): gate.admit_evidence(source, root / 'published')
+    def test_import_lifecycle_adapter_preserves_every_other_original_byte(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / 'ColorPickerTests/TCPhotoImportLifecycleTests.m').read_text()
+        start = text.index('// Locate the same real cancellation action independently')
+        end = text.index('@interface TCPhotoImportLifecycleTests : XCTestCase', start)
+        text = text[:start] + text[end:]
+        new = '''    UIButton *cancel=TCVisibleImportCancel(palette.view);
+    XCTAssertNotNil(cancel,@"The real loading Cancel action must remain visible and reachable in the restored design");
+    XCTAssertTrue(cancel.enabled);'''
+        old = '    XCTAssertTrue([[palette.navigationItem.rightBarButtonItems valueForKey:@"accessibilityIdentifier"] containsObject:@"photo.import.cancel"]);'
+        self.assertEqual(text.count(new), 1)
+        text = text.replace(new, old)
+        self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), '9ab82653389d0baa4f713ed758ced976d4910ee8687fca5af078b6bf7e0bb994')
+    def test_privacy_suite_uses_exact_current_native_contract(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m').read_text()
+        self.assertEqual(len(gate.testcase_names(root / 'TouchColorUITests/TouchColorOriginalDesignUITests.m')), 4)
+        for required in ['privacy.body.zh-Hans', 'privacy.body.en', 'original.about.close', 'original.back', 'photo.import.cancel', '#ff00ff', '#ff0000']:
+            self.assertIn(required, source)
+        for stale in ['privacy.retry', 'privacy.error', 'self.app.webViews', '@"--ui-test-image"', 'returnToPaletteFrom:']:
+            self.assertNotIn(stale, source)
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

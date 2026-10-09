@@ -64,6 +64,22 @@
 }
 @end
 
+// Locate the same real cancellation action independently of whether the
+// original design presents it in its loading panel or a navigation bar.
+static UIButton *TCVisibleImportCancel(UIView *root) {
+    if ([root isKindOfClass:UIButton.class] && [root.accessibilityIdentifier isEqualToString:@"photo.import.cancel"]) {
+        for (UIView *ancestor=root;ancestor;ancestor=ancestor.superview) {
+            if (ancestor.hidden || ancestor.alpha<=0 || !ancestor.userInteractionEnabled) return nil;
+        }
+        return (UIButton *)root;
+    }
+    for (UIView *child in root.subviews) {
+        UIButton *found=TCVisibleImportCancel(child);
+        if (found) return found;
+    }
+    return nil;
+}
+
 @interface TCPhotoImportLifecycleTests : XCTestCase
 @end
 @implementation TCPhotoImportLifecycleTests
@@ -96,7 +112,9 @@
     [palette loadPhotoFromProvider:provider];
     XCTAssertEqual([XCTWaiter waitForExpectations:@[provider.requested] timeout:5],XCTWaiterResultCompleted);
     XCTAssertTrue(workspace.loading);
-    XCTAssertTrue([[palette.navigationItem.rightBarButtonItems valueForKey:@"accessibilityIdentifier"] containsObject:@"photo.import.cancel"]);
+    UIButton *cancel=TCVisibleImportCancel(palette.view);
+    XCTAssertNotNil(cancel,@"The real loading Cancel action must remain visible and reachable in the restored design");
+    XCTAssertTrue(cancel.enabled);
     XCTestExpectation *returned=[self expectationWithDescription:@"Failed provider returned"];
     [provider deliverURL:nil error:[NSError errorWithDomain:@"TouchColor.ProviderFixture" code:1 userInfo:nil] returned:returned];
     [self waitForExpectations:@[returned] timeout:5];

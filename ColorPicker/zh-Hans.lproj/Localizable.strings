@@ -108,3 +108,8 @@
 "Open in Browser" = "在浏览器中打开";
 "Mail could not be opened. You can copy the email address from the policy." = "无法打开邮件。你可以从隐私说明中复制邮箱地址。";
 "The browser could not be opened. The complete policy remains available here." = "无法打开浏览器。你仍可在此查看完整隐私说明。";
+
+
+"About" = "关于";
+
+"Back" = "返回";
