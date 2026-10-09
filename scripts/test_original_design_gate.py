@@ -61,7 +61,7 @@ class OriginalDesignGateTests(unittest.TestCase):
         self.assertEqual(color(150, 100), bytes([255, 0, 255]))
     def test_admission_retains_small_package_and_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp); source = root / 'evidence'; source.mkdir()
+            root = Path(tmp).resolve(); source = root / 'evidence'; source.mkdir()
             (source / 'sample.png').write_bytes(b'png')
             (source / 'acceptance.json').write_text('{}')
             self.assertTrue(gate.admit_evidence(source, root / 'published'))
@@ -69,7 +69,7 @@ class OriginalDesignGateTests(unittest.TestCase):
             self.assertTrue(receipt['complete']); self.assertEqual(receipt['omitted'], [])
     def test_admission_overflow_omits_images_and_stays_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp); source = root / 'evidence'; source.mkdir()
+            root = Path(tmp).resolve(); source = root / 'evidence'; source.mkdir()
             with (source / 'oversized.png').open('wb') as stream: stream.truncate(25 * 1024 * 1024)
             (source / 'acceptance.json').write_text('{"functional_passed":false}')
             self.assertFalse(gate.admit_evidence(source, root / 'published'))
@@ -77,9 +77,21 @@ class OriginalDesignGateTests(unittest.TestCase):
             self.assertFalse(receipt['complete']); self.assertEqual(receipt['omitted'][0]['path'], 'oversized.png')
             self.assertFalse((root / 'published/oversized.png').exists())
             self.assertLess(sum(p.stat().st_size for p in (root / 'published').rglob('*') if p.is_file()), 24 * 1024 * 1024)
+    def test_owned_temp_fixture_canonicalizes_system_parent_alias(self):
+        # macOS may expose tempfile roots through /var -> /private/var. Resolve
+        # only the test-owned fixture root; production link guards stay strict.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            owned = root / 'owned'; owned.mkdir()
+            alias = root / 'system-temp-alias'; alias.symlink_to(owned, target_is_directory=True)
+            source = alias / 'evidence'; source.mkdir()
+            (source / 'acceptance.json').write_text('{}')
+            with self.assertRaises(RuntimeError): gate.admit_evidence(source, owned / 'rejected')
+            self.assertTrue(gate.admit_evidence(source.resolve(), owned / 'published'))
+
     def test_admission_rejects_linked_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp); source = root / 'evidence'; source.mkdir()
+            root = Path(tmp).resolve(); source = root / 'evidence'; source.mkdir()
             (root / 'other.log').write_text('foreign')
             (source / 'linked.log').symlink_to(root / 'other.log')
             with self.assertRaises(RuntimeError): gate.admit_evidence(source, root / 'published')
