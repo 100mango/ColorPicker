@@ -1,0 +1,271 @@
+name: TouchColor secondary About Mac qualification (two independent rows, ACTIVE)
+on:
+  push:
+    branches: [touchcolor-mac-secondary-qualification]
+    paths:
+      - .github/workflows/mac-secondary-qualification.yml
+      - tools/mac-secondary-qualification/**
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-mac-secondary-qualification
+  cancel-in-progress: false
+jobs:
+  mac-normal:
+    if: ${{ true && github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-mac-secondary-qualification' && github.run_attempt == 1 }}
+    runs-on: xcode-27
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      PYTHONDONTWRITEBYTECODE: '1'
+      TOUCHCOLOR_JOB_PLATFORM: mac
+      TOUCHCOLOR_JOB_LANE: normal
+      TOUCHCOLOR_JOB_MINUTES: '40'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '3000000'
+      TOUCHCOLOR_SECONDARY_EVIDENCE_REQUIRED: '1'
+    steps:
+      - name: Start original job clock before checkout and compiler
+        id: clock
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import os,time
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              out.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PYTHON
+      - name: Checkout exact source with sole parent available
+        id: checkout
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: File-only exact source and bootstrap admission
+        id: bootstrap
+        if: ${{ success() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/mac-secondary-qualification/bootstrap.py source
+      - name: Standard Actions compiler bootstrap within setup300
+        id: compile
+        if: ${{ success() && steps.bootstrap.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/mac-secondary-qualification/bootstrap.py compile-admission
+          # exec keeps the standard Actions step as compiler owner. No custom
+          # poll/wait/kill helper; compiler descendant cleanup is not core-proven.
+          exec /usr/bin/clang -std=c11 -Wall -Wextra -Werror -dynamiclib tools/mac-secondary-qualification/owned_mac_public.c -o build/mac-owned-public.dylib -lproc
+      - name: One safe Session self-test then exact mandatory Mac row
+        id: controller
+        if: ${{ success() && steps.compile.outcome == 'success' }}
+        timeout-minutes: 35
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          # With no continue-on-error, actual step success certifies exit0.
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          python3 -I -S tools/mac-secondary-qualification/controller.py normal
+      - name: Bound upload or preserve small bootstrap failure record
+        id: evidence
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import json,os,stat,tempfile
+          from pathlib import Path
+          temp=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          if temp.stat().st_uid!=os.geteuid():raise ValueError('Foreign runner temp')
+          folder=Path(tempfile.mkdtemp(prefix='touch-mac-normal-failure-',dir=temp))
+          directory=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+          try:
+              info=os.fstat(directory)
+              if info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o700:raise ValueError('Unsafe fallback directory')
+              value={'complete':False,'source_sha':os.environ.get('GITHUB_SHA'),'lane':'normal',
+                     'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),'job':os.environ.get('GITHUB_JOB'),
+                     'reason':'bootstrap/controller/evidence incomplete',
+                     'stages':{k:os.environ.get(k,'unknown') for k in ('BOOTSTRAP_OUTCOME','COMPILE_OUTCOME','CONTROLLER_OUTCOME','CONTROLLER_EXIT')}}
+              raw=(json.dumps(value,sort_keys=True)+'\n').encode()
+              if len(raw)>8192:raise ValueError('Fallback exceeds8KB')
+              fd=os.open('mac-row-result.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+              try:
+                  if os.write(fd,raw)!=len(raw):raise ValueError('Short fallback write')
+              finally:os.close(fd)
+              again=os.stat(folder,follow_symlinks=False)
+              if (again.st_dev,again.st_ino)!=(info.st_dev,info.st_ino):raise ValueError('Fallback anchor changed')
+          finally:os.close(directory)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('path='+str(folder)+'\ncomplete=false\n')
+          PYTHON
+          if test -f build/mac-upload/mac-row-result.json; then
+            python3 -I -S tools/mac-secondary-qualification/bootstrap.py upload
+            printf 'path=build/mac-upload\ncomplete=%s\n' '${{ steps.controller.outputs.complete }}' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Retain exact bounded row evidence
+        id: upload
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touch-mac-normal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Exact outcome and original row evidence acceptance
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        run: |
+          set -euo pipefail
+          test '${{ steps.evidence.outcome }}' = success
+          test '${{ steps.evidence.outputs.complete }}' = true
+          python3 -I -S tools/mac-secondary-qualification/bootstrap.py gate
+  mac-sandbox:
+    if: ${{ true && github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-mac-secondary-qualification' && github.run_attempt == 1 }}
+    runs-on: xcode-27
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      PYTHONDONTWRITEBYTECODE: '1'
+      TOUCHCOLOR_JOB_PLATFORM: mac
+      TOUCHCOLOR_JOB_LANE: sandbox
+      TOUCHCOLOR_JOB_MINUTES: '40'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '3000000'
+      TOUCHCOLOR_SECONDARY_EVIDENCE_REQUIRED: '1'
+    steps:
+      - name: Start original job clock before checkout and compiler
+        id: clock
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import os,time
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              out.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PYTHON
+      - name: Checkout exact source with sole parent available
+        id: checkout
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: File-only exact source and bootstrap admission
+        id: bootstrap
+        if: ${{ success() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/mac-secondary-qualification/bootstrap.py source
+      - name: Standard Actions compiler bootstrap within setup300
+        id: compile
+        if: ${{ success() && steps.bootstrap.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/mac-secondary-qualification/bootstrap.py compile-admission
+          # exec keeps the standard Actions step as compiler owner. No custom
+          # poll/wait/kill helper; compiler descendant cleanup is not core-proven.
+          exec /usr/bin/clang -std=c11 -Wall -Wextra -Werror -dynamiclib tools/mac-secondary-qualification/owned_mac_public.c -o build/mac-owned-public.dylib -lproc
+      - name: One safe Session self-test then exact mandatory Mac row
+        id: controller
+        if: ${{ success() && steps.compile.outcome == 'success' }}
+        timeout-minutes: 35
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          # With no continue-on-error, actual step success certifies exit0.
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          python3 -I -S tools/mac-secondary-qualification/controller.py sandbox
+      - name: Bound upload or preserve small bootstrap failure record
+        id: evidence
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import json,os,stat,tempfile
+          from pathlib import Path
+          temp=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          if temp.stat().st_uid!=os.geteuid():raise ValueError('Foreign runner temp')
+          folder=Path(tempfile.mkdtemp(prefix='touch-mac-sandbox-failure-',dir=temp))
+          directory=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+          try:
+              info=os.fstat(directory)
+              if info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o700:raise ValueError('Unsafe fallback directory')
+              value={'complete':False,'source_sha':os.environ.get('GITHUB_SHA'),'lane':'sandbox',
+                     'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),'job':os.environ.get('GITHUB_JOB'),
+                     'reason':'bootstrap/controller/evidence incomplete',
+                     'stages':{k:os.environ.get(k,'unknown') for k in ('BOOTSTRAP_OUTCOME','COMPILE_OUTCOME','CONTROLLER_OUTCOME','CONTROLLER_EXIT')}}
+              raw=(json.dumps(value,sort_keys=True)+'\n').encode()
+              if len(raw)>8192:raise ValueError('Fallback exceeds8KB')
+              fd=os.open('mac-row-result.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+              try:
+                  if os.write(fd,raw)!=len(raw):raise ValueError('Short fallback write')
+              finally:os.close(fd)
+              again=os.stat(folder,follow_symlinks=False)
+              if (again.st_dev,again.st_ino)!=(info.st_dev,info.st_ino):raise ValueError('Fallback anchor changed')
+          finally:os.close(directory)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('path='+str(folder)+'\ncomplete=false\n')
+          PYTHON
+          if test -f build/mac-upload/mac-row-result.json; then
+            python3 -I -S tools/mac-secondary-qualification/bootstrap.py upload
+            printf 'path=build/mac-upload\ncomplete=%s\n' '${{ steps.controller.outputs.complete }}' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Retain exact bounded row evidence
+        id: upload
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touch-mac-sandbox-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Exact outcome and original row evidence acceptance
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        run: |
+          set -euo pipefail
+          test '${{ steps.evidence.outcome }}' = success
+          test '${{ steps.evidence.outputs.complete }}' = true
+          python3 -I -S tools/mac-secondary-qualification/bootstrap.py gate

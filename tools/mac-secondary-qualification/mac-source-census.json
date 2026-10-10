@@ -1,0 +1,747 @@
+{
+  "schema": 1,
+  "product_commit": "7c671f04e4d69884741a411851ae26083361c7f7",
+  "product_tree": "f477c19b8181c4e3eb2142beaef4dea742cca0cd",
+  "project": {
+    "path": "TouchColorMac.xcodeproj/project.pbxproj",
+    "sha256": "8e0e86454d839a67e0efe04ec00c7cf532fd019e5a25a0b2e18dc03370438c99"
+  },
+  "schemes": {
+    "TouchColorMac": {
+      "path": "TouchColorMac.xcodeproj/xcshareddata/xcschemes/TouchColorMac.xcscheme",
+      "sha256": "966a25e8cc7f6c110dd64ec4c4fb50b7b59c7aa4b96398bd864571d0f3b36650",
+      "build_targets": [
+        {
+          "target": "TouchColorMac",
+          "id": "99F4B5DE5084845CC40DD3E4",
+          "product": "TouchColor.app"
+        }
+      ],
+      "test_targets": [
+        "TouchColorMacTests",
+        "TouchColorMacUITests"
+      ]
+    },
+    "TouchColorMacSandbox": {
+      "path": "TouchColorMac.xcodeproj/xcshareddata/xcschemes/TouchColorMacSandbox.xcscheme",
+      "sha256": "932bbb66d596ce38c128e0ae46f868209f3f24c0fbb379ae8241e56802398fb1",
+      "build_targets": [
+        {
+          "target": "TouchColorMac",
+          "id": "99F4B5DE5084845CC40DD3E4",
+          "product": "TouchColor.app"
+        }
+      ],
+      "test_targets": [
+        "TouchColorMacUITests"
+      ]
+    }
+  },
+  "targets": {
+    "TouchColorMacTests": {
+      "id": "FE2721D06EFF0262D90AE971",
+      "source_files": [
+        {
+          "path": "TouchColorMacTests/CameraTests.swift",
+          "sha256": "c0af8999d62828141895bdadc9fae6f2e91ba1c9eca94092bc0b18a005462381"
+        },
+        {
+          "path": "TouchColorMacTests/ImageSessionTests.swift",
+          "sha256": "f54550f5c4672516486e25e50af24050c147f98669d8a24bc6edc583d53e16b6"
+        },
+        {
+          "path": "TouchColorMacTests/PrivacyTextTests.swift",
+          "sha256": "80cd08ba92daddd95ea58f85eaf4a51e2e76ccfa7de98a1683a775b025b31cd1"
+        },
+        {
+          "path": "TouchColorMacTests/SixColorThumbnailTests.swift",
+          "sha256": "3447d3eb113c0527bcdd74bbe91abcd29e823ac39136ce0e791a739561fb0950"
+        },
+        {
+          "path": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "sha256": "1735aa2e5a84c49c62b5476b5b57e91c3d1a4f6d3e55d4bb464fa43f1f161470"
+        },
+        {
+          "path": "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift",
+          "sha256": "824e87a129024b1be4a953b4bff6e1d61c3a4b019d088b2f044ca29915a75dcc"
+        },
+        {
+          "path": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "sha256": "32f3a3b018f0058b743fb3ec70f75228def4dca3a744358a7d0471263758e56e"
+        },
+        {
+          "path": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "sha256": "68244e88357bae862ace0469323ee9a1e5d1b5c61dca6f29d68a4369b13fb9b2"
+        },
+        {
+          "path": "TouchColorMacUITests/SixColorThumbnail.swift",
+          "sha256": "4118919d73344d00a1ecd8119e7a114716e23dd3b28796485112b2adf8a822b3"
+        }
+      ],
+      "test_count": 61,
+      "tests": [
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testNoDeviceNeverRequestsPermissionOrStartsCapture",
+          "class": "CameraTests",
+          "method": "testNoDeviceNeverRequestsPermissionOrStartsCapture",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 28,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testAvailableSelectionSurvivesRefreshWithoutRequestingPermission",
+          "class": "CameraTests",
+          "method": "testAvailableSelectionSurvivesRefreshWithoutRequestingPermission",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 41,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testPermissionCancelDeniedNoDeviceAndRepeatedStart",
+          "class": "CameraTests",
+          "method": "testPermissionCancelDeniedNoDeviceAndRepeatedStart",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 59,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testOldFramesFailuresAndFreezeCannotEscapeStopRestartOrInterruption",
+          "class": "CameraTests",
+          "method": "testOldFramesFailuresAndFreezeCannotEscapeStopRestartOrInterruption",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 77,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testCurrentFreezeDeliversOnceAndClearsCaptureSelection",
+          "class": "CameraTests",
+          "method": "testCurrentFreezeDeliversOnceAndClearsCaptureSelection",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 97,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testSyntheticBGRAUsesActualPaddedStrideAndFullFramePNG",
+          "class": "CameraTests",
+          "method": "testSyntheticBGRAUsesActualPaddedStrideAndFullFramePNG",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 109,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testBackgroundNotificationStopsRealModelWithoutHardware",
+          "class": "CameraTests",
+          "method": "testBackgroundNotificationStopsRealModelWithoutHardware",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 134,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testInitialPermissionDeactivationWaitsForActiveAppOrGivesExplicitRetry",
+          "class": "CameraTests",
+          "method": "testInitialPermissionDeactivationWaitsForActiveAppOrGivesExplicitRetry",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 141,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/CameraTests/testDelayedOldSessionInterruptionCannotStopRestartedCapture",
+          "class": "CameraTests",
+          "method": "testDelayedOldSessionInterruptionCannotStopRestartedCapture",
+          "source": "TouchColorMacTests/CameraTests.swift",
+          "line": 161,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testBoundedPaletteImportRejectsCancellationAndOversizeWithoutLosingSourceOrHistory",
+          "class": "ImageSessionTests",
+          "method": "testBoundedPaletteImportRejectsCancellationAndOversizeWithoutLosingSourceOrHistory",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 42,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testRealDataImportNumericSelectionAndWindowIsolation",
+          "class": "ImageSessionTests",
+          "method": "testRealDataImportNumericSelectionAndWindowIsolation",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 70,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testActualSwiftUIWindowKeepsImportedCanvasInsideCompactContentBounds",
+          "class": "ImageSessionTests",
+          "method": "testActualSwiftUIWindowKeepsImportedCanvasInsideCompactContentBounds",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 89,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testNativeScrollMagnificationPanResizeAndMarkerUseOneCoordinateSpace",
+          "class": "ImageSessionTests",
+          "method": "testNativeScrollMagnificationPanResizeAndMarkerUseOneCoordinateSpace",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 131,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testReplacingCancellingAndFailingImportCannotOverwriteValidSource",
+          "class": "ImageSessionTests",
+          "method": "testReplacingCancellingAndFailingImportCannotOverwriteValidSource",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 157,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testUnsupportedPasteInvalidatesOlderImportAndKeepsCompleteImage",
+          "class": "ImageSessionTests",
+          "method": "testUnsupportedPasteInvalidatesOlderImportAndKeepsCompleteImage",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 175,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testPNGExportSnapshotSurvivesNewImportAndReopensActualPixels",
+          "class": "ImageSessionTests",
+          "method": "testPNGExportSnapshotSurvivesNewImportAndReopensActualPixels",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 191,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testRealPasteAndPaletteImportKeepOrderAndDuplicates",
+          "class": "ImageSessionTests",
+          "method": "testRealPasteAndPaletteImportKeepOrderAndDuplicates",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 208,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testActualMacCanvasCompositesTransparentAndHalfAlphaPixelsOverWhite",
+          "class": "ImageSessionTests",
+          "method": "testActualMacCanvasCompositesTransparentAndHalfAlphaPixelsOverWhite",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 226,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/ImageSessionTests/testBoundedFileProviderDropPreservesOrientationAndRejectsOversize",
+          "class": "ImageSessionTests",
+          "method": "testBoundedFileProviderDropPreservesOrientationAndRejectsOversize",
+          "source": "TouchColorMacTests/ImageSessionTests.swift",
+          "line": 250,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/PrivacyTextTests/testApprovedBilingualStringsAndReadOnlySelectablePlainTextFlags",
+          "class": "PrivacyTextTests",
+          "method": "testApprovedBilingualStringsAndReadOnlySelectablePlainTextFlags",
+          "source": "TouchColorMacTests/PrivacyTextTests.swift",
+          "line": 16,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/PrivacyTextTests/testUnchangedUpdatesPreserveSelectionAndChangedTextStaysPlain",
+          "class": "PrivacyTextTests",
+          "method": "testUnchangedUpdatesPreserveSelectionAndChangedTextStaysPlain",
+          "source": "TouchColorMacTests/PrivacyTextTests.swift",
+          "line": 36,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/PrivacyTextTests/testActualLayoutWrapsCompleteParagraphsAtRepresentativeWidths",
+          "class": "PrivacyTextTests",
+          "method": "testActualLayoutWrapsCompleteParagraphsAtRepresentativeWidths",
+          "source": "TouchColorMacTests/PrivacyTextTests.swift",
+          "line": 51,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/PrivacyTextTests/testNormalAppKitSelectionAndCopyKeepCompleteBilingualText",
+          "class": "PrivacyTextTests",
+          "method": "testNormalAppKitSelectionAndCopyKeepCompleteBilingualText",
+          "source": "TouchColorMacTests/PrivacyTextTests.swift",
+          "line": 95,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/PrivacyTextTests/testParagraphAccessibilityLabelsAreLocalizedWithoutChangingApprovedCopy",
+          "class": "PrivacyTextTests",
+          "method": "testParagraphAccessibilityLabelsAreLocalizedWithoutChangingApprovedCopy",
+          "source": "TouchColorMacTests/PrivacyTextTests.swift",
+          "line": 108,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/SixColorThumbnailTests/testFindsOnlyCompleteAsymmetricVisibleFixtureAtItsActualPosition",
+          "class": "SixColorThumbnailTests",
+          "method": "testFindsOnlyCompleteAsymmetricVisibleFixtureAtItsActualPosition",
+          "source": "TouchColorMacTests/SixColorThumbnailTests.swift",
+          "line": 28,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testActualFileSnapshotAndExactCapPreserveEveryByte",
+          "class": "BoundedFileReaderTests",
+          "method": "testActualFileSnapshotAndExactCapPreserveEveryByte",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 6,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testGrowingStreamCannotReturnOrConsumeAnOversizePrefixAsSuccess",
+          "class": "BoundedFileReaderTests",
+          "method": "testGrowingStreamCannotReturnOrConsumeAnOversizePrefixAsSuccess",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 17,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testTruncationAndReadFailureNeverReturnASnapshot",
+          "class": "BoundedFileReaderTests",
+          "method": "testTruncationAndReadFailureNeverReturnASnapshot",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 30,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testCancellationStopsBeforeOpeningAndBeforeAnotherChunk",
+          "class": "BoundedFileReaderTests",
+          "method": "testCancellationStopsBeforeOpeningAndBeforeAnotherChunk",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 43,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testRealFileTruncatedDuringStreamingIsRejected",
+          "class": "BoundedFileReaderTests",
+          "method": "testRealFileTruncatedDuringStreamingIsRejected",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 57,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testFreshMetadataRejectsSameSizeMutationAndIgnoresAnOlderURLCache",
+          "class": "BoundedFileReaderTests",
+          "method": "testFreshMetadataRejectsSameSizeMutationAndIgnoresAnOlderURLCache",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 70,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/BoundedFileReaderTests/testCopiedProviderBytesAreExactAndGrowingFileIsRejected",
+          "class": "BoundedFileReaderTests",
+          "method": "testCopiedProviderBytesAreExactAndGrowingFileIsRejected",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/BoundedFileReaderTests.swift",
+          "line": 92,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorDomainTests/testLegacyHexAndRGBFormattingAcrossByteRange",
+          "class": "ColorDomainTests",
+          "method": "testLegacyHexAndRGBFormattingAcrossByteRange",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift",
+          "line": 5,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorDomainTests/testFiniteGeometryAndZoomMatchLegacyEdges",
+          "class": "ColorDomainTests",
+          "method": "testFiniteGeometryAndZoomMatchLegacyEdges",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift",
+          "line": 21,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorDomainTests/testGenerationRejectsOldImportAndCancellation",
+          "class": "ColorDomainTests",
+          "method": "testGenerationRejectsOldImportAndCancellation",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift",
+          "line": 33,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/CaptureEpochTests/testStopAndRestartRejectOldCaptureAndQueuedDeliveries",
+          "class": "CaptureEpochTests",
+          "method": "testStopAndRestartRejectOldCaptureAndQueuedDeliveries",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift",
+          "line": 42,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteTransferTests/testVersionedExplicitTransferKeepsDuplicatesAndRejectsInvalidWholeMessage",
+          "class": "PaletteTransferTests",
+          "method": "testVersionedExplicitTransferKeepsDuplicatesAndRejectsInvalidWholeMessage",
+          "source": "Packages/ColorCore/Tests/ColorDomainTests/ColorDomainTests.swift",
+          "line": 52,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorPaletteTests/testOriginalKeyDuplicatesOrderAndReopenWithoutMigration",
+          "class": "ColorPaletteTests",
+          "method": "testOriginalKeyDuplicatesOrderAndReopenWithoutMigration",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 10,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorPaletteTests/testMalformedDefaultsRemainUntouchedUntilBackupBeforeFirstWrite",
+          "class": "ColorPaletteTests",
+          "method": "testMalformedDefaultsRemainUntouchedUntilBackupBeforeFirstWrite",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 24,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorPaletteTests/testWrongTopLevelAndInvalidImportNeverDeleteData",
+          "class": "ColorPaletteTests",
+          "method": "testWrongTopLevelAndInvalidImportNeverDeleteData",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 36,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testPersistedInboxStorageIdentifiersRemainByteIdentical",
+          "class": "PaletteInboxTests",
+          "method": "testPersistedInboxStorageIdentifiersRemainByteIdentical",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 50,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testExplicitAcceptanceAtomicDomainPreservesLegacyBackupOrderAndDuplicateReceipt",
+          "class": "PaletteInboxTests",
+          "method": "testExplicitAcceptanceAtomicDomainPreservesLegacyBackupOrderAndDuplicateReceipt",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 55,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testPartialMalformedConflictingAndRejectedTransfersCannotChangePhonePalette",
+          "class": "PaletteInboxTests",
+          "method": "testPartialMalformedConflictingAndRejectedTransfersCannotChangePhonePalette",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 76,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testRejectedReceiptSurvivesRetryRelaunchAndConflictingIdentifier",
+          "class": "PaletteInboxTests",
+          "method": "testRejectedReceiptSurvivesRetryRelaunchAndConflictingIdentifier",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 95,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testConflictingSavedOutcomesNeverChangeThePaletteOrInbox",
+          "class": "PaletteInboxTests",
+          "method": "testConflictingSavedOutcomesNeverChangeThePaletteOrInbox",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 114,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testCounterpartChangeKeepsLocalAcceptanceButRequiresCurrentRetryForReceipt",
+          "class": "PaletteInboxTests",
+          "method": "testCounterpartChangeKeepsLocalAcceptanceButRequiresCurrentRetryForReceipt",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 127,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteInboxTests/testInactiveOrFullReceiptRoutesNeverEvictOtherPendingDeliveryAuthority",
+          "class": "PaletteInboxTests",
+          "method": "testInactiveOrFullReceiptRoutesNeverEvictOtherPendingDeliveryAuthority",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 156,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PaletteSelectionTests/testCompleteFileSelectionPreservesOrderDuplicatesAndRejectsInvalidInput",
+          "class": "PaletteSelectionTests",
+          "method": "testCompleteFileSelectionPreservesOrderDuplicatesAndRejectsInvalidInput",
+          "source": "Packages/ColorCore/Tests/ColorPaletteLegacyTests/ColorPaletteTests.swift",
+          "line": 174,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testPNGChunkBoundsCRCAndTerminalBoundaryRejectMalformedFiles",
+          "class": "ColorRasterTests",
+          "method": "testPNGChunkBoundsCRCAndTerminalBoundaryRejectMalformedFiles",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 68,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testValidPNGAncillaryAndMultipleIDATKeepOriginalBytesAndPixels",
+          "class": "ColorRasterTests",
+          "method": "testValidPNGAncillaryAndMultipleIDATKeepOriginalBytesAndPixels",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 84,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testPNGCRCScanCancelsWithinOneLargeIDATWithoutDecoding",
+          "class": "ColorRasterTests",
+          "method": "testPNGCRCScanCancelsWithinOneLargeIDATWithoutDecoding",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 106,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testCompleteJPEGStillUsesOriginalImageIOPath",
+          "class": "ColorRasterTests",
+          "method": "testCompleteJPEGStillUsesOriginalImageIOPath",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 144,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testCompleteHEIFStillUsesOriginalImageIOPath",
+          "class": "ColorRasterTests",
+          "method": "testCompleteHEIFStillUsesOriginalImageIOPath",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 145,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testDimensionBearingTruncatedPNGIsRejectedBySourceAndPreviewDecoders",
+          "class": "ColorRasterTests",
+          "method": "testDimensionBearingTruncatedPNGIsRejectedBySourceAndPreviewDecoders",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 146,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testAllEightOrientationsMatchFrozenUIKitOracleAndExportReopen",
+          "class": "ColorRasterTests",
+          "method": "testAllEightOrientationsMatchFrozenUIKitOracleAndExportReopen",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 159,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testAlphaIsCompositedOnWhiteAndP3IsConvertedToSRGB",
+          "class": "ColorRasterTests",
+          "method": "testAlphaIsCompositedOnWhiteAndP3IsConvertedToSRGB",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 187,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testPNGReopenPreservesAlphaSeparatelyFromWhiteDisplayMatte",
+          "class": "ColorRasterTests",
+          "method": "testPNGReopenPreservesAlphaSeparatelyFromWhiteDisplayMatte",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 197,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/ColorRasterTests/testFullSourceDimensionsEdgesCorruptAndCancel",
+          "class": "ColorRasterTests",
+          "method": "testFullSourceDimensionsEdgesCorruptAndCancel",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 216,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PreviewRasterTests/testBoundedPreviewMatchesSourceForSmallFixturesAndAllOrientations",
+          "class": "PreviewRasterTests",
+          "method": "testBoundedPreviewMatchesSourceForSmallFixturesAndAllOrientations",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 235,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PreviewRasterTests/testLargeWatchPreviewIsExplicitlyReducedAndReopensAtBoundedDimensions",
+          "class": "PreviewRasterTests",
+          "method": "testLargeWatchPreviewIsExplicitlyReducedAndReopensAtBoundedDimensions",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 248,
+          "shared_package": true
+        },
+        {
+          "identifier": "TouchColorMacTests/PreviewRasterTests/testProgressiveFileBytesCapacityAndCancellation",
+          "class": "PreviewRasterTests",
+          "method": "testProgressiveFileBytesCapacityAndCancellation",
+          "source": "Packages/ColorCore/Tests/ColorRasterTests/ColorRasterTests.swift",
+          "line": 260,
+          "shared_package": true
+        }
+      ]
+    },
+    "TouchColorMacUITests": {
+      "id": "EDEF04536BDD07E17940AE61",
+      "source_files": [
+        {
+          "path": "TouchColorMacUITests/SixColorThumbnail.swift",
+          "sha256": "4118919d73344d00a1ecd8119e7a114716e23dd3b28796485112b2adf8a822b3"
+        },
+        {
+          "path": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "sha256": "2cd7a6b6be55ea6d924e3f74345c17a47d4f7de7f3dd132c0a15767c96c84a51"
+        }
+      ],
+      "test_count": 14,
+      "tests": [
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testNativeFileSamplingZoomPalettePersistenceAndPrivacy",
+          "class": "TouchColorMacUITests",
+          "method": "testNativeFileSamplingZoomPalettePersistenceAndPrivacy",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 182,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testSystemPhotosImportSamplesActualImageInsideSandbox",
+          "class": "TouchColorMacUITests",
+          "method": "testSystemPhotosImportSamplesActualImageInsideSandbox",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 341,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testNativePaletteAndImageExportReopenAndDelete",
+          "class": "TouchColorMacUITests",
+          "method": "testNativePaletteAndImageExportReopenAndDelete",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 428,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testSimplifiedChineseNativeSamplingFlowAndScreenshot",
+          "class": "TouchColorMacUITests",
+          "method": "testSimplifiedChineseNativeSamplingFlowAndScreenshot",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 479,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testPasteImageAndOpenCancelRetainSource",
+          "class": "TouchColorMacUITests",
+          "method": "testPasteImageAndOpenCancelRetainSource",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 502,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testActualNoCameraRouteDismissesWithoutRequestingPermission",
+          "class": "TouchColorMacUITests",
+          "method": "testActualNoCameraRouteDismissesWithoutRequestingPermission",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 517,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail",
+          "class": "TouchColorMacUITests",
+          "method": "testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 555,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail",
+          "class": "TouchColorMacUITests",
+          "method": "testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 559,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit",
+          "class": "TouchColorMacUITests",
+          "method": "testDiagnosticStandardAppKitSheetAudit",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 943,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit",
+          "class": "TouchColorMacUITests",
+          "method": "testDiagnosticStandardAppKitAlertAudit",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 964,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityEmptyAndPopulatedCanvas",
+          "class": "TouchColorMacUITests",
+          "method": "testOfficialAccessibilityEmptyAndPopulatedCanvas",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 992,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityCameraAndPrivacy",
+          "class": "TouchColorMacUITests",
+          "method": "testOfficialAccessibilityCameraAndPrivacy",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 1026,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityCorruptImportRetainsPreviousSource",
+          "class": "TouchColorMacUITests",
+          "method": "testOfficialAccessibilityCorruptImportRetainsPreviousSource",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 1050,
+          "shared_package": false
+        },
+        {
+          "identifier": "TouchColorMacUITests/TouchColorMacUITests/testSandboxBoundaryMatchesExactAppConfiguration",
+          "class": "TouchColorMacUITests",
+          "method": "testSandboxBoundaryMatchesExactAppConfiguration",
+          "source": "TouchColorMacUITests/TouchColorMacUITests.swift",
+          "line": 1084,
+          "shared_package": false
+        }
+      ]
+    }
+  },
+  "compiled_unique_methods": 75,
+  "hosted": 61,
+  "hosted_mac_specific": 25,
+  "hosted_shared": 36,
+  "ui_compiled": 14,
+  "proposed_normal_ui_methods": [
+    "TouchColorMacUITests/TouchColorMacUITests/testNativeFileSamplingZoomPalettePersistenceAndPrivacy",
+    "TouchColorMacUITests/TouchColorMacUITests/testNativePaletteAndImageExportReopenAndDelete",
+    "TouchColorMacUITests/TouchColorMacUITests/testSimplifiedChineseNativeSamplingFlowAndScreenshot",
+    "TouchColorMacUITests/TouchColorMacUITests/testPasteImageAndOpenCancelRetainSource",
+    "TouchColorMacUITests/TouchColorMacUITests/testActualNoCameraRouteDismissesWithoutRequestingPermission",
+    "TouchColorMacUITests/TouchColorMacUITests/testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail",
+    "TouchColorMacUITests/TouchColorMacUITests/testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail",
+    "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityEmptyAndPopulatedCanvas",
+    "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityCameraAndPrivacy",
+    "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityCorruptImportRetainsPreviousSource",
+    "TouchColorMacUITests/TouchColorMacUITests/testSandboxBoundaryMatchesExactAppConfiguration"
+  ],
+  "normal_ui_count": 11,
+  "sandbox_ui_methods": [
+    "TouchColorMacUITests/TouchColorMacUITests/testNativeFileSamplingZoomPalettePersistenceAndPrivacy",
+    "TouchColorMacUITests/TouchColorMacUITests/testSystemPhotosImportSamplesActualImageInsideSandbox",
+    "TouchColorMacUITests/TouchColorMacUITests/testNativePaletteAndImageExportReopenAndDelete",
+    "TouchColorMacUITests/TouchColorMacUITests/testSimplifiedChineseNativeSamplingFlowAndScreenshot",
+    "TouchColorMacUITests/TouchColorMacUITests/testPasteImageAndOpenCancelRetainSource",
+    "TouchColorMacUITests/TouchColorMacUITests/testActualNoCameraRouteDismissesWithoutRequestingPermission",
+    "TouchColorMacUITests/TouchColorMacUITests/testExplicitPrivacyContactHasEnglishLinkSemanticsWithoutOpeningMail",
+    "TouchColorMacUITests/TouchColorMacUITests/testExplicitPrivacyContactHasSimplifiedChineseLinkSemanticsWithoutOpeningMail",
+    "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityEmptyAndPopulatedCanvas",
+    "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityCameraAndPrivacy",
+    "TouchColorMacUITests/TouchColorMacUITests/testOfficialAccessibilityCorruptImportRetainsPreviousSource",
+    "TouchColorMacUITests/TouchColorMacUITests/testSandboxBoundaryMatchesExactAppConfiguration"
+  ],
+  "sandbox_ui_count": 12,
+  "separate_standard_modal_diagnostics": [
+    "TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitSheetAudit",
+    "TouchColorMacUITests/TouchColorMacUITests/testDiagnosticStandardAppKitAlertAudit"
+  ],
+  "standard_diagnostic_count": 2,
+  "photos_method_only_in_sandbox": [
+    "TouchColorMacUITests/TouchColorMacUITests/testSystemPhotosImportSamplesActualImageInsideSandbox"
+  ],
+  "normal_hosted_plus_ui_plus_sandbox_execution_count": 84,
+  "separate_diagnostic_executions": 2,
+  "no_historical_to_current_equivalence_admitted": true
+}
