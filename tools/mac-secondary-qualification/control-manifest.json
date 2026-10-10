@@ -1,0 +1,92 @@
+{
+  "READY": true,
+  "base_commit": "84da71d3526426a6e630887dc88fed59e1edc055",
+  "files": [
+    {
+      "bytes": 13806,
+      "mode": "100644",
+      "path": ".github/workflows/mac-secondary-qualification.yml",
+      "sha256": "6c68638929e5bb709c1d5afb8bfa5984d7a4d4d5eab94f978924307f0a9206d9"
+    },
+    {
+      "bytes": 125260,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/base-manifest.json",
+      "sha256": "f39955a50facf08c8448ff1ed2e16112e6737f4f204f6462a59072c5549bc585"
+    },
+    {
+      "bytes": 4130,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/bootstrap.py",
+      "sha256": "8b2c97cc8e2e108090e09fb8dc00a2e57378371d3fccadaf3d0a983c50c011de"
+    },
+    {
+      "bytes": 5398,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/budget.py",
+      "sha256": "336a3adaf133938de3cd045ec3c857c60951582fa723617c7f88f943aab430f0"
+    },
+    {
+      "bytes": 8968,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/commands.py",
+      "sha256": "4fe090a2b6b2d5ebbe7d38e8f8e2cb56f83afc6f4f997c14a929543ef193f1a1"
+    },
+    {
+      "bytes": 27214,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/controller.py",
+      "sha256": "abaaaa685e9084650895151dfb2419cfb0c912e0518303da2287ec9af3073d35"
+    },
+    {
+      "bytes": 38989,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/evidence.py",
+      "sha256": "aacbf92b51701567ace7b8fe552322a3bbf7e363073dd86cac3fb73f37ce8315"
+    },
+    {
+      "bytes": 8471,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/io_boundary.py",
+      "sha256": "08cbe95946cb50a3e18af39fba81cec06eaf1a840a97f4ae8394883c00a9380f"
+    },
+    {
+      "bytes": 36828,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/mac-source-census.json",
+      "sha256": "f16f61c0b11890c05a37d8f01e394f9b7e711e337b1d5adbac25dc9ba04bdb84"
+    },
+    {
+      "bytes": 19355,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/owned_mac_process.py",
+      "sha256": "8aa9bfab78c8b3e035aad3eeece0c4a6687b3e0bbc7eb2756df565017b477613"
+    },
+    {
+      "bytes": 1133,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/owned_mac_public.c",
+      "sha256": "113312357e6eee89eef49a0c0ff6641b1a67699c336572042b3223d3aa313f4d"
+    },
+    {
+      "bytes": 5774,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/runtime_contract.py",
+      "sha256": "f218c3f3b4507a671f20138b521cc4fc49ac6a6030935690068d751df9e4d077"
+    },
+    {
+      "bytes": 2568,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/self_test.py",
+      "sha256": "a7f27573c9f251a5d7bdcffe47befcf1003d3491c82123e8d43ddf49f50613d1"
+    },
+    {
+      "bytes": 5221,
+      "mode": "100644",
+      "path": "tools/mac-secondary-qualification/source_guard.py",
+      "sha256": "416539cac123478e434130207ee23c0558ca5831ff8a291638c80aa3901be88a"
+    }
+  ],
+  "product_commit": "7c671f04e4d69884741a411851ae26083361c7f7",
+  "schema": 1
+}
