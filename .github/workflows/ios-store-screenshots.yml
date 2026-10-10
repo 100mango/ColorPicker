@@ -1,0 +1,277 @@
+name: TouchColor final922 Store screenshots (two independent rows, ACTIVE)
+on:
+  push:
+    branches: [touchcolor-ios-store-screenshots]
+    paths:
+      - .github/workflows/ios-store-screenshots.yml
+      - tools/ios-store-screenshots/**
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-ios-store-screenshots
+  cancel-in-progress: false
+jobs:
+  capture-iphone17pro:
+    if: ${{ true && github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-ios-store-screenshots' && github.run_attempt == 1 }}
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      PYTHONDONTWRITEBYTECODE: '1'
+      TOUCHCOLOR_JOB_PLATFORM: ios-store-screenshots
+      TOUCHCOLOR_JOB_LANE: iphone17pro
+      TOUCHCOLOR_JOB_MINUTES: '35'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '12582912'
+    steps:
+      - name: Start original job clock before checkout and compiler
+        id: clock
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import os,time
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              out.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PYTHON
+      - name: Checkout exact source with sole parent available
+        id: checkout
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: File-only exact source and bootstrap admission
+        id: bootstrap
+        if: ${{ success() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/ios-store-screenshots/bootstrap.py source
+      - name: Standard Actions compiler bootstrap within setup240
+        id: compile
+        if: ${{ success() && steps.bootstrap.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/ios-store-screenshots/bootstrap.py compile-admission
+          # exec keeps the standard Actions step as compiler owner. No custom
+          # poll/wait/kill helper; compiler descendant cleanup is not core-proven.
+          exec /usr/bin/clang -std=c11 -Wall -Wextra -Werror -dynamiclib tools/ios-store-screenshots/owned_mac_public.c -o build/store-owned-public.dylib -lproc
+      - name: One safe Session self-test then home-first existing screenshot methods
+        id: controller
+        if: ${{ success() && steps.compile.outcome == 'success' }}
+        timeout-minutes: 33
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          # With no continue-on-error, actual step success certifies exit0.
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          python3 -I -S tools/ios-store-screenshots/controller.py iphone17pro
+      - name: Bound upload or preserve small bootstrap failure record
+        id: evidence
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import json,os,stat,tempfile
+          from pathlib import Path
+          temp=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          if temp.stat().st_uid!=os.geteuid():raise ValueError('Foreign runner temp')
+          folder=Path(tempfile.mkdtemp(prefix='touch-capture-iphone17pro-failure-',dir=temp))
+          directory=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+          try:
+              info=os.fstat(directory)
+              if info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o700:raise ValueError('Unsafe fallback directory')
+              value={'complete':False,'source_sha':os.environ.get('GITHUB_SHA'),'lane':'iphone17pro',
+                     'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),'job':os.environ.get('GITHUB_JOB'),
+                     'reason':'bootstrap/controller/evidence incomplete',
+                     'stages':{k:os.environ.get(k,'unknown') for k in ('BOOTSTRAP_OUTCOME','COMPILE_OUTCOME','CONTROLLER_OUTCOME','CONTROLLER_EXIT')}}
+              raw=(json.dumps(value,sort_keys=True)+'\n').encode()
+              if len(raw)>8192:raise ValueError('Fallback exceeds8KB')
+              fd=os.open('capture-result.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+              try:
+                  if os.write(fd,raw)!=len(raw):raise ValueError('Short fallback write')
+              finally:os.close(fd)
+              again=os.stat(folder,follow_symlinks=False)
+              if (again.st_dev,again.st_ino)!=(info.st_dev,info.st_ino):raise ValueError('Fallback anchor changed')
+          finally:os.close(directory)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('path='+str(folder)+'\ncomplete=false\n')
+          PYTHON
+          if test -f build/store-upload/capture-result.json; then
+            if python3 -I -S tools/ios-store-screenshots/bootstrap.py upload; then
+              printf 'path=build/store-upload\ncomplete=%s\n' '${{ steps.controller.outputs.complete }}' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Retain exact bounded capture evidence
+        id: upload
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touch-capture-iphone17pro-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Exact outcome and original capture evidence acceptance
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          UPLOAD_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          UPLOAD_ARTIFACT_NAME: touch-capture-iphone17pro-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test '${{ steps.evidence.outcome }}' = success
+          test '${{ steps.evidence.outputs.complete }}' = true
+          python3 -I -S tools/ios-store-screenshots/bootstrap.py gate
+  capture-ipad13m5:
+    if: ${{ true && github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-ios-store-screenshots' && github.run_attempt == 1 }}
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      PYTHONDONTWRITEBYTECODE: '1'
+      TOUCHCOLOR_JOB_PLATFORM: ios-store-screenshots
+      TOUCHCOLOR_JOB_LANE: ipad13m5
+      TOUCHCOLOR_JOB_MINUTES: '35'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '12582912'
+    steps:
+      - name: Start original job clock before checkout and compiler
+        id: clock
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import os,time
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              out.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PYTHON
+      - name: Checkout exact source with sole parent available
+        id: checkout
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: File-only exact source and bootstrap admission
+        id: bootstrap
+        if: ${{ success() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/ios-store-screenshots/bootstrap.py source
+      - name: Standard Actions compiler bootstrap within setup240
+        id: compile
+        if: ${{ success() && steps.bootstrap.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/ios-store-screenshots/bootstrap.py compile-admission
+          # exec keeps the standard Actions step as compiler owner. No custom
+          # poll/wait/kill helper; compiler descendant cleanup is not core-proven.
+          exec /usr/bin/clang -std=c11 -Wall -Wextra -Werror -dynamiclib tools/ios-store-screenshots/owned_mac_public.c -o build/store-owned-public.dylib -lproc
+      - name: One safe Session self-test then home-first existing screenshot methods
+        id: controller
+        if: ${{ success() && steps.compile.outcome == 'success' }}
+        timeout-minutes: 33
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          # With no continue-on-error, actual step success certifies exit0.
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          python3 -I -S tools/ios-store-screenshots/controller.py ipad13m5
+      - name: Bound upload or preserve small bootstrap failure record
+        id: evidence
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import json,os,stat,tempfile
+          from pathlib import Path
+          temp=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          if temp.stat().st_uid!=os.geteuid():raise ValueError('Foreign runner temp')
+          folder=Path(tempfile.mkdtemp(prefix='touch-capture-ipad13m5-failure-',dir=temp))
+          directory=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+          try:
+              info=os.fstat(directory)
+              if info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o700:raise ValueError('Unsafe fallback directory')
+              value={'complete':False,'source_sha':os.environ.get('GITHUB_SHA'),'lane':'ipad13m5',
+                     'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),'job':os.environ.get('GITHUB_JOB'),
+                     'reason':'bootstrap/controller/evidence incomplete',
+                     'stages':{k:os.environ.get(k,'unknown') for k in ('BOOTSTRAP_OUTCOME','COMPILE_OUTCOME','CONTROLLER_OUTCOME','CONTROLLER_EXIT')}}
+              raw=(json.dumps(value,sort_keys=True)+'\n').encode()
+              if len(raw)>8192:raise ValueError('Fallback exceeds8KB')
+              fd=os.open('capture-result.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+              try:
+                  if os.write(fd,raw)!=len(raw):raise ValueError('Short fallback write')
+              finally:os.close(fd)
+              again=os.stat(folder,follow_symlinks=False)
+              if (again.st_dev,again.st_ino)!=(info.st_dev,info.st_ino):raise ValueError('Fallback anchor changed')
+          finally:os.close(directory)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('path='+str(folder)+'\ncomplete=false\n')
+          PYTHON
+          if test -f build/store-upload/capture-result.json; then
+            if python3 -I -S tools/ios-store-screenshots/bootstrap.py upload; then
+              printf 'path=build/store-upload\ncomplete=%s\n' '${{ steps.controller.outputs.complete }}' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Retain exact bounded capture evidence
+        id: upload
+        if: ${{ always() && steps.evidence.outcome == 'success' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touch-capture-ipad13m5-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Exact outcome and original capture evidence acceptance
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          UPLOAD_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          UPLOAD_ARTIFACT_NAME: touch-capture-ipad13m5-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test '${{ steps.evidence.outcome }}' = success
+          test '${{ steps.evidence.outputs.complete }}' = true
+          python3 -I -S tools/ios-store-screenshots/bootstrap.py gate
