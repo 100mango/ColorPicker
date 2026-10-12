@@ -1,0 +1,223 @@
+name: TouchColor final922 Store home-only screenshots (one iPad row, ACTIVE)
+on:
+  push:
+    branches: [touchcolor-ios-store-ipad-receipt]
+    paths:
+      - .github/workflows/ios-store-home-capture.yml
+      - tools/ios-store-home-capture/**
+permissions:
+  contents: read
+concurrency:
+  group: touchcolor-ios-store-ipad-receipt
+  cancel-in-progress: false
+jobs:
+  capture-ipad13m5:
+    if: ${{ true && github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-ios-store-ipad-receipt' && github.run_attempt == 1 }}
+    runs-on: xcode-27
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      PYTHONDONTWRITEBYTECODE: '1'
+      TOUCHCOLOR_JOB_PLATFORM: ios-store-home-capture
+      TOUCHCOLOR_JOB_LANE: ipad13m5
+      TOUCHCOLOR_JOB_MINUTES: '35'
+      TOUCHCOLOR_EVIDENCE_LIMIT: '12582912'
+    steps:
+      - name: Start original job clock before checkout and compiler
+        id: clock
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import os,time
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('TOUCHCOLOR_JOB_STARTED_EPOCH='+str(time.time())+'\n')
+              out.write('TOUCHCOLOR_JOB_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PYTHON
+      - name: Checkout exact source with sole parent available
+        id: checkout
+        timeout-minutes: 1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: File-only exact source and bootstrap admission
+        id: bootstrap
+        if: ${{ success() && steps.checkout.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/ios-store-home-capture/bootstrap.py source
+      - name: Standard Actions compiler bootstrap within setup240
+        id: compile
+        if: ${{ success() && steps.bootstrap.outcome == 'success' }}
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          python3 -I -S tools/ios-store-home-capture/bootstrap.py compile-admission
+          # exec keeps the standard Actions step as compiler owner. No custom
+          # poll/wait/kill helper; compiler descendant cleanup is not core-proven.
+          exec /usr/bin/clang -std=c11 -Wall -Wextra -Werror -dynamiclib tools/ios-store-home-capture/owned_mac_public.c -o build/store-owned-public.dylib -lproc
+      - name: One safe Session self-test then dedicated original-home capture
+        id: controller
+        if: ${{ success() && steps.compile.outcome == 'success' }}
+        timeout-minutes: 33
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          # With no continue-on-error, actual step success certifies exit0.
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+        run: |
+          set -euo pipefail
+          trap 'code=$?; trap - EXIT; printf "exit=%s\n" "$code" >> "$GITHUB_OUTPUT"; exit "$code"' EXIT
+          python3 -I -S tools/ios-store-home-capture/controller.py ipad13m5
+      - name: Bound upload or preserve small bootstrap failure record
+        id: evidence
+        if: ${{ always() }}
+        timeout-minutes: 2
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+        run: |
+          set -euo pipefail
+          python3 -I -S - <<'PYTHON'
+          import json,os,stat,tempfile,time,math,re
+          IDS={'self-test','source','clean-start','host','xcode','runtime-devices','setup-proof','build','create','boot','ready','home','home-summary','home-export','home-proof','device-shutdown','device-delete'}
+
+          STAGES={'setup','build','device','home','home-proof','device-cleanup'}
+
+          ERRORS={'OwnershipUnknown','TimeoutExpired','PermissionError','OSError','RuntimeError','ValueError','InterruptedError','KeyboardInterrupt','SystemExit','TimeoutError','Other'}
+
+          OPS={'spawn','waitid_wnowait','proc_listpids','waitpid_reap','killpg_SIGTERM','killpg_SIGKILL'}
+
+          FAULTS=OPS|{op+'_returned_late' for op in OPS}|{'ownership_deadline','terminal_lease_disappeared','unexpected_child_status','unexpected_exit_status','unexpected_signal_status','terminal_lease_changed','invalid_group_members','final_lease_not_terminal','unexpected_reap_result','reap_status_changed','reap_returned_late','cleanup_deadline','transport_permission_denied','owner_handoff_failed'}
+
+          STATES={'HELD_LIVE','HELD_TERMINAL','UNKNOWN','REAPED'}
+
+          NUMBERS=('step_started_monotonic','native_started_monotonic','native_finished_monotonic','step_work_deadline','step_cleanup_deadline','native_work_deadline','native_cleanup_deadline','operation_started_monotonic','operation_finished_monotonic','operation_deadline')
+
+          COUNTERS=('pid','lease_calls','group_calls','reap_calls')
+
+          KEYS={'schema','complete','source_sha','run_id','run_attempt','job','lane','step_id','stage','native_id','primary_error','state','operation','ownership_fault','owned_group_cleanup_confirmed',*NUMBERS,*COUNTERS}
+
+          def number(value):
+           return value if type(value) in (int,float) and 0<=value<=1e13 and math.isfinite(value) else None
+
+          def choose(value,allowed):return value if type(value) is str and value in allowed else None
+
+          def validate(value,expected,lane):
+           if type(value) is not dict or set(value)!=KEYS:raise ValueError('Diagnostic schema differs')
+           if type(value['schema']) is not int or value['schema']!=1 or value['complete'] is not False:raise ValueError('Diagnostic scope differs')
+           if lane not in ('iphone17pro','ipad13m5') or value['lane']!=lane:raise ValueError('Diagnostic lane differs')
+           for key in ('source_sha','run_id','run_attempt','job'):
+            if value[key]!=expected.get(key):raise ValueError('Diagnostic run binding differs')
+           if not re.fullmatch('[0-9a-f]{40}',value['source_sha']) or not re.fullmatch('[1-9][0-9]{0,19}',value['run_id']) or value['run_attempt']!='1' or value['job']!='capture-'+lane:raise ValueError('Diagnostic identity malformed')
+           for key,allowed in [('step_id',IDS),('native_id',IDS),('stage',STAGES),('primary_error',ERRORS),('state',STATES),('operation',OPS),('ownership_fault',FAULTS)]:
+            if value[key] is not None and choose(value[key],allowed) is None:raise ValueError('Non-fixed diagnostic text')
+           if type(value['owned_group_cleanup_confirmed']) is not bool:raise ValueError('Diagnostic cleanup type differs')
+           for key in NUMBERS:
+            if value[key] is not None and number(value[key]) is None:raise ValueError('Diagnostic number invalid')
+           for key in COUNTERS:
+            if value[key] is not None and (type(value[key]) is not int or not 0<=value[key]<=2147483647):raise ValueError('Diagnostic counter invalid')
+           if value['owned_group_cleanup_confirmed'] and not (value['state']=='REAPED' and value['reap_calls']==1 and type(value['pid']) is int and value['pid']>0):raise ValueError('Diagnostic cleanup contradiction')
+           if len(encoded(value))>8192:raise ValueError('Diagnostic exceeds8KiB')
+           return value
+
+          def encoded(value):return (json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+
+          def read_fixed_receipt(envelope):
+              # One fixed file only; no directory scan, content logging, retry or import.
+              end=time.monotonic()+3
+              def fence():
+                  if time.monotonic()>=end:raise TimeoutError('Fixed diagnostic read deadline')
+              held=[]
+              try:
+                  root=Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+                  fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW);held.append(fd)
+                  for part in root.parts[1:]:
+                      fence();fd=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd);held.append(fd)
+                  repo=fd;repo_info=os.fstat(repo)
+                  if repo_info.st_uid!=os.geteuid():raise ValueError('Foreign workspace')
+                  fence();directory=os.open('build',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=repo);held.append(directory)
+                  directory_info=os.fstat(directory)
+                  if directory_info.st_uid!=os.geteuid():raise ValueError('Foreign build')
+                  fence();file=os.open('store-failure-receipt.json',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=directory);held.append(file)
+                  before=os.fstat(file)
+                  if not stat.S_ISREG(before.st_mode) or before.st_uid!=os.geteuid() or before.st_nlink!=1 or not 0<before.st_size<=8192:raise ValueError('Unsafe fixed diagnostic')
+                  raw=bytearray()
+                  while len(raw)<=8192:
+                      fence();part=os.read(file,8193-len(raw))
+                      if not part:break
+                      raw.extend(part)
+                  after=os.fstat(file);path_info=os.stat('store-failure-receipt.json',dir_fd=directory,follow_symlinks=False)
+                  identity=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
+                  if identity(before)!=identity(after) or identity(after)!=identity(path_info) or len(raw)!=before.st_size:raise ValueError('Diagnostic changed')
+                  for expected,actual in ((repo_info,os.stat(root,follow_symlinks=False)),(directory_info,os.stat('build',dir_fd=repo,follow_symlinks=False))):
+                      if (expected.st_dev,expected.st_ino)!=(actual.st_dev,actual.st_ino):raise ValueError('Diagnostic anchor changed')
+                  value=validate(json.loads(raw),envelope,envelope['lane']);fence();return value
+              except (OSError,ValueError,TypeError,KeyError,UnicodeError):
+                  return None
+              finally:
+                  for fd in reversed(held):os.close(fd)
+          from pathlib import Path
+          temp=Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          if temp.stat().st_uid!=os.geteuid():raise ValueError('Foreign runner temp')
+          folder=Path(tempfile.mkdtemp(prefix='touch-capture-ipad13m5-failure-',dir=temp))
+          directory=os.open(folder,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+          try:
+              info=os.fstat(directory)
+              if info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o700:raise ValueError('Unsafe fallback directory')
+              value={'complete':False,'source_sha':os.environ.get('GITHUB_SHA'),'lane':'ipad13m5',
+                     'run_id':os.environ.get('GITHUB_RUN_ID'),'run_attempt':os.environ.get('GITHUB_RUN_ATTEMPT'),'job':os.environ.get('GITHUB_JOB'),
+                     'reason':'bootstrap/controller/evidence incomplete',
+                     'stages':{k:os.environ.get(k,'unknown') for k in ('BOOTSTRAP_OUTCOME','COMPILE_OUTCOME','CONTROLLER_OUTCOME','CONTROLLER_EXIT')}}
+              value['controller_diagnostic']=read_fixed_receipt(value)
+              raw=(json.dumps(value,sort_keys=True)+'\n').encode()
+              if len(raw)>8192:raise ValueError('Fallback exceeds8KB')
+              fd=os.open('capture-result.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+              try:
+                  if os.write(fd,raw)!=len(raw):raise ValueError('Short fallback write')
+              finally:os.close(fd)
+              again=os.stat(folder,follow_symlinks=False)
+              if (again.st_dev,again.st_ino)!=(info.st_dev,info.st_ino):raise ValueError('Fallback anchor changed')
+          finally:os.close(directory)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('path='+str(folder)+'\ncomplete=false\n')
+          PYTHON
+          if test -f build/store-upload/capture-result.json; then
+            if python3 -I -S tools/ios-store-home-capture/bootstrap.py upload; then
+              printf 'path=build/store-upload\ncomplete=%s\n' '${{ steps.controller.outputs.complete }}' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Retain exact bounded capture evidence
+        id: upload
+        if: ${{ always() && steps.evidence.outputs.path != '' }}
+        timeout-minutes: 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: touch-capture-ipad13m5-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Exact outcome and original capture evidence acceptance
+        if: ${{ always() }}
+        timeout-minutes: 1
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+          COMPILE_EXIT: ${{ steps.compile.outcome == 'success' && '0' || 'unknown' }}
+          CONTROLLER_OUTCOME: ${{ steps.controller.outcome }}
+          CONTROLLER_EXIT: ${{ steps.controller.outputs.exit }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          UPLOAD_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          UPLOAD_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          UPLOAD_ARTIFACT_NAME: touch-capture-ipad13m5-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test '${{ steps.evidence.outcome }}' = success
+          test '${{ steps.evidence.outputs.complete }}' = true
+          python3 -I -S tools/ios-store-home-capture/bootstrap.py gate

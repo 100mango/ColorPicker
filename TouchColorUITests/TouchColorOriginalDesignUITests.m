@@ -391,6 +391,11 @@ static BOOL TCDesignFiniteRect(CGRect frame) {
     XCTAssertFalse(self.app.buttons[@"photo.import.cancel"].exists);
     [self assertRedHistory:[self openLibrary] count:0];
 }
+- (void)testStoreOriginalHomeScreenshotOnly {
+    [self launchReset:YES extra:nil];
+    [self assertHomeUsable];
+    [self capture:@"01-original-home"];
+}
 - (void)testOriginalHomeTabsAndRepeatedPhotoPickerCancellation {
     [self launchReset:YES extra:nil];
     [self capture:@"01-original-home"];
