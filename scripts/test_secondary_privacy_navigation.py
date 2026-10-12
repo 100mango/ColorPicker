@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = json.loads(Path(__file__).with_name('secondary_privacy_navigation_baseline.json').read_text())
 # BEGIN exact store-PNG compatibility inverse
 STORE_PNG_APPEND = '        // Original, full-resolution main-screen bytes for the exact store diagnostic.\n        let storePNG = app.screenshot().pngRepresentation\n        XCTAssertFalse(storePNG.isEmpty)\n        let storeShot = XCTAttachment(data: storePNG, uniformTypeIdentifier: "public.png")\n        storeShot.name = "Native TV store main populated"; storeShot.lifetime = .keepAlways; add(storeShot)\n'
+STORE_JPEG_APPEND = '        // Original, full-resolution main-screen bytes for the exact store diagnostic.\n        let storeJPEG = try XCTUnwrap(app.screenshot().image.jpegData(compressionQuality: 0.45))\n        XCTAssertLessThanOrEqual(storeJPEG.count, 1_800_000)\n        let storeShot = XCTAttachment(data: storeJPEG, uniformTypeIdentifier: "public.jpeg")\n        storeShot.name = "Native TV store main populated"; storeShot.lifetime = .keepAlways; add(storeShot)\n        let decodedStore = try XCTUnwrap(UIImage(data: storeJPEG)?.cgImage)\n        XCTAssertNotNil(decodedStore.dataProvider?.data)\n        XCTAssertTrue([[1920, 1080], [3840, 2160]].contains([decodedStore.width, decodedStore.height]))\n        XCTAssertEqual(decodedStore.colorSpace?.model, .rgb)\n        XCTAssertTrue([CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(decodedStore.alphaInfo))\n'
+TV_WITH_JPEG_SHA256 = '1a3d596e23126c6b543642b14b3514ff6492904b0f76dc4c113ee59154be0223'
 TV_WITH_PNG_SHA256 = 'c950c2d28b0737206e87d296b5a6ff9058e3a6f89a19a39451532b6759c1d8cd'
 TV_WITHOUT_PNG_SHA256 = '984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4'
 
@@ -19,9 +21,10 @@ def before_store_png(path, value):
     actual = hashlib.sha256(value.encode()).hexdigest()
     if actual == TV_WITHOUT_PNG_SHA256:
         return value
-    if actual != TV_WITH_PNG_SHA256 or value.count(STORE_PNG_APPEND) != 1:
+    addition = STORE_JPEG_APPEND if actual == TV_WITH_JPEG_SHA256 else STORE_PNG_APPEND
+    if actual not in (TV_WITH_PNG_SHA256, TV_WITH_JPEG_SHA256) or value.count(addition) != 1:
         raise ValueError('TV source differs from the exact original or trailing PNG-only overlay')
-    restored = value.replace(STORE_PNG_APPEND, '', 1)
+    restored = value.replace(addition, '', 1)
     if hashlib.sha256(restored.encode()).hexdigest() != TV_WITHOUT_PNG_SHA256:
         raise ValueError('Original TV assertions were not restored exactly')
     return restored

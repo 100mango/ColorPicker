@@ -202,12 +202,13 @@ class QualificationTests(unittest.TestCase):
             q.admit(self.env)
 
     def test_png_compatibility_inverse_rejects_any_other_tv_change(self):
-        from test_secondary_privacy_navigation import before_store_png, STORE_PNG_APPEND
+        from test_secondary_privacy_navigation import before_store_png, STORE_PNG_APPEND, STORE_JPEG_APPEND
         path = 'TouchColorTVUITests/TVWorkflowTests.swift'
         current = (ROOT / path).read_text()
         restored = before_store_png(path, current)
-        self.assertEqual(current.replace(STORE_PNG_APPEND, '', 1), restored)
-        for bad in (current + STORE_PNG_APPEND, current.replace('continueAfterFailure = false', 'continueAfterFailure = true', 1), current.replace('pngRepresentation', 'jpegRepresentation', 1)):
+        self.assertEqual(current.replace(STORE_JPEG_APPEND, '', 1), restored)
+        self.assertEqual(before_store_png(path, current.replace(STORE_JPEG_APPEND, STORE_PNG_APPEND, 1)), restored)
+        for bad in (current + STORE_PNG_APPEND, current.replace('continueAfterFailure = false', 'continueAfterFailure = true', 1), current.replace('compressionQuality: 0.45', 'compressionQuality: 0.9', 1)):
             with self.assertRaises(ValueError): before_store_png(path, bad)
 
     def test_about_compatibility_file_cannot_relax_original_assertions(self):

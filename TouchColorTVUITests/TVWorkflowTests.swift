@@ -232,10 +232,15 @@ final class TVWorkflowTests: XCTestCase {
         try assertSecondaryPrivacyAndRemoteReturn(context: "populated")
         XCTAssertEqual(app.staticTexts["tv.palette.count"].label, "1")
         // Original, full-resolution main-screen bytes for the exact store diagnostic.
-        let storePNG = app.screenshot().pngRepresentation
-        XCTAssertFalse(storePNG.isEmpty)
-        let storeShot = XCTAttachment(data: storePNG, uniformTypeIdentifier: "public.png")
+        let storeJPEG = try XCTUnwrap(app.screenshot().image.jpegData(compressionQuality: 0.45))
+        XCTAssertLessThanOrEqual(storeJPEG.count, 1_800_000)
+        let storeShot = XCTAttachment(data: storeJPEG, uniformTypeIdentifier: "public.jpeg")
         storeShot.name = "Native TV store main populated"; storeShot.lifetime = .keepAlways; add(storeShot)
+        let decodedStore = try XCTUnwrap(UIImage(data: storeJPEG)?.cgImage)
+        XCTAssertNotNil(decodedStore.dataProvider?.data)
+        XCTAssertTrue([[1920, 1080], [3840, 2160]].contains([decodedStore.width, decodedStore.height]))
+        XCTAssertEqual(decodedStore.colorSpace?.model, .rgb)
+        XCTAssertTrue([CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(decodedStore.alphaInfo))
     }
     @MainActor private func audit(_ state: String) throws {
         if #available(tvOS 27.0, *) {

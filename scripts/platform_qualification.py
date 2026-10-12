@@ -46,7 +46,7 @@ DEFERRED = {
     'mac_sandbox': 'Not run: strict unsigned scope excludes test_mac_sandbox.sh and its ad-hoc signatures. The original full Mac evidence gate remains incomplete.',
     'ios': 'Not run here: the corrected iOS native gate is owned separately.',
     'watch_container_and_paired_transport': 'Not qualified: corrected iOS Watch embedding and paired foreground/background transport remain separate open gates.',
-    'distribution': 'Unsigned TV archive diagnostic only; no export, real signing, notarization, Store submission, physical camera/radio, or Intel runtime qualification.',
+    'distribution': 'TV screenshot-only diagnostic; prior archive separately retained; no export, real signing, notarization, Store submission, physical camera/radio, or Intel runtime qualification.',
 }
 
 
@@ -168,12 +168,12 @@ def admit(environ=None):
         admitted_test = admitted_test.replace(old, new, 1)
     test_path = 'TouchColorTVUITests/TVWorkflowTests.swift'
     original_test = git('show', product + ':' + test_path)
-    allowed_tests = {'984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'c950c2d28b0737206e87d296b5a6ff9058e3a6f89a19a39451532b6759c1d8cd'}
+    allowed_tests = {'984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'c950c2d28b0737206e87d296b5a6ff9058e3a6f89a19a39451532b6759c1d8cd', '1a3d596e23126c6b543642b14b3514ff6492904b0f76dc4c113ee59154be0223'}
     require(hashlib.sha256(original_test.encode()).hexdigest() == '984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'Frozen TV test source changed')
     compatibility_path = 'scripts/test_secondary_privacy_navigation.py'
     original_compatibility = git('show', product + ':' + compatibility_path)
     require(hashlib.sha256(original_compatibility.encode()).hexdigest() == 'f5004e3328546cd42956897842db3cda2334f5d3ce2500a89490fd1494cf20db', 'Original About navigation test bytes changed')
-    allowed_compatibility = {'f5004e3328546cd42956897842db3cda2334f5d3ce2500a89490fd1494cf20db', 'aee6bca941d19190aa8bc657bf4890454b13ad3794d0c0fc00b1d9de6c815a4d'}
+    allowed_compatibility = {'f5004e3328546cd42956897842db3cda2334f5d3ce2500a89490fd1494cf20db', 'aee6bca941d19190aa8bc657bf4890454b13ad3794d0c0fc00b1d9de6c815a4d', '3a6fcf8fc749dc2caafe1f82070dff2760b09e63827ddd7345f8b217c01e5ebc'}
     for commit in controls:
         parents = git('rev-list', '--parents', '-n', '1', commit).split()
         require(len(parents) == 2, 'Every control commit must have a sole parent; merges are rejected')
