@@ -30,7 +30,7 @@ class QualificationTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        for name in ('.github/workflows/apple-platforms.yml', 'scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py'):
+        for name in ('.github/workflows/apple-platforms.yml', 'scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py', 'TouchColorTVUITests/TVWorkflowTests.swift'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             text = (ROOT / name).read_text()
@@ -39,6 +39,10 @@ class QualificationTests(unittest.TestCase):
             if name == 'scripts/test_retain_mac_evidence.py':
                 for old, new in q.MAC_IDENTITY_TEST_EDITS:
                     text = text.replace(new, old)
+            if name == 'TouchColorTVUITests/TVWorkflowTests.swift':
+                start = text.index('        // Original, full-resolution main-screen bytes')
+                end = text.index('\n    }', start)
+                text = text[:start] + text[end + 1:]
             path.write_text(text)
         (self.root / 'Product.swift').write_text('corrected product\n')
         self.run_git('init', '-q', '-b', 'touchcolor-platform-qualification')
@@ -108,8 +112,8 @@ class QualificationTests(unittest.TestCase):
     def test_delivered_guard_is_closed_before_any_source_execution(self):
         config = json.loads((ROOT / q.CONFIG).read_text())
         self.assertIs(config['READY'], False)
-        self.assertEqual(config['corrected_product_sha'], 'UNBOUND')
-        self.assertEqual(config['corrected_product_tree'], 'UNBOUND')
+        self.assertEqual(config['corrected_product_sha'], '7c671f04e4d69884741a411851ae26083361c7f7')
+        self.assertEqual(config['corrected_product_tree'], 'f477c19b8181c4e3eb2142beaef4dea742cca0cd')
         with cwd(ROOT), patch.object(q, 'git', side_effect=AssertionError('must not read source')):
             with self.assertRaisesRegex(ValueError, 'closed'):
                 q.admit(self.env)
@@ -177,6 +181,20 @@ class QualificationTests(unittest.TestCase):
         (self.root / 'Product.swift').write_text('unexpected source resurrection\n')
         self.run_git('add', '-A'); self.run_git('commit', '--amend', '--no-edit', '-q'); self.rebind_control()
         with self.enabled_fixture(), self.assertRaisesRegex(ValueError, 'transition changed product'):
+            q.admit(self.env)
+
+    def test_tv_store_archive_admits_only_its_exact_existing_budget_row(self):
+        self.configure(selected_lane='tv-store-archive')
+        with self.enabled_fixture():
+            row = q.admit(self.env)['row']
+        self.assertEqual(row, {'platform': 'tv', 'minutes': 25, 'evidence_bytes': 2000000, 'lane': 'tv-store-archive'})
+
+    def test_tv_capture_overlay_rejects_changed_assertions(self):
+        path = self.root / 'TouchColorTVUITests/TVWorkflowTests.swift'
+        path.write_text(path.read_text().replace('continueAfterFailure = false', 'continueAfterFailure = true', 1))
+        self.run_git('add', '-A'); self.run_git('commit', '-qm', 'invalid test assertion overlay')
+        self.rebind_control()
+        with self.enabled_fixture(), self.assertRaisesRegex(ValueError, 'trailing original-PNG'):
             q.admit(self.env)
 
     def test_historical_mac_assertion_changes_rejected(self):

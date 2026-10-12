@@ -1,7 +1,7 @@
 name: Corrected TouchColor unsigned platform qualification (closed)
 on:
   push:
-    branches: [touchcolor-platform-qualification]
+    branches: [touchcolor-tv-store-archive]
     paths: [.github/platform-qualification.json]
 permissions:
   contents: read
@@ -12,7 +12,7 @@ jobs:
   native-platform:
     name: Unsigned ${{ matrix.lane || matrix.platform }} on a fresh standard VM
     # BEGIN LOCAL QUALIFICATION SELECTION
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-platform-qualification' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-tv-store-archive' }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -21,7 +21,7 @@ jobs:
           - platform: tv
             minutes: 25
             evidence_bytes: 2000000
-            lane: tv-secondary-missing-screens
+            lane: tv-store-archive
     # END LOCAL QUALIFICATION SELECTION
     runs-on: xcode-27
     timeout-minutes: ${{ matrix.minutes }}
@@ -73,8 +73,8 @@ jobs:
           PAIRS={('27.0','26A428'),('27.0.1','26A434')}
           KEY='tv_host_runtime_boundary'
           STATE=Path('build/tv-host-preflight.json')
-          DIAGNOSTIC='tv-secondary-missing-screens'
-          METHODS=('TouchColorTVUITests/TVWorkflowTests/testRemoteColorEditorAndMenuReturn','TouchColorTVUITests/TVWorkflowTests/testChineseRemoteColorEditor')
+          DIAGNOSTIC='tv-store-archive'
+          METHODS=('TouchColorTVUITests/TVWorkflowTests/testRemoteColorEditorAndMenuReturn',)
           
           def require(ok,message):
               if not ok: raise ValueError(message)
@@ -95,7 +95,7 @@ jobs:
           def environment():
               sha=os.environ.get('GITHUB_SHA','')
               require(re.fullmatch('[0-9a-f]{40}',sha) and os.environ.get('GITHUB_WORKFLOW_SHA')==sha,'Control source mismatch')
-              require(os.environ.get('GITHUB_REPOSITORY')=='100mango/ColorPicker' and os.environ.get('GITHUB_REF')=='refs/heads/touchcolor-platform-qualification','Wrong runtime route')
+              require(os.environ.get('GITHUB_REPOSITORY')=='100mango/ColorPicker' and os.environ.get('GITHUB_REF')=='refs/heads/touchcolor-tv-store-archive','Wrong runtime route')
               require(os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='tv' and os.environ.get('TOUCHCOLOR_JOB_LANE') in ('tv',DIAGNOSTIC),'Only reviewed TV full/diagnostic rows are admitted')
               return sha
           
@@ -164,7 +164,7 @@ jobs:
               validate_host(host);sha=environment()
               diagnostic=os.environ['TOUCHCOLOR_JOB_LANE']==DIAGNOSTIC
               census=compiled_census()
-              count=2 if diagnostic else len(census['tests'])
+              count=1 if diagnostic else len(census['tests'])
               expected=sorted(METHODS) if diagnostic else census['tests']
               require(runtime.get('sha')==sha and runtime.get('platform')=='tv' and runtime.get('result')=='passed','TV runtime source/result mismatch')
               require(runtime.get('runtime')=='com.apple.CoreSimulator.SimRuntime.tvOS-27-0','TV simulator runtime must remain27.0')
@@ -197,7 +197,7 @@ jobs:
               return {'host':host,'summary_sha256':digest(summary_raw),'runtime_body_sha256':digest(canonical(runtime)),
                       'simulator':{'identifier':runtime['runtime'],'device_id':udid,'os_version':device['osVersion'],'platform':device['platform'],'architecture':device['architecture']},
                       'test_summary':{'total':count,'passed':count,'failed':0,'skipped':0,'expected_failures':0},
-                      'scope':'missing-screenshot diagnostic only' if diagnostic else 'full compiled TV suite',
+                      'scope':'unsigned archive and one main-screen diagnostic only' if diagnostic else 'full compiled TV suite',
                       'source_census':census,'expected_selected_methods':expected,'host_os_equivalence_claim':False}
           
           def bind(root):
@@ -234,11 +234,11 @@ jobs:
                       with open(os.environ['GITHUB_OUTPUT'],'a') as output:output.write('tv_runtime_boundary_complete='+str(value).lower()+'\n')
           TV_HOST_POLICY
           cat > build/tv_diagnostic_adapter.py <<'TV_DIAGNOSTIC_ADAPTER'
-          """Exact control-owned two-method diagnostic copies; frozen product sources stay untouched."""
+          """Exact control-owned single-method diagnostic copies; frozen product sources stay untouched."""
           import hashlib,json,os,sys
           from pathlib import Path
-          DIAGNOSTIC='tv-secondary-missing-screens'
-          METHODS=('TouchColorTVUITests/TVWorkflowTests/testRemoteColorEditorAndMenuReturn','TouchColorTVUITests/TVWorkflowTests/testChineseRemoteColorEditor')
+          DIAGNOSTIC='tv-store-archive'
+          METHODS=('TouchColorTVUITests/TVWorkflowTests/testRemoteColorEditorAndMenuReturn',)
           SOURCE_HASHES={'scripts/test_extra_platforms.py': 'd2322c5c1a0de7b1dbc35914584907e730885a42e026a83d7431fe98604f8d73', 'scripts/run_budgeted_step.py': '6b71272820881dfe8a52e42c6a77714bb39043f7c5c1876b28e796a0ee5387fc'}
           DRIVER=Path('build/tv-evidence-driver.py')
           WRAPPER=Path('build/tv-budgeted-step.py')
@@ -253,6 +253,15 @@ jobs:
               old="        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+skip,660)"
               new="        from tv_diagnostic_adapter import derivation\n        if kind!='tv' or skip: raise ValueError('Diagnostic requires TV and successful Photos seed')\n        report['tv_diagnostic_execution']=derivation()\n        run(test_common+test_arguments+['-resultBundlePath','build/'+kind+'-tests.xcresult']+"+repr(['-only-testing:'+m for m in METHODS])+",660)"
               need(driver.count(old)==1,'TV native selection hunk changed');driver=driver.replace(old,new,1)
+              old="    run(common+['-configuration','Release','-destination','generic/platform='+platform,'-derivedDataPath','build/'+kind+'-device','build'],420)"
+              new="    run(common+['-configuration','Release','-sdk','appletvos','-destination','generic/platform=tvOS','-derivedDataPath','build/tv-device','-archivePath','build/tv-archive/TouchColor.xcarchive','ARCHS=arm64','CODE_SIGNING_REQUIRED=NO','CODE_SIGN_IDENTITY=','CODE_SIGN_STYLE=Manual','DEVELOPMENT_TEAM=','archive'],420)"
+              need(driver.count(old)==1,'TV unsigned build hunk changed');driver=driver.replace(old,new,1)
+              old="    binary=Path('build')/(kind+'-device')/'Build/Products'/{'vision':'Release-xros','watch':'Release-watchos','tv':'Release-appletvos'}[kind]/'TouchColor.app/TouchColor'"
+              new="    binary=Path('build/tv-archive/TouchColor.xcarchive/Products/Applications/TouchColor.app/TouchColor')"
+              need(driver.count(old)==1,'TV device app path hunk changed');driver=driver.replace(old,new,1)
+              old="    bundle=binary.parent"
+              new="    bundle=binary.parent\n    archive_info=plistlib.loads(Path('build/tv-archive/TouchColor.xcarchive/Info.plist').read_bytes())\n    assert archive_info['ApplicationProperties']['ApplicationPath']=='Applications/TouchColor.app'\n    report['unsigned_archive']={'source_sha':'7c671f04e4d69884741a411851ae26083361c7f7','path':'build/tv-archive/TouchColor.xcarchive','app_path':str(bundle),'application_path':archive_info['ApplicationProperties']['ApplicationPath'],'signed':False}"
+              need(driver.count(old)==1,'TV archive info hunk changed');driver=driver.replace(old,new,1)
               prefix="import sys\nsys.path.insert(0,'scripts')\nfrom tv_diagnostic_adapter import verify_files\nverify_files()\n"
               driver=prefix+driver
               wrapper=originals['scripts/run_budgeted_step.py'].decode()
@@ -265,8 +274,8 @@ jobs:
                   need(Path(name).read_bytes()==raw,'Derived diagnostic driver/budget bytes drifted')
           def derivation():
               outputs=replacements()
-              return {'schema':1,'scope':'missing-screenshot diagnostic only','product_sha':'7c671f04e4d69884741a411851ae26083361c7f7','source_sha':os.environ.get('GITHUB_SHA'),
-                      'selected_methods':list(METHODS),'expected_executed_tests':2,'hosted_tests_selected':0,'source_sha256':SOURCE_HASHES,
+              return {'schema':1,'scope':'unsigned archive and one main-screen diagnostic only','product_sha':'7c671f04e4d69884741a411851ae26083361c7f7','source_sha':os.environ.get('GITHUB_SHA'),
+                      'selected_methods':list(METHODS),'expected_executed_tests':1,'hosted_tests_selected':0,'source_sha256':SOURCE_HASHES,
                       'derived_sha256':{name:sha(raw) for name,raw in outputs.items()},'all_original_clocks_reserves_cleanup_and_limits_preserved':True}
           def prepare():
               outputs=replacements()
@@ -277,14 +286,14 @@ jobs:
               need(sys.argv[1:]==['prepare'],'Unknown diagnostic adapter action');prepare()
           TV_DIAGNOSTIC_ADAPTER
           cat > build/tv_missing_evidence.py <<'TV_MISSING_EVIDENCE'
-          """Protect four missing raw attachments and four audits under the unchanged2MB diagnostic cap."""
-          import copy,json,os,sys
+          """Protect one original RGB PNG and the unsigned archive receipt under the unchanged2MB diagnostic cap."""
+          import copy,json,os,sys,struct,zlib
           from pathlib import Path
           sys.path.insert(0,'scripts')
           import secondary_about_evidence as evidence
           from tv_diagnostic_adapter import DIAGNOSTIC,METHODS
           KEY='tv_missing_screenshot_evidence'
-          TITLES=('Native TV secondary Privacy empty','Native TV secondary About populated','Native TV secondary About zh-normal','Native TV secondary Privacy zh-normal')
+          TITLES=('Native TV store main populated',)
           HISTORY={'run_id': 37941182061, 'job_id': 113855658783, 'control_sha': 'e5d10fb1949f6483c807ef91d8f7f2850fae9738', 'control_tree': '71e370b89d4468121e4ffd51f100f6c1e5a8f06a', 'product_sha': '7c671f04e4d69884741a411851ae26083361c7f7', 'artifact_sha256': '0377f414839f8240131ca8b6ab531f1ae241d452ef5a1f9602f0383cb212e9b8', 'job_log_sha256': '252e4771c88014c247062278b11cfddcd641f2e54249d4842c54b4b4bb8972b4', 'native_summary': {'result': 'Passed', 'totalTestCount': 45, 'passedTests': 45, 'failedTests': 0, 'skippedTests': 0, 'expectedFailures': 0}, 'historical_ci_conclusion': 'failure; never retroactively green', 'retained_images': [{'title': 'Native TV secondary About empty', 'path': 'tv-screenshots/2DC1961C-F2AB-40E5-88C2-CA4FC96E2A27.jpeg', 'bytes': 185767, 'sha256': '60b4ade84dcc88c3149688db8378fa8a825ab5f606d593064f70fb19d5d583f7', 'retained': True, 'original_bytes_verified': True}, {'title': 'Native TV secondary Privacy populated', 'path': 'tv-screenshots/195A7899-9996-4D3A-82BF-D998270A0EA2.jpeg', 'bytes': 427966, 'sha256': 'eac811aba0a99af50bd0704f3b9b893653d2e643c9f8a3836f0a417cc4bccb68', 'retained': True, 'original_bytes_verified': True}, {'title': 'Native TV secondary About zh-public-largest', 'path': 'tv-screenshots/0AE81A25-51FD-4B72-98B9-12F0E8044D62.jpeg', 'bytes': 218569, 'sha256': '05e0ad8486a62e2063c0f2d83347a14f61f2039ca905f40140ad93ae9e23c781', 'retained': True, 'original_bytes_verified': True}, {'title': 'Native TV secondary Privacy zh-public-largest', 'path': 'tv-screenshots/2F67DAAE-AEFA-4147-9764-57D3D08C76AE.jpeg', 'bytes': 427810, 'sha256': '790c32176fe2c6312a68bd1c2f83c5a44b1bac366e9f5e53594419366705c16f', 'retained': True, 'original_bytes_verified': True}], 'full_functional_count': 45, 'visual_complete': False}
           need=evidence.require
           
@@ -293,23 +302,62 @@ jobs:
               bound=evidence.binding();need(os.environ.get('GITHUB_RUN_ID','').isdigit() and os.environ.get('GITHUB_RUN_ATTEMPT','').isdigit(),'Missing diagnostic run identity')
               return {'source_sha':bound['source_sha'],'product_sha':'7c671f04e4d69884741a411851ae26083361c7f7','run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'lane':DIAGNOSTIC,'evidence_bytes':2_000_000}
           
-          def specs():return evidence.requirements(evidence.binding())
+          def specs():return [{'method':'TVWorkflowTests/testRemoteColorEditorAndMenuReturn()','context':'populated','folder':'tv-screenshots','summary':'tv-summary.json','title':TITLES[0],'audit':False}]
           def outcomes(root):
               raw=evidence.read(root/'tv-summary.json');summary=evidence.strict(raw)
               need(summary.get('result')=='Passed' and summary.get('testFailures')==[],'Diagnostic XCTest failed')
-              for key,value in [('totalTestCount',2),('passedTests',2),('failedTests',0),('skippedTests',0),('expectedFailures',0)]:
-                  need(type(summary.get(key)) is int and summary[key]==value,'Diagnostic requires exactly2 UI tests, no failures/skips')
+              for key,value in [('totalTestCount',1),('passedTests',1),('failedTests',0),('skippedTests',0),('expectedFailures',0)]:
+                  need(type(summary.get(key)) is int and summary[key]==value,'Diagnostic requires exactly1 UI test, no failures/skips')
               return raw
           
+          def png_facts(raw):
+              need(raw.startswith(b'\x89PNG\r\n\x1a\n'),'Original PNG required')
+              pos=8;types=[];dimensions=None;compressed=bytearray()
+              while pos<len(raw):
+                  need(pos+12<=len(raw),'Truncated PNG chunk')
+                  length=struct.unpack('>I',raw[pos:pos+4])[0];end=pos+12+length
+                  need(end<=len(raw),'Truncated PNG payload')
+                  kind=raw[pos+4:pos+8];data=raw[pos+8:end-4]
+                  need(zlib.crc32(kind+data)&0xffffffff==struct.unpack('>I',raw[end-4:end])[0],'PNG CRC mismatch')
+                  if kind==b'IHDR':
+                      need(not types and length==13,'PNG header order/size')
+                      width,height,depth,color,compression,filtering,interlace=struct.unpack('>IIBBBBB',data)
+                      need((width,height) in ((1920,1080),(3840,2160)) and depth==8 and color==2 and compression==filtering==interlace==0,'Unqualified TV PNG dimensions/color/encoding')
+                      dimensions=[width,height]
+                  need(kind!=b'tRNS','Alpha/transparency is forbidden')
+                  if kind==b'IDAT':
+                      need(not compressed or types[-1]==b'IDAT','PNG IDAT chunks must be contiguous')
+                      compressed.extend(data);need(len(compressed)<=2_000_000,'PNG compressed payload exceeds cap')
+                  types.append(kind);pos=end
+                  if kind==b'IEND':need(length==0 and pos==len(raw),'PNG trailing data');break
+              need(dimensions is not None and types[-1]==b'IEND' and b'IDAT' in types,'Incomplete PNG')
+              expected=dimensions[1]*(1+dimensions[0]*3);decoder=zlib.decompressobj()
+              try: pixels=decoder.decompress(compressed,expected+1)
+              except zlib.error: raise ValueError('PNG IDAT cannot be decoded') from None
+              need(decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail and len(pixels)==expected,'PNG decoded rows/stream mismatch')
+              need(all(pixels[offset]<=4 for offset in range(0,len(pixels),1+dimensions[0]*3)),'Invalid PNG row filter')
+              return dimensions
+
           def validate_items(root,record):
               expected=specs();wanted=[s for s in expected if s['title'] in TITLES];audit_specs=[s for s in expected if s['audit']]
               need([x['required'] for x in record['images']]==wanted and [x['required'] for x in record['audits']]==audit_specs,'Missing-proof requirement inventory changed')
               summary=outcomes(root)
+              runtime=evidence.strict(evidence.read(root/'tv-runtime.json'))
+              archive=runtime.get('unsigned_archive',{})
+              need(archive=={'source_sha':'7c671f04e4d69884741a411851ae26083361c7f7','path':'build/tv-archive/TouchColor.xcarchive','app_path':'build/tv-archive/TouchColor.xcarchive/Products/Applications/TouchColor.app','application_path':'Applications/TouchColor.app','signed':False},'Exact unsigned device archive receipt required')
+              app=runtime.get('release_bundle',{})
+              need(app.get('CFBundleIdentifier')=='com.mango.touchColor' and app.get('CFBundleShortVersionString')=='2.0.1' and app.get('CFBundleVersion')=='20002' and app.get('CFBundleSupportedPlatforms')==['AppleTVOS'] and app.get('unsigned') is True,'Archived TV app identity mismatch')
+              stages=[x for x in runtime.get('stages',[]) if 'archive' in x.get('command',[])]
+              need(len(stages)==1 and stages[0].get('exit')==0 and stages[0].get('process_group_gone') is True and stages[0].get('capture_reader_finished') is True,'Successful clean archive stage required')
+              command=stages[0]['command']
+              for flag,value in [('-sdk','appletvos'),('-destination','generic/platform=tvOS'),('-archivePath','build/tv-archive/TouchColor.xcarchive')]:
+                  need(command.count(flag)==1 and command[command.index(flag)+1]==value,'Archive cannot be replaced by simulator build')
+              need('CODE_SIGNING_ALLOWED=NO' in command and 'CODE_SIGNING_REQUIRED=NO' in command,'Unsigned archive flags required')
               for row in record['images']+record['audits']:
                   item=row['item'];raw=evidence.current_item(root,item);need(raw is not None,'Mandatory raw attachment was deleted')
                   need(evidence.summary_passed(summary,item,'tv'),'Attachment source/device/time mismatch')
                   if row in record['images']:
-                      need((raw.startswith(b'\xff\xd8') and raw.endswith(b'\xff\xd9')) or (raw.startswith(b'\x89PNG\r\n\x1a\n') and raw.endswith(b'\x00\x00\x00\x00IEND\xaeB`\x82')),'Invalid raw screenshot')
+                      png_facts(raw)
                   else:
                       need(len(raw)<=evidence.MAX_AUDIT,'Audit exceeds bounded text');value=evidence.strict(raw);spec=row['required'];klass,method=spec['method'].removesuffix('()').split('/')
                       names={'-['+klass+' '+method+']','-[TouchColorTVUITests.'+klass+' '+method+']'}
@@ -323,7 +371,7 @@ jobs:
           def prepare(root):
               root=Path(root);bound=route();runtime_path=root/'tv-runtime.json';runtime=evidence.strict(evidence.read(runtime_path))
               need(KEY not in runtime and not(root/evidence.REPORT).exists(),'Do not overwrite or mix full qualification receipt')
-              groups=evidence.manifests(root);record={'schema':1,'binding':bound,'scope':'missing-screenshot diagnostic only; composed review is not one green full run','historical_full_run':HISTORY,'images':[],'audits':[],'optional_omissions':[]}
+              groups=evidence.manifests(root);record={'schema':1,'binding':bound,'scope':'unsigned archive and one main-screen diagnostic only; composed review is not one green full run','historical_full_run':HISTORY,'images':[],'audits':[],'optional_omissions':[]}
               for spec in specs():
                   if spec['title'] in TITLES:
                       items=evidence.candidates(root,groups,spec,'tv');need(len(items)==1,'Exactly one mandatory raw image required: '+spec['title']);record['images'].append({'required':spec,'item':items[0]})
@@ -340,7 +388,7 @@ jobs:
                           if relative in keep:kept.append(item)
                           else:
                               path=root/relative;raw=evidence.read(path);optional.append(path)
-                              record['optional_omissions'].append({'path':relative,'file':evidence.facts(raw),'title':item.get('suggestedHumanReadableName'),'method':group.get('testIdentifier'),'reason':'Optional duplicate/primary screenshot in the explicit missing-four diagnostic; original run retained evidence is separately identified'})
+                              record['optional_omissions'].append({'path':relative,'file':evidence.facts(raw),'title':item.get('suggestedHumanReadableName'),'method':group.get('testIdentifier'),'reason':'Optional screenshot outside this exact one-PNG store diagnostic; earlier functional evidence remains separately identified'})
                       group['attachments']=kept
               runtime[KEY]=record
               prospective={runtime_path:evidence.encoded(runtime)}
@@ -350,7 +398,7 @@ jobs:
               need(total<=2_000_000-65_536,'Mandatory raw screenshots/audits/metadata exceed unchanged cap plus binding reserve; no mandatory deletion')
               for path in optional:path.unlink()
               for path,raw in prospective.items():path.write_bytes(raw)
-              print('TV_MISSING_PROOF_PROTECTED',json.dumps({'raw_images':4,'audits':4,'current_bytes':total,'cap':2_000_000,'no_image_transformation':True}))
+              print('TV_MISSING_PROOF_PROTECTED',json.dumps({'raw_images':len(record['images']),'audits':len(record['audits']),'current_bytes':total,'cap':2_000_000,'no_image_transformation':True}))
           
           def complete(root):
               try:
@@ -371,7 +419,7 @@ jobs:
                       with open(os.environ['GITHUB_OUTPUT'],'a') as stream:stream.write('tv_missing_evidence_complete='+str(value).lower()+'\n')
           TV_MISSING_EVIDENCE
           python3 build/tv-host-boundary.py preflight
-          if test "$TOUCHCOLOR_JOB_LANE" = tv-secondary-missing-screens; then
+          if test "$TOUCHCOLOR_JOB_LANE" = tv-store-archive; then
             python3 build/tv_diagnostic_adapter.py prepare
           fi
           xcodebuild -version | tee /tmp/touchcolor-platform-xcode.txt
@@ -526,8 +574,8 @@ jobs:
         if: ${{ !cancelled() && matrix.platform == 'tv' && steps.toolchain.outcome == 'success' }}
         timeout-minutes: 25
         run: |
-          if test "$TOUCHCOLOR_JOB_LANE" = tv-secondary-missing-screens; then
-            python3 build/tv-budgeted-step.py --cleanup-driver --label 'Native TV missing-screenshot diagnostic: exact two UI methods' --seconds 1320 --phase work <<'TV_DIAGNOSTIC_BODY'
+          if test "$TOUCHCOLOR_JOB_LANE" = tv-store-archive; then
+            python3 build/tv-budgeted-step.py --cleanup-driver --label 'Native TV unsigned archive and exact one UI screenshot method' --seconds 1320 --phase work <<'TV_DIAGNOSTIC_BODY'
           python3 build/tv-evidence-driver.py tv
           TV_DIAGNOSTIC_BODY
           else
@@ -638,13 +686,13 @@ jobs:
                           print('RETAINED_MAC_ACCESSIBILITY_DIAGNOSTIC',text[:12000],flush=True)
           PY
           python3 scripts/compress_vision_evidence.py build/evidence
-          if test "$TOUCHCOLOR_JOB_LANE" = tv-secondary-missing-screens; then
+          if test "$TOUCHCOLOR_JOB_LANE" = tv-store-archive; then
             python3 build/tv_missing_evidence.py prepare build/evidence
           fi
           if test "$TOUCHCOLOR_JOB_PLATFORM" = tv && test -f build/tv-host-boundary.py; then
             python3 build/tv-host-boundary.py bind build/evidence
           fi
-          if test "$TOUCHCOLOR_JOB_LANE" != tv-secondary-missing-screens; then
+          if test "$TOUCHCOLOR_JOB_LANE" != tv-store-archive; then
           case "$TOUCHCOLOR_JOB_PLATFORM" in
             mac|tv|watch|vision)
               python3 scripts/secondary_about_evidence.py prepare build/evidence
@@ -656,7 +704,7 @@ jobs:
           python3 - <<'PY'
           import json,os,sys
           from pathlib import Path
-          if os.environ.get('TOUCHCOLOR_JOB_LANE')=='tv-secondary-missing-screens': sys.exit(0) # Explicit protected four-image diagnostic plan; final guard enforces2MB.
+          if os.environ.get('TOUCHCOLOR_JOB_LANE')=='tv-store-archive': sys.exit(0) # Explicit protected one-PNG diagnostic plan; final guard enforces2MB.
           if os.environ.get('TOUCHCOLOR_JOB_PLATFORM')=='mac': sys.exit(0) # Mac keeps its explicit priority/omission plan.
           if os.environ.get('TOUCHCOLOR_JOB_PLATFORM') in ('vision','watch'): sys.exit(0) # Native text rows keep mandatory proof and explicit omissions.
           root=Path('build/evidence'); total=0; limit=int(os.environ['TOUCHCOLOR_EVIDENCE_LIMIT'])-16384
@@ -681,7 +729,7 @@ jobs:
         if: always()
         timeout-minutes: 1
         env:
-          TOUCHCOLOR_SECONDARY_EVIDENCE_REQUIRED: ${{ matrix.lane != 'tv-secondary-missing-screens' && (matrix.platform == 'mac' || matrix.platform == 'tv' || matrix.platform == 'watch' || matrix.platform == 'vision') && '1' || '0' }}
+          TOUCHCOLOR_SECONDARY_EVIDENCE_REQUIRED: ${{ matrix.lane != 'tv-store-archive' && (matrix.platform == 'mac' || matrix.platform == 'tv' || matrix.platform == 'watch' || matrix.platform == 'vision') && '1' || '0' }}
         run: |
           set -euo pipefail
           python3 scripts/validate_evidence.py build/evidence "$TOUCHCOLOR_EVIDENCE_LIMIT"
@@ -690,7 +738,7 @@ jobs:
           else
             echo 'tv_runtime_boundary_complete=false' >> "$GITHUB_OUTPUT"
           fi
-          if test "$TOUCHCOLOR_JOB_LANE" = tv-secondary-missing-screens; then
+          if test "$TOUCHCOLOR_JOB_LANE" = tv-store-archive; then
             if test -f build/tv_missing_evidence.py; then
               python3 build/tv_missing_evidence.py check build/evidence
             else
@@ -729,7 +777,7 @@ jobs:
           NATIVE_TEXT_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.native_text_evidence_complete }}
         run: test "$NATIVE_TEXT_EVIDENCE_COMPLETE" = true
       - name: Require retained secondary About evidence
-        if: ${{ always() && matrix.lane != 'tv-secondary-missing-screens' && (matrix.platform == 'mac' || matrix.platform == 'tv' || matrix.platform == 'watch' || matrix.platform == 'vision') }}
+        if: ${{ always() && matrix.lane != 'tv-store-archive' && (matrix.platform == 'mac' || matrix.platform == 'tv' || matrix.platform == 'watch' || matrix.platform == 'vision') }}
         timeout-minutes: 1
         env:
           SECONDARY_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.secondary_evidence_complete }}
@@ -740,8 +788,8 @@ jobs:
         env:
           TV_RUNTIME_BOUNDARY_COMPLETE: ${{ steps.evidence_guard.outputs.tv_runtime_boundary_complete }}
         run: test "$TV_RUNTIME_BOUNDARY_COMPLETE" = true
-      - name: Require four missing raw screenshots and four strict audits
-        if: ${{ always() && matrix.lane == 'tv-secondary-missing-screens' }}
+      - name: Require one original RGB PNG and exact unsigned TV archive
+        if: ${{ always() && matrix.lane == 'tv-store-archive' }}
         timeout-minutes: 1
         env:
           TV_MISSING_EVIDENCE_COMPLETE: ${{ steps.evidence_guard.outputs.tv_missing_evidence_complete }}

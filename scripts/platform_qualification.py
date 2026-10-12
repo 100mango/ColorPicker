@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Closed admission only; all native execution and acceptance stay in existing scripts."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,7 @@ import subprocess
 import sys
 
 REPOSITORY = '100mango/ColorPicker'
-REF = 'refs/heads/touchcolor-platform-qualification'
+REF = 'refs/heads/touchcolor-tv-store-archive'
 WORKFLOW = '.github/workflows/platform-qualification.yml'
 WORKFLOW_REF = REPOSITORY + '/' + WORKFLOW + '@' + REF
 CONFIG = '.github/platform-qualification.json'
@@ -21,6 +22,7 @@ OVERLAY_PATHS = {
     'scripts/retain_mac_evidence.py',
     'scripts/test_retain_mac_evidence.py',
     'PLATFORM-QUALIFICATION.md',
+    'TouchColorTVUITests/TVWorkflowTests.swift',
 }
 MAC_IDENTITY = """    ('100mango/ColorPicker', 'refs/heads/touchcolor-platform-qualification',
      '100mango/ColorPicker/.github/workflows/platform-qualification.yml@refs/heads/touchcolor-platform-qualification'):
@@ -43,7 +45,7 @@ DEFERRED = {
     'mac_sandbox': 'Not run: strict unsigned scope excludes test_mac_sandbox.sh and its ad-hoc signatures. The original full Mac evidence gate remains incomplete.',
     'ios': 'Not run here: the corrected iOS native gate is owned separately.',
     'watch_container_and_paired_transport': 'Not qualified: corrected iOS Watch embedding and paired foreground/background transport remain separate open gates.',
-    'distribution': 'No archive/export, real signing, notarization, Store submission, physical camera/radio, or Intel runtime qualification.',
+    'distribution': 'Unsigned TV archive diagnostic only; no export, real signing, notarization, Store submission, physical camera/radio, or Intel runtime qualification.',
 }
 
 
@@ -78,7 +80,7 @@ def rows():
 
 def select(lane):
     require(lane not in ('ios', 'paired'), 'Legacy iOS/paired row is deferred, never a corrected-source qualification')
-    if lane == 'tv-secondary-missing-screens':
+    if lane in ('tv-secondary-missing-screens', 'tv-store-archive'):
         original = [row for row in rows() if row.get('lane', row['platform']) == 'tv']
         require(len(original) == 1, 'Missing original TV budget row')
         return {**original[0], 'lane': lane}
@@ -114,7 +116,7 @@ SELECTION_END = '    # END LOCAL QUALIFICATION SELECTION\n'
 def selection_block(config):
     if config['READY']:
         row = select(config['selected_lane'])
-        condition = "${{ github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-platform-qualification' }}"
+        condition = "${{ github.event_name == 'push' && github.ref == 'refs/heads/touchcolor-tv-store-archive' }}"
     else:
         row = {'platform': 'unselected', 'minutes': 1, 'evidence_bytes': 0}
         condition = '${{ false }}'
@@ -163,9 +165,15 @@ def admit(environ=None):
     for old, new in MAC_IDENTITY_TEST_EDITS:
         require(admitted_test.count(old) == 1, 'Unexpected historical identity-count test')
         admitted_test = admitted_test.replace(old, new, 1)
+    test_path = 'TouchColorTVUITests/TVWorkflowTests.swift'
+    original_test = git('show', product + ':' + test_path)
+    allowed_tests = {'984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'c950c2d28b0737206e87d296b5a6ff9058e3a6f89a19a39451532b6759c1d8cd'}
+    require(hashlib.sha256(original_test.encode()).hexdigest() == '984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'Frozen TV test source changed')
     for commit in controls:
         parents = git('rev-list', '--parents', '-n', '1', commit).split()
         require(len(parents) == 2, 'Every control commit must have a sole parent; merges are rejected')
+        require(hashlib.sha256(git('show', commit + ':' + test_path).encode()).hexdigest() in allowed_tests,
+                'TV test overlay must be only the reviewed trailing original-PNG attachment')
         transition = set(git('diff', '--name-only', '--no-renames', parents[1], commit, '--').splitlines())
         require(transition and transition <= OVERLAY_PATHS, 'A control transition changed product source or lacks an explicit control edit')
         require(git('show', commit + ':scripts/retain_mac_evidence.py') == admitted_mac,
@@ -177,11 +185,12 @@ def admit(environ=None):
     require(git('rev-parse', product + '^{tree}') == config['corrected_product_tree'], 'Corrected product tree mismatch')
     # All additions are ordinary non-executable source files. No app, project,
     # version, signing, legacy workflow or acceptance assertion may be changed.
+    # The sole test-only exception appends raw PNG retention after unchanged assertions.
     changed = set(git('diff', '--name-only', '--no-renames', product, 'HEAD', '--').splitlines())
     require(changed == OVERLAY_PATHS, 'Control commit must contain only the complete reviewed qualification overlay')
     for path in OVERLAY_PATHS:
         require(git('ls-tree', 'HEAD', '--', path).startswith('100644 blob '), 'Unexpected control-file mode/type: ' + path)
-        if path not in ('scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py'):
+        if path not in ('scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py', test_path):
             require(git('ls-tree', product, '--', path) == '', 'Qualification control path already existed in product source: ' + path)
     require(git('status', '--porcelain', '--untracked-files=normal') == '', 'Dirty tracked source or unexpected untracked files')
     row = select(config['selected_lane'])
