@@ -30,7 +30,7 @@ class QualificationTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        for name in ('.github/workflows/apple-platforms.yml', 'scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py', 'TouchColorTVUITests/TVWorkflowTests.swift'):
+        for name in ('.github/workflows/apple-platforms.yml', 'scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py', 'TouchColorTVUITests/TVWorkflowTests.swift', 'scripts/test_secondary_privacy_navigation.py'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             text = (ROOT / name).read_text()
@@ -43,6 +43,10 @@ class QualificationTests(unittest.TestCase):
                 start = text.index('        // Original, full-resolution main-screen bytes')
                 end = text.index('\n    }', start)
                 text = text[:start] + text[end + 1:]
+            if name == 'scripts/test_secondary_privacy_navigation.py':
+                start = text.index('# BEGIN exact store-PNG compatibility inverse\n')
+                end = text.index('# END exact store-PNG compatibility inverse\n', start) + len('# END exact store-PNG compatibility inverse\n')
+                text = text[:start] + 'def source(path): return (ROOT / path).read_text()\n' + text[end:]
             path.write_text(text)
         (self.root / 'Product.swift').write_text('corrected product\n')
         self.run_git('init', '-q', '-b', 'touchcolor-platform-qualification')
@@ -195,6 +199,23 @@ class QualificationTests(unittest.TestCase):
         self.run_git('add', '-A'); self.run_git('commit', '-qm', 'invalid test assertion overlay')
         self.rebind_control()
         with self.enabled_fixture(), self.assertRaisesRegex(ValueError, 'trailing original-PNG'):
+            q.admit(self.env)
+
+    def test_png_compatibility_inverse_rejects_any_other_tv_change(self):
+        from test_secondary_privacy_navigation import before_store_png, STORE_PNG_APPEND
+        path = 'TouchColorTVUITests/TVWorkflowTests.swift'
+        current = (ROOT / path).read_text()
+        restored = before_store_png(path, current)
+        self.assertEqual(current.replace(STORE_PNG_APPEND, '', 1), restored)
+        for bad in (current + STORE_PNG_APPEND, current.replace('continueAfterFailure = false', 'continueAfterFailure = true', 1), current.replace('pngRepresentation', 'jpegRepresentation', 1)):
+            with self.assertRaises(ValueError): before_store_png(path, bad)
+
+    def test_about_compatibility_file_cannot_relax_original_assertions(self):
+        path = self.root / 'scripts/test_secondary_privacy_navigation.py'
+        path.write_text(path.read_text().replace("self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), expected)", 'self.assertTrue(True)', 1))
+        self.run_git('add', '-A'); self.run_git('commit', '-qm', 'invalid historical assertion change')
+        self.rebind_control()
+        with self.enabled_fixture(), self.assertRaisesRegex(ValueError, 'exact PNG inverse'):
             q.admit(self.env)
 
     def test_historical_mac_assertion_changes_rejected(self):

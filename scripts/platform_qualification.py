@@ -23,6 +23,7 @@ OVERLAY_PATHS = {
     'scripts/test_retain_mac_evidence.py',
     'PLATFORM-QUALIFICATION.md',
     'TouchColorTVUITests/TVWorkflowTests.swift',
+    'scripts/test_secondary_privacy_navigation.py',
 }
 MAC_IDENTITY = """    ('100mango/ColorPicker', 'refs/heads/touchcolor-platform-qualification',
      '100mango/ColorPicker/.github/workflows/platform-qualification.yml@refs/heads/touchcolor-platform-qualification'):
@@ -169,11 +170,17 @@ def admit(environ=None):
     original_test = git('show', product + ':' + test_path)
     allowed_tests = {'984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'c950c2d28b0737206e87d296b5a6ff9058e3a6f89a19a39451532b6759c1d8cd'}
     require(hashlib.sha256(original_test.encode()).hexdigest() == '984f6ab11e2ae8d7d79949a3953e9536f3164230fae1ca6a7d14d8e476e5ccb4', 'Frozen TV test source changed')
+    compatibility_path = 'scripts/test_secondary_privacy_navigation.py'
+    original_compatibility = git('show', product + ':' + compatibility_path)
+    require(hashlib.sha256(original_compatibility.encode()).hexdigest() == 'f5004e3328546cd42956897842db3cda2334f5d3ce2500a89490fd1494cf20db', 'Original About navigation test bytes changed')
+    allowed_compatibility = {'f5004e3328546cd42956897842db3cda2334f5d3ce2500a89490fd1494cf20db', 'aee6bca941d19190aa8bc657bf4890454b13ad3794d0c0fc00b1d9de6c815a4d'}
     for commit in controls:
         parents = git('rev-list', '--parents', '-n', '1', commit).split()
         require(len(parents) == 2, 'Every control commit must have a sole parent; merges are rejected')
         require(hashlib.sha256(git('show', commit + ':' + test_path).encode()).hexdigest() in allowed_tests,
                 'TV test overlay must be only the reviewed trailing original-PNG attachment')
+        require(hashlib.sha256(git('show', commit + ':' + compatibility_path).encode()).hexdigest() in allowed_compatibility,
+                'About navigation tests changed beyond the exact PNG inverse')
         transition = set(git('diff', '--name-only', '--no-renames', parents[1], commit, '--').splitlines())
         require(transition and transition <= OVERLAY_PATHS, 'A control transition changed product source or lacks an explicit control edit')
         require(git('show', commit + ':scripts/retain_mac_evidence.py') == admitted_mac,
@@ -190,7 +197,7 @@ def admit(environ=None):
     require(changed == OVERLAY_PATHS, 'Control commit must contain only the complete reviewed qualification overlay')
     for path in OVERLAY_PATHS:
         require(git('ls-tree', 'HEAD', '--', path).startswith('100644 blob '), 'Unexpected control-file mode/type: ' + path)
-        if path not in ('scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py', test_path):
+        if path not in ('scripts/retain_mac_evidence.py', 'scripts/test_retain_mac_evidence.py', test_path, compatibility_path):
             require(git('ls-tree', product, '--', path) == '', 'Qualification control path already existed in product source: ' + path)
     require(git('status', '--porcelain', '--untracked-files=normal') == '', 'Dirty tracked source or unexpected untracked files')
     row = select(config['selected_lane'])

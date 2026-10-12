@@ -2,7 +2,7 @@ name: Corrected TouchColor unsigned platform qualification (closed)
 on:
   push:
     branches: [touchcolor-tv-store-archive]
-    paths: [.github/platform-qualification.json]
+    paths: [.github/platform-qualification.json, scripts/platform_qualification.py, scripts/test_platform_qualification.py, scripts/test_secondary_privacy_navigation.py]
 permissions:
   contents: read
 concurrency:
