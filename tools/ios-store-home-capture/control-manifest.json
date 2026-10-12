@@ -1,0 +1,98 @@
+{
+  "READY": true,
+  "base_commit": "922eb296e3b2417a414b72ad4eb2dddeb534328f",
+  "files": [
+    {
+      "bytes": 14334,
+      "mode": "100644",
+      "path": ".github/workflows/ios-store-home-capture.yml",
+      "sha256": "a457526129b680758ccb86b9f563f14c18615135a24b4df67fa6bbd9861d73a8"
+    },
+    {
+      "bytes": 30920,
+      "mode": "100644",
+      "path": "TouchColorUITests/TouchColorOriginalDesignUITests.m",
+      "sha256": "520a7315951e217800e4823565e9ac2c46c72ff3e03b30cf41dda8fc38cc0181"
+    },
+    {
+      "bytes": 130676,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/base-manifest.json",
+      "sha256": "ae34becb1be3c507789ab72196177f9b4c8f15c32420d1fcc1d6ae0dc8cb8916"
+    },
+    {
+      "bytes": 4383,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/bootstrap.py",
+      "sha256": "32f0237413d309b75d3ef7e52232b1947da3e4969f5a2426fa6f05fc17024302"
+    },
+    {
+      "bytes": 5397,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/budget.py",
+      "sha256": "e360fa3801d48226f50bb8bdf1f30f32883c7359dcadfa898396e484601256b0"
+    },
+    {
+      "bytes": 7255,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/capture_contract.py",
+      "sha256": "76e35bc5a7b0d0ab9224b0b62b225df15bea93e99f939e2c5ced5519fded38ae"
+    },
+    {
+      "bytes": 3421,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/commands.py",
+      "sha256": "4ba55b3155be3d4e68e37e8a2c496bf0e36d2888bc9710ebe888f05667f41164"
+    },
+    {
+      "bytes": 15958,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/controller.py",
+      "sha256": "d37e0b77793997f112ab51d5729f7642e6c932c9945144733650fbb2709a470f"
+    },
+    {
+      "bytes": 14007,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/evidence.py",
+      "sha256": "5013eae3ed91a8e36c879d47eb5c6696ca5a6bdb7320aaa14b822d72f8b2f832"
+    },
+    {
+      "bytes": 8471,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/io_boundary.py",
+      "sha256": "08cbe95946cb50a3e18af39fba81cec06eaf1a840a97f4ae8394883c00a9380f"
+    },
+    {
+      "bytes": 19355,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/owned_mac_process.py",
+      "sha256": "8aa9bfab78c8b3e035aad3eeece0c4a6687b3e0bbc7eb2756df565017b477613"
+    },
+    {
+      "bytes": 1133,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/owned_mac_public.c",
+      "sha256": "113312357e6eee89eef49a0c0ff6641b1a67699c336572042b3223d3aa313f4d"
+    },
+    {
+      "bytes": 2568,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/self_test.py",
+      "sha256": "a7f27573c9f251a5d7bdcffe47befcf1003d3491c82123e8d43ddf49f50613d1"
+    },
+    {
+      "bytes": 5842,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/source_guard.py",
+      "sha256": "1a775dd10c66b6ef1099fe0d8fc39733fa6e967578984401b2e98148ba45b63d"
+    },
+    {
+      "bytes": 1206,
+      "mode": "100644",
+      "path": "tools/ios-store-home-capture/source_helpers.py",
+      "sha256": "2d7d656f481a994759f517441e01c5c4ba5a12c7d5ae538a6cec2279e9afde0c"
+    }
+  ],
+  "product_commit": "922eb296e3b2417a414b72ad4eb2dddeb534328f",
+  "schema": 1
+}
