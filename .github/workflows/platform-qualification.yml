@@ -1,0 +1,52 @@
+name: Fixed TouchColor TV unsigned rpath diagnostic
+on:
+  push:
+    branches: [touchcolor-tv-rpath-diagnostic-20261015-r2]
+permissions:
+  contents: read
+concurrency:
+  group: fixed-final-original-ios-release
+  cancel-in-progress: false
+jobs:
+  archive:
+    name: Observe one unsigned TV archive and both rpath contracts
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == '100mango/ColorPicker' &&
+      github.ref == 'refs/heads/touchcolor-tv-rpath-diagnostic-20261015-r2' &&
+      github.actor == '100mango' && github.triggering_actor == '100mango' &&
+      github.run_attempt == 1 && github.workflow_sha == github.sha
+    runs-on: xcode-27
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Start the unchanged TV job clock
+        timeout-minutes: 1
+        run: |
+          python3 - <<'PY'
+          import os,time
+          with open(os.environ['GITHUB_ENV'],'a') as stream:
+              stream.write('TV_RPATH_STARTED_MONOTONIC='+str(time.monotonic())+'\n')
+          PY
+      - name: Check out exact control with its frozen product parent
+        timeout-minutes: 2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          submodules: false
+          lfs: false
+      - name: Check the pure exact-path regression matrix
+        timeout-minutes: 2
+        run: |
+          python3 -B -S -m unittest discover -s scripts -p test_tv_rpath_contract.py -v
+          python3 -B -O -S -m unittest discover -s scripts -p test_tv_rpath_contract.py -v
+      - name: Archive once without credentials and compare the same binary
+        timeout-minutes: 18
+        run: python3 -B -S scripts/tv_rpath_diagnostic.py
+      - name: Always remove only owned diagnostic build state
+        if: ${{ always() }}
+        timeout-minutes: 2
+        run: python3 -B -S scripts/tv_rpath_diagnostic.py cleanup
